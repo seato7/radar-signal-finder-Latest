@@ -99,6 +99,7 @@ make clean       # Stop and remove volumes
 
 ### Ingest
 - `POST /api/ingest/run?mode=demo|real` - Run ETL pipeline
+- `POST /api/ingest/13f` - Ingest single 13F-HR filing with holdings deltas
 
 ### Alerts
 - `GET /api/alerts` - List active alerts
@@ -130,6 +131,16 @@ curl -X POST "http://localhost:8000/api/ingest/run?mode=demo"
 
 # Ingest real-mode (policy feeds)
 curl -X POST "http://localhost:8000/api/ingest/run?mode=real"
+
+# Ingest 13F filing
+curl -X POST "http://localhost:8000/api/ingest/13f" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filing_url": "https://sec.gov/...",
+    "xml_content": "<xml>...</xml>",
+    "manager_name": "Vanguard Group",
+    "period_ended": "2024-03-31"
+  }'
 
 # Get scoring weights
 curl "http://localhost:8000/api/healthz/weights" | jq
@@ -165,6 +176,7 @@ Key variables:
 - `HALF_LIFE_DAYS` - Signal decay half-life (default: 30.0)
 - `SLACK_WEBHOOK` - Optional Slack notifications
 - `OPENFIGI_API_KEY` - Optional OpenFIGI for CUSIP mapping
+- `CUSIP_MAP_CSV_URLS` - Comma-separated CSV URLs for CUSIP→ticker mapping
 - `FRONTEND_PUBLIC_URL` - Frontend URL for CORS and deep links (default: http://localhost:5173)
 - `POLICY_FEEDS` - Comma-separated RSS/Atom feed URLs for policy signals
 - `POLICY_KEYWORDS` - Comma-separated keywords for theme mapping
@@ -200,6 +212,42 @@ At 60 days: ~25% weight
 At 90 days: ~12.5% weight
 
 ## 🔄 ETL Pipeline
+
+### Demo Mode
+
+Demo mode (`mode=demo`) creates synthetic signals for all 3 canonical themes with realistic distributions.
+
+### Real Mode
+
+Real mode (`mode=real`) fetches live data from configured sources.
+
+#### SEC 13F Holdings (Deep)
+
+**Signal Types:**
+- `bigmoney_hold_new` - New position (not held in prior quarter)
+- `bigmoney_hold_increase` - Position increased >5%
+- `bigmoney_hold_decrease` - Position decreased >5%
+- `bigmoney_hold` - Position unchanged (±5%)
+
+**CUSIP Mapping:**
+1. First tries `CUSIP_MAP_CSV_URLS` (comma-separated CSV files with `cusip,ticker` columns)
+2. Falls back to OpenFIGI API if `OPENFIGI_API_KEY` is set
+3. Persists mappings to assets collection
+
+**Idempotency:**
+- Checksum: `sha256(manager|period_ended|cusip|value|shares)`
+- Re-running with same filing data inserts 0 new signals
+
+**CSV Format Example:**
+```csv
+cusip,ticker
+037833100,AAPL
+594918104,MSFT
+```
+
+#### Policy Feeds
+
+RSS/Atom feeds configured via `POLICY_FEEDS` are fetched and filtered by `POLICY_KEYWORDS`.
 
 ### Idempotency
 

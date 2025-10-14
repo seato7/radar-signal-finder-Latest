@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Body
 from backend.etl import demo, policy_feeds
+from backend.etl.sec_13f_holdings import run_13f_holdings_etl
 from backend.services.theme_mapper import run_theme_mapper
+from typing import Optional
 
 router = APIRouter()
 
@@ -16,8 +18,12 @@ async def run_ingest(mode: str = Query("demo", regex="^(demo|real)$")):
             "summary": result
         }
     else:
-        # Real mode - run policy feeds ETL + theme mapper
+        # Real mode - run policy feeds ETL + 13F holdings + theme mapper
         policy_result = await policy_feeds.run_policy_feeds_etl()
+        
+        # 13F holdings are processed separately via dedicated endpoint
+        # since they require specific filing data
+        
         mapper_result = await run_theme_mapper()
         
         return {
@@ -26,3 +32,22 @@ async def run_ingest(mode: str = Query("demo", regex="^(demo|real)$")):
             "policy_feeds": policy_result,
             "theme_mapper": mapper_result
         }
+
+@router.post("/13f")
+async def ingest_13f_filing(
+    filing_url: str = Body(...),
+    xml_content: str = Body(...),
+    manager_name: str = Body(...),
+    period_ended: str = Body(...)
+):
+    """Ingest a single 13F-HR filing with holdings deltas"""
+    result = await run_13f_holdings_etl(filing_url, xml_content, manager_name, period_ended)
+    
+    # Run theme mapper on new signals
+    mapper_result = await run_theme_mapper()
+    
+    return {
+        "status": "success",
+        "holdings": result,
+        "theme_mapper": mapper_result
+    }
