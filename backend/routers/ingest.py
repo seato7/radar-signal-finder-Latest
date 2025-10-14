@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, Body
 from backend.etl import demo, policy_feeds
-from backend.etl.sec_13f_holdings import run_13f_holdings_etl
+from backend.etl.sec_13f_holdings import run_13f_holdings_etl, diagnose_13f_mappings
 from backend.services.theme_mapper import run_theme_mapper
 from typing import Optional
 
@@ -50,4 +50,13 @@ async def ingest_13f_filing(
         "status": "success",
         "holdings": result,
         "theme_mapper": mapper_result
+    }
+
+@router.get("/diagnose/13f")
+async def diagnose_13f(limit: int = Query(50, ge=10, le=200)):
+    """Diagnose recent 13F CUSIP mapping issues"""
+    result = await diagnose_13f_mappings(limit)
+    return {
+        "status": "success",
+        "diagnostics": result
     }
