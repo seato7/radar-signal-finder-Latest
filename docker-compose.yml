@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: opportunity-radar-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - opportunity-radar
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: opportunity-radar-mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
+    depends_on:
+      - mongo
+    networks:
+      - opportunity-radar
+
+  backend:
+    build: ./backend
+    container_name: opportunity-radar-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=opportunity_radar
+      - FRONTEND_PUBLIC_URL=http://localhost:5173
+    depends_on:
+      - mongo
+    networks:
+      - opportunity-radar
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: opportunity-radar-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    networks:
+      - opportunity-radar
+
+volumes:
+  mongo_data:
+
+networks:
+  opportunity-radar:
+    driver: bridge

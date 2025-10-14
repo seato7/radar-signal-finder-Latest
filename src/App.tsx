@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import Dashboard from "./pages/Dashboard";
+import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
 import Radar from "./pages/Radar";
 import Watchlist from "./pages/Watchlist";
@@ -32,7 +32,7 @@ const App = () => (
               </header>
               <main className="flex-1 p-6">
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<Home />} />
                   <Route path="/alerts" element={<Alerts />} />
                   <Route path="/radar" element={<Radar />} />
                   <Route path="/watchlist" element={<Watchlist />} />
