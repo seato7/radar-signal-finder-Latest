@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 
 router = APIRouter()
 
-@router.get("/{ticker}")
-async def get_asset(ticker: str):
-    """Get asset details, where to buy info, and recent signals"""
+@router.get("/by-ticker/{ticker}")
+async def get_asset_by_ticker(ticker: str):
+    """Get asset details by ticker symbol"""
     db = get_db()
     ticker = ticker.upper()
     
@@ -17,11 +17,36 @@ async def get_asset(ticker: str):
     if not asset:
         # Return basic info even if not in DB
         asset = {
+            "_id": None,
             "ticker": ticker,
             "exchange": "UNKNOWN",
             "name": ticker,
             "metadata": {}
         }
+    
+    return await _get_asset_response(asset)
+
+@router.get("/{asset_id}")
+async def get_asset(asset_id: str):
+    """Get asset details, where to buy info, and recent signals"""
+    from bson import ObjectId
+    db = get_db()
+    
+    # Get asset
+    try:
+        asset = await db.assets.find_one({"_id": ObjectId(asset_id)})
+    except:
+        asset = None
+    
+    if not asset:
+        return {"error": "Asset not found"}
+    
+    return await _get_asset_response(asset)
+
+async def _get_asset_response(asset: dict):
+    """Helper to build asset response with signals and themes"""
+    db = get_db()
+    ticker = asset.get("ticker", "")
     
     # Get where to buy
     where_to_buy = get_where_to_buy(asset.get("exchange", "UNKNOWN"), ticker)

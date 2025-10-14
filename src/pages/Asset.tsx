@@ -37,7 +37,7 @@ const Asset = () => {
   useEffect(() => {
     const fetchAsset = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/assets/${ticker}`);
+        const response = await fetch(`http://localhost:8000/api/assets/by-ticker/${ticker}`);
         const data = await response.json();
         setAsset(data);
       } catch (error) {

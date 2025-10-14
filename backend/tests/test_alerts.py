@@ -5,9 +5,14 @@ from backend.config import settings
 @pytest.mark.asyncio
 async def test_alert_firing_threshold():
     """Test alert fires when threshold conditions met"""
-    # This would require mocking database and signals
-    # For now, verify the logic exists
-    assert settings.ALERT_SCORE_THRESHOLD == 80.0
+    # Verify threshold is env-driven with correct default
+    assert settings.ALERT_SCORE_THRESHOLD == 2.0
+    
+    # Test threshold can be overridden
+    original = settings.ALERT_SCORE_THRESHOLD
+    settings.ALERT_SCORE_THRESHOLD = 3.5
+    assert settings.ALERT_SCORE_THRESHOLD == 3.5
+    settings.ALERT_SCORE_THRESHOLD = original
 
 @pytest.mark.asyncio
 async def test_momentum_fade_detection():

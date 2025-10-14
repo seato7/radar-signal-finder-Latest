@@ -104,6 +104,7 @@ make clean       # Stop and remove volumes
 - `GET /api/alerts` - List active alerts
 - `GET /api/alerts/thresholds` - Get alert thresholds
 - `POST /api/alerts/thresholds` - Update thresholds
+- `POST /api/alerts/check` - Manually trigger alert check
 
 ### Watchlist
 - `GET /api/watchlist` - Get watchlist
@@ -111,12 +112,44 @@ make clean       # Stop and remove volumes
 - `DELETE /api/watchlist/{ticker}` - Remove ticker
 
 ### Assets
-- `GET /api/assets/{ticker}` - Asset details + where to buy
+- `GET /api/assets/{asset_id}` - Asset details by ID + where to buy
+- `GET /api/assets/by-ticker/{ticker}` - Asset details by ticker symbol
 
 ### Backtest
-- `GET /api/backtest/summary?since_days=120` - Backtest summary
-- `GET /api/backtest/top_contributors` - Top performing assets
-- `GET /api/backtest/rows.csv` - Export backtest data
+- `POST /api/backtest/prices/run` - Ingest price data from CSV
+- `GET /api/backtest/summary?since_days=120&group_by=theme` - Backtest summary
+- `GET /api/backtest/top_contributors?rank_horizon=7` - Top performing assets
+- `GET /api/backtest/rows.csv?since_days=120` - Export backtest data as CSV
+- `GET /api/backtest/rows.parquet?since_days=120` - Export backtest data as Parquet
+
+### Example Requests
+
+```bash
+# Ingest demo data
+curl -X POST "http://localhost:8000/api/ingest/run?mode=demo"
+
+# Ingest real-mode (policy feeds)
+curl -X POST "http://localhost:8000/api/ingest/run?mode=real"
+
+# Get scoring weights
+curl "http://localhost:8000/api/healthz/weights" | jq
+
+# Get theme scores
+curl "http://localhost:8000/api/radar/themes?days=30" | jq
+
+# Get and update alert thresholds
+curl "http://localhost:8000/api/alerts/thresholds" | jq
+curl -X POST "http://localhost:8000/api/alerts/thresholds" \
+  -H "Content-Type: application/json" \
+  -d '{"signal":"policy_approval","threshold":1.5}'
+
+# Get asset info by ticker
+curl "http://localhost:8000/api/assets/by-ticker/ERII" | jq
+
+# Download backtest exports
+curl "http://localhost:8000/api/backtest/rows.csv?since_days=120" > backtest.csv
+curl "http://localhost:8000/api/backtest/rows.parquet?since_days=120" > backtest.parquet
+```
 
 ## ⚙️ Configuration
 
@@ -128,10 +161,14 @@ cp backend/.env.example backend/.env
 
 Key variables:
 - `MONGO_URL` - MongoDB connection string
-- `ALERT_SCORE_THRESHOLD` - Alert firing threshold (default: 80.0)
+- `ALERT_SCORE_THRESHOLD` - Alert firing threshold (default: 2.0, range: 0-10)
 - `HALF_LIFE_DAYS` - Signal decay half-life (default: 30.0)
 - `SLACK_WEBHOOK` - Optional Slack notifications
 - `OPENFIGI_API_KEY` - Optional OpenFIGI for CUSIP mapping
+- `FRONTEND_PUBLIC_URL` - Frontend URL for CORS and deep links (default: http://localhost:5173)
+- `POLICY_FEEDS` - Comma-separated RSS/Atom feed URLs for policy signals
+- `POLICY_KEYWORDS` - Comma-separated keywords for theme mapping
+- `PRICE_CSV_URLS` - Comma-separated price data CSV URLs for backtesting
 
 See `backend/.env.example` for all options.
 

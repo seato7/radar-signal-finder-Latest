@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     
     OPENFIGI_API_KEY: Optional[str] = None
     
-    ALERT_SCORE_THRESHOLD: float = 80.0
+    ALERT_SCORE_THRESHOLD: float = 2.0
     HALF_LIFE_DAYS: float = 30.0
     
     class Config:
