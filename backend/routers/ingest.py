@@ -71,3 +71,88 @@ async def diagnose_13f(limit: int = Query(50, ge=10, le=200)):
         "status": "success",
         "diagnostics": result
     }
+
+@router.get("/diagnose/policy")
+async def diagnose_policy(limit: int = Query(50, ge=10, le=100)):
+    """Diagnose recent policy feed parsing"""
+    from backend.db import get_db
+    
+    db = get_db()
+    
+    # Get recent policy signals
+    signals_cursor = db.signals.find({
+        "signal_type": {"$in": ["policy_keyword", "policy_approval"]}
+    }).sort("created_at", -1).limit(limit)
+    
+    signals = await signals_cursor.to_list(length=None)
+    
+    # Aggregate stats
+    keyword_matched = sum(1 for s in signals if s.get("theme_id") is not None)
+    keyword_unmatched = len(signals) - keyword_matched
+    
+    samples = []
+    for s in signals[:10]:
+        samples.append({
+            "signal_type": s.get("signal_type"),
+            "value_text": s.get("value_text", "")[:80],
+            "theme_id": s.get("theme_id"),
+            "checksum": s.get("checksum", "")[:16],
+            "observed_at": s.get("observed_at").isoformat() if s.get("observed_at") else None
+        })
+    
+    return {
+        "status": "success",
+        "diagnostics": {
+            "counts": {
+                "total": len(signals),
+                "mapped": keyword_matched,
+                "unmapped": keyword_unmatched
+            },
+            "samples": samples
+        }
+    }
+
+@router.get("/diagnose/form4")
+async def diagnose_form4(limit: int = Query(50, ge=10, le=100)):
+    """Diagnose recent Form 4 insider transactions"""
+    from backend.db import get_db
+    
+    db = get_db()
+    
+    # Get recent insider signals
+    signals_cursor = db.signals.find({
+        "signal_type": {"$in": ["insider_buy", "insider_sell"]}
+    }).sort("created_at", -1).limit(limit)
+    
+    signals = await signals_cursor.to_list(length=None)
+    
+    # Aggregate stats
+    buys = sum(1 for s in signals if s.get("signal_type") == "insider_buy")
+    sells = sum(1 for s in signals if s.get("signal_type") == "insider_sell")
+    mapped = sum(1 for s in signals if s.get("theme_id") is not None)
+    
+    samples = []
+    for s in signals[:10]:
+        raw = s.get("raw", {})
+        samples.append({
+            "signal_type": s.get("signal_type"),
+            "ticker": s.get("ticker", raw.get("issuer_ticker")),
+            "code": raw.get("transaction_code"),
+            "shares": raw.get("shares"),
+            "theme_id": s.get("theme_id"),
+            "checksum": s.get("checksum", "")[:16],
+            "observed_at": s.get("observed_at").isoformat() if s.get("observed_at") else None
+        })
+    
+    return {
+        "status": "success",
+        "diagnostics": {
+            "counts": {
+                "total": len(signals),
+                "buys": buys,
+                "sells": sells,
+                "mapped": mapped
+            },
+            "samples": samples
+        }
+    }

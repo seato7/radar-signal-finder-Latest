@@ -86,12 +86,19 @@ const Radar = () => {
                     <ArrowUpRight className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {opp.themes.map((theme) => (
                         <Badge key={theme} variant="secondary" className="text-xs">
                           {theme}
                         </Badge>
                       ))}
+                      {/* Component badges (top 3) */}
+                      <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                        PolicyMomentum
+                      </Badge>
+                      <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                        FlowPressure
+                      </Badge>
                     </div>
                     <span className="text-xs text-muted-foreground">{opp.updated}</span>
                   </div>

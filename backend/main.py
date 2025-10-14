@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from backend.db import init_db, close_db
-from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets
+from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz
 from backend.config import settings
 
 @asynccontextmanager
@@ -39,6 +39,8 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])
 app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"])
 app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
+app.include_router(themes.router, prefix="/api/themes", tags=["themes"])
+app.include_router(healthz.router, prefix="/api/healthz", tags=["health"])
 
 @app.get("/")
 async def root():

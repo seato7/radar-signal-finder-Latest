@@ -35,24 +35,43 @@ async def run_demo_etl():
     signals_created = 0
     now = datetime.utcnow()
     
-    # Generate signals over the last 45 days
+    # Generate richer, more balanced signals over the last 45 days
     for theme_id in THEME_IDS:
-        # Create 8-12 signals per theme
-        num_signals = random.randint(8, 12)
+        # Ensure diverse signal distribution per theme
+        signals_per_type = {
+            "policy_keyword": 2,
+            "policy_approval": 1,
+            "flow_pressure": 1,
+            "filing_13f_new": 1,
+            "bigmoney_hold_increase": 1,
+            "insider_buy": 1,
+            "social_mention": 2
+        }
         
-        for i in range(num_signals):
-            signal_type, component = random.choice(signal_types)
-            days_ago = random.randint(0, 45)
-            observed_at = now - timedelta(days=days_ago)
+        for signal_type_key, count in signals_per_type.items():
+            component = next((comp for st, comp in signal_types if st == signal_type_key), "Unknown")
             
-            signal_data = {
-                "signal_type": signal_type,
-                "theme_id": theme_id,
-                "magnitude": random.uniform(0.6, 1.8),
-                "direction": "up",
-                "observed_at": observed_at,
-                "value_text": f"Demo {component} signal for {theme_id}"
-            }
+            for i in range(count):
+                # Spread signals across 30-45 days with recent bias
+                days_ago = random.choices(
+                    [random.randint(0, 10), random.randint(11, 30), random.randint(31, 45)],
+                    weights=[0.5, 0.3, 0.2]
+                )[0]
+                
+                observed_at = now - timedelta(days=days_ago)
+                
+                # Vary magnitudes to show decay
+                base_magnitude = random.uniform(0.8, 1.5)
+                magnitude = base_magnitude * (1.0 if days_ago < 15 else 0.7)
+                
+                signal_data = {
+                    "signal_type": signal_type_key,
+                    "theme_id": theme_id,
+                    "magnitude": magnitude,
+                    "direction": "up",
+                    "observed_at": observed_at,
+                    "value_text": f"Demo {component} signal for {theme_id}"
+                }
             
             checksum = Signal.generate_checksum(signal_data)
             

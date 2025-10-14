@@ -50,32 +50,70 @@ async def check_momentum_fade(theme_id: str, current_score: float) -> bool:
     
     return current_score < (0.5 * rolling_max)
 
-async def send_slack_alert(theme: Dict, score: float, positives: List[str], dont_miss: Optional[Dict] = None) -> bool:
+async def send_slack_alert(theme: Dict, score: float, positives: List[str], components: Dict[str, float], why_now: Optional[str] = None, dont_miss: Optional[Dict] = None) -> bool:
     """
-    Send alert to Slack webhook.
+    Send enhanced alert to Slack webhook with component breakdown and buttons.
     Returns True if successful, False otherwise.
     """
     if not settings.SLACK_WEBHOOK:
         return False
     
-    # Build message
-    theme_url = f"{settings.FRONTEND_PUBLIC_URL}/themes?id={theme['id']}"
-    message = f"⚡ *Opportunity Radar Alert*\n\n"
-    message += f"Theme: *{theme['name']}*\n"
-    message += f"Score: *{score:.2f}*\n"
-    message += f"Positive Components: {', '.join(positives)}\n\n"
-    message += f"<{theme_url}|Open Theme>"
+    # Build rich message with blocks
+    theme_url = f"{settings.FRONTEND_PUBLIC_URL}/themes?id={theme['id']}&utm_source=slack&utm_medium=alert"
     
+    # Top 3 components
+    top_components = sorted(components.items(), key=lambda x: x[1], reverse=True)[:3]
+    components_text = "\n".join([f"• {name}: {value:.1f}" for name, value in top_components])
+    
+    # Main text
+    text_lines = [
+        f"⚡ *Opportunity Radar Alert*",
+        f"",
+        f"Theme: *{theme['name'][:50]}*",  # Truncate long titles
+        f"Score: *{score:.2f}*",
+        f"Positive Components: {', '.join(positives)}",
+        f"",
+        f"*Top Contributors:*",
+        components_text
+    ]
+    
+    # Add "why now?" summary if available
+    if why_now:
+        text_lines.append(f"\n_{why_now}_")
+    
+    message_text = "\n".join(text_lines)
+    
+    # Build attachments with action buttons
+    attachments = [
+        {
+            "fallback": f"Open {theme['name']} in Opportunity Radar",
+            "actions": [
+                {
+                    "type": "button",
+                    "text": "Open Theme",
+                    "url": theme_url
+                }
+            ]
+        }
+    ]
+    
+    # Add "Open Asset" button if dont_miss present
     if dont_miss:
-        asset_url = f"{settings.FRONTEND_PUBLIC_URL}/asset?ticker={dont_miss.get('ticker')}"
-        message += f"\n🎯 Don't Miss: {dont_miss.get('ticker')}\n"
-        message += f"<{asset_url}|Open Asset>"
+        asset_url = f"{settings.FRONTEND_PUBLIC_URL}/asset?id={dont_miss.get('asset_id')}&utm_source=slack&utm_medium=alert"
+        attachments[0]["actions"].append({
+            "type": "button",
+            "text": f"Open Asset: {dont_miss.get('ticker', 'Asset')[:10]}",
+            "url": asset_url
+        })
     
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 settings.SLACK_WEBHOOK,
-                json={"text": message},
+                json={
+                    "text": message_text,
+                    "attachments": attachments
+                },
                 timeout=10.0
             )
             response.raise_for_status()
@@ -149,11 +187,18 @@ async def check_and_fire_alerts():
                 
                 result = await db.alerts.insert_one(alert_doc)
                 
+                # Get "why now?" summary if available
+                from backend.services.summarize import get_why_now_summary
+                why_now_data = await get_why_now_summary(theme_id, days=14)
+                why_now_summary = why_now_data.get("summary", "")
+                
                 # Try to send Slack alert
                 slack_success = await send_slack_alert(
                     {"id": theme_id, "name": theme["name"]},
                     score,
-                    positives
+                    positives,
+                    components,
+                    why_now=why_now_summary
                 )
                 
                 if not slack_success and settings.SLACK_WEBHOOK:

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     ALERT_SCORE_THRESHOLD: float = 2.0
     HALF_LIFE_DAYS: float = 30.0
     
+    TTL_DAYS: int = 365  # Signal retention (default 1 year)
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

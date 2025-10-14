@@ -1,8 +1,12 @@
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { AlertCircle, AlertTriangle, Info, CheckCircle2, Settings } from "lucide-react";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 const alerts = [
   {
@@ -47,6 +51,40 @@ const severityConfig = {
 };
 
 const Alerts = () => {
+  const { toast } = useToast();
+  const [scoreThreshold, setScoreThreshold] = useState("2.0");
+  const [minPositives, setMinPositives] = useState("3");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSaveThresholds = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/alerts/thresholds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score_threshold: parseFloat(scoreThreshold),
+          min_positives: parseInt(minPositives)
+        })
+      });
+      
+      if (response.ok) {
+        toast({
+          title: "Thresholds updated",
+          description: "Alert thresholds saved successfully"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update thresholds",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -58,6 +96,48 @@ const Alerts = () => {
           </Button>
         }
       />
+
+      <Card className="shadow-data">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-primary" />
+            <CardTitle>Alert Thresholds</CardTitle>
+          </div>
+          <CardDescription>Configure when alerts should fire</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="score-threshold">Score Threshold</Label>
+              <Input
+                id="score-threshold"
+                type="number"
+                step="0.1"
+                value={scoreThreshold}
+                onChange={(e) => setScoreThreshold(e.target.value)}
+                placeholder="2.0"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="min-positives">Minimum Positive Components</Label>
+              <Input
+                id="min-positives"
+                type="number"
+                value={minPositives}
+                onChange={(e) => setMinPositives(e.target.value)}
+                placeholder="3"
+              />
+            </div>
+          </div>
+          <Button 
+            onClick={handleSaveThresholds} 
+            disabled={isSaving}
+            className="bg-gradient-chrome text-primary-foreground"
+          >
+            {isSaving ? "Saving..." : "Save Thresholds"}
+          </Button>
+        </CardContent>
+      </Card>
 
       <div className="space-y-3">
         {alerts.map((alert) => {

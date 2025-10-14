@@ -3,14 +3,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Play } from "lucide-react";
+import { Play, Download } from "lucide-react";
 
 const Backtest = () => {
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+  const handleDownload = (format: 'csv' | 'parquet') => {
+    window.open(`${API_BASE}/api/export?format=${format}`, '_blank');
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Backtest Engine"
         description="Validate scoring models against historical data"
+        action={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => handleDownload('csv')}>
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleDownload('parquet')}>
+              <Download className="mr-2 h-4 w-4" />
+              Export Parquet
+            </Button>
+          </div>
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-2">

@@ -9,10 +9,16 @@ async def init_db():
     client = AsyncIOMotorClient(settings.MONGO_URL)
     db = client[settings.DB_NAME]
     
-    # Create indexes
+    # Get TTL days from env (default 365)
+    ttl_days = int(settings.TTL_DAYS) if hasattr(settings, 'TTL_DAYS') else 365
+    ttl_seconds = ttl_days * 24 * 60 * 60
+    
+    # Create indexes with TTL for signals
     await db.signals.create_index("checksum", unique=True)
     await db.signals.create_index("signal_type")
     await db.signals.create_index("observed_at")
+    await db.signals.create_index("theme_id")  # For theme queries
+    await db.signals.create_index("created_at", expireAfterSeconds=ttl_seconds)  # TTL index
     
     await db.assets.create_index("ticker", unique=True)
     
@@ -22,8 +28,10 @@ async def init_db():
     await db.prices.create_index([("ticker", 1), ("date", -1)])
     
     await db.alerts.create_index("created_at")
+    await db.alerts.create_index("theme_id")  # For theme alert lookups
     
     print(f"✓ Connected to MongoDB: {settings.DB_NAME}")
+    print(f"✓ Signal TTL set to {ttl_days} days")
 
 async def close_db():
     global client
