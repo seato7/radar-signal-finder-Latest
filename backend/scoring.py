@@ -4,16 +4,16 @@ from datetime import datetime, timedelta
 from backend.config import settings
 from backend.models import Signal
 
-# Component weights
+# Component weights - exact spec values
 WEIGHTS = {
-    "PolicyMomentum": 0.15,
-    "FlowPressure": 0.20,
-    "BigMoneyConfirm": 0.18,
-    "InsiderPoliticianConfirm": 0.12,
-    "Attention": 0.10,
-    "TechEdge": 0.00,  # Future
-    "RiskFlags": -0.05,
-    "CapexMomentum": 0.00,  # Future (0.6 when live)
+    "PolicyMomentum": 1.0,
+    "FlowPressure": 1.0,
+    "BigMoneyConfirm": 1.0,
+    "InsiderPoliticianConfirm": 0.8,
+    "Attention": 0.5,
+    "TechEdge": 0.4,
+    "RiskFlags": -1.0,
+    "CapexMomentum": 0.6,
 }
 
 def exponential_decay(days_ago: float, half_life: float = None) -> float:

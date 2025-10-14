@@ -8,68 +8,69 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Dystopian Chrome - Dark Theme Only */
-    --background: 0 0% 7%;
-    --foreground: 0 0% 92%;
+    /* Spec-compliant dark tokens */
+    --bg: 217 91% 3%;  /* #06080f */
+    --fg: 220 25% 93%;  /* #e6e9f2 */
+    --surface-1: 220 58% 6%;  /* #0b1020 */
+    --surface-2: 220 52% 10%;  /* #0e1428 */
+    --border: 220 31% 24%;  /* #2a3450 */
+    --accent: 199 89% 48%;  /* #0ea5e9 */
+    --accent-purple: 258 90% 66%;  /* #8b5cf6 */
+    --accent-gold: 38 92% 50%;  /* #f59e0b */
+    
+    /* Map to shadcn tokens */
+    --background: 217 91% 3%;
+    --foreground: 220 25% 93%;
 
-    --card: 0 0% 10%;
-    --card-foreground: 0 0% 92%;
+    --card: 220 58% 6%;
+    --card-foreground: 220 25% 93%;
 
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 92%;
+    --popover: 220 52% 10%;
+    --popover-foreground: 220 25% 93%;
 
-    /* Chrome metallic primary */
-    --primary: 200 15% 75%;
-    --primary-foreground: 0 0% 10%;
-    --primary-glow: 200 80% 60%;
+    --primary: 199 89% 48%;
+    --primary-foreground: 220 25% 93%;
+    --primary-glow: 199 89% 58%;
 
-    /* Steel gray secondary */
-    --secondary: 220 10% 25%;
-    --secondary-foreground: 0 0% 92%;
+    --secondary: 220 31% 24%;
+    --secondary-foreground: 220 25% 93%;
 
-    /* Dark muted tones */
-    --muted: 220 10% 18%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 220 52% 10%;
+    --muted-foreground: 220 25% 60%;
 
-    /* Electric cyan accent */
-    --accent: 190 85% 55%;
-    --accent-foreground: 0 0% 10%;
+    --accent: 199 89% 48%;
+    --accent-foreground: 217 91% 3%;
 
-    /* Crimson alerts */
     --destructive: 0 75% 55%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive-foreground: 220 25% 93%;
 
-    /* Neon green for positive signals */
     --success: 142 75% 55%;
-    --success-foreground: 0 0% 10%;
+    --success-foreground: 217 91% 3%;
 
-    /* Amber warnings */
-    --warning: 38 92% 55%;
-    --warning-foreground: 0 0% 10%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 217 91% 3%;
 
-    --border: 220 15% 20%;
-    --input: 220 15% 20%;
-    --ring: 200 80% 60%;
+    --input: 220 31% 24%;
+    --ring: 199 89% 48%;
 
     --radius: 0.375rem;
 
-    /* Sidebar dark chrome */
-    --sidebar-background: 0 0% 9%;
-    --sidebar-foreground: 0 0% 85%;
-    --sidebar-primary: 200 15% 75%;
-    --sidebar-primary-foreground: 0 0% 10%;
-    --sidebar-accent: 220 15% 18%;
-    --sidebar-accent-foreground: 0 0% 92%;
-    --sidebar-border: 220 15% 16%;
-    --sidebar-ring: 200 80% 60%;
+    --sidebar-background: 220 58% 6%;
+    --sidebar-foreground: 220 25% 85%;
+    --sidebar-primary: 199 89% 48%;
+    --sidebar-primary-foreground: 220 25% 93%;
+    --sidebar-accent: 220 52% 10%;
+    --sidebar-accent-foreground: 220 25% 93%;
+    --sidebar-border: 220 31% 20%;
+    --sidebar-ring: 199 89% 48%;
 
     /* Custom gradients */
-    --gradient-chrome: linear-gradient(135deg, hsl(200 15% 75%) 0%, hsl(220 20% 60%) 100%);
-    --gradient-glow: linear-gradient(180deg, hsl(190 85% 55% / 0.1) 0%, transparent 100%);
+    --gradient-chrome: linear-gradient(135deg, hsl(199 89% 48%) 0%, hsl(258 90% 66%) 100%);
+    --gradient-glow: linear-gradient(180deg, hsl(199 89% 48% / 0.1) 0%, transparent 100%);
     
-    /* Shadows with chrome glow */
-    --shadow-chrome: 0 0 20px hsl(200 80% 60% / 0.15);
-    --shadow-data: 0 2px 8px hsl(0 0% 0% / 0.4);
+    /* Shadows */
+    --shadow-chrome: 0 0 20px hsl(199 89% 48% / 0.2);
+    --shadow-data: 0 2px 8px hsl(217 91% 3% / 0.6);
   }
 }
 

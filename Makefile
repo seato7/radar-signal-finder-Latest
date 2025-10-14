@@ -1,4 +1,4 @@
-.PHONY: up down be fe seed test clean
+.PHONY: up down be fe seed ingest-demo test clean
 
 up:
 	@echo "🚀 Starting Opportunity Radar..."
@@ -8,6 +8,10 @@ up:
 	@echo "  Backend API:   http://localhost:8000"
 	@echo "  API Docs:      http://localhost:8000/docs"
 	@echo "  Mongo Express: http://localhost:8081"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. make seed        # Seed canonical themes"
+	@echo "  2. make ingest-demo # Run demo ingest"
 
 down:
 	@echo "🛑 Stopping Opportunity Radar..."
@@ -22,9 +26,14 @@ fe:
 	docker-compose logs -f frontend
 
 seed:
-	@echo "🌱 Seeding demo data..."
+	@echo "🌱 Seeding canonical themes..."
+	docker-compose exec backend python -m backend.scripts.seed_themes
+	@echo "\n✓ Themes seeded. Now run 'make ingest-demo' or click 'Run Ingest (Demo)' in UI"
+
+ingest-demo:
+	@echo "📊 Running demo ingest..."
 	curl -X POST "http://localhost:8000/api/ingest/run?mode=demo"
-	@echo "\n✓ Demo data seeded. Visit http://localhost:5173"
+	@echo "\n✓ Demo ingest complete. Visit http://localhost:5173"
 
 test:
 	@echo "🧪 Running backend tests..."

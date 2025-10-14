@@ -1,13 +1,41 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Play, Database } from "lucide-react";
+import { Play, Database, RefreshCw } from "lucide-react";
+
+interface ThemeScore {
+  id: string;
+  name: string;
+  score: number;
+  components: Record<string, number>;
+  as_of: string;
+}
 
 const Home = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [themes, setThemes] = useState<ThemeScore[]>([]);
+  const [loadingThemes, setLoadingThemes] = useState(false);
+
+  const fetchThemes = async () => {
+    setLoadingThemes(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/radar/themes?days=45`);
+      const data = await response.json();
+      setThemes(data.slice(0, 3)); // Top 3 themes
+    } catch (error) {
+      console.error("Failed to fetch themes:", error);
+    } finally {
+      setLoadingThemes(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchThemes();
+  }, []);
 
   const runIngest = async (mode: 'demo' | 'real') => {
     setLoading(true);
@@ -21,6 +49,11 @@ const Home = () => {
         title: `${mode === 'demo' ? 'Demo' : 'Real'} Ingest Complete`,
         description: `Created ${data.summary.signals_created || 0} signals`,
       });
+
+      // Refresh themes after ingest
+      setTimeout(() => {
+        fetchThemes();
+      }, 1000);
     } catch (error) {
       toast({
         title: "Ingest Failed",
@@ -32,11 +65,30 @@ const Home = () => {
     }
   };
 
+  const getTopComponents = (components: Record<string, number>) => {
+    return Object.entries(components)
+      .filter(([_, value]) => value > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => name);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Opportunity Radar Control"
         description="Run ETL pipelines and monitor system health"
+        action={
+          <Button
+            onClick={fetchThemes}
+            disabled={loadingThemes}
+            variant="outline"
+            size="sm"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loadingThemes ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        }
       />
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -89,12 +141,62 @@ const Home = () => {
               <span className="text-sm font-medium text-success">● Connected</span>
             </div>
             <div className="flex justify-between items-center p-3 bg-muted/50 rounded-md">
-              <span className="text-sm text-muted-foreground">Last Ingest</span>
-              <span className="text-sm font-medium text-foreground">Just now</span>
+              <span className="text-sm text-muted-foreground">Active Themes</span>
+              <span className="text-sm font-medium text-foreground">{themes.length}</span>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Theme Scores Table */}
+      {themes.length > 0 && (
+        <Card className="shadow-data">
+          <CardHeader>
+            <CardTitle>Today's Theme Scores</CardTitle>
+            <CardDescription>Top scored themes with component breakdown</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {themes.map((theme) => {
+                const topComponents = getTopComponents(theme.components);
+                return (
+                  <div
+                    key={theme.id}
+                    className="p-4 rounded-lg border border-border bg-card hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-bold text-lg text-foreground">{theme.name}</h3>
+                        <Badge 
+                          variant="outline" 
+                          className={`${
+                            theme.score >= 80 ? 'border-success text-success' :
+                            theme.score >= 60 ? 'border-accent text-accent' :
+                            'border-warning text-warning'
+                          }`}
+                        >
+                          Score: {theme.score.toFixed(1)}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(theme.as_of).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-sm text-muted-foreground">Top Components:</span>
+                      {topComponents.map((comp) => (
+                        <Badge key={comp} variant="secondary" className="text-xs">
+                          {comp}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="shadow-data">
         <CardHeader>
@@ -107,9 +209,9 @@ const Home = () => {
                 1
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Run Demo Ingest</h4>
+                <h4 className="font-medium text-foreground">Seed Canonical Themes</h4>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Demo Mode" above to populate the database with test data
+                  Run <code className="px-1 py-0.5 bg-muted rounded text-xs">make seed</code> in terminal to load the 3 themes
                 </p>
               </div>
             </div>
@@ -118,9 +220,9 @@ const Home = () => {
                 2
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Explore Radar</h4>
+                <h4 className="font-medium text-foreground">Run Demo Ingest</h4>
                 <p className="text-sm text-muted-foreground">
-                  Navigate to Radar page to see scored opportunities
+                  Click "Run Demo Mode" above to populate signals with test data
                 </p>
               </div>
             </div>
@@ -129,9 +231,9 @@ const Home = () => {
                 3
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Configure Alerts</h4>
+                <h4 className="font-medium text-foreground">Explore Results</h4>
                 <p className="text-sm text-muted-foreground">
-                  Set thresholds in Alerts page to receive notifications
+                  Navigate to Radar or Themes page to see scored opportunities
                 </p>
               </div>
             </div>

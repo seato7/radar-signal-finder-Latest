@@ -19,11 +19,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
-origins = [settings.FRONTEND_PUBLIC_URL] if settings.FRONTEND_PUBLIC_URL else ["*"]
+# CORS - strict: only FRONTEND_PUBLIC_URL allowed
+if not settings.FRONTEND_PUBLIC_URL:
+    raise ValueError("FRONTEND_PUBLIC_URL must be set in environment")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[settings.FRONTEND_PUBLIC_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

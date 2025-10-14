@@ -38,17 +38,31 @@ This starts:
 - **API Docs**: http://localhost:8000/docs
 - **Mongo Express**: http://localhost:8081
 
-### 2. Seed Demo Data
+### 2. Seed Canonical Themes
 
 ```bash
 make seed
 ```
 
-Generates demo themes, assets, and signals for testing.
+Seeds the 3 canonical themes:
+- AI Liquid Cooling
+- Water Reuse  
+- HVDC Transformers
 
-### 3. Access the Application
+### 3. Run Demo Ingest
 
-Open http://localhost:5173 in your browser.
+```bash
+make ingest-demo
+```
+
+Or click "Run Ingest (Demo)" in the UI at http://localhost:5173
+
+### 4. View Results
+
+Navigate to http://localhost:5173 and explore:
+- **Home**: Run ingests and view system status
+- **Radar**: See scored themes with components
+- **Themes**: Explore theme details
 
 ## 🧪 Development
 
@@ -115,7 +129,7 @@ cp backend/.env.example backend/.env
 Key variables:
 - `MONGO_URL` - MongoDB connection string
 - `ALERT_SCORE_THRESHOLD` - Alert firing threshold (default: 80.0)
-- `HALF_LIFE_DAYS` - Signal decay half-life (default: 7.0)
+- `HALF_LIFE_DAYS` - Signal decay half-life (default: 30.0)
 - `SLACK_WEBHOOK` - Optional Slack notifications
 - `OPENFIGI_API_KEY` - Optional OpenFIGI for CUSIP mapping
 
@@ -127,24 +141,26 @@ See `backend/.env.example` for all options.
 
 | Component | Weight | Description |
 |-----------|--------|-------------|
-| PolicyMomentum | 0.15 | Regulatory & policy signals |
-| FlowPressure | 0.20 | ETF flows & volume anomalies |
-| BigMoneyConfirm | 0.18 | 13F filings & institutional activity |
-| InsiderPoliticianConfirm | 0.12 | Form 4 insider & politician trades |
-| Attention | 0.10 | Social & news mentions |
-| RiskFlags | -0.05 | Negative signals |
+| PolicyMomentum | 1.0 | Regulatory & policy signals |
+| FlowPressure | 1.0 | ETF flows & volume anomalies |
+| BigMoneyConfirm | 1.0 | 13F filings & institutional activity |
+| InsiderPoliticianConfirm | 0.8 | Form 4 insider & politician trades |
+| Attention | 0.5 | Social & news mentions |
+| TechEdge | 0.4 | Technical/tech edge signals |
+| RiskFlags | -1.0 | Negative risk signals |
+| CapexMomentum | 0.6 | Capital expenditure momentum |
 
 ### Exponential Decay
 
-Signals decay with half-life = 7 days (configurable):
+Signals decay with half-life = 30 days (configurable):
 
 ```
 decay = exp(-ln(2) * days_ago / half_life)
 ```
 
-At 7 days: ~50% weight
-At 14 days: ~25% weight
-At 21 days: ~12.5% weight
+At 30 days: ~50% weight
+At 60 days: ~25% weight
+At 90 days: ~12.5% weight
 
 ## 🔄 ETL Pipeline
 

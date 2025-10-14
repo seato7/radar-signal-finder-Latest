@@ -1,75 +1,65 @@
 from datetime import datetime, timedelta
 from backend.db import get_db
-from backend.models import Signal, Citation, Theme, Asset
-from bson import ObjectId
+from backend.models import Signal, Citation
 import random
 
+# Canonical theme IDs
+THEME_IDS = [
+    "theme-ai-liquid-cooling",
+    "theme-water-reuse",
+    "theme-hvdc-transformers"
+]
+
 async def run_demo_etl():
-    """Generate demo signals for testing"""
+    """Generate demo signals for the 3 canonical themes"""
     db = get_db()
     
-    # Create demo themes
-    demo_themes = [
-        {"name": "DeFi Expansion", "keywords": ["defi", "decentralized", "protocol"]},
-        {"name": "Layer 2 Scaling", "keywords": ["layer2", "l2", "scaling", "rollup"]},
-        {"name": "Institutional Flow", "keywords": ["institutional", "hedge", "fund"]}
-    ]
+    # Verify themes exist
+    themes_count = await db.themes.count_documents({"_id": {"$in": THEME_IDS}})
+    if themes_count == 0:
+        return {
+            "error": "No themes found. Run: python backend/scripts/seed_themes.py first",
+            "themes_created": 0,
+            "signals_created": 0
+        }
     
-    theme_ids = []
-    for theme_data in demo_themes:
-        result = await db.themes.update_one(
-            {"name": theme_data["name"]},
-            {"$set": theme_data},
-            upsert=True
-        )
-        theme_id = result.upserted_id or (await db.themes.find_one({"name": theme_data["name"]}))["_id"]
-        theme_ids.append(str(theme_id))
-    
-    # Create demo assets
-    demo_assets = [
-        {"ticker": "BTC", "exchange": "CRYPTO", "name": "Bitcoin"},
-        {"ticker": "ETH", "exchange": "CRYPTO", "name": "Ethereum"},
-        {"ticker": "SOL", "exchange": "CRYPTO", "name": "Solana"},
-        {"ticker": "UNI", "exchange": "CRYPTO", "name": "Uniswap"},
-        {"ticker": "MATIC", "exchange": "CRYPTO", "name": "Polygon"}
-    ]
-    
-    for asset_data in demo_assets:
-        await db.assets.update_one(
-            {"ticker": asset_data["ticker"]},
-            {"$set": asset_data},
-            upsert=True
-        )
-    
-    # Generate demo signals
+    # Signal types mapped to components
     signal_types = [
-        "policy_keyword",
-        "flow_pressure",
-        "filing_13f_new",
-        "insider_buy",
-        "social_mention"
+        ("policy_keyword", "PolicyMomentum"),
+        ("flow_pressure", "FlowPressure"),
+        ("filing_13f_new", "BigMoneyConfirm"),
+        ("insider_buy", "InsiderPoliticianConfirm"),
+        ("social_mention", "Attention"),
     ]
     
     signals_created = 0
     now = datetime.utcnow()
     
-    for i in range(30):
-        for theme_id in theme_ids:
+    # Generate signals over the last 45 days
+    for theme_id in THEME_IDS:
+        # Create 8-12 signals per theme
+        num_signals = random.randint(8, 12)
+        
+        for i in range(num_signals):
+            signal_type, component = random.choice(signal_types)
+            days_ago = random.randint(0, 45)
+            observed_at = now - timedelta(days=days_ago)
+            
             signal_data = {
-                "signal_type": random.choice(signal_types),
+                "signal_type": signal_type,
                 "theme_id": theme_id,
-                "asset_id": random.choice(["BTC", "ETH", "SOL"]),
-                "magnitude": random.uniform(0.5, 2.0),
+                "magnitude": random.uniform(0.6, 1.8),
                 "direction": "up",
-                "observed_at": now - timedelta(days=random.randint(0, 29))
+                "observed_at": observed_at,
+                "value_text": f"Demo {component} signal for {theme_id}"
             }
             
             checksum = Signal.generate_checksum(signal_data)
             
             citation = {
-                "source": f"Demo Source {i}",
-                "url": f"https://example.com/signal/{i}",
-                "timestamp": signal_data["observed_at"].isoformat()
+                "source": f"Demo Source - {component}",
+                "url": f"https://example.com/demo/{theme_id}/{checksum[:8]}",
+                "timestamp": observed_at.isoformat()
             }
             
             try:
@@ -78,7 +68,7 @@ async def run_demo_etl():
                     "checksum": checksum,
                     "oa_citation": citation,
                     "created_at": now,
-                    "raw": {}
+                    "raw": {"demo": True, "component": component}
                 })
                 signals_created += 1
             except Exception:
@@ -86,8 +76,7 @@ async def run_demo_etl():
                 pass
     
     return {
-        "themes_created": len(demo_themes),
-        "assets_created": len(demo_assets),
+        "themes_available": themes_count,
         "signals_created": signals_created,
-        "message": "Demo data ingested successfully"
+        "message": f"Demo data ingested: {signals_created} signals across {themes_count} themes"
     }

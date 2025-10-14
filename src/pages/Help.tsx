@@ -22,16 +22,20 @@ const Help = () => {
               <AccordionTrigger>How are opportunity scores calculated?</AccordionTrigger>
               <AccordionContent className="text-muted-foreground space-y-2">
                 <p>
-                  Opportunity Radar uses a weighted scoring model with four main components:
+                  Opportunity Radar uses a weighted scoring model with eight main components:
                 </p>
                 <ul className="list-disc pl-6 space-y-1">
-                  <li><strong>Momentum (35%):</strong> Price action and trend strength</li>
-                  <li><strong>Sentiment (25%):</strong> Social media and news sentiment analysis</li>
-                  <li><strong>Volume (25%):</strong> Trading volume patterns and anomalies</li>
-                  <li><strong>Technical (15%):</strong> Chart patterns and indicators</li>
+                  <li><strong>PolicyMomentum (1.0):</strong> Regulatory & policy signals</li>
+                  <li><strong>FlowPressure (1.0):</strong> ETF flows & volume anomalies</li>
+                  <li><strong>BigMoneyConfirm (1.0):</strong> 13F filings & institutional activity</li>
+                  <li><strong>InsiderPoliticianConfirm (0.8):</strong> Insider & politician trades</li>
+                  <li><strong>Attention (0.5):</strong> Social media and news mentions</li>
+                  <li><strong>TechEdge (0.4):</strong> Technical edge signals</li>
+                  <li><strong>RiskFlags (-1.0):</strong> Negative risk indicators</li>
+                  <li><strong>CapexMomentum (0.6):</strong> Capital expenditure momentum</li>
                 </ul>
                 <p className="mt-2">
-                  Scores decay exponentially over time to prioritize recent signals.
+                  Scores decay exponentially over time (30-day half-life) to prioritize recent signals.
                 </p>
               </AccordionContent>
             </AccordionItem>
@@ -92,8 +96,8 @@ const Help = () => {
               { method: "POST", path: "/api/watchlist", desc: "Add to watchlist" },
               { method: "GET", path: "/api/themes", desc: "List active themes" },
               { method: "GET", path: "/api/export", desc: "Export data (CSV/Parquet)" },
-            ].map((endpoint) => (
-              <div key={endpoint.path} className="flex items-center gap-3 p-3 rounded-md bg-muted/50 border border-border">
+            ].map((endpoint, idx) => (
+              <div key={`${endpoint.method}-${endpoint.path}-${idx}`} className="flex items-center gap-3 p-3 rounded-md bg-muted/50 border border-border">
                 <Badge variant={endpoint.method === "GET" ? "secondary" : "outline"}>
                   {endpoint.method}
                 </Badge>
