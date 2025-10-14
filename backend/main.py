@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from backend.db import init_db, close_db
-from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz
+from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin
 from backend.config import settings
 from backend.logging_config import setup_logging
 from backend.metrics import metrics
@@ -74,6 +74,9 @@ app.include_router(watchlist.router, prefix="/api/watchlist", tags=["watchlist"]
 app.include_router(assets.router, prefix="/api/assets", tags=["assets"])
 app.include_router(themes.router, prefix="/api/themes", tags=["themes"])
 app.include_router(healthz.router, prefix="/api/healthz", tags=["health"])
+app.include_router(bots.router, prefix="/api/bots", tags=["bots"])
+app.include_router(payments.router, prefix="/api/payments", tags=["payments"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 # Request counting middleware
 @app.middleware("http")

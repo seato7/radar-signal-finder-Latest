@@ -1,4 +1,4 @@
-import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle } from "lucide-react";
+import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import {
   Sidebar,
@@ -19,8 +19,11 @@ const navigationItems = [
   { title: "Radar", url: "/radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },
   { title: "Backtest", url: "/backtest", icon: TrendingUp },
+  { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
   { title: "Asset View", url: "/asset", icon: Briefcase },
+  { title: "Pricing", url: "/pricing", icon: CreditCard },
+  { title: "Admin", url: "/admin", icon: Shield },
   { title: "Help", url: "/help", icon: HelpCircle },
 ];
 

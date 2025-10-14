@@ -12,6 +12,9 @@ import Watchlist from "./pages/Watchlist";
 import Backtest from "./pages/Backtest";
 import Asset from "./pages/Asset";
 import Themes from "./pages/Themes";
+import Bots from "./pages/Bots";
+import Pricing from "./pages/Pricing";
+import Admin from "./pages/Admin";
 import Help from "./pages/Help";
 import NotFound from "./pages/NotFound";
 
@@ -39,6 +42,9 @@ const App = () => (
                   <Route path="/backtest" element={<Backtest />} />
                   <Route path="/asset" element={<Asset />} />
                   <Route path="/themes" element={<Themes />} />
+                  <Route path="/bots" element={<Bots />} />
+                  <Route path="/pricing" element={<Pricing />} />
+                  <Route path="/admin" element={<Admin />} />
                   <Route path="/help" element={<Help />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
