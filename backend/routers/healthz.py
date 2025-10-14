@@ -1,7 +1,10 @@
 from fastapi import APIRouter
 from backend.db import get_db
+from backend.metrics import metrics
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.get("/indexes")
 async def list_indexes():
@@ -29,3 +32,20 @@ async def list_indexes():
         "status": "healthy",
         "indexes": indexes
     }
+
+@router.get("/metrics")
+async def get_metrics():
+    """Get production metrics summary"""
+    try:
+        metrics_data = metrics.get_metrics()
+        
+        return {
+            "status": "healthy",
+            **metrics_data
+        }
+    except Exception as e:
+        logger.error(f"Failed to collect metrics: {str(e)}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }

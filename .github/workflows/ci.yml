@@ -50,12 +50,29 @@ jobs:
           coverage run -m pytest -v
           coverage report
           coverage html
+          coverage xml
+      
+      - name: Generate coverage badge
+        if: github.ref == 'refs/heads/main'
+        working-directory: ./backend
+        run: |
+          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(round(float(root.attrib['line-rate']) * 100, 1))")
+          echo "COVERAGE=$COVERAGE" >> $GITHUB_ENV
+          echo "Coverage: $COVERAGE%"
       
       - name: Upload coverage
         uses: actions/upload-artifact@v3
         with:
           name: coverage-report
-          path: backend/htmlcov/
+          path: |
+            backend/htmlcov/
+            backend/coverage.xml
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: backend/coverage.xml
+          fail_ci_if_error: false
 
   frontend-build:
     runs-on: ubuntu-latest

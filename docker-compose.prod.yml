@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-radar_admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo_data_prod:/data/db
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No ports exposed - internal only
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PRODUCTION: "1"
+      LOG_LEVEL: INFO
+      MONGO_URL: mongodb://${MONGO_USER:-radar_admin}:${MONGO_PASSWORD}@mongo:27017
+      DB_NAME: opportunity_radar_prod
+      FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL}
+      SLACK_WEBHOOK: ${SLACK_WEBHOOK}
+      SEC_USER_AGENT: ${SEC_USER_AGENT}
+      SEC_ACCEPT_LANGUAGE: ${SEC_ACCEPT_LANGUAGE}
+      POLICY_FEEDS: ${POLICY_FEEDS}
+      ETF_FLOWS_CSV_URLS: ${ETF_FLOWS_CSV_URLS}
+      ETF_SECTOR_MAP_JSON: ${ETF_SECTOR_MAP_JSON}
+      CUSIP_MAP_CSV_URLS: ${CUSIP_MAP_CSV_URLS}
+      PRICE_CSV_URLS: ${PRICE_CSV_URLS}
+      OPENFIGI_API_KEY: ${OPENFIGI_API_KEY}
+      ALERT_SCORE_THRESHOLD: ${ALERT_SCORE_THRESHOLD:-2.0}
+      HALF_LIFE_DAYS: ${HALF_LIFE_DAYS:-30.0}
+      TTL_DAYS: ${TTL_DAYS:-365}
+      ETL_TIMEOUT_SECONDS: ${ETL_TIMEOUT_SECONDS:-15.0}
+      ETL_RATE_LIMIT: ${ETL_RATE_LIMIT:-5.0}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - backend_logs:/app/logs
+    # No direct port exposure
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_URL: ${FRONTEND_PUBLIC_URL}
+    restart: unless-stopped
+    networks:
+      - frontend
+    # No direct port exposure
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+
+volumes:
+  mongo_data_prod:
+    driver: local
+  backend_logs:
+    driver: local
+  nginx_cache:
+    driver: local
+  nginx_logs:
+    driver: local

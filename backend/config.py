@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     
     TTL_DAYS: int = 365  # Signal retention (default 1 year)
     
+    ETL_TIMEOUT_SECONDS: float = 15.0  # HTTP request timeout for ETLs
+    ETL_RATE_LIMIT: float = 5.0  # Requests per second
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
