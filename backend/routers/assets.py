@@ -1,14 +1,17 @@
 from fastapi import APIRouter
 from backend.db import get_db
+from backend.services.where_to_buy import get_where_to_buy
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
 @router.get("/{ticker}")
 async def get_asset(ticker: str):
-    """Get asset details and where to buy info"""
+    """Get asset details, where to buy info, and recent signals"""
     db = get_db()
     ticker = ticker.upper()
     
+    # Get asset
     asset = await db.assets.find_one({"ticker": ticker})
     
     if not asset:
@@ -20,36 +23,41 @@ async def get_asset(ticker: str):
             "metadata": {}
         }
     
-    # Determine where to buy based on exchange
-    where_to_buy = get_where_to_buy(asset.get("exchange", "UNKNOWN"))
+    # Get where to buy
+    where_to_buy = get_where_to_buy(asset.get("exchange", "UNKNOWN"), ticker)
+    
+    # Get recent signals (last 30 days)
+    since = datetime.utcnow() - timedelta(days=30)
+    signals_cursor = db.signals.find({
+        "value_text": {"$regex": ticker, "$options": "i"},
+        "observed_at": {"$gte": since}
+    }).sort("observed_at", -1).limit(10)
+    signals = await signals_cursor.to_list(length=None)
+    
+    # Get associated themes
+    theme_ids = list(set(s.get("theme_id") for s in signals if s.get("theme_id")))
+    themes = []
+    if theme_ids:
+        themes_cursor = db.themes.find({"_id": {"$in": theme_ids}})
+        themes = await themes_cursor.to_list(length=None)
     
     return {
         "ticker": asset["ticker"],
         "exchange": asset.get("exchange"),
         "name": asset.get("name"),
         "metadata": asset.get("metadata", {}),
-        "where_to_buy": where_to_buy
+        "where_to_buy": where_to_buy,
+        "signals": [
+            {
+                "id": str(s["_id"]),
+                "type": s["signal_type"],
+                "observed_at": s["observed_at"].isoformat(),
+                "citation": s.get("oa_citation")
+            }
+            for s in signals
+        ],
+        "themes": [
+            {"id": str(t["_id"]), "name": t["name"]}
+            for t in themes
+        ]
     }
-
-def get_where_to_buy(exchange: str) -> list:
-    """Return AU-friendly brokers based on exchange"""
-    if exchange in ["NYSE", "NASDAQ", "US"]:
-        return [
-            {"name": "Stake", "url": "https://stake.com.au", "type": "broker"},
-            {"name": "Interactive Brokers", "url": "https://www.interactivebrokers.com.au", "type": "broker"}
-        ]
-    elif exchange in ["ASX", "AUS"]:
-        return [
-            {"name": "CommSec", "url": "https://www.commsec.com.au", "type": "broker"},
-            {"name": "SelfWealth", "url": "https://www.selfwealth.com.au", "type": "broker"}
-        ]
-    elif exchange in ["CRYPTO", "BINANCE", "COINBASE"]:
-        return [
-            {"name": "Binance AU", "url": "https://www.binance.com/en-AU", "type": "exchange"},
-            {"name": "Kraken", "url": "https://www.kraken.com", "type": "exchange"},
-            {"name": "KuCoin", "url": "https://www.kucoin.com", "type": "exchange"}
-        ]
-    else:
-        return [
-            {"name": "Interactive Brokers", "url": "https://www.interactivebrokers.com.au", "type": "broker"}
-        ]

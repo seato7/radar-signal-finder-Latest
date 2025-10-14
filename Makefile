@@ -1,4 +1,4 @@
-.PHONY: up down be fe seed ingest-demo test clean
+.PHONY: up down be fe seed ingest-demo test clean lint format
 
 up:
 	@echo "🚀 Starting Opportunity Radar..."
@@ -38,6 +38,16 @@ ingest-demo:
 test:
 	@echo "🧪 Running backend tests..."
 	docker-compose exec backend pytest -v
+
+lint:
+	@echo "🔍 Linting backend..."
+	docker-compose exec backend ruff check backend/
+	@echo "✓ Linting complete"
+
+format:
+	@echo "✨ Formatting backend..."
+	docker-compose exec backend ruff format backend/
+	@echo "✓ Formatting complete"
 
 clean:
 	@echo "🧹 Cleaning up..."

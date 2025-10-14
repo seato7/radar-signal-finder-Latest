@@ -1,15 +1,68 @@
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Star, ExternalLink, Clock } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+
+interface WhereToBuy {
+  name: string;
+  url: string;
+}
+
+interface AssetData {
+  ticker: string;
+  exchange: string;
+  name: string;
+  where_to_buy: WhereToBuy[];
+  signals: Array<{
+    id: string;
+    type: string;
+    observed_at: string;
+    citation: any;
+  }>;
+  themes: Array<{
+    id: string;
+    name: string;
+  }>;
+}
 
 const Asset = () => {
+  const [searchParams] = useSearchParams();
+  const ticker = searchParams.get("ticker") || "BTC";
+  const [asset, setAsset] = useState<AssetData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAsset = async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/assets/${ticker}`);
+        const data = await response.json();
+        setAsset(data);
+      } catch (error) {
+        console.error("Failed to fetch asset:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAsset();
+  }, [ticker]);
+
+  if (loading) {
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (!asset) {
+    return <div className="p-6">Asset not found</div>;
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="BTC/USD"
-        description="Detailed opportunity analysis"
+        title={`${asset.ticker} - ${asset.name}`}
+        description={`Exchange: ${asset.exchange}`}
         action={
           <Button variant="outline" className="shadow-chrome">
             <Star className="mr-2 h-4 w-4" />
@@ -21,101 +74,80 @@ const Asset = () => {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="shadow-data lg:col-span-2">
           <CardHeader>
-            <CardTitle>Opportunity Score: 94.2</CardTitle>
-            <CardDescription>Score breakdown and contributing factors</CardDescription>
+            <CardTitle>Recent Signals</CardTitle>
+            <CardDescription>Latest activity for this asset</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              {[
-                { component: "Momentum", weight: 0.35, score: 96.5, color: "text-success" },
-                { component: "Sentiment", weight: 0.25, score: 92.8, color: "text-accent" },
-                { component: "Volume", weight: 0.25, score: 94.1, color: "text-primary" },
-                { component: "Technical", weight: 0.15, score: 89.3, color: "text-warning" },
-              ].map((comp) => (
-                <div key={comp.component} className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground">{comp.component}</span>
-                      <Badge variant="outline" className="text-xs">
-                        Weight: {(comp.weight * 100).toFixed(0)}%
-                      </Badge>
+          <CardContent>
+            {asset.signals.length > 0 ? (
+              <div className="space-y-3">
+                {asset.signals.slice(0, 10).map((signal) => (
+                  <div key={signal.id} className="flex items-center justify-between p-3 rounded-md bg-muted/50 border border-border">
+                    <div>
+                      <div className="font-medium text-foreground">{signal.type}</div>
+                      <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(signal.observed_at).toLocaleString()}
+                      </div>
                     </div>
-                    <span className={`font-bold ${comp.color}`}>{comp.score}</span>
+                    {signal.citation?.url && (
+                      <Button variant="ghost" size="sm" asChild>
+                        <a href={signal.citation.url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    )}
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-chrome"
-                      style={{ width: `${comp.score}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent signals</p>
+            )}
           </CardContent>
         </Card>
 
         <div className="space-y-6">
           <Card className="shadow-data">
             <CardHeader>
-              <CardTitle className="text-base">Active Themes</CardTitle>
+              <CardTitle className="text-base">Associated Themes</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {["Momentum", "Volume Spike", "Institutional", "Technical Breakout"].map((theme) => (
-                  <Badge key={theme} variant="secondary">
-                    {theme}
-                  </Badge>
-                ))}
-              </div>
+              {asset.themes.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {asset.themes.map((theme) => (
+                    <Badge key={theme.id} variant="secondary">
+                      {theme.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No themes</p>
+              )}
             </CardContent>
           </Card>
 
           <Card className="shadow-data">
             <CardHeader>
               <CardTitle className="text-base">Where to Buy (AU)</CardTitle>
+              <CardDescription>AU-friendly brokers and exchanges</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {["CoinSpot", "Binance AU", "Swyftx"].map((exchange) => (
+              {asset.where_to_buy.map((broker, idx) => (
                 <Button
-                  key={exchange}
+                  key={idx}
                   variant="outline"
                   className="w-full justify-between"
+                  asChild
                 >
-                  {exchange}
-                  <ExternalLink className="h-4 w-4" />
+                  <a href={broker.url} target="_blank" rel="noopener noreferrer">
+                    {broker.name}
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
                 </Button>
               ))}
             </CardContent>
           </Card>
         </div>
       </div>
-
-      <Card className="shadow-data">
-        <CardHeader>
-          <CardTitle>Signal Citations</CardTitle>
-          <CardDescription>Data sources and timestamps</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[
-              { source: "CoinGecko API", metric: "Price & Volume", timestamp: "2 minutes ago" },
-              { source: "Twitter Sentiment", metric: "Social Score", timestamp: "5 minutes ago" },
-              { source: "On-chain Analytics", metric: "Whale Activity", timestamp: "8 minutes ago" },
-            ].map((citation, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-md bg-muted/50 border border-border">
-                <div>
-                  <div className="font-medium text-foreground">{citation.source}</div>
-                  <div className="text-sm text-muted-foreground">{citation.metric}</div>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  {citation.timestamp}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };

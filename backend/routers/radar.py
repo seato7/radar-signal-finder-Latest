@@ -2,13 +2,21 @@ from fastapi import APIRouter, Query
 from datetime import datetime, timedelta
 from backend.db import get_db
 from backend.scoring import compute_theme_score, get_weights
+from backend.cache import cache
 from typing import List
 
 router = APIRouter()
 
 @router.get("/themes")
 async def get_themes(days: int = Query(30, ge=1, le=365)):
-    """Get all themes with scores"""
+    """Get all themes with scores (cached 60s)"""
+    cache_key = f"themes_{days}"
+    
+    # Check cache
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+    
     db = get_db()
     
     since = datetime.utcnow() - timedelta(days=days)
@@ -50,11 +58,22 @@ async def get_themes(days: int = Query(30, ge=1, le=365)):
     
     # Sort by score descending
     results.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Cache for 60 seconds
+    cache.set(cache_key, results, ttl_seconds=60)
+    
     return results
 
 @router.get("/theme/{theme_id}")
 async def get_theme(theme_id: str, days: int = Query(30, ge=1, le=365)):
-    """Get detailed theme with signals"""
+    """Get detailed theme with signals (cached 60s)"""
+    cache_key = f"theme_{theme_id}_{days}"
+    
+    # Check cache
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+    
     db = get_db()
     from bson import ObjectId
     
@@ -83,7 +102,7 @@ async def get_theme(theme_id: str, days: int = Query(30, ge=1, le=365)):
     
     score, components, positives = compute_theme_score(signals)
     
-    return {
+    result = {
         "id": str(theme["_id"]),
         "name": theme["name"],
         "score": round(score, 2),
@@ -101,3 +120,8 @@ async def get_theme(theme_id: str, days: int = Query(30, ge=1, le=365)):
             for s in signals[:50]  # Limit to 50 for performance
         ]
     }
+    
+    # Cache for 60 seconds
+    cache.set(cache_key, result, ttl_seconds=60)
+    
+    return result
