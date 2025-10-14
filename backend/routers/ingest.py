@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Query, Body
 from backend.etl import demo, policy_feeds
 from backend.etl.sec_13f_holdings import run_13f_holdings_etl, diagnose_13f_mappings
+from backend.etl.sec_form4 import run_form4_etl
+from backend.etl.etf_flows import run_etf_flows_etl
 from backend.services.theme_mapper import run_theme_mapper
 from typing import Optional
 
@@ -18,18 +20,27 @@ async def run_ingest(mode: str = Query("demo", regex="^(demo|real)$")):
             "summary": result
         }
     else:
-        # Real mode - run policy feeds ETL + 13F holdings + theme mapper
+        # Real mode - run full ETL pipeline
         policy_result = await policy_feeds.run_policy_feeds_etl()
+        
+        # Run Form 4 insiders ETL
+        form4_result = await run_form4_etl(limit=100)
+        
+        # Run ETF flows ETL
+        etf_flows_result = await run_etf_flows_etl()
         
         # 13F holdings are processed separately via dedicated endpoint
         # since they require specific filing data
         
+        # Run theme mapper last to map all new signals
         mapper_result = await run_theme_mapper()
         
         return {
             "status": "success",
             "mode": "real",
             "policy_feeds": policy_result,
+            "form4_insiders": form4_result,
+            "etf_flows": etf_flows_result,
             "theme_mapper": mapper_result
         }
 

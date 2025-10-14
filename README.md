@@ -249,6 +249,63 @@ cusip,ticker
 
 RSS/Atom feeds configured via `POLICY_FEEDS` are fetched and filtered by `POLICY_KEYWORDS`.
 
+#### SEC Form 4 Insiders
+
+**Source:** SEC Atom feed for Form 4 filings  
+**Module:** `backend/etl/sec_form4.py`
+
+Parses insider transaction data:
+- Transaction codes: P (purchase), S (sale), or acquired/disposed flags
+- Maps to `insider_buy` (direction=up) or `insider_sell` (direction=down)
+- Idempotency: `sha256(accession|reportedHolder|ticker|transaction_date|code|shares|price)`
+- Citation: Direct SEC filing URL
+
+**Raw data includes:**
+- `issuer_name`: Company name
+- `reported_holder`: Insider name
+- `code`: Transaction code
+- `shares`: Number of shares
+- `price`: Price per share
+- `acquired_disposed`: A (acquired) or D (disposed)
+
+**Caveats:**
+- Only non-derivative transactions are processed
+- Derivative securities (options, warrants) are excluded
+- Multiple transactions per filing create separate signals
+
+#### ETF Flows
+
+**Source:** CSV URLs configured via `ETF_FLOWS_CSV_URLS`  
+**Module:** `backend/etl/etf_flows.py`
+
+Computes per-ETF and sector-level flow pressure:
+- Reads CSV with columns: `date`, `ticker`, `flow` (flexible header detection)
+- Computes rolling 60-day z-score: `(flow - mean) / stdev`
+- Emits `flow_pressure_etf` per ETF with magnitude = |z|
+- Aggregates by sector using `ETF_SECTOR_MAP_JSON`
+- Emits `flow_pressure` per sector with magnitude = sector z-score
+
+**Sector Mapping:**
+Configure via `ETF_SECTOR_MAP_JSON` environment variable:
+```json
+{
+  "SPY": "Broad Market",
+  "QQQ": "Technology",
+  "XLE": "Energy"
+}
+```
+
+**CSV Schema** (headers auto-detected, case-insensitive):
+```csv
+date,ticker,flow
+2024-01-15,SPY,1500000
+2024-01-15,QQQ,-800000
+```
+
+**Scoring Weight:**
+- Sector `flow_pressure`: Full weight (1.0)
+- Per-ETF `flow_pressure_etf`: Half weight (0.5×)
+
 ### Idempotency
 
 All ETL modules use deterministic checksums:
