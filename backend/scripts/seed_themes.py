@@ -1,5 +1,11 @@
 """Seed the 3 canonical themes for Opportunity Radar"""
 import asyncio
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
 
