@@ -63,7 +63,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        VITE_API_URL: ${FRONTEND_PUBLIC_URL}
+        VITE_API_URL: ""
     restart: unless-stopped
     networks:
       - frontend
