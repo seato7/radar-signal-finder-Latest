@@ -45,7 +45,7 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: opportunity-radar-frontend
     ports:
-      - "5173:5173"
+      - "5173:80"
     volumes:
       - ./src:/app/src
       - ./public:/app/public
