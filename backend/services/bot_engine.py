@@ -6,7 +6,7 @@ from backend.db import get_db
 from backend.models_bots import Bot, OrderSim, PositionSim, BotLog, RiskPolicy
 from backend.services.bot_strategies import STRATEGIES
 from backend.logging_config import get_logger
-from backend.metrics import increment_counter
+from backend.metrics import metrics
 
 logger = get_logger(__name__)
 
@@ -136,7 +136,7 @@ class BotEngine:
         
         self.running_bots[bot_id] = True
         logger.info(f"Started bot {bot_id}")
-        increment_counter("bot_started")
+        metrics.increment("bot_started")
         
         await self._log_bot(bot_id, "info", "Bot started")
     
@@ -151,7 +151,7 @@ class BotEngine:
             del self.running_bots[bot_id]
         
         logger.info(f"Stopped bot {bot_id}")
-        increment_counter("bot_stopped")
+        metrics.increment("bot_stopped")
         
         await self._log_bot(bot_id, "info", "Bot stopped")
     
@@ -183,7 +183,7 @@ class BotEngine:
             if drawdown_pct > bot.risk_policy.max_drawdown_pct:
                 await self.pause_bot(bot_id)
                 await self._log_bot(bot_id, "warning", f"Circuit breaker triggered: drawdown {drawdown_pct:.2f}%")
-                increment_counter("bot_circuit_breaker")
+                metrics.increment("bot_circuit_breaker")
                 return
         
         # Check theme subscriptions
@@ -274,7 +274,7 @@ class BotEngine:
                     await self.db.positions_sim.delete_one({"_id": position["_id"]})
         
         await self._log_bot(bot.id, "info", f"Executed {order.side} {order.qty} {order.ticker} @ {order.price:.2f}")
-        increment_counter(f"bot_order_{order.side}")
+        metrics.increment(f"bot_order_{order.side}")
     
     async def _check_theme_trigger(self, bot: Bot, subscription: Dict):
         """Check if theme subscription should trigger action"""
