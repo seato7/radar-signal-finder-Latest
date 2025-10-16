@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from backend.db import init_db, close_db
-from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin
+from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin, auth
 from backend.config import settings
 from backend.logging_config import setup_logging
 from backend.metrics import metrics
@@ -65,6 +65,7 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(radar.router, prefix="/api/radar", tags=["radar"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])

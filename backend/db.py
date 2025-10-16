@@ -30,6 +30,10 @@ async def init_db():
     await db.alerts.create_index("created_at")
     await db.alerts.create_index("theme_id")  # For theme alert lookups
     
+    # User indexes
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("role")
+    
     print(f"✓ Connected to MongoDB: {settings.DB_NAME}")
     print(f"✓ Signal TTL set to {ttl_days} days")
 

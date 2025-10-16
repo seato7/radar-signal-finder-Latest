@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     ETL_TIMEOUT_SECONDS: float = 15.0  # HTTP request timeout for ETLs
     ETL_RATE_LIMIT: float = 5.0  # Requests per second
     
+    JWT_SECRET_KEY: str = "change-this-to-a-random-secret-key-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

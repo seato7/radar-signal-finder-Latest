@@ -3,6 +3,7 @@ from backend.db import get_db
 from backend.models_bots import Bot, RiskPolicy
 from backend.services.bot_strategies import get_strategy_schemas
 from backend.services.bot_engine import get_bot_engine
+from backend.auth import get_current_active_user, TokenData
 from typing import List, Dict, Any
 from datetime import datetime
 
@@ -16,12 +17,19 @@ async def get_available_strategies():
     }
 
 @router.post("/create")
-async def create_bot(bot: Bot, db=Depends(get_db)):
+async def create_bot(
+    bot: Bot, 
+    db=Depends(get_db),
+    current_user: TokenData = Depends(get_current_active_user)
+):
     """Create a new trading bot"""
     bot.created_at = datetime.utcnow()
     bot.updated_at = datetime.utcnow()
     
-    result = await db.bots.insert_one(bot.dict(exclude={"id"}))
+    bot_dict = bot.dict(exclude={"id"})
+    bot_dict["user_id"] = current_user.user_id  # Link bot to user
+    
+    result = await db.bots.insert_one(bot_dict)
     bot.id = str(result.inserted_id)
     
     await db.bots.update_one({"_id": result.inserted_id}, {"$set": {"_id": str(result.inserted_id)}})

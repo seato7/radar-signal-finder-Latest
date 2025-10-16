@@ -43,6 +43,9 @@ services:
       TTL_DAYS: ${TTL_DAYS:-365}
       ETL_TIMEOUT_SECONDS: ${ETL_TIMEOUT_SECONDS:-15.0}
       ETL_RATE_LIMIT: ${ETL_RATE_LIMIT:-5.0}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-10080}
     depends_on:
       mongo:
         condition: service_healthy

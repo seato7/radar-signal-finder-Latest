@@ -3,11 +3,19 @@ import type { Opportunity, Alert, BacktestResult, WatchlistItem, ScoringWeights 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 class ApiClient {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem('auth_token');
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+  }
+
   private async fetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
         ...options?.headers,
       },
     });

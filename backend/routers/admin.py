@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.db import get_db
+from backend.auth import require_admin, TokenData
 from datetime import datetime, timedelta
 
 router = APIRouter()
 
-@router.get("/metrics")
+@router.get("/metrics", dependencies=[Depends(require_admin)])
 async def get_admin_metrics(db=Depends(get_db)):
     """Get admin dashboard metrics"""
     
@@ -38,7 +39,7 @@ async def get_admin_metrics(db=Depends(get_db)):
         }
     }
 
-@router.get("/audit")
+@router.get("/audit", dependencies=[Depends(require_admin)])
 async def get_audit_log(limit: int = 100, db=Depends(get_db)):
     """Get recent bot actions and payment events"""
     

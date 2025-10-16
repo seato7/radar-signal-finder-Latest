@@ -1,5 +1,7 @@
-import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield } from "lucide-react";
+import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -10,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
+  SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
 
@@ -29,6 +32,7 @@ const navigationItems = [
 
 export function AppSidebar() {
   const { state } = useSidebar();
+  const { user, logout } = useAuth();
   const isCollapsed = state === "collapsed";
 
   return (
@@ -69,6 +73,39 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter className="border-t border-border p-4">
+        {!isCollapsed && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <User className="h-4 w-4" />
+              <div className="flex flex-col">
+                <span className="font-medium">{user?.email}</span>
+                <span className="text-xs text-muted-foreground capitalize">{user?.role} Plan</span>
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={logout}
+              className="w-full"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
+        )}
+        {isCollapsed && (
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={logout}
+            title="Logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }
