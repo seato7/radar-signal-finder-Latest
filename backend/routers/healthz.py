@@ -6,6 +6,11 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+@router.get("")
+async def healthz():
+    """Health check endpoint for load balancers"""
+    return {"status": "healthy", "service": "opportunity-radar"}
+
 @router.get("/indexes")
 async def list_indexes():
     """List all active MongoDB indexes"""
