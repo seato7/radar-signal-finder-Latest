@@ -29,7 +29,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - ./backend:/app/backend
     environment:
       - MONGO_URL=mongodb://mongo:27017
       - DB_NAME=opportunity_radar
