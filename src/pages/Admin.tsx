@@ -11,12 +11,23 @@ const Admin = () => {
 
   useEffect(() => {
     const fetchData = async () => {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+
       try {
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+        };
+
         const [metricsRes, auditRes] = await Promise.all([
-          fetch(`${API_BASE}/api/admin/metrics`),
-          fetch(`${API_BASE}/api/admin/audit`)
+          fetch(`${API_BASE}/api/admin/metrics`, { headers }),
+          fetch(`${API_BASE}/api/admin/audit`, { headers })
         ]);
         
+        if (!metricsRes.ok || !auditRes.ok) {
+          throw new Error('Unauthorized');
+        }
+
         const metricsData = await metricsRes.json();
         const auditData = await auditRes.json();
         
