@@ -7,11 +7,15 @@ db = None
 
 async def init_db():
     global client, db
-    # Temporarily allow invalid certificates to bypass SSL issues
+    # Use certifi CA bundle and disable TLS certificate verification for MongoDB Atlas
     client = AsyncIOMotorClient(
         settings.MONGO_URL,
         tls=True,
-        tlsAllowInvalidCertificates=True
+        tlsCAFile=certifi.where(),
+        tlsAllowInvalidCertificates=True,
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=20000,
+        socketTimeoutMS=20000
     )
     db = client[settings.DB_NAME]
     
