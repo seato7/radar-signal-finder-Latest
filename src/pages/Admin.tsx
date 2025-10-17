@@ -1,18 +1,26 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Users, Bot, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 const Admin = () => {
+  const navigate = useNavigate();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const [metrics, setMetrics] = useState<any>(null);
   const [audit, setAudit] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       const token = localStorage.getItem('auth_token');
-      if (!token) return;
+      if (!token) {
+        toast.error('Please login to access admin panel');
+        navigate('/login');
+        return;
+      }
 
       try {
         const headers = {
@@ -25,7 +33,9 @@ const Admin = () => {
         ]);
         
         if (!metricsRes.ok || !auditRes.ok) {
-          throw new Error('Unauthorized');
+          toast.error('Unauthorized access - Admin privileges required');
+          navigate('/login');
+          return;
         }
 
         const metricsData = await metricsRes.json();
@@ -35,13 +45,16 @@ const Admin = () => {
         setAudit(auditData.bot_actions || []);
       } catch (error) {
         console.error("Failed to fetch admin data:", error);
+        toast.error('Failed to load admin data');
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchData();
-  }, []);
+  }, [navigate]);
 
-  if (!metrics) return <div>Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
 
   return (
     <div className="space-y-6">
