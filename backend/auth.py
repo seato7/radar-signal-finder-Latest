@@ -67,8 +67,9 @@ async def get_current_active_user(
     current_user: TokenData = Depends(get_current_user)
 ) -> TokenData:
     """Dependency to ensure user is active"""
+    from bson import ObjectId
     db = get_db()
-    user = await db.users.find_one({"_id": current_user.user_id})
+    user = await db.users.find_one({"_id": ObjectId(current_user.user_id)})
     
     if not user or not user.get("is_active", False):
         raise HTTPException(status_code=400, detail="Inactive user")

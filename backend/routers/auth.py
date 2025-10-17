@@ -95,9 +95,10 @@ async def login(credentials: UserLogin):
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: TokenData = Depends(get_current_active_user)):
     """Get current user information"""
+    from bson import ObjectId
     db = get_db()
     
-    user = await db.users.find_one({"_id": current_user.user_id})
+    user = await db.users.find_one({"_id": ObjectId(current_user.user_id)})
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
