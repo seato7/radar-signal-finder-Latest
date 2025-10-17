@@ -78,7 +78,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const data = await response.json();
       const newToken = data.access_token;
-      setToken(newToken);
       localStorage.setItem('auth_token', newToken);
       
       // Fetch user data immediately after login
@@ -88,13 +87,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       });
 
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        setUser(userData);
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user data');
       }
+
+      const userData = await userResponse.json();
+      
+      // Update state with both token and user before navigating
+      setToken(newToken);
+      setUser(userData);
       
       toast.success('Logged in successfully');
-      navigate('/');
+      
+      // Small delay to ensure state updates before navigation
+      setTimeout(() => navigate('/'), 100);
     } catch (error: any) {
       toast.error(error.message || 'Login failed');
       throw error;
@@ -118,7 +124,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const data = await response.json();
       const newToken = data.access_token;
-      setToken(newToken);
       localStorage.setItem('auth_token', newToken);
       
       // Fetch user data immediately after registration
@@ -128,13 +133,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       });
 
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        setUser(userData);
+      if (!userResponse.ok) {
+        throw new Error('Failed to fetch user data');
       }
+
+      const userData = await userResponse.json();
+      
+      // Update state with both token and user before navigating
+      setToken(newToken);
+      setUser(userData);
       
       toast.success('Account created successfully');
-      navigate('/');
+      
+      // Small delay to ensure state updates before navigation
+      setTimeout(() => navigate('/'), 100);
     } catch (error: any) {
       toast.error(error.message || 'Registration failed');
       throw error;
