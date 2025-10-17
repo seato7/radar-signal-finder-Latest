@@ -8,11 +8,17 @@ db = None
 
 async def init_db():
     global client, db
-    # Create SSL context with certifi certificates for MongoDB Atlas
+    # Create SSL context with certifi certificates and lower security level for MongoDB Atlas
     ssl_context = ssl.create_default_context(cafile=certifi.where())
+    # Lower security level from 2 to 1 to work with MongoDB Atlas
+    # See: https://github.com/mongodb/mongo/issues/5302
+    ssl_context.set_ciphers('DEFAULT@SECLEVEL=1')
+    
     client = AsyncIOMotorClient(
         settings.MONGO_URL,
-        tlsCAFile=certifi.where()
+        tls=True,
+        tlsCAFile=certifi.where(),
+        tlsAllowInvalidCertificates=False
     )
     db = client[settings.DB_NAME]
     
