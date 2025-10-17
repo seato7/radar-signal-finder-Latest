@@ -6,7 +6,11 @@ db = None
 
 async def init_db():
     global client, db
-    client = AsyncIOMotorClient(settings.MONGO_URL)
+    # For Atlas connections, add SSL configuration
+    client = AsyncIOMotorClient(
+        settings.MONGO_URL,
+        tlsAllowInvalidCertificates=True  # Workaround for Railway SSL issues
+    )
     db = client[settings.DB_NAME]
     
     # Get TTL days from env (default 365)
