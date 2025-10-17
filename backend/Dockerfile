@@ -5,6 +5,10 @@ WORKDIR /app
 # Install curl for healthcheck and ca-certificates for MongoDB Atlas SSL
 RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
+# Copy custom OpenSSL config to lower security level for MongoDB Atlas compatibility
+COPY openssl.cnf /etc/ssl/openssl.cnf
+ENV OPENSSL_CONF=/etc/ssl/openssl.cnf
+
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 

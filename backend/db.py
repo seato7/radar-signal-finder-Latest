@@ -1,22 +1,17 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
 import certifi
-import ssl
 
 client: AsyncIOMotorClient = None
 db = None
 
 async def init_db():
     global client, db
-    # Create SSL context with certifi certificates and lower security level for MongoDB Atlas
-    # Railway/Ubuntu systems have OpenSSL SECLEVEL=2 which rejects some Atlas certificates
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
-    ssl_context.set_ciphers('DEFAULT@SECLEVEL=1')
-    
+    # Use certifi for CA certificates
     client = AsyncIOMotorClient(
         settings.MONGO_URL,
         tls=True,
-        tlsContext=ssl_context
+        tlsCAFile=certifi.where()
     )
     db = client[settings.DB_NAME]
     
