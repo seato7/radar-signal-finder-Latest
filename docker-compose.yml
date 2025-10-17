@@ -43,6 +43,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        - VITE_API_URL=http://184.105.3.73:8000
     container_name: opportunity-radar-frontend
     ports:
       - "5173:80"
@@ -51,7 +53,7 @@ services:
       - ./public:/app/public
       - ./index.html:/app/index.html
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=http://184.105.3.73:8000
     networks:
       - opportunity-radar
 
