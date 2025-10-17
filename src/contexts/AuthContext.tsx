@@ -77,8 +77,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const data = await response.json();
-      setToken(data.access_token);
-      localStorage.setItem('auth_token', data.access_token);
+      const newToken = data.access_token;
+      setToken(newToken);
+      localStorage.setItem('auth_token', newToken);
+      
+      // Fetch user data immediately after login
+      const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${newToken}`,
+        },
+      });
+
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setUser(userData);
+      }
       
       toast.success('Logged in successfully');
       navigate('/');
@@ -104,8 +117,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const data = await response.json();
-      setToken(data.access_token);
-      localStorage.setItem('auth_token', data.access_token);
+      const newToken = data.access_token;
+      setToken(newToken);
+      localStorage.setItem('auth_token', newToken);
+      
+      // Fetch user data immediately after registration
+      const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${newToken}`,
+        },
+      });
+
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setUser(userData);
+      }
       
       toast.success('Account created successfully');
       navigate('/');
