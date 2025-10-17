@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    MONGO_URL: str = "mongodb://mongo:27017"
+    MONGO_URL: str  # No default - must be set via environment variable
     DB_NAME: str = "opportunity_radar"
     
     SLACK_WEBHOOK: Optional[str] = None
