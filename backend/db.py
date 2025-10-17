@@ -9,16 +9,14 @@ db = None
 async def init_db():
     global client, db
     # Create SSL context with certifi certificates and lower security level for MongoDB Atlas
+    # Railway/Ubuntu systems have OpenSSL SECLEVEL=2 which rejects some Atlas certificates
     ssl_context = ssl.create_default_context(cafile=certifi.where())
-    # Lower security level from 2 to 1 to work with MongoDB Atlas
-    # See: https://github.com/mongodb/mongo/issues/5302
     ssl_context.set_ciphers('DEFAULT@SECLEVEL=1')
     
     client = AsyncIOMotorClient(
         settings.MONGO_URL,
         tls=True,
-        tlsCAFile=certifi.where(),
-        tlsAllowInvalidCertificates=False
+        tlsContext=ssl_context
     )
     db = client[settings.DB_NAME]
     
