@@ -33,7 +33,7 @@ services:
     environment:
       - MONGO_URL=mongodb://mongo:27017
       - DB_NAME=opportunity_radar
-      - FRONTEND_PUBLIC_URL=http://localhost:5173
+      - FRONTEND_PUBLIC_URL=http://184.105.3.73:5173
     depends_on:
       - mongo
     networks:
