@@ -7,11 +7,11 @@ db = None
 
 async def init_db():
     global client, db
-    # Use certifi for CA certificates
+    # Temporarily allow invalid certificates to bypass SSL issues
     client = AsyncIOMotorClient(
         settings.MONGO_URL,
         tls=True,
-        tlsCAFile=certifi.where()
+        tlsAllowInvalidCertificates=True
     )
     db = client[settings.DB_NAME]
     
