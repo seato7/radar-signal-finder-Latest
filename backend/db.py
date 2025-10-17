@@ -1,12 +1,19 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
+import certifi
+import ssl
 
 client: AsyncIOMotorClient = None
 db = None
 
 async def init_db():
     global client, db
-    client = AsyncIOMotorClient(settings.MONGO_URL)
+    # Create SSL context with certifi certificates for MongoDB Atlas
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    client = AsyncIOMotorClient(
+        settings.MONGO_URL,
+        tlsCAFile=certifi.where()
+    )
     db = client[settings.DB_NAME]
     
     # Get TTL days from env (default 365)
