@@ -42,7 +42,6 @@ PLANS = {
         "features": {
             "max_bots": 3,
             "max_alerts": 25,
-            "live_eligible": True,
             "exports": ["csv", "parquet"],
             "backtest_days": -1
         }
@@ -55,8 +54,6 @@ PLANS = {
         "features": {
             "max_bots": 10,
             "max_alerts": -1,
-            "live_eligible": True,
-            "priority_support": True,
             "exports": ["csv", "parquet"],
             "backtest_days": -1
         }
@@ -69,9 +66,6 @@ PLANS = {
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
-            "live_eligible": True,
-            "priority_support": True,
-            "advanced_analytics": True,
             "exports": ["csv", "parquet"],
             "backtest_days": -1
         }
@@ -83,12 +77,9 @@ PLANS = {
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
-            "live_eligible": True,
-            "dedicated_support": True,
-            "custom_integrations": True,
-            "api_access": True,
             "exports": ["csv", "parquet"],
-            "backtest_days": -1
+            "backtest_days": -1,
+            "custom_support": True
         }
     }
 }

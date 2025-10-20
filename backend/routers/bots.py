@@ -23,6 +23,31 @@ async def create_bot(
     current_user: TokenData = Depends(get_current_active_user)
 ):
     """Create a new trading bot"""
+    from backend.services.payments import check_plan_limit, get_plans
+    
+    # Get user's subscription
+    user_id = current_user.username
+    subscription = await db.subscriptions.find_one({"user_id": user_id})
+    user_plan = subscription.get("plan", "free") if subscription else "free"
+    
+    # Count user's existing bots
+    existing_bots_count = await db.bots.count_documents({"user_id": user_id})
+    
+    # Check if user can create more bots
+    if not check_plan_limit(user_plan, "max_bots", existing_bots_count):
+        max_bots = get_plans()[user_plan]["features"]["max_bots"]
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Your {user_plan} plan allows {max_bots} bot{'s' if max_bots != 1 else ''}. Upgrade to create more."
+        )
+    
+    # Enforce paper mode only for all plans
+    if bot.mode != "paper":
+        raise HTTPException(
+            status_code=403,
+            detail="Only paper trading is currently supported. Live trading coming soon."
+        )
+    
     bot.created_at = datetime.utcnow()
     bot.updated_at = datetime.utcnow()
     

@@ -18,9 +18,26 @@ async def ingest_prices():
 @router.get("/summary")
 async def backtest_summary(
     since_days: int = Query(120, ge=1, le=365),
-    group_by: str = Query("theme", regex="^(theme|signal)$")
+    group_by: str = Query("theme", regex="^(theme|signal)$"),
+    user_id: str = Query("default")
 ):
     """Get backtest summary with forward returns"""
+    from backend.services.payments import get_plans
+    from backend.db import get_db
+    
+    # Get user's subscription and enforce backtest limits
+    db = get_db()
+    subscription = await db.subscriptions.find_one({"user_id": user_id})
+    user_plan = subscription.get("plan", "free") if subscription else "free"
+    
+    max_days = get_plans()[user_plan]["features"]["backtest_days"]
+    if max_days != -1 and since_days > max_days:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your {user_plan} plan allows {max_days}-day backtests. Upgrade for longer horizons."
+        )
+    
     result = await compute_backtest_summary(since_days, group_by)
     return result
 
@@ -35,9 +52,23 @@ async def top_contributors(
     return {"rank_horizon_days": rank_horizon, "min_signals": min_signals, "contributors": result}
 
 @router.get("/rows.csv")
-async def backtest_csv(since_days: int = Query(120, ge=1)):
+async def backtest_csv(since_days: int = Query(120, ge=1), user_id: str = Query("default")):
     """Export backtest data as CSV"""
+    from backend.services.payments import get_plans
+    from fastapi import HTTPException
+    
     db = get_db()
+    
+    # Enforce backtest horizon limits
+    subscription = await db.subscriptions.find_one({"user_id": user_id})
+    user_plan = subscription.get("plan", "free") if subscription else "free"
+    
+    max_days = get_plans()[user_plan]["features"]["backtest_days"]
+    if max_days != -1 and since_days > max_days:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your {user_plan} plan allows {max_days}-day backtests. Upgrade for longer horizons."
+        )
     
     # Get signals and compute rows
     since_date = datetime.utcnow() - timedelta(days=since_days)
@@ -72,8 +103,11 @@ async def backtest_csv(since_days: int = Query(120, ge=1)):
     )
 
 @router.get("/rows.parquet")
-async def backtest_parquet(since_days: int = Query(120, ge=1)):
+async def backtest_parquet(since_days: int = Query(120, ge=1), user_id: str = Query("default")):
     """Export backtest data as Parquet"""
+    from backend.services.payments import get_plans
+    from fastapi import HTTPException
+    
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
@@ -84,6 +118,24 @@ async def backtest_parquet(since_days: int = Query(120, ge=1)):
         }
     
     db = get_db()
+    
+    # Check if user's plan allows parquet export
+    subscription = await db.subscriptions.find_one({"user_id": user_id})
+    user_plan = subscription.get("plan", "free") if subscription else "free"
+    
+    allowed_exports = get_plans()[user_plan]["features"]["exports"]
+    if "parquet" not in allowed_exports:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Parquet export requires Starter plan or higher. Your plan: {user_plan}."
+        )
+    
+    max_days = get_plans()[user_plan]["features"]["backtest_days"]
+    if max_days != -1 and since_days > max_days:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your {user_plan} plan allows {max_days}-day backtests."
+        )
     
     # Get signals and compute rows
     since_date = datetime.utcnow() - timedelta(days=since_days)

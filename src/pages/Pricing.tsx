@@ -43,7 +43,7 @@ const Pricing = () => {
       period: "/mo",
       description: "For serious traders",
       features: [
-        "3 live-eligible bots",
+        "3 paper trading bots",
         "25 alerts",
         "CSV & Parquet exports",
         "Unlimited backtest horizon"
@@ -57,9 +57,8 @@ const Pricing = () => {
       period: "/mo",
       description: "Advanced trading",
       features: [
-        "10 live-eligible bots",
+        "10 paper trading bots",
         "Unlimited alerts",
-        "Priority support",
         "CSV & Parquet exports",
         "Unlimited backtest horizon"
       ],
@@ -72,11 +71,9 @@ const Pricing = () => {
       period: "/mo",
       description: "Maximum power",
       features: [
-        "Unlimited live-eligible bots",
+        "Unlimited paper trading bots",
         "Unlimited alerts",
-        "Priority support",
-        "Advanced analytics",
-        "All export formats",
+        "CSV & Parquet exports",
         "Unlimited backtest horizon"
       ],
       cta: "Start Premium",
@@ -89,10 +86,9 @@ const Pricing = () => {
       description: "Custom solutions for teams",
       features: [
         "Unlimited bots & alerts",
-        "Dedicated support",
-        "Custom integrations",
-        "API access",
-        "All export formats"
+        "Custom support",
+        "All export formats",
+        "Unlimited backtest horizon"
       ],
       cta: "Contact Sales",
       plan_id: "enterprise"
