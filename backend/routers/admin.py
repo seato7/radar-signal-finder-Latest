@@ -100,3 +100,27 @@ async def get_audit_log(limit: int = 100, db=Depends(get_db)):
         "bot_actions": bot_logs,
         "payment_events": subs
     }
+
+@router.post("/make-admin/{email}")
+async def make_user_admin(email: str, db=Depends(get_db)):
+    """Promote a user to admin role - temporary endpoint for setup"""
+    from backend.models_auth import UserRole
+    
+    # Find user by email
+    user = await db.users.find_one({"email": email})
+    
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found")
+    
+    # Update role to admin
+    result = await db.users.update_one(
+        {"email": email},
+        {"$set": {"role": UserRole.ADMIN.value}}
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Successfully promoted {email} to admin",
+        "email": email,
+        "new_role": UserRole.ADMIN.value
+    }
