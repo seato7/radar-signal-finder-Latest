@@ -56,9 +56,16 @@ async def global_exception_handler(request: Request, exc: Exception):
 if not settings.FRONTEND_PUBLIC_URL:
     raise ValueError("FRONTEND_PUBLIC_URL must be set in environment")
 
+# Parse comma-separated origins to support multiple domains
+allowed_origins = [
+    origin.strip() 
+    for origin in settings.FRONTEND_PUBLIC_URL.split(',')
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_PUBLIC_URL],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
