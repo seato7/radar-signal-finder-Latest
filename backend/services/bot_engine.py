@@ -16,6 +16,15 @@ class BotEngine:
     def __init__(self, db):
         self.db = db
         self.running_bots = {}
+        self._broker = None
+    
+    def get_broker(self):
+        """Get or initialize broker adapter"""
+        if self._broker is None:
+            from backend.services.alpaca_broker import get_broker
+            from backend.config import settings
+            self._broker = get_broker(paper_mode=settings.ALPACA_PAPER_MODE)
+        return self._broker
     
     async def simulate_bot(self, bot: Bot, since_days: int = 30) -> Dict[str, Any]:
         """Simulate bot performance over historical data"""
@@ -221,9 +230,16 @@ class BotEngine:
                 await self._execute_order(bot, order)
     
     async def _execute_order(self, bot: Bot, order: OrderSim):
-        """Execute simulated order and update positions"""
+        """Execute order - paper or live mode"""
         order.bot_id = bot.id
         
+        if bot.mode == "live":
+            await self._execute_live_order(bot, order)
+        else:
+            await self._execute_paper_order(bot, order)
+    
+    async def _execute_paper_order(self, bot: Bot, order: OrderSim):
+        """Execute simulated order and update positions"""
         # Apply slippage
         slippage = (bot.risk_policy.slippage_bps / 10000.0) * order.price
         if order.side == "buy":
@@ -273,8 +289,91 @@ class BotEngine:
                 else:
                     await self.db.positions_sim.delete_one({"_id": position["_id"]})
         
-        await self._log_bot(bot.id, "info", f"Executed {order.side} {order.qty} {order.ticker} @ {order.price:.2f}")
+        await self._log_bot(bot.id, "info", f"[PAPER] Executed {order.side} {order.qty} {order.ticker} @ {order.price:.2f}")
         metrics.increment(f"bot_order_{order.side}")
+    
+    async def _execute_live_order(self, bot: Bot, order: OrderSim):
+        """Execute live order via Alpaca"""
+        broker = self.get_broker()
+        
+        # Pre-trade validations
+        account = await broker.get_account()
+        if "error" in account:
+            await self._log_bot(bot.id, "error", f"Broker error: {account['error']}")
+            return
+        
+        # Check buying power for buys
+        if order.side == "buy":
+            buying_power = float(account.get("buying_power", 0))
+            position_value = order.qty * order.price
+            if position_value > buying_power:
+                await self._log_bot(bot.id, "warning", f"Insufficient buying power: need ${position_value:.2f}, have ${buying_power:.2f}")
+                return
+        
+        # Check position size limits
+        max_position_value = bot.risk_policy.max_position_value_usd
+        if order.side == "buy" and (order.qty * order.price) > max_position_value:
+            await self._log_bot(bot.id, "warning", f"Order exceeds max position size: ${order.qty * order.price:.2f} > ${max_position_value:.2f}")
+            return
+        
+        # Place order with broker
+        result = await broker.place_order(
+            ticker=order.ticker,
+            side=order.side,
+            qty=order.qty,
+            order_type="market"
+        )
+        
+        if "error" in result:
+            await self._log_bot(bot.id, "error", f"Order failed: {result['error']}")
+            metrics.increment("bot_live_order_failed")
+            return
+        
+        # Log successful order
+        order_id = result.get("id", "unknown")
+        await self._log_bot(bot.id, "info", f"[LIVE] {order.side.upper()} {order.qty} {order.ticker} - Order ID: {order_id}")
+        
+        # Save to live orders collection
+        await self.db.orders_live.insert_one({
+            "bot_id": bot.id,
+            "broker_order_id": order_id,
+            "ticker": order.ticker,
+            "side": order.side,
+            "qty": order.qty,
+            "price": order.price,
+            "status": result.get("status", "pending"),
+            "ts": datetime.utcnow(),
+            "broker_response": result
+        })
+        
+        metrics.increment(f"bot_live_order_{order.side}")
+    
+    async def sync_live_positions(self, bot_id: str):
+        """Sync positions from broker for live bot"""
+        bot_doc = await self.db.bots.find_one({"_id": bot_id})
+        if not bot_doc or bot_doc["mode"] != "live":
+            return
+        
+        broker = self.get_broker()
+        positions = await broker.get_positions()
+        
+        # Update positions in DB
+        for pos in positions:
+            await self.db.positions_live.update_one(
+                {"bot_id": bot_id, "ticker": pos["symbol"]},
+                {
+                    "$set": {
+                        "qty": float(pos["qty"]),
+                        "avg_price": float(pos["avg_entry_price"]),
+                        "current_price": float(pos["current_price"]),
+                        "unrealized_pnl": float(pos["unrealized_pl"]),
+                        "ts": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+        
+        await self._log_bot(bot_id, "info", f"Synced {len(positions)} live positions")
     
     async def _check_theme_trigger(self, bot: Bot, subscription: Dict):
         """Check if theme subscription should trigger action"""

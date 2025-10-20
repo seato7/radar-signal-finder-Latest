@@ -139,3 +139,118 @@ async def get_subscriptions(bot_id: str, db=Depends(get_db)):
         raise HTTPException(status_code=404, detail="Bot not found")
     
     return {"subscriptions": bot.get("theme_subscriptions", [])}
+
+@router.get("/broker/test")
+async def test_broker_connection(db=Depends(get_db)):
+    """Test Alpaca broker connection"""
+    from backend.services.alpaca_broker import get_broker
+    
+    broker = get_broker(paper_mode=True)
+    account = await broker.get_account()
+    
+    if "error" in account:
+        return {
+            "connected": False,
+            "error": account["error"],
+            "configured": bool(broker.api_key)
+        }
+    
+    return {
+        "connected": True,
+        "account_number": account.get("account_number", "N/A"),
+        "buying_power": account.get("buying_power", "0"),
+        "cash": account.get("cash", "0"),
+        "portfolio_value": account.get("portfolio_value", "0"),
+        "paper_mode": True
+    }
+
+@router.post("/{bot_id}/sync_positions")
+async def sync_positions(bot_id: str, db=Depends(get_db)):
+    """Sync live positions from broker"""
+    bot = await db.bots.find_one({"_id": bot_id})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    if bot["mode"] != "live":
+        raise HTTPException(status_code=400, detail="Bot must be in live mode")
+    
+    engine = await get_bot_engine()
+    await engine.sync_live_positions(bot_id)
+    
+    return {"status": "synced"}
+
+@router.get("/{bot_id}/live_positions")
+async def get_live_positions(bot_id: str, db=Depends(get_db)):
+    """Get live positions for bot"""
+    bot = await db.bots.find_one({"_id": bot_id})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    if bot["mode"] != "live":
+        # Return paper positions if not live
+        positions = await db.positions_sim.find({"bot_id": bot_id}).to_list(length=None)
+        return {"mode": "paper", "positions": positions}
+    
+    positions = await db.positions_live.find({"bot_id": bot_id}).to_list(length=None)
+    return {"mode": "live", "positions": positions}
+
+@router.post("/{bot_id}/upgrade_to_live")
+async def upgrade_to_live(
+    bot_id: str,
+    db=Depends(get_db),
+    current_user: TokenData = Depends(get_current_active_user)
+):
+    """Upgrade bot from paper to live mode (with safety checks)"""
+    from backend.services.payments import get_plans
+    
+    # Get bot
+    bot = await db.bots.find_one({"_id": bot_id})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Check user subscription
+    user_id = current_user.username
+    subscription = await db.subscriptions.find_one({"user_id": user_id})
+    user_plan = subscription.get("plan", "free") if subscription else "free"
+    
+    # Verify plan allows live trading
+    plan_features = get_plans()[user_plan]["features"]
+    if not plan_features.get("live_eligible", False):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Live trading requires Starter plan or higher. Current plan: {user_plan}"
+        )
+    
+    # Check broker connection
+    from backend.services.alpaca_broker import get_broker
+    broker = get_broker(paper_mode=True)  # Test with paper first
+    account = await broker.get_account()
+    
+    if "error" in account:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Broker connection failed: {account['error']}. Configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
+        )
+    
+    # Safety check: bot must have been tested in paper mode
+    orders_count = await db.orders_sim.count_documents({"bot_id": bot_id})
+    if orders_count < 5:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bot must execute at least 5 paper trades before going live. Current: {orders_count}"
+        )
+    
+    # Upgrade to live
+    await db.bots.update_one(
+        {"_id": bot_id},
+        {"$set": {"mode": "live", "updated_at": datetime.utcnow()}}
+    )
+    
+    engine = await get_bot_engine()
+    await engine._log_bot(bot_id, "warning", "Bot upgraded to LIVE TRADING mode")
+    
+    return {
+        "status": "upgraded",
+        "mode": "live",
+        "warning": "Bot is now trading with real money. Monitor closely."
+    }

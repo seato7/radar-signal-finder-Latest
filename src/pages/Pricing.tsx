@@ -44,6 +44,7 @@ const Pricing = () => {
       description: "For serious traders",
       features: [
         "3 paper trading bots",
+        "Live trading enabled",
         "25 alerts",
         "CSV & Parquet exports",
         "Unlimited backtest horizon"
@@ -58,6 +59,7 @@ const Pricing = () => {
       description: "Advanced trading",
       features: [
         "10 paper trading bots",
+        "Live trading enabled",
         "Unlimited alerts",
         "CSV & Parquet exports",
         "Unlimited backtest horizon"
@@ -72,6 +74,7 @@ const Pricing = () => {
       description: "Maximum power",
       features: [
         "Unlimited paper trading bots",
+        "Live trading enabled",
         "Unlimited alerts",
         "CSV & Parquet exports",
         "Unlimited backtest horizon"
@@ -86,6 +89,7 @@ const Pricing = () => {
       description: "Custom solutions for teams",
       features: [
         "Unlimited bots & alerts",
+        "Live trading enabled",
         "Custom support",
         "All export formats",
         "Unlimited backtest horizon"
