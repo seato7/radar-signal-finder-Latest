@@ -25,7 +25,7 @@ PLANS = {
         "name": "Lite",
         "price": 7.99,
         "currency": "USD",
-        "stripe_price_id": os.getenv("STRIPE_LITE_PRICE_ID", ""),
+        "stripe_price_id": os.getenv("STRIPE_LITE_PRICE_ID", "price_1SKByaRxVAVJnFJ4PcqG5uaX"),
         "features": {
             "max_bots": 0,
             "max_alerts": 10,
@@ -38,7 +38,7 @@ PLANS = {
         "name": "Starter",
         "price": 19.99,
         "currency": "USD",
-        "stripe_price_id": os.getenv("STRIPE_STARTER_PRICE_ID", ""),
+        "stripe_price_id": os.getenv("STRIPE_STARTER_PRICE_ID", "price_1SKBz4RxVAVJnFJ423DRGPZP"),
         "features": {
             "max_bots": 3,
             "max_alerts": 25,
@@ -51,7 +51,7 @@ PLANS = {
         "name": "Pro",
         "price": 32.99,
         "currency": "USD",
-        "stripe_price_id": os.getenv("STRIPE_PRO_PRICE_ID", ""),
+        "stripe_price_id": os.getenv("STRIPE_PRO_PRICE_ID", "price_1SKBzORxVAVJnFJ4Pwee2TOR"),
         "features": {
             "max_bots": 10,
             "max_alerts": -1,
@@ -65,7 +65,7 @@ PLANS = {
         "name": "Premium",
         "price": 59.99,
         "currency": "USD",
-        "stripe_price_id": os.getenv("STRIPE_PREMIUM_PRICE_ID", ""),
+        "stripe_price_id": os.getenv("STRIPE_PREMIUM_PRICE_ID", "price_1SKBzsRxVAVJnFJ4OMUknOIZ"),
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
@@ -111,22 +111,54 @@ async def create_checkout_session(user_id: str, plan: str, success_url: str, can
             "url": success_url + "?session_id=mock_session_id"
         }
     
-    # TODO: Implement actual Stripe checkout session creation
-    # For now, return mock
-    return {
-        "session_id": "mock_session_id",
-        "url": success_url + "?session_id=mock_session_id",
-        "plan": plan,
-        "price": plan_info["price"]
-    }
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        
+        # Check if customer exists
+        customers = stripe.Customer.list(email=user_id, limit=1)
+        customer_id = customers.data[0].id if customers.data else None
+        
+        # Create checkout session
+        session = stripe.checkout.Session.create(
+            customer=customer_id,
+            customer_email=user_id if not customer_id else None,
+            line_items=[{
+                'price': plan_info['stripe_price_id'],
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        
+        return {
+            "session_id": session.id,
+            "url": session.url,
+            "plan": plan,
+            "price": plan_info["price"]
+        }
+    except Exception as e:
+        logger.error(f"Error creating checkout session: {e}")
+        raise
 
 async def create_portal_session(customer_id: str, return_url: str) -> Dict[str, str]:
     """Create Stripe customer portal session"""
     if not STRIPE_SECRET_KEY:
         return {"url": return_url}
     
-    # TODO: Implement actual portal session
-    return {"url": return_url}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+        return {"url": session.url}
+    except Exception as e:
+        logger.error(f"Error creating portal session: {e}")
+        raise
 
 async def verify_webhook(payload: bytes, signature: str) -> Dict[str, Any]:
     """Verify Stripe webhook signature and parse event"""
@@ -134,8 +166,17 @@ async def verify_webhook(payload: bytes, signature: str) -> Dict[str, Any]:
         logger.warning("Stripe webhook secret not configured")
         return {}
     
-    # TODO: Implement actual signature verification
-    return {}
+    try:
+        import stripe
+        stripe.api_key = STRIPE_SECRET_KEY
+        
+        event = stripe.Webhook.construct_event(
+            payload, signature, STRIPE_WEBHOOK_SECRET
+        )
+        return event
+    except Exception as e:
+        logger.error(f"Error verifying webhook: {e}")
+        raise
 
 def check_plan_limit(user_plan: str, feature: str, current_count: int) -> bool:
     """Check if user is within plan limits for a feature"""

@@ -14,26 +14,24 @@ const Pricing = () => {
       period: "",
       description: "Get started with basic features",
       features: [
-        "1 alert rule",
-        "1 paper bot",
-        "Delayed data (T+1)",
+        "1 paper trading bot",
+        "1 alert",
         "CSV exports only",
-        "30-day backtests"
+        "30-day backtest horizon"
       ],
       cta: "Current Plan",
       plan_id: "free"
     },
     {
       name: "Lite",
-      price: "$9.99",
+      price: "$7.99",
       period: "/mo",
-      description: "Perfect for individual traders",
+      description: "Perfect for beginners",
       features: [
-        "3 paper bots",
-        "Real-time alerts",
-        "Up to 90-day backtests",
+        "3 paper trading bots",
+        "10 alerts",
         "CSV exports",
-        "Email support"
+        "90-day backtest horizon"
       ],
       cta: "Start Lite",
       plan_id: "lite",
@@ -41,33 +39,48 @@ const Pricing = () => {
     },
     {
       name: "Starter",
-      price: "$29",
+      price: "$19.99",
       period: "/mo",
       description: "For serious traders",
       features: [
         "3 live-eligible bots",
-        "Unlimited alerts",
-        "Unlimited backtests",
+        "25 alerts",
         "CSV & Parquet exports",
-        "Priority support"
+        "Unlimited backtest horizon"
       ],
       cta: "Start Starter",
       plan_id: "starter"
     },
     {
       name: "Pro",
-      price: "$79",
+      price: "$32.99",
       period: "/mo",
-      description: "Advanced automation & API",
+      description: "Advanced trading",
       features: [
-        "Unlimited bots",
+        "10 live-eligible bots",
         "Unlimited alerts",
-        "API access (read)",
-        "Up to 3 team seats",
-        "All export formats"
+        "Priority support",
+        "CSV & Parquet exports",
+        "Unlimited backtest horizon"
       ],
       cta: "Start Pro",
       plan_id: "pro"
+    },
+    {
+      name: "Premium",
+      price: "$59.99",
+      period: "/mo",
+      description: "Maximum power",
+      features: [
+        "Unlimited live-eligible bots",
+        "Unlimited alerts",
+        "Priority support",
+        "Advanced analytics",
+        "All export formats",
+        "Unlimited backtest horizon"
+      ],
+      cta: "Start Premium",
+      plan_id: "premium"
     },
     {
       name: "Enterprise",
@@ -75,11 +88,11 @@ const Pricing = () => {
       period: "",
       description: "Custom solutions for teams",
       features: [
-        "White-label option",
-        "API write access",
-        "SSO integration",
-        "SLA guarantee",
-        "Dedicated support"
+        "Unlimited bots & alerts",
+        "Dedicated support",
+        "Custom integrations",
+        "API access",
+        "All export formats"
       ],
       cta: "Contact Sales",
       plan_id: "enterprise"
@@ -122,7 +135,7 @@ const Pricing = () => {
         description="Choose the perfect plan for your trading needs"
       />
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {plans.map((plan) => (
           <Card key={plan.name} className={`shadow-data relative ${plan.popular ? 'border-primary' : ''}`}>
             {plan.popular && (
