@@ -101,7 +101,7 @@ async def get_audit_log(limit: int = 100, db=Depends(get_db)):
         "payment_events": subs
     }
 
-@router.post("/make-admin/{email}")
+@router.get("/make-admin/{email}")
 async def make_user_admin(email: str, db=Depends(get_db)):
     """Promote a user to admin role - temporary endpoint for setup"""
     from backend.models_auth import UserRole
