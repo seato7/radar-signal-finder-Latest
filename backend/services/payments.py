@@ -12,38 +12,36 @@ PLANS = {
     "free": {
         "name": "Free",
         "price": 0,
-        "currency": "AUD",
+        "currency": "USD",
         "features": {
             "max_bots": 0,
             "max_alerts": 1,
             "paper_bots": 1,
-            "data_delay": "T+1",
             "exports": ["csv"],
             "backtest_days": 30
         }
     },
     "lite": {
         "name": "Lite",
-        "price": 9.99,
-        "currency": "AUD",
+        "price": 7.99,
+        "currency": "USD",
         "stripe_price_id": os.getenv("STRIPE_LITE_PRICE_ID", ""),
         "features": {
-            "max_bots": 3,
+            "max_bots": 0,
             "max_alerts": 10,
             "paper_bots": 3,
-            "data_delay": "realtime",
             "exports": ["csv"],
             "backtest_days": 90
         }
     },
     "starter": {
         "name": "Starter",
-        "price": 29,
-        "currency": "AUD",
+        "price": 19.99,
+        "currency": "USD",
         "stripe_price_id": os.getenv("STRIPE_STARTER_PRICE_ID", ""),
         "features": {
             "max_bots": 3,
-            "max_alerts": -1,
+            "max_alerts": 25,
             "live_eligible": True,
             "exports": ["csv", "parquet"],
             "backtest_days": -1
@@ -51,15 +49,29 @@ PLANS = {
     },
     "pro": {
         "name": "Pro",
-        "price": 79,
-        "currency": "AUD",
+        "price": 32.99,
+        "currency": "USD",
         "stripe_price_id": os.getenv("STRIPE_PRO_PRICE_ID", ""),
+        "features": {
+            "max_bots": 10,
+            "max_alerts": -1,
+            "live_eligible": True,
+            "priority_support": True,
+            "exports": ["csv", "parquet"],
+            "backtest_days": -1
+        }
+    },
+    "premium": {
+        "name": "Premium",
+        "price": 59.99,
+        "currency": "USD",
+        "stripe_price_id": os.getenv("STRIPE_PREMIUM_PRICE_ID", ""),
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
             "live_eligible": True,
-            "api_access": "read",
-            "team_seats": 3,
+            "priority_support": True,
+            "advanced_analytics": True,
             "exports": ["csv", "parquet"],
             "backtest_days": -1
         }
@@ -67,15 +79,14 @@ PLANS = {
     "enterprise": {
         "name": "Enterprise",
         "price": "contact",
-        "currency": "AUD",
+        "currency": "USD",
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
             "live_eligible": True,
-            "api_access": "write",
-            "sla": True,
-            "white_label": True,
-            "sso": True,
+            "dedicated_support": True,
+            "custom_integrations": True,
+            "api_access": True,
             "exports": ["csv", "parquet"],
             "backtest_days": -1
         }
