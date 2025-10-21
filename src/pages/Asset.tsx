@@ -33,11 +33,12 @@ const Asset = () => {
   const ticker = searchParams.get("ticker") || "BTC";
   const [asset, setAsset] = useState<AssetData | null>(null);
   const [loading, setLoading] = useState(true);
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
     const fetchAsset = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/assets/by-ticker/${ticker}`);
+        const response = await fetch(`${API_BASE}/api/assets/by-ticker/${ticker}`);
         const data = await response.json();
         setAsset(data);
       } catch (error) {
