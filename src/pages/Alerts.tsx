@@ -57,6 +57,29 @@ const Alerts = () => {
   const [scoreThreshold, setScoreThreshold] = useState("2.0");
   const [minPositives, setMinPositives] = useState("3");
   const [isSaving, setIsSaving] = useState(false);
+  const [alertsList, setAlertsList] = useState(alerts);
+
+  const handleMarkRead = (id: string) => {
+    setAlertsList(alertsList.map(alert => 
+      alert.id === id ? { ...alert, read: true } : alert
+    ));
+  };
+
+  const handleMarkAllRead = () => {
+    setAlertsList(alertsList.map(alert => ({ ...alert, read: true })));
+    toast({
+      title: "All marked as read",
+      description: "All alerts have been marked as read"
+    });
+  };
+
+  const handleDismiss = (id: string) => {
+    setAlertsList(alertsList.filter(alert => alert.id !== id));
+    toast({
+      title: "Alert dismissed",
+      description: "Alert has been removed"
+    });
+  };
 
   const handleSaveThresholds = async () => {
     if (!isAuthenticated || !token) {
@@ -105,7 +128,7 @@ const Alerts = () => {
         title="Alert Center"
         description="Real-time notifications for high-priority opportunities"
         action={
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
             Mark All Read
           </Button>
         }
@@ -154,7 +177,14 @@ const Alerts = () => {
       </Card>
 
       <div className="space-y-3">
-        {alerts.map((alert) => {
+        {alertsList.length === 0 ? (
+          <Card className="shadow-data">
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">No alerts at the moment. You'll be notified when opportunities arise.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          alertsList.map((alert) => {
           const config = severityConfig[alert.severity];
           const Icon = config.icon;
 
@@ -190,16 +220,30 @@ const Alerts = () => {
                       </Badge>
                     </div>
                   </div>
-                  {!alert.read && (
-                    <Button variant="ghost" size="sm" className="ml-auto">
-                      <CheckCircle2 className="h-4 w-4" />
+                  <div className="flex gap-2 ml-auto">
+                    {!alert.read && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleMarkRead(alert.id)}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => handleDismiss(alert.id)}
+                    >
+                      Dismiss
                     </Button>
-                  )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
           );
-        })}
+        }))}
       </div>
     </div>
   );

@@ -3,8 +3,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Star, ExternalLink, Clock } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Star, ExternalLink, Clock, TrendingUp, TrendingDown } from "lucide-react";
+import { useSearchParams, Link } from "react-router-dom";
+import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 interface WhereToBuy {
   name: string;
@@ -33,7 +35,10 @@ const Asset = () => {
   const ticker = searchParams.get("ticker") || "BTC";
   const [asset, setAsset] = useState<AssetData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [score, setScore] = useState<number>(92.5);
+  const [ranking, setRanking] = useState<number>(12);
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const { toast } = useToast();
 
   useEffect(() => {
     const fetchAsset = async () => {
@@ -51,6 +56,22 @@ const Asset = () => {
     fetchAsset();
   }, [ticker]);
 
+  const handleAddToWatchlist = async () => {
+    try {
+      // TODO: Implement actual API call
+      toast({
+        title: "Added to Watchlist",
+        description: `${ticker} has been added to your watchlist`
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add to watchlist",
+        variant: "destructive"
+      });
+    }
+  };
+
   if (loading) {
     return <div className="p-6">Loading...</div>;
   }
@@ -65,12 +86,54 @@ const Asset = () => {
         title={`${asset.ticker} - ${asset.name}`}
         description={`Exchange: ${asset.exchange}`}
         action={
-          <Button variant="outline" className="shadow-chrome">
+          <Button 
+            variant="outline" 
+            className="shadow-chrome"
+            onClick={handleAddToWatchlist}
+          >
             <Star className="mr-2 h-4 w-4" />
             Add to Watchlist
           </Button>
         }
       />
+
+      {/* Score and Ranking Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="shadow-data">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <div className="text-sm text-muted-foreground mb-2">Current Score</div>
+              <div className="text-4xl font-bold text-primary mb-2">{score}</div>
+              <Badge variant="outline" className="border-success text-success">
+                <TrendingUp className="mr-1 h-3 w-3" />
+                +2.3 (24h)
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-data">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <div className="text-sm text-muted-foreground mb-2">Ranking</div>
+              <div className="text-4xl font-bold text-foreground mb-2">#{ranking}</div>
+              <div className="text-sm text-muted-foreground">Out of 500 assets</div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-data">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <div className="text-sm text-muted-foreground mb-2">Signal Strength</div>
+              <div className="text-4xl font-bold text-foreground mb-2">85%</div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden mt-2">
+                <div className="h-full bg-gradient-chrome" style={{ width: "85%" }} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="shadow-data lg:col-span-2">
@@ -87,7 +150,7 @@ const Asset = () => {
                       <div className="font-medium text-foreground">{signal.type}</div>
                       <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
                         <Clock className="h-3 w-3" />
-                        {new Date(signal.observed_at).toLocaleString()}
+                        {formatDistanceToNow(new Date(signal.observed_at), { addSuffix: true })}
                       </div>
                     </div>
                     {signal.citation?.url && (
@@ -115,9 +178,11 @@ const Asset = () => {
               {asset.themes.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {asset.themes.map((theme) => (
-                    <Badge key={theme.id} variant="secondary">
-                      {theme.name}
-                    </Badge>
+                    <Link key={theme.id} to="/themes">
+                      <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
+                        {theme.name}
+                      </Badge>
+                    </Link>
                   ))}
                 </div>
               ) : (

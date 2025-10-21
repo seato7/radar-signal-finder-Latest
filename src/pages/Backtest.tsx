@@ -65,9 +65,9 @@ const Backtest = () => {
           <CardContent>
             <div className="space-y-4">
               {[
-                { period: "Q4 2024", hitRate: 72.3, opportunities: 156, avgReturn: 8.4 },
-                { period: "Q3 2024", hitRate: 68.9, opportunities: 142, avgReturn: 6.7 },
-                { period: "Q2 2024", hitRate: 71.2, opportunities: 138, avgReturn: 7.9 },
+                { period: "Q1 2025", hitRate: 72.3, opportunities: 156, avgReturn: 8.4 },
+                { period: "Q4 2024", hitRate: 68.9, opportunities: 142, avgReturn: 6.7 },
+                { period: "Q3 2024", hitRate: 71.2, opportunities: 138, avgReturn: 7.9 },
               ].map((result) => (
                 <div key={result.period} className="p-4 rounded-md bg-muted/50 border border-border space-y-2">
                   <div className="flex justify-between items-center">

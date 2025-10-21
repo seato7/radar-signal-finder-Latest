@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, Filter, ArrowUpRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { formatDistanceToNow } from "date-fns";
 
 const opportunities = [
   {
@@ -42,6 +44,18 @@ const opportunities = [
 ];
 
 const Radar = () => {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filteredOpps, setFilteredOpps] = useState(opportunities);
+  
+  useEffect(() => {
+    const filtered = opportunities.filter(opp => 
+      opp.asset.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      opp.signal.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      opp.themes.some(theme => theme.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+    setFilteredOpps(filtered);
+  }, [searchTerm]);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -57,6 +71,8 @@ const Radar = () => {
               <Input
                 placeholder="Search assets or themes..."
                 className="pl-10"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <Button variant="outline" size="icon">
@@ -65,13 +81,18 @@ const Radar = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {opportunities.map((opp) => (
-              <Link
-                key={opp.id}
-                to={`/asset?id=${opp.id}`}
-                className="block"
-              >
+          {filteredOpps.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No opportunities found matching "{searchTerm}"
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredOpps.map((opp) => (
+                <Link
+                  key={opp.id}
+                  to={`/asset?ticker=${opp.asset.split('/')[0]}`}
+                  className="block"
+                >
                 <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
                   <div className="flex items-start justify-between mb-3">
                     <div>
@@ -104,8 +125,9 @@ const Radar = () => {
                   </div>
                 </div>
               </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

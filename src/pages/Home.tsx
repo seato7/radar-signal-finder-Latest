@@ -159,39 +159,27 @@ const Home = () => {
       </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="shadow-data">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Play className="h-5 w-5 text-accent" />
-              Run Ingest Pipeline
-            </CardTitle>
-            <CardDescription>
-              Execute ETL to fetch and process latest market signals
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              onClick={() => runIngest('demo')}
-              disabled={loading}
-              className="w-full bg-gradient-chrome text-primary-foreground hover:opacity-90"
-            >
-              <Database className="mr-2 h-4 w-4" />
-              Run Demo Mode
-            </Button>
-            <Button
-              onClick={() => runIngest('real')}
-              disabled={loading}
-              variant="outline"
-              className="w-full"
-            >
-              <Play className="mr-2 h-4 w-4" />
-              Run Real Mode
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Demo mode generates synthetic signals for testing. Real mode fetches live data.
-            </p>
-          </CardContent>
-        </Card>
+          <Card className="shadow-data">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Play className="h-5 w-5 text-primary" />
+                Run Ingest Pipeline
+              </CardTitle>
+              <CardDescription>
+                Fetch latest data from configured sources
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button
+                onClick={() => runIngest('real')}
+                disabled={loading}
+                className="w-full justify-start bg-gradient-chrome text-primary-foreground"
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? 'Processing...' : 'Run Data Ingest'}
+              </Button>
+            </CardContent>
+          </Card>
 
         <Card className="shadow-data">
           <CardHeader>
@@ -287,9 +275,9 @@ const Home = () => {
                 2
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Run Demo Ingest</h4>
+                <h4 className="font-medium text-foreground">Run Data Ingest</h4>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Demo Mode" above to populate signals with test data
+                  Click "Run Data Ingest" above to fetch latest market data and signals
                 </p>
               </div>
             </div>

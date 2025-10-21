@@ -2,10 +2,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Info, Bell } from "lucide-react";
+import { TrendingUp, Info, Bell, ArrowRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { Link } from "react-router-dom";
 
 const themes = [
   {
@@ -160,23 +161,41 @@ const Themes = () => {
               </div>
               <div>
                 <div className="text-sm text-muted-foreground mb-2">Top Assets</div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {theme.topAssets.map((asset) => (
-                    <Badge key={asset} variant="secondary">
-                      {asset}
-                    </Badge>
+                    <Link 
+                      key={asset} 
+                      to={`/asset?ticker=${asset}`}
+                      className="hover:opacity-80 transition-opacity"
+                    >
+                      <Badge variant="secondary" className="cursor-pointer">
+                        {asset}
+                      </Badge>
+                    </Link>
                   ))}
                 </div>
               </div>
-              <Button 
-                onClick={() => handleSubscribe(theme.id, theme.name)}
-                disabled={subscribing === theme.id}
-                className="w-full mt-4"
-                variant="outline"
-              >
-                <Bell className="mr-2 h-4 w-4" />
-                {subscribing === theme.id ? "Subscribing..." : "Subscribe to Alerts"}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  asChild
+                  className="flex-1"
+                  variant="outline"
+                >
+                  <Link to="/radar">
+                    View Opportunities
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button 
+                  onClick={() => handleSubscribe(theme.id, theme.name)}
+                  disabled={subscribing === theme.id}
+                  className="flex-1"
+                  variant="outline"
+                >
+                  <Bell className="mr-2 h-4 w-4" />
+                  {subscribing === theme.id ? "Subscribing..." : "Alerts"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}
