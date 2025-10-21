@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TrendingUp, Info, Bell } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const themes = [
   {
@@ -46,6 +46,7 @@ const Themes = () => {
   const [whyNowData, setWhyNowData] = useState<Record<string, any>>({});
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const { toast } = useToast();
+  const { token, isAuthenticated } = useAuth();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
@@ -65,23 +66,22 @@ const Themes = () => {
   }, [API_BASE]);
 
   const handleSubscribe = async (themeId: string, themeName: string) => {
+    if (!isAuthenticated || !token) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to subscribe to alerts",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setSubscribing(themeId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({
-          title: "Authentication required",
-          description: "Please log in to subscribe to alerts",
-          variant: "destructive"
-        });
-        return;
-      }
-
       const response = await fetch(`${API_BASE}/api/alerts/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ theme_id: themeId })
       });
