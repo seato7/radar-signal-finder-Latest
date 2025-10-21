@@ -162,21 +162,30 @@ const Home = () => {
           <Card className="shadow-data">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Play className="h-5 w-5 text-primary" />
+                <Database className="h-5 w-5 text-primary" />
                 Run Ingest Pipeline
               </CardTitle>
               <CardDescription>
-                Fetch latest data from configured sources
+                Populate database with demo or live data
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <Button
+                onClick={() => runIngest('demo')}
+                disabled={loading}
+                variant="outline"
+                className="w-full justify-start"
+              >
+                <Play className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? 'Processing...' : 'Demo Mode (Sample Data)'}
+              </Button>
               <Button
                 onClick={() => runIngest('real')}
                 disabled={loading}
                 className="w-full justify-start bg-gradient-chrome text-primary-foreground"
               >
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {loading ? 'Processing...' : 'Run Data Ingest'}
+                {loading ? 'Processing...' : 'Real Mode (Live Sources)'}
               </Button>
             </CardContent>
           </Card>
@@ -275,9 +284,9 @@ const Home = () => {
                 2
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Run Data Ingest</h4>
+                <h4 className="font-medium text-foreground">Populate Data</h4>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Data Ingest" above to fetch latest market data and signals
+                  Click "Demo Mode" to load 32 sample assets and signals, or "Real Mode" for live data sources
                 </p>
               </div>
             </div>

@@ -10,9 +10,66 @@ THEME_IDS = [
     "theme-hvdc-transformers"
 ]
 
+# Demo assets - mix of stocks and crypto
+DEMO_ASSETS = [
+    # Stocks - AI & Tech
+    {"ticker": "NVDA", "name": "NVIDIA Corporation", "exchange": "NASDAQ"},
+    {"ticker": "AMD", "name": "Advanced Micro Devices Inc", "exchange": "NASDAQ"},
+    {"ticker": "MSFT", "name": "Microsoft Corporation", "exchange": "NASDAQ"},
+    {"ticker": "GOOGL", "name": "Alphabet Inc Class A", "exchange": "NASDAQ"},
+    {"ticker": "TSLA", "name": "Tesla Inc", "exchange": "NASDAQ"},
+    {"ticker": "META", "name": "Meta Platforms Inc", "exchange": "NASDAQ"},
+    {"ticker": "AAPL", "name": "Apple Inc", "exchange": "NASDAQ"},
+    {"ticker": "AMZN", "name": "Amazon.com Inc", "exchange": "NASDAQ"},
+    
+    # Stocks - Energy & Infrastructure
+    {"ticker": "NEE", "name": "NextEra Energy Inc", "exchange": "NYSE"},
+    {"ticker": "ENPH", "name": "Enphase Energy Inc", "exchange": "NASDAQ"},
+    {"ticker": "FSLR", "name": "First Solar Inc", "exchange": "NASDAQ"},
+    {"ticker": "ABB", "name": "ABB Ltd", "exchange": "NYSE"},
+    {"ticker": "SIEGY", "name": "Siemens Energy AG", "exchange": "OTC"},
+    
+    # Stocks - Water & Environmental
+    {"ticker": "AWK", "name": "American Water Works Co Inc", "exchange": "NYSE"},
+    {"ticker": "XYL", "name": "Xylem Inc", "exchange": "NYSE"},
+    {"ticker": "WTRG", "name": "Essential Utilities Inc", "exchange": "NYSE"},
+    {"ticker": "ERII", "name": "Energy Recovery Inc", "exchange": "NASDAQ"},
+    
+    # Crypto
+    {"ticker": "BTC", "name": "Bitcoin", "exchange": "CRYPTO"},
+    {"ticker": "ETH", "name": "Ethereum", "exchange": "CRYPTO"},
+    {"ticker": "SOL", "name": "Solana", "exchange": "CRYPTO"},
+    {"ticker": "BNB", "name": "Binance Coin", "exchange": "CRYPTO"},
+    {"ticker": "ADA", "name": "Cardano", "exchange": "CRYPTO"},
+    {"ticker": "DOT", "name": "Polkadot", "exchange": "CRYPTO"},
+    {"ticker": "AVAX", "name": "Avalanche", "exchange": "CRYPTO"},
+    {"ticker": "MATIC", "name": "Polygon", "exchange": "CRYPTO"},
+    
+    # Australian Stocks
+    {"ticker": "BHP", "name": "BHP Group Ltd", "exchange": "ASX"},
+    {"ticker": "CBA", "name": "Commonwealth Bank of Australia", "exchange": "ASX"},
+    {"ticker": "CSL", "name": "CSL Limited", "exchange": "ASX"},
+    {"ticker": "WDS", "name": "Woodside Energy Group Ltd", "exchange": "ASX"},
+]
+
 async def run_demo_etl():
-    """Generate demo signals for the 3 canonical themes"""
+    """Generate demo signals and assets for the 3 canonical themes"""
     db = get_db()
+    
+    # First, seed assets if collection is empty
+    assets_count = await db.assets.count_documents({})
+    assets_inserted = 0
+    
+    if assets_count == 0:
+        for asset_data in DEMO_ASSETS:
+            try:
+                await db.assets.insert_one({
+                    **asset_data,
+                    "metadata": {"demo": True}
+                })
+                assets_inserted += 1
+            except Exception:
+                pass  # Skip duplicates
     
     # Verify themes exist
     themes_count = await db.themes.count_documents({"_id": {"$in": THEME_IDS}})
@@ -97,5 +154,6 @@ async def run_demo_etl():
     return {
         "themes_available": themes_count,
         "signals_created": signals_created,
-        "message": f"Demo data ingested: {signals_created} signals across {themes_count} themes"
+        "assets_inserted": assets_inserted,
+        "message": f"Demo data ingested: {signals_created} signals, {assets_inserted} assets across {themes_count} themes"
     }
