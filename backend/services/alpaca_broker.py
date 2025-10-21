@@ -9,9 +9,9 @@ logger = get_logger(__name__)
 class AlpacaAdapter:
     """Adapter for Alpaca broker - supports stocks and crypto"""
     
-    def __init__(self, paper_mode: bool = True):
-        self.api_key = os.getenv("ALPACA_API_KEY", "")
-        self.secret_key = os.getenv("ALPACA_SECRET_KEY", "")
+    def __init__(self, api_key: str = None, secret_key: str = None, paper_mode: bool = True):
+        self.api_key = api_key or os.getenv("ALPACA_API_KEY", "")
+        self.secret_key = secret_key or os.getenv("ALPACA_SECRET_KEY", "")
         self.paper_mode = paper_mode
         
         # Alpaca endpoints
@@ -310,12 +310,6 @@ class AlpacaAdapter:
             return None
 
 
-# Global broker instance
-_broker_instance = None
-
-def get_broker(paper_mode: bool = True) -> AlpacaAdapter:
-    """Get or create broker instance"""
-    global _broker_instance
-    if _broker_instance is None:
-        _broker_instance = AlpacaAdapter(paper_mode=paper_mode)
-    return _broker_instance
+def get_broker(api_key: str = None, secret_key: str = None, paper_mode: bool = True) -> AlpacaAdapter:
+    """Create a broker instance with optional user-specific credentials"""
+    return AlpacaAdapter(api_key=api_key, secret_key=secret_key, paper_mode=paper_mode)

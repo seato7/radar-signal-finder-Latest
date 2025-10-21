@@ -20,6 +20,7 @@ import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
 import Login from "./pages/Login";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -65,6 +66,7 @@ const App = () => (
                               } 
                             />
                             <Route path="/help" element={<Help />} />
+                            <Route path="/settings" element={<Settings />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>

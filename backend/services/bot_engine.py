@@ -18,13 +18,21 @@ class BotEngine:
         self.running_bots = {}
         self._broker = None
     
-    def get_broker(self):
-        """Get or initialize broker adapter"""
-        if self._broker is None:
-            from backend.services.alpaca_broker import get_broker
-            from backend.config import settings
-            self._broker = get_broker(paper_mode=settings.ALPACA_PAPER_MODE)
-        return self._broker
+    async def get_broker(self, bot: Bot):
+        """Get broker adapter with user-specific credentials"""
+        from backend.routers.broker import get_user_broker_key
+        
+        # Get user's broker credentials
+        creds = await get_user_broker_key(bot.user_id, self.db)
+        if not creds:
+            raise ValueError("No broker account connected. Please connect your broker in Settings.")
+        
+        from backend.services.alpaca_broker import get_broker
+        return get_broker(
+            api_key=creds["api_key"],
+            secret_key=creds["secret_key"],
+            paper_mode=creds["paper_mode"]
+        )
     
     async def simulate_bot(self, bot: Bot, since_days: int = 30) -> Dict[str, Any]:
         """Simulate bot performance over historical data"""
@@ -294,7 +302,7 @@ class BotEngine:
     
     async def _execute_live_order(self, bot: Bot, order: OrderSim):
         """Execute live order via Alpaca"""
-        broker = self.get_broker()
+        broker = await self.get_broker(bot)
         
         # Pre-trade validations
         account = await broker.get_account()
@@ -354,7 +362,8 @@ class BotEngine:
         if not bot_doc or bot_doc["mode"] != "live":
             return
         
-        broker = self.get_broker()
+        bot = Bot(**bot_doc)
+        broker = await self.get_broker(bot)
         positions = await broker.get_positions()
         
         # Update positions in DB

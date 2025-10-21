@@ -40,6 +40,10 @@ async def init_db():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("role")
     
+    # Broker API keys indexes
+    await db.api_keys.create_index("user_id")
+    await db.api_keys.create_index([("user_id", 1), ("exchange", 1), ("key_id", 1)], unique=True)
+    
     print(f"✓ Connected to MongoDB: {settings.DB_NAME}")
     print(f"✓ Signal TTL set to {ttl_days} days")
 
