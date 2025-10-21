@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from backend.db import init_db, close_db
+from backend.init_admin import init_admin
 from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin, auth, broker, api_keys, analytics
 from backend.config import settings
 from backend.logging_config import setup_logging
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Opportunity Radar API")
     await init_db()
+    await init_admin()
     metrics.increment("app_starts")
     yield
     # Shutdown
