@@ -8,7 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { Trash2, Loader2 } from 'lucide-react';
+import { Trash2, Loader2, Copy, Key, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -29,13 +30,28 @@ interface SupportedBroker {
   assets: string[];
 }
 
+interface ApiKeyEnterprise {
+  id: string;
+  label: string;
+  key_prefix: string;
+  permissions: string[];
+  is_active: boolean;
+  last_used: string | null;
+  created_at: string;
+}
+
 export default function Settings() {
-  const { token } = useAuth();
+  const { token, userPlan } = useAuth();
   const { toast } = useToast();
   const [keys, setKeys] = useState<BrokerKey[]>([]);
   const [brokers, setBrokers] = useState<SupportedBroker[]>([]);
   const [loading, setLoading] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  
+  const [apiKeys, setApiKeys] = useState<ApiKeyEnterprise[]>([]);
+  const [apiKeyLabel, setApiKeyLabel] = useState('');
+  const [creatingApiKey, setCreatingApiKey] = useState(false);
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     exchange: 'alpaca',
@@ -48,7 +64,10 @@ export default function Settings() {
   useEffect(() => {
     fetchKeys();
     fetchSupportedBrokers();
-  }, []);
+    if (userPlan === 'enterprise') {
+      fetchApiKeys();
+    }
+  }, [userPlan]);
 
   const fetchSupportedBrokers = async () => {
     try {
@@ -60,6 +79,97 @@ export default function Settings() {
     } catch (error) {
       console.error('Error fetching brokers:', error);
     }
+  };
+
+  const fetchApiKeys = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/keys`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setApiKeys(data);
+      }
+    } catch (error) {
+      console.error('Error fetching API keys:', error);
+    }
+  };
+
+  const handleCreateApiKey = async () => {
+    if (!apiKeyLabel.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a label for the API key',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setCreatingApiKey(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/keys`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          label: apiKeyLabel,
+          permissions: ['read']
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setNewApiKey(data.key);
+        setApiKeyLabel('');
+        fetchApiKeys();
+        toast({
+          title: 'API Key Created',
+          description: 'Save this key - it will only be shown once!',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: data.detail || 'Failed to create API key',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create API key',
+        variant: 'destructive'
+      });
+    } finally {
+      setCreatingApiKey(false);
+    }
+  };
+
+  const handleDeleteApiKey = async (keyId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/keys/${keyId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        toast({ title: 'API Key Revoked' });
+        fetchApiKeys();
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to revoke API key',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: 'Copied to clipboard' });
   };
 
   const fetchKeys = async () => {
@@ -316,6 +426,109 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {/* API Keys Management - Enterprise Only */}
+      {userPlan === 'enterprise' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              API Keys
+            </CardTitle>
+            <CardDescription>
+              Generate API keys for programmatic access to your data
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {newApiKey && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p className="font-semibold">Save this API key - it won't be shown again!</p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2 bg-muted rounded text-sm break-all">
+                        {newApiKey}
+                      </code>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => copyToClipboard(newApiKey)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setNewApiKey(null)}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="flex gap-2">
+              <Input
+                placeholder="API Key Label (e.g., 'Production Server')"
+                value={apiKeyLabel}
+                onChange={(e) => setApiKeyLabel(e.target.value)}
+              />
+              <Button
+                onClick={handleCreateApiKey}
+                disabled={creatingApiKey}
+              >
+                {creatingApiKey ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Create Key'
+                )}
+              </Button>
+            </div>
+
+            {apiKeys.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">
+                No API keys created yet
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {apiKeys.map((key) => (
+                  <div key={key.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-semibold">{key.label}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {key.key_prefix}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {key.last_used ? `Last used: ${new Date(key.last_used).toLocaleDateString()}` : 'Never used'}
+                      </p>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDeleteApiKey(key.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 p-4 bg-muted rounded-lg">
+              <h4 className="font-semibold mb-2">Using Your API Key</h4>
+              <p className="text-sm text-muted-foreground mb-2">
+                Include your API key in request headers:
+              </p>
+              <code className="block p-2 bg-background rounded text-xs">
+                X-API-Key: ok_live_your_key_here
+              </code>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
