@@ -70,7 +70,7 @@ async def add_broker_key(
     
     # Check if key already exists
     existing = await db.api_keys.find_one({
-        "user_id": user["email"],
+        "user_id": user.email,
         "exchange": exchange,
         "key_id": api_key
     })
@@ -82,7 +82,7 @@ async def add_broker_key(
     encrypted_secret = encrypt_secret(secret_key)
     
     key_doc = {
-        "user_id": user["email"],
+        "user_id": user.email,
         "label": label,
         "exchange": exchange,
         "key_id": api_key,
@@ -104,7 +104,7 @@ async def list_broker_keys(
     db=Depends(get_db)
 ):
     """List user's connected broker accounts"""
-    keys = await db.api_keys.find({"user_id": user["email"]}).to_list(100)
+    keys = await db.api_keys.find({"user_id": user.email}).to_list(100)
     
     for key in keys:
         key["id"] = str(key.pop("_id"))
@@ -123,7 +123,7 @@ async def delete_broker_key(
     
     result = await db.api_keys.delete_one({
         "_id": ObjectId(key_id),
-        "user_id": user["email"]
+        "user_id": user.email
     })
     
     if result.deleted_count == 0:
@@ -142,7 +142,7 @@ async def test_broker_key(
     
     key_doc = await db.api_keys.find_one({
         "_id": ObjectId(key_id),
-        "user_id": user["email"]
+        "user_id": user.email
     })
     
     if not key_doc:
