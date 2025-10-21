@@ -60,9 +60,23 @@ const Home = () => {
       const data = await response.json();
       console.log('Ingest response:', data);
       
+      // Handle different response formats
+      let description = '';
+      if (mode === 'demo') {
+        const signalsCreated = data.summary?.signals_created || 0;
+        description = data.summary?.message || `Created ${signalsCreated} signals`;
+      } else {
+        // Real mode - aggregate results from multiple sources
+        const parts = [];
+        if (data.policy_feeds?.signals_created) parts.push(`${data.policy_feeds.signals_created} policy`);
+        if (data.form4_insiders?.signals_created) parts.push(`${data.form4_insiders.signals_created} insider`);
+        if (data.etf_flows?.signals_created) parts.push(`${data.etf_flows.signals_created} flow`);
+        description = parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Ingest complete';
+      }
+      
       toast({
         title: `${mode === 'demo' ? 'Demo' : 'Real'} Ingest Complete`,
-        description: `Created ${data.summary.signals_created || 0} signals`,
+        description,
       });
 
       // Refresh themes after ingest
