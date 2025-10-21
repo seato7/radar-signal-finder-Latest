@@ -22,6 +22,7 @@ import Help from "./pages/Help";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
+import CheckStatus from "./pages/CheckStatus";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -69,6 +70,7 @@ const App = () => (
                             <Route path="/help" element={<Help />} />
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/analytics" element={<Analytics />} />
+                            <Route path="/check-status" element={<CheckStatus />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
