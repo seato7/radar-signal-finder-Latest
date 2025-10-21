@@ -43,8 +43,7 @@ const Pricing = () => {
       period: "/mo",
       description: "For serious traders",
       features: [
-        "3 bots (can connect to real broker)",
-        "Live trading enabled",
+        "3 live-eligible bots",
         "25 alerts",
         "CSV & Parquet exports",
         "Unlimited backtest horizon"
@@ -58,8 +57,7 @@ const Pricing = () => {
       period: "/mo",
       description: "Advanced trading",
       features: [
-        "10 bots (can connect to real broker)",
-        "Live trading enabled",
+        "10 live-eligible bots",
         "Unlimited alerts",
         "Priority support",
         "CSV & Parquet exports",
@@ -74,8 +72,7 @@ const Pricing = () => {
       period: "/mo",
       description: "Maximum power",
       features: [
-        "Unlimited bots (can connect to real broker)",
-        "Live trading enabled",
+        "Unlimited live-eligible bots",
         "Unlimited alerts",
         "Priority support",
         "Advanced analytics",
@@ -92,13 +89,10 @@ const Pricing = () => {
       description: "Custom solutions for teams",
       features: [
         "Unlimited bots & alerts",
-        "Live trading enabled",
         "Dedicated support",
         "Custom integrations",
-        "API access for external apps",
-        "Advanced analytics",
-        "All export formats",
-        "Unlimited backtest horizon"
+        "API access",
+        "All export formats"
       ],
       cta: "Contact Sales",
       plan_id: "enterprise"
