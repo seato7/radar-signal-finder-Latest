@@ -32,7 +32,15 @@ async def create_checkout(
 @router.get("/status")
 async def get_payment_status(user_id: str = "default", db=Depends(get_db)):
     """Get user's current subscription status"""
-    subscription = await db.subscriptions.find_one({"user_id": user_id})
+    # First try to find user by email (user_id could be email)
+    user = await db.users.find_one({"email": user_id})
+    
+    # If user found, look up subscription by their ObjectId
+    if user:
+        subscription = await db.subscriptions.find_one({"user_id": str(user["_id"])})
+    else:
+        # Fallback: try direct lookup by user_id
+        subscription = await db.subscriptions.find_one({"user_id": user_id})
     
     if not subscription:
         return {

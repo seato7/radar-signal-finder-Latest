@@ -3,9 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 const Pricing = () => {
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const { userPlan } = useAuth();
 
   const plans = [
     {
@@ -162,10 +164,11 @@ const Pricing = () => {
               </ul>
               <Button 
                 className="w-full" 
-                variant={plan.plan_id === "free" ? "outline" : "default"}
+                variant={plan.plan_id === userPlan ? "outline" : "default"}
                 onClick={() => handleCheckout(plan.plan_id)}
+                disabled={plan.plan_id === userPlan}
               >
-                {plan.cta}
+                {plan.plan_id === userPlan ? "Current Plan" : plan.cta}
               </Button>
             </CardContent>
           </Card>
