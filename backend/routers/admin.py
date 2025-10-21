@@ -96,6 +96,15 @@ async def get_audit_log(limit: int = 100, db=Depends(get_db)):
     # Get recent subscription updates
     subs = await db.subscriptions.find().sort("updated_at", -1).limit(limit).to_list(length=limit)
     
+    # Convert ObjectIds to strings
+    for log in bot_logs:
+        if "_id" in log:
+            log["_id"] = str(log["_id"])
+    
+    for sub in subs:
+        if "_id" in sub:
+            sub["_id"] = str(sub["_id"])
+    
     return {
         "bot_actions": bot_logs,
         "payment_events": subs
