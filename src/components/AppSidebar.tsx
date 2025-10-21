@@ -1,4 +1,4 @@
-import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3 } from "lucide-react";
+import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -98,9 +98,20 @@ export function AppSidebar() {
                 <User className="h-4 w-4" />
                 <span className="font-medium truncate">{user?.email}</span>
               </div>
-              <Badge variant={getPlanBadgeVariant(userPlan)} className="w-fit capitalize">
-                {userPlan} Plan
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={getPlanBadgeVariant(userPlan)} className="w-fit capitalize">
+                  {userPlan} Plan
+                </Badge>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => window.location.reload()}
+                  title="Refresh plan status"
+                  className="h-6 px-2"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
             <Button 
               variant="outline" 
