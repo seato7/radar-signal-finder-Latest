@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { AlertCircle, AlertTriangle, Info, CheckCircle2, Settings } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const alerts = [
   {
@@ -52,16 +53,29 @@ const severityConfig = {
 
 const Alerts = () => {
   const { toast } = useToast();
+  const { token, isAuthenticated } = useAuth();
   const [scoreThreshold, setScoreThreshold] = useState("2.0");
   const [minPositives, setMinPositives] = useState("3");
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSaveThresholds = async () => {
+    if (!isAuthenticated || !token) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to update thresholds",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/alerts/thresholds`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           score_threshold: parseFloat(scoreThreshold),
           min_positives: parseInt(minPositives)

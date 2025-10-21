@@ -8,9 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, Square, TrendingUp, TrendingDown, Activity } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Bots = () => {
   const { toast } = useToast();
+  const { token, isAuthenticated } = useAuth();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   
   const [bots, setBots] = useState([
@@ -26,10 +28,22 @@ const Bots = () => {
   });
 
   const handleCreate = async () => {
+    if (!isAuthenticated || !token) {
+      toast({ 
+        title: "Authentication required",
+        description: "Please log in to create bots",
+        variant: "destructive" 
+      });
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE}/api/bots/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           ...formData,
           tickers: formData.tickers.split(',').map(t => t.trim()),
@@ -46,8 +60,20 @@ const Bots = () => {
   };
 
   const handleBotAction = async (botId: string, action: string) => {
+    if (!isAuthenticated || !token) {
+      toast({ 
+        title: "Authentication required",
+        description: "Please log in to control bots",
+        variant: "destructive" 
+      });
+      return;
+    }
+
     try {
-      await fetch(`${API_BASE}/api/bots/${botId}/${action}`, { method: 'POST' });
+      await fetch(`${API_BASE}/api/bots/${botId}/${action}`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       toast({ title: `Bot ${action}ed` });
     } catch (error) {
       toast({ title: `Failed to ${action} bot`, variant: "destructive" });
