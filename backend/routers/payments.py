@@ -49,7 +49,14 @@ async def get_payment_status(user_id: str = "default", db=Depends(get_db)):
             "features": get_plans()["free"]["features"]
         }
     
-    return subscription
+    # Convert ObjectId fields to strings for JSON serialization
+    result = dict(subscription)
+    if "_id" in result:
+        result["_id"] = str(result["_id"])
+    if "user_id" in result:
+        result["user_id"] = str(result["user_id"])
+    
+    return result
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db=Depends(get_db)):
