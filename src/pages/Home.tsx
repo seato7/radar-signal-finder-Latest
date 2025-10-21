@@ -19,11 +19,12 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [themes, setThemes] = useState<ThemeScore[]>([]);
   const [loadingThemes, setLoadingThemes] = useState(false);
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/radar/themes?days=45`);
+      const response = await fetch(`${API_BASE}/api/radar/themes?days=45`);
       const data = await response.json();
       setThemes(data.slice(0, 3)); // Top 3 themes
     } catch (error) {
@@ -40,7 +41,7 @@ const Home = () => {
   const runIngest = async (mode: 'demo' | 'real') => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/ingest/run?mode=${mode}`, {
+      const response = await fetch(`${API_BASE}/api/ingest/run?mode=${mode}`, {
         method: 'POST'
       });
       const data = await response.json();
