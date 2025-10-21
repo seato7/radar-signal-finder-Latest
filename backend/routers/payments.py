@@ -4,8 +4,26 @@ from backend.services.payments import get_plans, create_checkout_session, create
 from backend.models_bots import Subscription
 from datetime import datetime
 from typing import Dict, Any
+from bson import ObjectId
 
 router = APIRouter()
+
+def convert_objectid_to_str(doc: dict) -> dict:
+    """Convert all ObjectId fields in a document to strings for JSON serialization"""
+    if not doc:
+        return doc
+    
+    result = {}
+    for key, value in doc.items():
+        if isinstance(value, ObjectId):
+            result[key] = str(value)
+        elif isinstance(value, dict):
+            result[key] = convert_objectid_to_str(value)
+        elif isinstance(value, list):
+            result[key] = [convert_objectid_to_str(item) if isinstance(item, dict) else str(item) if isinstance(item, ObjectId) else item for item in value]
+        else:
+            result[key] = value
+    return result
 
 @router.get("/plans")
 async def get_payment_plans():
@@ -49,14 +67,8 @@ async def get_payment_status(user_id: str = "default", db=Depends(get_db)):
             "features": get_plans()["free"]["features"]
         }
     
-    # Convert ObjectId fields to strings for JSON serialization
-    result = dict(subscription)
-    if "_id" in result:
-        result["_id"] = str(result["_id"])
-    if "user_id" in result:
-        result["user_id"] = str(result["user_id"])
-    
-    return result
+    # Convert all ObjectId fields to strings for JSON serialization
+    return convert_objectid_to_str(dict(subscription))
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db=Depends(get_db)):
