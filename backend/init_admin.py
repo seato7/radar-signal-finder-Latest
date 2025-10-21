@@ -60,10 +60,13 @@ async def init_admin():
             print(f"✅ Updated admin user: {ADMIN_EMAIL}")
         
         # Create or update premium subscription
+        logger.info("🔍 Checking subscription status...")
         subscription = await db.subscriptions.find_one({"user_id": user_id})
+        logger.info(f"📊 Subscription exists: {subscription is not None}")
         expires_at = datetime.utcnow() + timedelta(days=365)
         
         if not subscription:
+            logger.info("➕ Creating new premium subscription...")
             subscription_data = {
                 "user_id": user_id,
                 "plan": "premium",
@@ -72,8 +75,10 @@ async def init_admin():
                 "expires_at": expires_at
             }
             await db.subscriptions.insert_one(subscription_data)
+            logger.info("✓ Subscription created")
             print(f"✅ Created premium subscription for {ADMIN_EMAIL}")
         else:
+            logger.info("🔄 Updating existing subscription...")
             await db.subscriptions.update_one(
                 {"user_id": user_id},
                 {"$set": {
@@ -82,8 +87,10 @@ async def init_admin():
                     "expires_at": expires_at
                 }}
             )
+            logger.info("✓ Subscription updated")
             print(f"✅ Updated premium subscription for {ADMIN_EMAIL}")
         
+        logger.info("🎉 Admin setup complete!")
         print(f"🎉 Admin setup complete! Email: {ADMIN_EMAIL}, Role: admin, Plan: premium")
         
     except Exception as e:
