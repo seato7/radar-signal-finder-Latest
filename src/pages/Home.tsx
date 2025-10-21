@@ -41,10 +41,24 @@ const Home = () => {
   const runIngest = async (mode: 'demo' | 'real') => {
     setLoading(true);
     try {
+      console.log('Calling ingest with URL:', `${API_BASE}/api/ingest/run?mode=${mode}`);
       const response = await fetch(`${API_BASE}/api/ingest/run?mode=${mode}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
+      
+      console.log('Response status:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
       const data = await response.json();
+      console.log('Ingest response:', data);
       
       toast({
         title: `${mode === 'demo' ? 'Demo' : 'Real'} Ingest Complete`,
@@ -56,9 +70,10 @@ const Home = () => {
         fetchThemes();
       }, 1000);
     } catch (error) {
+      console.error('Ingest error:', error);
       toast({
         title: "Ingest Failed",
-        description: "Could not connect to backend API",
+        description: error instanceof Error ? error.message : "Could not connect to backend API",
         variant: "destructive"
       });
     } finally {
