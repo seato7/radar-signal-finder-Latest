@@ -1,7 +1,8 @@
 import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3 } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Sidebar,
   SidebarContent,
@@ -34,8 +35,21 @@ const navigationItems = [
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const { user, logout } = useAuth();
+  const { user, logout, userPlan } = useAuth();
   const isCollapsed = state === "collapsed";
+
+  const getPlanBadgeVariant = (plan: string) => {
+    switch (plan) {
+      case 'enterprise':
+      case 'premium':
+        return 'default';
+      case 'pro':
+      case 'starter':
+        return 'secondary';
+      default:
+        return 'outline';
+    }
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border">
@@ -79,12 +93,14 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-border p-4">
         {!isCollapsed && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <User className="h-4 w-4" />
-              <div className="flex flex-col">
-                <span className="font-medium">{user?.email}</span>
-                <span className="text-xs text-muted-foreground capitalize">{user?.role} Plan</span>
+            <div className="flex flex-col gap-2 text-sm">
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                <span className="font-medium truncate">{user?.email}</span>
               </div>
+              <Badge variant={getPlanBadgeVariant(userPlan)} className="w-fit capitalize">
+                {userPlan} Plan
+              </Badge>
             </div>
             <Button 
               variant="outline" 

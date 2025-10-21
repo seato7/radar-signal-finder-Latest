@@ -91,6 +91,31 @@ const Home = () => {
         }
       />
 
+      {/* User Plan Status Card */}
+      <Card className="shadow-data border-primary/50">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Your Subscription</CardTitle>
+              <CardDescription>Current plan and features</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-2xl font-bold capitalize mb-1">Premium Plan</div>
+              <div className="text-sm text-muted-foreground">
+                ✓ Unlimited bots • ✓ Unlimited alerts • ✓ Advanced analytics
+              </div>
+            </div>
+            <Badge variant="default" className="text-base px-4 py-2">
+              Active
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="shadow-data">
           <CardHeader>
