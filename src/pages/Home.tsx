@@ -59,21 +59,32 @@ const Home = () => {
       
       const data = await response.json();
       console.log('Ingest response:', data);
+      console.log('Mode:', mode);
       
       // Handle different response formats
       let description = '';
       if (mode === 'demo') {
+        console.log('Demo summary:', data.summary);
         const signalsCreated = data.summary?.signals_created || 0;
         description = data.summary?.message || `Created ${signalsCreated} signals`;
       } else {
+        console.log('Real mode data:', {
+          policy_feeds: data.policy_feeds,
+          form4_insiders: data.form4_insiders,
+          etf_flows: data.etf_flows
+        });
+        
         // Real mode - aggregate results from multiple sources
         const parts = [];
         if (data.policy_feeds?.signals_created) parts.push(`${data.policy_feeds.signals_created} policy`);
         if (data.form4_insiders?.signals_created) parts.push(`${data.form4_insiders.signals_created} insider`);
         if (data.etf_flows?.signals_created) parts.push(`${data.etf_flows.signals_created} flow`);
+        
+        console.log('Parts assembled:', parts);
         description = parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Ingest complete';
       }
       
+      console.log('Toast description:', description);
       toast({
         title: `${mode === 'demo' ? 'Demo' : 'Real'} Ingest Complete`,
         description,
