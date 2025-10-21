@@ -1,11 +1,15 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Info } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { TrendingUp, Info, Bell } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const themes = [
   {
+    id: "theme-defi-expansion",
     name: "DeFi Expansion",
     count: 23,
     strength: 85,
@@ -13,6 +17,7 @@ const themes = [
     topAssets: ["UNI", "AAVE", "CRV"],
   },
   {
+    id: "theme-layer2-scaling",
     name: "Layer 2 Scaling",
     count: 18,
     strength: 78,
@@ -20,6 +25,7 @@ const themes = [
     topAssets: ["MATIC", "ARB", "OP"],
   },
   {
+    id: "theme-institutional-flow",
     name: "Institutional Flow",
     count: 15,
     strength: 72,
@@ -27,6 +33,7 @@ const themes = [
     topAssets: ["BTC", "ETH", "SOL"],
   },
   {
+    id: "theme-technical-breakout",
     name: "Technical Breakout",
     count: 12,
     strength: 68,
@@ -37,6 +44,8 @@ const themes = [
 
 const Themes = () => {
   const [whyNowData, setWhyNowData] = useState<Record<string, any>>({});
+  const [subscribing, setSubscribing] = useState<string | null>(null);
+  const { toast } = useToast();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
@@ -54,6 +63,52 @@ const Themes = () => {
     };
     fetchWhyNow();
   }, [API_BASE]);
+
+  const handleSubscribe = async (themeId: string, themeName: string) => {
+    setSubscribing(themeId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({
+          title: "Authentication required",
+          description: "Please log in to subscribe to alerts",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/alerts/subscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ theme_id: themeId })
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Subscribed!",
+          description: `You'll receive alerts for ${themeName}`
+        });
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Subscription failed",
+          description: error.detail || "Failed to subscribe",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to subscribe to alerts",
+        variant: "destructive"
+      });
+    } finally {
+      setSubscribing(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -113,6 +168,15 @@ const Themes = () => {
                   ))}
                 </div>
               </div>
+              <Button 
+                onClick={() => handleSubscribe(theme.id, theme.name)}
+                disabled={subscribing === theme.id}
+                className="w-full mt-4"
+                variant="outline"
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                {subscribing === theme.id ? "Subscribing..." : "Subscribe to Alerts"}
+              </Button>
             </CardContent>
           </Card>
         ))}
