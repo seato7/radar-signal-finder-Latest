@@ -1,1 +1,4 @@
 project_id = "detxhoqiarohjevedmxh"
+
+[functions.populate-assets]
+verify_jwt = false

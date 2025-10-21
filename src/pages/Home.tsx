@@ -38,68 +38,34 @@ const Home = () => {
     fetchThemes();
   }, []);
 
-  const runIngest = async (mode: 'demo' | 'real') => {
+  const runIngest = async () => {
     setLoading(true);
     try {
-      console.log('Calling ingest with URL:', `${API_BASE}/api/ingest/run?mode=${mode}`);
-      const response = await fetch(`${API_BASE}/api/ingest/run?mode=${mode}`, {
+      const response = await fetch(`${API_BASE}/api/ingest/run?mode=real`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' }
       });
       
-      console.log('Response status:', response.status, response.statusText);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        throw new Error(`HTTP ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Ingest response:', data);
-      console.log('Mode:', mode);
+      const parts = [];
+      if (data.policy_feeds?.inserted) parts.push(`${data.policy_feeds.inserted} policy`);
+      if (data.form4_insiders?.inserted) parts.push(`${data.form4_insiders.inserted} insider`);
+      if (data.etf_flows?.inserted) parts.push(`${data.etf_flows.inserted} flow`);
       
-      // Handle different response formats
-      let description = '';
-      if (mode === 'demo') {
-        console.log('Demo summary:', data.summary);
-        const signalsCreated = data.summary?.signals_created || 0;
-        description = data.summary?.message || `Created ${signalsCreated} signals`;
-      } else {
-        console.log('Real mode data:', {
-          policy_feeds: data.policy_feeds,
-          form4_insiders: data.form4_insiders,
-          etf_flows: data.etf_flows
-        });
-        
-        // Real mode - aggregate results from multiple sources
-        const parts = [];
-        // Backend returns 'inserted' not 'signals_created'
-        if (data.policy_feeds?.inserted) parts.push(`${data.policy_feeds.inserted} policy`);
-        if (data.form4_insiders?.inserted) parts.push(`${data.form4_insiders.inserted} insider`);
-        if (data.etf_flows?.inserted) parts.push(`${data.etf_flows.inserted} flow`);
-        
-        console.log('Parts assembled:', parts);
-        description = parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Real ingest complete - data sources processed';
-      }
-      
-      console.log('Toast description:', description);
       toast({
-        title: `${mode === 'demo' ? 'Demo' : 'Real'} Ingest Complete`,
-        description,
+        title: "Data Ingest Complete",
+        description: parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Data sources processed',
       });
 
-      // Refresh themes after ingest
-      setTimeout(() => {
-        fetchThemes();
-      }, 1000);
+      setTimeout(() => fetchThemes(), 1000);
     } catch (error) {
-      console.error('Ingest error:', error);
       toast({
         title: "Ingest Failed",
-        description: error instanceof Error ? error.message : "Could not connect to backend API",
+        description: error instanceof Error ? error.message : "Could not connect to backend",
         variant: "destructive"
       });
     } finally {
@@ -162,30 +128,21 @@ const Home = () => {
           <Card className="shadow-data">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-primary" />
-                Run Ingest Pipeline
+                <RefreshCw className="h-5 w-5 text-primary" />
+                Data Ingest Pipeline
               </CardTitle>
               <CardDescription>
-                Populate database with demo or live data
+                Fetch latest market signals and data
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent>
               <Button
-                onClick={() => runIngest('demo')}
-                disabled={loading}
-                variant="outline"
-                className="w-full justify-start"
-              >
-                <Play className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {loading ? 'Processing...' : 'Demo Mode (Sample Data)'}
-              </Button>
-              <Button
-                onClick={() => runIngest('real')}
+                onClick={runIngest}
                 disabled={loading}
                 className="w-full justify-start bg-gradient-chrome text-primary-foreground"
               >
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {loading ? 'Processing...' : 'Real Mode (Live Sources)'}
+                {loading ? 'Processing...' : 'Run Data Ingest'}
               </Button>
             </CardContent>
           </Card>
@@ -284,9 +241,9 @@ const Home = () => {
                 2
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Populate Data</h4>
+                <h4 className="font-medium text-foreground">Run Data Ingest</h4>
                 <p className="text-sm text-muted-foreground">
-                  Click "Demo Mode" to load 32 sample assets and signals, or "Real Mode" for live data sources
+                  Click "Run Data Ingest" to fetch latest signals from configured data sources
                 </p>
               </div>
             </div>
