@@ -1,23 +1,48 @@
-# Multi-Tenant Broker Integration Guide
+# Multi-Broker Integration Guide
 
 ## Overview
 
-Opportunity Radar now supports **Model 1: User API Keys** - a secure, scalable approach where each user connects their own broker account. Users maintain full control of their funds while the platform executes trades on their behalf using encrypted API keys.
-
-## Why Model 1?
-
-✅ **No Regulatory Burden** - Platform never touches user money, no licenses needed  
-✅ **Zero Liability** - Funds stay in user's broker account  
-✅ **User Trust** - Users maintain full control and visibility  
-✅ **Scalability** - No limit on number of users or capital  
-✅ **Industry Standard** - Used by 90% of trading bot platforms  
+Opportunity Radar supports **Model 1: User API Keys** across multiple major brokers. Users connect their own broker accounts, maintain full control of their funds, and the platform executes trades on their behalf using encrypted API keys.
 
 ## Supported Brokers
 
-Currently supported:
-- **Alpaca Markets** (Stocks & Crypto)
-  - Paper trading (testing)
-  - Live trading (real money)
+### 1. Alpaca Markets 🇺🇸
+- **Assets**: US Stocks, Crypto
+- **Paper Trading**: ✅ Yes
+- **Best For**: US traders, beginners, paper testing
+- **API Docs**: [alpaca.markets/docs](https://alpaca.markets/docs)
+
+### 2. Interactive Brokers (IBKR) 🌍
+- **Assets**: Global Stocks, Options, Futures, Forex
+- **Paper Trading**: ✅ Yes
+- **Best For**: Professional traders, international markets
+- **API Docs**: [interactivebrokers.com/api](https://interactivebrokers.com/api)
+
+### 3. Coinbase 🪙
+- **Assets**: Cryptocurrency
+- **Paper Trading**: ❌ No
+- **Best For**: US crypto traders, institutional
+- **API Docs**: [docs.coinbase.com](https://docs.coinbase.com)
+
+### 4. Binance 🪙
+- **Assets**: Cryptocurrency
+- **Paper Trading**: ✅ Yes (Testnet)
+- **Best For**: Global crypto traders, high volume
+- **API Docs**: [binance-docs.github.io](https://binance-docs.github.io)
+
+### 5. Kraken 🪙
+- **Assets**: Cryptocurrency
+- **Paper Trading**: ❌ No
+- **Best For**: European crypto traders, security-focused
+- **API Docs**: [docs.kraken.com](https://docs.kraken.com)
+
+## Why Model 1?
+
+✅ **No Regulatory Burden** - Platform never touches user money  
+✅ **Zero Liability** - Funds stay in user's broker account  
+✅ **User Trust** - Full control and visibility  
+✅ **Scalability** - No limit on users or capital  
+✅ **Multi-Broker** - Users can connect multiple accounts  
 
 ## User Flow
 
@@ -25,225 +50,245 @@ Currently supported:
 Users create an account and choose a subscription plan.
 
 ### 2. Connect Broker Account
-Users navigate to **Settings → Connect Broker Account** and:
-- Enter their Alpaca API Key
-- Enter their Alpaca Secret Key
-- Choose Paper or Live mode
-- Click "Connect Broker"
-
-The system validates credentials before saving.
+Navigate to **Settings → Connect Broker Account**:
+1. Select broker from dropdown
+2. Enter API Key
+3. Enter Secret Key
+4. Choose Paper/Live mode (if supported)
+5. Click "Connect Broker"
 
 ### 3. Create Trading Bot
-Once broker is connected, users can:
-- Create trading bots with strategies
-- Start paper trading (always safe)
-- Upgrade to live trading (requires paid plan + broker connection)
+Once broker is connected:
+- Create bots with strategies
+- Bot will trade using your connected broker
+- View positions in broker's own dashboard
 
-### 4. Trading Execution
-- Platform fetches user's API keys (encrypted)
-- Executes trades through user's broker account
-- All orders appear in user's Alpaca dashboard
-- Funds never leave user's broker account
+## Getting API Keys by Broker
+
+### Alpaca
+1. Sign up at [alpaca.markets](https://alpaca.markets)
+2. Go to Dashboard → API Keys
+3. Generate new key with "Trading" permissions
+4. Copy both API Key and Secret (shown once!)
+5. Paper keys start with "PK", Live keys start with "AK"
+
+### Interactive Brokers
+1. Open IBKR account at [interactivebrokers.com](https://interactivebrokers.com)
+2. Enable API access in Account Settings
+3. Install IB Gateway or TWS
+4. Generate API credentials in Account Management
+5. Note: IBKR requires running their gateway software
+
+### Coinbase
+1. Sign up at [coinbase.com](https://coinbase.com)
+2. Enable Advanced Trade
+3. Go to Settings → API
+4. Create API key with "Trade" permissions
+5. Save key name and private key
+
+### Binance
+1. Create account at [binance.com](https://binance.com)
+2. Complete KYC verification
+3. Go to API Management
+4. Create new key, enable spot trading
+5. Save API Key and Secret Key
+6. Optional: Restrict to specific IPs for security
+
+### Kraken
+1. Sign up at [kraken.com](https://kraken.com)
+2. Complete verification
+3. Settings → API
+4. Generate API key with trading permissions
+5. Save public and private keys
+
+## Security Best Practices
+
+### For Users
+⚠️ **Start with Paper Trading** - Test strategies risk-free  
+⚠️ **Protect Your Keys** - Never share or expose keys  
+⚠️ **Monitor Regularly** - Check broker dashboard daily  
+⚠️ **Set Position Limits** - Configure max position sizes  
+⚠️ **Enable Circuit Breakers** - Auto-pause on drawdown  
+
+### For Platform
+🔒 **Fernet Encryption** - All secrets encrypted at rest  
+🔒 **No Secret Logging** - Secrets never in logs/responses  
+🔒 **Validation on Save** - Keys tested before storing  
+🔒 **User Isolation** - Each user's keys completely separate  
 
 ## API Endpoints
 
-### Connect Broker
-```
+```bash
+# Get supported brokers
+GET /api/broker/supported
+
+# Connect broker
 POST /api/broker/keys
 {
-  "exchange": "alpaca",
+  "exchange": "alpaca|ibkr|coinbase|binance|kraken",
   "label": "My Trading Account",
-  "api_key": "PK...",
+  "api_key": "...",
   "secret_key": "...",
   "paper_mode": true
 }
-```
 
-### List Connected Brokers
-```
+# List connected brokers
 GET /api/broker/keys
-```
 
-### Test Connection
-```
+# Test connection
 POST /api/broker/keys/{key_id}/test
-```
 
-### Remove Broker
-```
+# Remove broker
 DELETE /api/broker/keys/{key_id}
 ```
 
-## Security
-
-### Encryption
-- API secrets are encrypted using Fernet (symmetric encryption)
-- Encryption key derived from JWT secret
-- Secrets never returned in API responses
-- Only decrypted when placing orders
-
-### Validation
-- API keys tested before saving
-- Invalid credentials rejected immediately
-- Connection tested periodically
-
-### Storage
-- MongoDB collection: `api_keys`
-- Fields: `user_id`, `exchange`, `key_id`, `secret_enc`, `paper_mode`
-- Indexes: unique per user/exchange/key combo
-
-## User Guide
-
-### How to Get Alpaca API Keys
-
-1. **Create Alpaca Account**
-   - Sign up at [alpaca.markets](https://alpaca.markets)
-   - Complete verification
-
-2. **Generate API Keys**
-   - Go to Dashboard → API Keys
-   - Click "Generate New Key"
-   - Choose "Trading" permissions
-   - Save both API Key and Secret Key (shown once!)
-
-3. **Paper vs Live**
-   - **Paper Trading**: Free, unlimited, no real money, perfect for testing
-   - **Live Trading**: Real money, requires funded account, use with caution
-
-4. **Connect to Opportunity Radar**
-   - Navigate to Settings
-   - Paste your API Key
-   - Paste your Secret Key
-   - Select Paper or Live mode
-   - Click Connect
-
-### Safety Tips
-
-⚠️ **Start with Paper Trading**  
-Always test strategies in paper mode first
-
-⚠️ **Protect Your Keys**  
-Never share API keys or secret keys
-
-⚠️ **Monitor Your Account**  
-Check your Alpaca dashboard regularly
-
-⚠️ **Set Position Limits**  
-Configure max position sizes in bot settings
-
-⚠️ **Enable Circuit Breakers**  
-Set max drawdown limits to auto-pause bots
-
 ## Technical Architecture
 
+### Broker Adapter Pattern
+Each broker has its own adapter implementing common interface:
+- `get_account()` - Fetch account info
+- `get_positions()` - Get current positions
+- `place_order()` - Execute trade
+- `get_latest_price()` - Fetch current price
+
 ### Bot Execution Flow
-
 ```
-User creates bot → Bot engine needs to trade
+Bot tick → Fetch user's broker credentials
     ↓
-Fetch user's encrypted API key from DB
+Decrypt API keys from database
     ↓
-Decrypt secret key
+Get broker adapter for user's exchange
     ↓
-Initialize broker adapter with user's keys
+Execute strategy → Generate orders
     ↓
-Execute trade through user's broker account
+Place orders via user's broker adapter
     ↓
-Log order in database
+Orders executed in user's real broker account
 ```
-
-### Key Components
-
-1. **`backend/utils/encryption.py`** - Encryption/decryption utilities
-2. **`backend/routers/broker.py`** - API key management endpoints
-3. **`backend/services/alpaca_broker.py`** - Broker adapter (modified to accept keys)
-4. **`backend/services/bot_engine.py`** - Bot execution (modified to fetch user keys)
-5. **`src/pages/Settings.tsx`** - Frontend settings page
 
 ### Database Schema
-
 ```javascript
 // api_keys collection
 {
   _id: ObjectId,
   user_id: "user@example.com",
-  label: "My Trading Account",
-  exchange: "alpaca",
-  key_id: "PK...",  // Public key
+  label: "My Alpaca Account",
+  exchange: "alpaca",  // or ibkr, coinbase, binance, kraken
+  key_id: "PK...",     // Public key
   secret_enc: Binary,  // Encrypted secret
   paper_mode: true,
   created_at: ISODate
 }
 ```
 
-## Future Brokers
+## Broker-Specific Notes
 
-The architecture is designed to support multiple brokers:
-- Interactive Brokers
-- TD Ameritrade
-- Coinbase
-- Binance
-- Kraken
+### Alpaca
+- Supports fractional shares
+- Crypto uses `BTCUSD` format
+- Paper and live have separate URLs
+- Very reliable API, great for beginners
 
-Each would require:
-1. New adapter in `backend/services/{broker}_broker.py`
-2. Update `backend/routers/broker.py` to validate that broker
-3. Update `AlpacaAdapter` initialization to be broker-agnostic
+### Interactive Brokers
+- Most complex integration
+- Requires running gateway software
+- Uses contract IDs instead of symbols
+- Best execution, lowest fees
+- Global market access
+
+### Coinbase
+- Simple REST API
+- Uses `BTC-USD` pair format
+- No paper trading available
+- Higher fees than exchanges
+- Good for US institutions
+
+### Binance
+- Largest crypto exchange
+- Testnet available for paper trading
+- HMAC signature required
+- Very fast execution
+- Many trading pairs
+
+### Kraken
+- Strong security reputation
+- Base64 signature required
+- No paper trading
+- Good for Europe
+- Lower volume than Binance
 
 ## Troubleshooting
 
 ### "Invalid API credentials"
-- Double-check you copied the full API key and secret
-- Ensure keys are for the correct environment (paper vs live)
-- Verify keys haven't been revoked in Alpaca dashboard
+- Verify you copied complete key and secret
+- Check paper vs live mode matches your keys
+- Ensure keys haven't been revoked
+- For Binance/Kraken: Check signature method
 
 ### "No broker account connected"
-- Go to Settings and connect a broker first
-- Ensure connection was successful (test it)
+- Go to Settings and connect broker first
+- Test connection after connecting
+- Ensure connection was successful
 
 ### "Insufficient buying power"
-- Check your Alpaca account balance
+- Check your broker account balance
 - Reduce position sizes in bot settings
-- Fund your Alpaca account
+- Fund your broker account
 
 ### Orders not appearing
-- Check bot logs in the Bots page
+- Check bot logs in Bots page
 - Verify bot status is "running"
-- Check your Alpaca dashboard for orders
+- Check broker's own dashboard/app
 - Review bot_logs collection in database
 
-## Admin Tasks
-
-### Check User's Broker Connection
-```javascript
-db.api_keys.find({ user_id: "user@example.com" })
-```
-
-### Remove Stuck Keys
-```javascript
-db.api_keys.deleteOne({ _id: ObjectId("...") })
-```
-
-### Audit All Connections
-```javascript
-db.api_keys.aggregate([
-  { $group: { _id: "$exchange", count: { $sum: 1 } } }
-])
-```
+### IBKR Connection Issues
+- Ensure IB Gateway or TWS is running
+- Check gateway is accepting connections
+- Verify port configuration
+- Client Portal API requires session management
 
 ## Deployment Checklist
 
-✅ Environment variable `JWT_SECRET_KEY` set (for encryption)  
-✅ MongoDB indexes created (automatically on startup)  
-✅ Frontend Settings page deployed  
-✅ Backend broker router registered  
-✅ User documentation updated  
-✅ Support team trained  
+✅ All broker adapter files created  
+✅ Broker router updated with multi-broker support  
+✅ Settings UI shows broker dropdown  
+✅ Encryption/decryption working  
+✅ Bot engine uses broker adapter factory  
+✅ Database indexes for api_keys collection  
+✅ User documentation for each broker  
 
-## Next Steps
+## Future Enhancements
 
-1. **User Onboarding** - Add broker connection to signup flow
-2. **Broker Health Checks** - Periodic validation of stored keys
-3. **Key Rotation** - Allow users to update keys without losing bot history
-4. **Multi-Broker Support** - Add more broker integrations
-5. **Portfolio View** - Show combined positions across all user's bots
+1. **Broker Portfolio View** - Aggregate positions across brokers
+2. **Multi-Broker Arbitrage** - Bots that trade across exchanges
+3. **Broker Health Monitoring** - Auto-check connection status
+4. **Key Rotation** - Allow users to update keys seamlessly
+5. **More Brokers** - TD Ameritrade, Robinhood, eToro, etc.
+
+## Admin Queries
+
+```javascript
+// Check which brokers users are using
+db.api_keys.aggregate([
+  { $group: { _id: "$exchange", count: { $sum: 1 } } }
+])
+
+// Find users with multiple broker connections
+db.api_keys.aggregate([
+  { $group: { _id: "$user_id", brokers: { $push: "$exchange" }, count: { $sum: 1 } } },
+  { $match: { count: { $gt: 1 } } }
+])
+
+// Check paper vs live distribution
+db.api_keys.aggregate([
+  { $group: { _id: "$paper_mode", count: { $sum: 1 } } }
+])
+```
+
+## Support Resources
+
+- **Alpaca**: [alpaca.markets/support](https://alpaca.markets/support)
+- **IBKR**: [interactivebrokers.com/support](https://interactivebrokers.com/support)
+- **Coinbase**: [help.coinbase.com](https://help.coinbase.com)
+- **Binance**: [binance.com/support](https://binance.com/support)
+- **Kraken**: [support.kraken.com](https://support.kraken.com)

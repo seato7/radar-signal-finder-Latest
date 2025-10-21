@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { Trash2, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
@@ -20,14 +21,24 @@ interface BrokerKey {
   created_at: string;
 }
 
+interface SupportedBroker {
+  id: string;
+  name: string;
+  description: string;
+  supports_paper: boolean;
+  assets: string[];
+}
+
 export default function Settings() {
   const { token } = useAuth();
   const { toast } = useToast();
   const [keys, setKeys] = useState<BrokerKey[]>([]);
+  const [brokers, setBrokers] = useState<SupportedBroker[]>([]);
   const [loading, setLoading] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
+    exchange: 'alpaca',
     label: '',
     api_key: '',
     secret_key: '',
@@ -36,7 +47,20 @@ export default function Settings() {
 
   useEffect(() => {
     fetchKeys();
+    fetchSupportedBrokers();
   }, []);
+
+  const fetchSupportedBrokers = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/broker/supported`);
+      if (response.ok) {
+        const data = await response.json();
+        setBrokers(data.brokers);
+      }
+    } catch (error) {
+      console.error('Error fetching brokers:', error);
+    }
+  };
 
   const fetchKeys = async () => {
     try {
@@ -63,10 +87,7 @@ export default function Settings() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          exchange: 'alpaca',
-          ...formData
-        })
+        body: JSON.stringify(formData)
       });
 
       const data = await response.json();
@@ -76,7 +97,7 @@ export default function Settings() {
           title: 'Broker Connected',
           description: 'Your broker account has been connected successfully.',
         });
-        setFormData({ label: '', api_key: '', secret_key: '', paper_mode: true });
+        setFormData({ exchange: 'alpaca', label: '', api_key: '', secret_key: '', paper_mode: true });
         fetchKeys();
       } else {
         toast({
@@ -160,11 +181,33 @@ export default function Settings() {
         <CardHeader>
           <CardTitle>Connect Broker Account</CardTitle>
           <CardDescription>
-            Connect your Alpaca trading account to enable live trading. Your API keys are encrypted and stored securely.
+            Connect your trading account from any supported broker. Your API keys are encrypted and stored securely.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAddKey} className="space-y-4">
+            <div>
+              <Label htmlFor="exchange">Select Broker</Label>
+              <Select
+                value={formData.exchange}
+                onValueChange={(value) => setFormData({ ...formData, exchange: value })}
+              >
+                <SelectTrigger id="exchange">
+                  <SelectValue placeholder="Choose a broker" />
+                </SelectTrigger>
+                <SelectContent>
+                  {brokers.map((broker) => (
+                    <SelectItem key={broker.id} value={broker.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{broker.name}</span>
+                        <span className="text-xs text-muted-foreground">{broker.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <Label htmlFor="label">Account Label</Label>
               <Input
@@ -203,8 +246,16 @@ export default function Settings() {
                 id="paper_mode"
                 checked={formData.paper_mode}
                 onCheckedChange={(checked) => setFormData({ ...formData, paper_mode: checked })}
+                disabled={!brokers.find(b => b.id === formData.exchange)?.supports_paper}
               />
-              <Label htmlFor="paper_mode">Paper Trading Mode (Recommended)</Label>
+              <Label htmlFor="paper_mode">
+                Paper Trading Mode (Recommended)
+                {!brokers.find(b => b.id === formData.exchange)?.supports_paper && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    (Not available for this broker)
+                  </span>
+                )}
+              </Label>
             </div>
 
             <Button type="submit" disabled={loading}>

@@ -9,6 +9,44 @@ from datetime import datetime
 
 router = APIRouter(prefix="/api/broker", tags=["broker"])
 
+async def _validate_broker_credentials(exchange: str, api_key: str, secret_key: str, paper_mode: bool) -> bool:
+    """Validate broker credentials by testing connection"""
+    try:
+        if exchange == "alpaca":
+            from backend.services.alpaca_broker import AlpacaAdapter
+            adapter = AlpacaAdapter(api_key, secret_key, paper_mode)
+            result = await adapter.get_account()
+            return "error" not in result
+        
+        elif exchange == "ibkr":
+            from backend.services.ibkr_broker import IBKRAdapter
+            adapter = IBKRAdapter(api_key, secret_key, paper_mode)
+            result = await adapter.get_account()
+            return "error" not in result
+        
+        elif exchange == "coinbase":
+            from backend.services.coinbase_broker import CoinbaseAdapter
+            adapter = CoinbaseAdapter(api_key, secret_key, paper_mode)
+            result = await adapter.get_account()
+            return "error" not in result
+        
+        elif exchange == "binance":
+            from backend.services.binance_broker import BinanceAdapter
+            adapter = BinanceAdapter(api_key, secret_key, paper_mode)
+            result = await adapter.get_account()
+            return "error" not in result
+        
+        elif exchange == "kraken":
+            from backend.services.kraken_broker import KrakenAdapter
+            adapter = KrakenAdapter(api_key, secret_key, paper_mode)
+            result = await adapter.get_account()
+            return "error" not in result
+        
+        else:
+            return False
+    except Exception as e:
+        return False
+
 @router.post("/keys")
 async def add_broker_key(
     data: Dict[str, str],
@@ -25,23 +63,10 @@ async def add_broker_key(
     if not api_key or not secret_key:
         raise HTTPException(400, "API key and secret are required")
     
-    # Validate the keys by testing connection
-    base_url = "https://paper-api.alpaca.markets" if paper_mode else "https://api.alpaca.markets"
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{base_url}/v2/account",
-                headers={
-                    "APCA-API-KEY-ID": api_key,
-                    "APCA-API-SECRET-KEY": secret_key
-                },
-                timeout=10.0
-            )
-            if response.status_code != 200:
-                raise HTTPException(400, "Invalid API credentials")
-    except httpx.RequestError:
-        raise HTTPException(400, "Could not connect to broker")
+    # Validate based on exchange
+    is_valid = await _validate_broker_credentials(exchange, api_key, secret_key, paper_mode)
+    if not is_valid:
+        raise HTTPException(400, f"Invalid {exchange} credentials or could not connect")
     
     # Check if key already exists
     existing = await db.api_keys.find_one({
@@ -123,45 +148,131 @@ async def test_broker_key(
     if not key_doc:
         raise HTTPException(404, "API key not found")
     
-    # Decrypt and test
+    # Decrypt and test with appropriate adapter
     secret = decrypt_secret(key_doc["secret_enc"])
+    exchange = key_doc["exchange"]
     paper_mode = key_doc.get("paper_mode", True)
-    base_url = "https://paper-api.alpaca.markets" if paper_mode else "https://api.alpaca.markets"
     
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{base_url}/v2/account",
-                headers={
-                    "APCA-API-KEY-ID": key_doc["key_id"],
-                    "APCA-API-SECRET-KEY": secret
-                },
-                timeout=10.0
-            )
+        if exchange == "alpaca":
+            from backend.services.alpaca_broker import AlpacaAdapter
+            adapter = AlpacaAdapter(key_doc["key_id"], secret, paper_mode)
+            result = await adapter.get_account()
             
-            if response.status_code == 200:
-                account = response.json()
+            if "error" not in result:
                 return {
                     "status": "connected",
                     "account": {
-                        "buying_power": account.get("buying_power"),
-                        "cash": account.get("cash"),
-                        "portfolio_value": account.get("portfolio_value")
+                        "buying_power": result.get("buying_power"),
+                        "cash": result.get("cash"),
+                        "portfolio_value": result.get("portfolio_value")
                     }
                 }
-            else:
-                return {"status": "invalid", "error": "Invalid credentials"}
-    except httpx.RequestError as e:
+        
+        elif exchange == "coinbase":
+            from backend.services.coinbase_broker import CoinbaseAdapter
+            adapter = CoinbaseAdapter(key_doc["key_id"], secret, paper_mode)
+            result = await adapter.get_account()
+            if "error" not in result:
+                return {"status": "connected", "account": result}
+        
+        elif exchange == "binance":
+            from backend.services.binance_broker import BinanceAdapter
+            adapter = BinanceAdapter(key_doc["key_id"], secret, paper_mode)
+            result = await adapter.get_account()
+            if "error" not in result:
+                return {"status": "connected", "account": result}
+        
+        elif exchange == "kraken":
+            from backend.services.kraken_broker import KrakenAdapter
+            adapter = KrakenAdapter(key_doc["key_id"], secret, paper_mode)
+            result = await adapter.get_account()
+            if "error" not in result:
+                return {"status": "connected", "account": result}
+        
+        elif exchange == "ibkr":
+            from backend.services.ibkr_broker import IBKRAdapter
+            adapter = IBKRAdapter(key_doc["key_id"], secret, paper_mode)
+            result = await adapter.get_account()
+            if "error" not in result:
+                return {"status": "connected", "account": result}
+        
+        return {"status": "invalid", "error": "Invalid credentials"}
+    except Exception as e:
         return {"status": "error", "error": str(e)}
 
 async def get_user_broker_key(user_id: str, db):
-    """Helper to get user's primary broker key"""
+    """Helper to get user's primary broker key with broker adapter factory"""
     key_doc = await db.api_keys.find_one({"user_id": user_id})
     if not key_doc:
         return None
     
     return {
+        "exchange": key_doc["exchange"],
         "api_key": key_doc["key_id"],
         "secret_key": decrypt_secret(key_doc["secret_enc"]),
         "paper_mode": key_doc.get("paper_mode", True)
+    }
+
+def get_broker_adapter(exchange: str, api_key: str, secret_key: str, paper_mode: bool):
+    """Factory to create broker adapter based on exchange"""
+    if exchange == "alpaca":
+        from backend.services.alpaca_broker import AlpacaAdapter
+        return AlpacaAdapter(api_key, secret_key, paper_mode)
+    elif exchange == "ibkr":
+        from backend.services.ibkr_broker import IBKRAdapter
+        return IBKRAdapter(api_key, secret_key, paper_mode)
+    elif exchange == "coinbase":
+        from backend.services.coinbase_broker import CoinbaseAdapter
+        return CoinbaseAdapter(api_key, secret_key, paper_mode)
+    elif exchange == "binance":
+        from backend.services.binance_broker import BinanceAdapter
+        return BinanceAdapter(api_key, secret_key, paper_mode)
+    elif exchange == "kraken":
+        from backend.services.kraken_broker import KrakenAdapter
+        return KrakenAdapter(api_key, secret_key, paper_mode)
+    else:
+        raise ValueError(f"Unsupported broker: {exchange}")
+
+@router.get("/supported")
+async def get_supported_brokers():
+    """Get list of supported brokers"""
+    return {
+        "brokers": [
+            {
+                "id": "alpaca",
+                "name": "Alpaca Markets",
+                "description": "US stocks and crypto trading",
+                "supports_paper": True,
+                "assets": ["stocks", "crypto"]
+            },
+            {
+                "id": "ibkr",
+                "name": "Interactive Brokers",
+                "description": "Global stocks, options, futures, forex",
+                "supports_paper": True,
+                "assets": ["stocks", "options", "futures", "forex"]
+            },
+            {
+                "id": "coinbase",
+                "name": "Coinbase",
+                "description": "Cryptocurrency trading",
+                "supports_paper": False,
+                "assets": ["crypto"]
+            },
+            {
+                "id": "binance",
+                "name": "Binance",
+                "description": "Cryptocurrency trading",
+                "supports_paper": True,
+                "assets": ["crypto"]
+            },
+            {
+                "id": "kraken",
+                "name": "Kraken",
+                "description": "Cryptocurrency trading",
+                "supports_paper": False,
+                "assets": ["crypto"]
+            }
+        ]
     }

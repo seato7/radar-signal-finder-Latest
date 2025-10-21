@@ -20,15 +20,15 @@ class BotEngine:
     
     async def get_broker(self, bot: Bot):
         """Get broker adapter with user-specific credentials"""
-        from backend.routers.broker import get_user_broker_key
+        from backend.routers.broker import get_user_broker_key, get_broker_adapter
         
         # Get user's broker credentials
         creds = await get_user_broker_key(bot.user_id, self.db)
         if not creds:
             raise ValueError("No broker account connected. Please connect your broker in Settings.")
         
-        from backend.services.alpaca_broker import get_broker
-        return get_broker(
+        return get_broker_adapter(
+            exchange=creds["exchange"],
             api_key=creds["api_key"],
             secret_key=creds["secret_key"],
             paper_mode=creds["paper_mode"]
