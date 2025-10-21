@@ -76,12 +76,13 @@ const Home = () => {
         
         // Real mode - aggregate results from multiple sources
         const parts = [];
-        if (data.policy_feeds?.signals_created) parts.push(`${data.policy_feeds.signals_created} policy`);
-        if (data.form4_insiders?.signals_created) parts.push(`${data.form4_insiders.signals_created} insider`);
-        if (data.etf_flows?.signals_created) parts.push(`${data.etf_flows.signals_created} flow`);
+        // Backend returns 'inserted' not 'signals_created'
+        if (data.policy_feeds?.inserted) parts.push(`${data.policy_feeds.inserted} policy`);
+        if (data.form4_insiders?.inserted) parts.push(`${data.form4_insiders.inserted} insider`);
+        if (data.etf_flows?.inserted) parts.push(`${data.etf_flows.inserted} flow`);
         
         console.log('Parts assembled:', parts);
-        description = parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Ingest complete';
+        description = parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Real ingest complete - data sources processed';
       }
       
       console.log('Toast description:', description);
