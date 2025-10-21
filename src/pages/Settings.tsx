@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
-import { Trash2, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Trash2, Loader2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -150,7 +150,9 @@ export default function Settings() {
       if (data.status === 'connected') {
         toast({
           title: 'Connection Active',
-          description: `Account Balance: $${parseFloat(data.account.portfolio_value).toFixed(2)}`,
+          description: data.account?.portfolio_value 
+            ? `Account Balance: $${parseFloat(data.account.portfolio_value).toFixed(2)}`
+            : 'Connection successful',
         });
       } else {
         toast({
@@ -169,6 +171,8 @@ export default function Settings() {
       setTestingId(null);
     }
   };
+
+  const selectedBroker = brokers.find(b => b.id === formData.exchange);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -222,7 +226,7 @@ export default function Settings() {
               <Label htmlFor="api_key">API Key</Label>
               <Input
                 id="api_key"
-                placeholder="PK..."
+                placeholder="Enter your API key"
                 value={formData.api_key}
                 onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
                 required
@@ -246,11 +250,11 @@ export default function Settings() {
                 id="paper_mode"
                 checked={formData.paper_mode}
                 onCheckedChange={(checked) => setFormData({ ...formData, paper_mode: checked })}
-                disabled={!brokers.find(b => b.id === formData.exchange)?.supports_paper}
+                disabled={!selectedBroker?.supports_paper}
               />
               <Label htmlFor="paper_mode">
                 Paper Trading Mode (Recommended)
-                {!brokers.find(b => b.id === formData.exchange)?.supports_paper && (
+                {selectedBroker && !selectedBroker.supports_paper && (
                   <span className="text-xs text-muted-foreground ml-2">
                     (Not available for this broker)
                   </span>
