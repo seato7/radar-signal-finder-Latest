@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Star, ExternalLink, Clock, TrendingUp, TrendingDown } from "lucide-react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -30,9 +30,8 @@ interface AssetData {
   }>;
 }
 
-const Asset = () => {
-  const [searchParams] = useSearchParams();
-  const ticker = searchParams.get("ticker") || "BTC";
+const AssetDetail = () => {
+  const { ticker } = useParams<{ ticker: string }>();
   const [asset, setAsset] = useState<AssetData | null>(null);
   const [loading, setLoading] = useState(true);
   const [score, setScore] = useState<number>(92.5);
@@ -53,12 +52,13 @@ const Asset = () => {
       }
     };
 
-    fetchAsset();
+    if (ticker) {
+      fetchAsset();
+    }
   }, [ticker]);
 
   const handleAddToWatchlist = async () => {
     try {
-      // TODO: Implement actual API call
       toast({
         title: "Added to Watchlist",
         description: `${ticker} has been added to your watchlist`
@@ -218,4 +218,4 @@ const Asset = () => {
   );
 };
 
-export default Asset;
+export default AssetDetail;

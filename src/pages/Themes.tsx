@@ -165,7 +165,7 @@ const Themes = () => {
                   {theme.topAssets.map((asset) => (
                     <Link 
                       key={asset} 
-                      to={`/asset?ticker=${asset}`}
+                      to={`/asset/${asset}`}
                       className="hover:opacity-80 transition-opacity"
                     >
                       <Badge variant="secondary" className="cursor-pointer">

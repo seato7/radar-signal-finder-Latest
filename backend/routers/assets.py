@@ -5,6 +5,44 @@ from datetime import datetime, timedelta
 
 router = APIRouter()
 
+@router.get("/")
+async def get_all_assets(skip: int = 0, limit: int = 100, search: str = None):
+    """Get all assets with optional search and pagination"""
+    db = get_db()
+    
+    # Build query
+    query = {}
+    if search:
+        query = {
+            "$or": [
+                {"ticker": {"$regex": search, "$options": "i"}},
+                {"name": {"$regex": search, "$options": "i"}},
+                {"exchange": {"$regex": search, "$options": "i"}}
+            ]
+        }
+    
+    # Get total count
+    total = await db.assets.count_documents(query)
+    
+    # Get paginated assets
+    assets_cursor = db.assets.find(query).sort("ticker", 1).skip(skip).limit(limit)
+    assets = await assets_cursor.to_list(length=None)
+    
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "assets": [
+            {
+                "id": str(a["_id"]),
+                "ticker": a["ticker"],
+                "exchange": a.get("exchange", "UNKNOWN"),
+                "name": a.get("name", a["ticker"]),
+            }
+            for a in assets
+        ]
+    }
+
 @router.get("/by-ticker/{ticker}")
 async def get_asset_by_ticker(ticker: str):
     """Get asset details by ticker symbol"""

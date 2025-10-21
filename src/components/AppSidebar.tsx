@@ -25,7 +25,7 @@ const navigationItems = [
   { title: "Backtest", url: "/backtest", icon: TrendingUp },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
-  { title: "Asset View", url: "/asset", icon: Briefcase },
+  { title: "Asset View", url: "/assets", icon: Briefcase },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },

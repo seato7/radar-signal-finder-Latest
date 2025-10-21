@@ -90,7 +90,7 @@ const Radar = () => {
               {filteredOpps.map((opp) => (
                 <Link
                   key={opp.id}
-                  to={`/asset?ticker=${opp.asset.split('/')[0]}`}
+                  to={`/asset/${opp.asset.split('/')[0]}`}
                   className="block"
                 >
                 <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">

@@ -162,7 +162,7 @@ const Watchlist = () => {
                   </div>
                   <div className="flex gap-2">
                     <Button variant="ghost" size="icon" asChild>
-                      <Link to={`/asset?ticker=${item.asset.split('/')[0]}`}>
+                      <Link to={`/asset/${item.asset.split('/')[0]}`}>
                         <Eye className="h-4 w-4" />
                       </Link>
                     </Button>

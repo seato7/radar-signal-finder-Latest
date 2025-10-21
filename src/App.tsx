@@ -13,7 +13,8 @@ import Alerts from "./pages/Alerts";
 import Radar from "./pages/Radar";
 import Watchlist from "./pages/Watchlist";
 import Backtest from "./pages/Backtest";
-import Asset from "./pages/Asset";
+import Assets from "./pages/Assets";
+import AssetDetail from "./pages/AssetDetail";
 import Themes from "./pages/Themes";
 import Bots from "./pages/Bots";
 import Pricing from "./pages/Pricing";
@@ -55,7 +56,8 @@ const App = () => (
                             <Route path="/radar" element={<Radar />} />
                             <Route path="/watchlist" element={<Watchlist />} />
                             <Route path="/backtest" element={<Backtest />} />
-                            <Route path="/asset" element={<Asset />} />
+                            <Route path="/assets" element={<Assets />} />
+                            <Route path="/asset/:ticker" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
                             <Route path="/bots" element={<Bots />} />
                             <Route path="/pricing" element={<Pricing />} />
