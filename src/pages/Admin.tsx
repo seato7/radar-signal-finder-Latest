@@ -56,6 +56,22 @@ const Admin = () => {
 
   if (loading) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
 
+  if (!metrics) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Admin Dashboard"
+          description="System metrics and audit logs"
+        />
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-muted-foreground">Unable to load admin data. Please ensure you have admin privileges.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
