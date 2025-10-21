@@ -38,16 +38,25 @@ async def init_admin():
             print(f"✅ Created admin user: {ADMIN_EMAIL}")
         else:
             # Update existing user to admin
+            logger.info("🔄 Updating existing user to admin...")
+            user_id = str(user["_id"])
+            logger.info(f"📋 User ID: {user_id}")
+            
+            logger.info("🔐 Hashing password...")
+            hashed_pw = get_password_hash(ADMIN_PASSWORD)
+            logger.info("✓ Password hashed")
+            
+            logger.info("💾 Updating database...")
             await db.users.update_one(
                 {"email": ADMIN_EMAIL},
                 {"$set": {
                     "role": UserRole.ADMIN.value,
                     "is_active": True,
-                    "hashed_password": get_password_hash(ADMIN_PASSWORD),
+                    "hashed_password": hashed_pw,
                     "updated_at": datetime.utcnow()
                 }}
             )
-            user_id = str(user["_id"])
+            logger.info("✓ Database updated")
             print(f"✅ Updated admin user: {ADMIN_EMAIL}")
         
         # Create or update premium subscription
