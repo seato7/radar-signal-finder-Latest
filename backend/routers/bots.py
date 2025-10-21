@@ -23,30 +23,42 @@ async def create_bot(
     current_user: TokenData = Depends(get_current_active_user)
 ):
     """Create a new trading bot"""
-    from backend.services.payments import check_plan_limit, get_plans
+    from backend.services.payments import get_plans
     
     # Get user's subscription
     user_id = current_user.username
     subscription = await db.subscriptions.find_one({"user_id": user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
+    plan_features = get_plans()[user_plan]["features"]
     
-    # Count user's existing bots
-    existing_bots_count = await db.bots.count_documents({"user_id": user_id})
+    # Count user's existing bots by type
+    paper_bots_count = await db.bots.count_documents({"user_id": user_id, "mode": "paper"})
+    live_bots_count = await db.bots.count_documents({"user_id": user_id, "mode": "live"})
     
-    # Check if user can create more bots
-    if not check_plan_limit(user_plan, "max_bots", existing_bots_count):
-        max_bots = get_plans()[user_plan]["features"]["max_bots"]
-        raise HTTPException(
-            status_code=403, 
-            detail=f"Your {user_plan} plan allows {max_bots} bot{'s' if max_bots != 1 else ''}. Upgrade to create more."
-        )
-    
-    # Enforce paper mode only for all plans
-    if bot.mode != "paper":
-        raise HTTPException(
-            status_code=403,
-            detail="Only paper trading is currently supported. Live trading coming soon."
-        )
+    # Check if user is trying to create a live bot
+    if bot.mode == "live":
+        # Check if plan supports live trading
+        if not plan_features.get("live_eligible", False):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Live trading requires Starter plan or higher. Your {user_plan} plan only supports paper trading."
+            )
+        
+        # Check live bot limit
+        max_live_bots = plan_features.get("max_bots", 0)
+        if max_live_bots != -1 and live_bots_count >= max_live_bots:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Your {user_plan} plan allows {max_live_bots} live bot{'s' if max_live_bots != 1 else ''}. Upgrade for more."
+            )
+    else:
+        # Paper bot - check paper bot limit
+        max_paper_bots = plan_features.get("paper_bots", 0)
+        if max_paper_bots != -1 and paper_bots_count >= max_paper_bots:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Your {user_plan} plan allows {max_paper_bots} paper bot{'s' if max_paper_bots != 1 else ''}. Upgrade for more."
+            )
     
     bot.created_at = datetime.utcnow()
     bot.updated_at = datetime.utcnow()
@@ -219,6 +231,15 @@ async def upgrade_to_live(
         raise HTTPException(
             status_code=403,
             detail=f"Live trading requires Starter plan or higher. Current plan: {user_plan}"
+        )
+    
+    # Check live bot limit
+    live_bots_count = await db.bots.count_documents({"user_id": user_id, "mode": "live"})
+    max_live_bots = plan_features.get("max_bots", 0)
+    if max_live_bots != -1 and live_bots_count >= max_live_bots:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your {user_plan} plan allows {max_live_bots} live bot{'s' if max_live_bots != 1 else ''}. Upgrade for more."
         )
     
     # Check broker connection

@@ -16,14 +16,15 @@ const Bots = () => {
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   
   const [bots, setBots] = useState([
-    { id: "1", name: "Grid Bot AAPL", strategy: "grid", status: "running", pnl: 245.50, win_rate: 68.5 },
-    { id: "2", name: "Momentum SPY", strategy: "momentum", status: "paused", pnl: -32.10, win_rate: 45.2 },
+    { id: "1", name: "Grid Bot AAPL", strategy: "grid", status: "running", mode: "paper", pnl: 245.50, win_rate: 68.5 },
+    { id: "2", name: "Momentum SPY", strategy: "momentum", status: "paused", mode: "paper", pnl: -32.10, win_rate: 45.2 },
   ]);
   
   const [formData, setFormData] = useState({
     name: "",
     strategy: "grid",
     tickers: "",
+    mode: "paper",
     params: {}
   });
 
@@ -52,7 +53,7 @@ const Bots = () => {
       
       if (response.ok) {
         toast({ title: "Bot created successfully" });
-        setFormData({ name: "", strategy: "grid", tickers: "", params: {} });
+        setFormData({ name: "", strategy: "grid", tickers: "", mode: "paper", params: {} });
       }
     } catch (error) {
       toast({ title: "Failed to create bot", variant: "destructive" });
@@ -129,6 +130,24 @@ const Bots = () => {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="mode">Trading Mode</Label>
+              <Select value={formData.mode} onValueChange={(v) => setFormData({...formData, mode: v})}>
+                <SelectTrigger id="mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="paper">Paper Trading (Simulated)</SelectItem>
+                  <SelectItem value="live">Live Trading (Real Money)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {formData.mode === "paper" 
+                  ? "Practice with simulated trades" 
+                  : "⚠️ Live mode requires Starter plan or higher and uses real money"}
+              </p>
+            </div>
+
             <Button onClick={handleCreate} className="w-full">
               Create Bot
             </Button>
@@ -138,7 +157,7 @@ const Bots = () => {
         <Card className="shadow-data">
           <CardHeader>
             <CardTitle>Active Bots</CardTitle>
-            <CardDescription>Manage your paper trading bots</CardDescription>
+            <CardDescription>Manage your trading bots</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {bots.map((bot) => (
@@ -148,9 +167,16 @@ const Bots = () => {
                     <div className="font-semibold text-foreground">{bot.name}</div>
                     <div className="text-sm text-muted-foreground capitalize">{bot.strategy}</div>
                   </div>
-                  <Badge variant={bot.status === "running" ? "default" : "secondary"}>
-                    {bot.status}
-                  </Badge>
+                  <div className="flex gap-2">
+                    <Badge variant={bot.status === "running" ? "default" : "secondary"}>
+                      {bot.status}
+                    </Badge>
+                    {bot.mode && (
+                      <Badge variant={bot.mode === "live" ? "destructive" : "outline"}>
+                        {bot.mode === "live" ? "LIVE" : "Paper"}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-sm">
