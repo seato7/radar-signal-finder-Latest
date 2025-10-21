@@ -124,3 +124,103 @@ async def make_user_admin(email: str, db=Depends(get_db)):
         "email": email,
         "new_role": UserRole.ADMIN.value
     }
+
+@router.get("/upgrade-premium/{email}")
+async def upgrade_user_to_premium(email: str, db=Depends(get_db)):
+    """Upgrade a user to premium plan - temporary endpoint for setup"""
+    
+    # Find user by email
+    user = await db.users.find_one({"email": email})
+    
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found")
+    
+    # Check existing subscription
+    existing_sub = await db.subscriptions.find_one({"user_id": email})
+    
+    if existing_sub:
+        # Update existing subscription
+        result = await db.subscriptions.update_one(
+            {"user_id": email},
+            {
+                "$set": {
+                    "plan": "premium",
+                    "status": "active",
+                    "updated_at": datetime.utcnow(),
+                    "expires_at": datetime.utcnow() + timedelta(days=365)
+                }
+            }
+        )
+        message = "Updated existing subscription to premium"
+    else:
+        # Create new subscription
+        subscription = {
+            "user_id": email,
+            "plan": "premium",
+            "status": "active",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=365)
+        }
+        result = await db.subscriptions.insert_one(subscription)
+        message = "Created new premium subscription"
+    
+    return {
+        "status": "success",
+        "message": message,
+        "email": email,
+        "plan": "premium",
+        "expires_at": (datetime.utcnow() + timedelta(days=365)).isoformat()
+    }
+
+@router.get("/setup/{email}")
+async def full_setup(email: str, db=Depends(get_db)):
+    """Complete setup - make admin AND upgrade to premium"""
+    from backend.models_auth import UserRole
+    
+    # Find user by email
+    user = await db.users.find_one({"email": email})
+    
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found. Please login first.")
+    
+    # 1. Update role to admin
+    await db.users.update_one(
+        {"email": email},
+        {"$set": {"role": UserRole.ADMIN.value}}
+    )
+    
+    # 2. Update/create premium subscription
+    existing_sub = await db.subscriptions.find_one({"user_id": email})
+    
+    if existing_sub:
+        await db.subscriptions.update_one(
+            {"user_id": email},
+            {
+                "$set": {
+                    "plan": "premium",
+                    "status": "active",
+                    "updated_at": datetime.utcnow(),
+                    "expires_at": datetime.utcnow() + timedelta(days=365)
+                }
+            }
+        )
+    else:
+        subscription = {
+            "user_id": email,
+            "plan": "premium",
+            "status": "active",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=365)
+        }
+        await db.subscriptions.insert_one(subscription)
+    
+    return {
+        "status": "success",
+        "message": f"Successfully set up {email} as admin with premium plan",
+        "email": email,
+        "role": UserRole.ADMIN.value,
+        "plan": "premium",
+        "expires_at": (datetime.utcnow() + timedelta(days=365)).isoformat()
+    }
