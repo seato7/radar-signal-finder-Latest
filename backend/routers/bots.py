@@ -26,7 +26,7 @@ async def create_bot(
     from backend.services.payments import get_plans
     
     # Get user's subscription
-    user_id = current_user.username
+    user_id = current_user.user_id
     subscription = await db.subscriptions.find_one({"user_id": user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
     plan_features = get_plans()[user_plan]["features"]
@@ -221,7 +221,7 @@ async def upgrade_to_live(
         raise HTTPException(status_code=404, detail="Bot not found")
     
     # Check user subscription
-    user_id = current_user.username
+    user_id = current_user.user_id
     subscription = await db.subscriptions.find_one({"user_id": user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
     

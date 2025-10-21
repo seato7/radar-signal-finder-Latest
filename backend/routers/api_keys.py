@@ -18,7 +18,7 @@ async def create_api_key(
 ):
     """Create a new API key (Enterprise only)"""
     # Check if user has Enterprise plan
-    subscription = await db.subscriptions.find_one({"user_id": user["email"]})
+    subscription = await db.subscriptions.find_one({"user_id": user.user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
     
     if user_plan != "enterprise":
@@ -32,7 +32,7 @@ async def create_api_key(
     
     # Store in database
     key_doc = {
-        "user_id": user["email"],
+        "user_id": user.user_id,
         "label": data.label,
         "key_hash": key_hash,
         "key_prefix": key_prefix,
@@ -59,7 +59,7 @@ async def list_api_keys(
     db=Depends(get_db)
 ):
     """List user's API keys"""
-    keys = await db.api_keys_enterprise.find({"user_id": user["email"]}).to_list(100)
+    keys = await db.api_keys_enterprise.find({"user_id": user.user_id}).to_list(100)
     
     for key in keys:
         key["id"] = str(key.pop("_id"))
@@ -76,7 +76,7 @@ async def revoke_api_key(
     """Revoke an API key"""
     result = await db.api_keys_enterprise.delete_one({
         "_id": ObjectId(key_id),
-        "user_id": user["email"]
+        "user_id": user.user_id
     })
     
     if result.deleted_count == 0:

@@ -67,11 +67,11 @@ async def subscribe_to_theme(
 ):
     """Subscribe to alerts for a specific theme"""
     # Check user's subscription plan and alert limits
-    subscription = await db.subscriptions.find_one({"user_id": user["email"]})
+    subscription = await db.subscriptions.find_one({"user_id": user.user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
     
     # Count existing alerts for this user
-    alert_count = await db.alerts.count_documents({"user_id": user["email"]})
+    alert_count = await db.alerts.count_documents({"user_id": user.user_id})
     
     # Check limits
     max_alerts = get_plans()[user_plan]["features"]["max_alerts"]

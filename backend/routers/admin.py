@@ -144,13 +144,15 @@ async def upgrade_user_to_premium(email: str, db=Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail=f"User with email '{email}' not found")
     
+    user_id = str(user["_id"])
+    
     # Check existing subscription
-    existing_sub = await db.subscriptions.find_one({"user_id": email})
+    existing_sub = await db.subscriptions.find_one({"user_id": user_id})
     
     if existing_sub:
         # Update existing subscription
         result = await db.subscriptions.update_one(
-            {"user_id": email},
+            {"user_id": user_id},
             {
                 "$set": {
                     "plan": "premium",
@@ -164,7 +166,7 @@ async def upgrade_user_to_premium(email: str, db=Depends(get_db)):
     else:
         # Create new subscription
         subscription = {
-            "user_id": email,
+            "user_id": user_id,
             "plan": "premium",
             "status": "active",
             "created_at": datetime.utcnow(),
@@ -193,6 +195,8 @@ async def full_setup(email: str, db=Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail=f"User with email '{email}' not found. Please login first.")
     
+    user_id = str(user["_id"])
+    
     # 1. Update role to admin
     await db.users.update_one(
         {"email": email},
@@ -200,11 +204,11 @@ async def full_setup(email: str, db=Depends(get_db)):
     )
     
     # 2. Update/create premium subscription
-    existing_sub = await db.subscriptions.find_one({"user_id": email})
+    existing_sub = await db.subscriptions.find_one({"user_id": user_id})
     
     if existing_sub:
         await db.subscriptions.update_one(
-            {"user_id": email},
+            {"user_id": user_id},
             {
                 "$set": {
                     "plan": "premium",
@@ -216,7 +220,7 @@ async def full_setup(email: str, db=Depends(get_db)):
         )
     else:
         subscription = {
-            "user_id": email,
+            "user_id": user_id,
             "plan": "premium",
             "status": "active",
             "created_at": datetime.utcnow(),

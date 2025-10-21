@@ -14,7 +14,7 @@ async def get_analytics_dashboard(
 ):
     """Get advanced analytics dashboard (Premium/Enterprise only)"""
     # Check user's subscription plan
-    subscription = await db.subscriptions.find_one({"user_id": user["email"]})
+    subscription = await db.subscriptions.find_one({"user_id": user.user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
     
     if user_plan not in ["premium", "enterprise"]:
@@ -24,7 +24,7 @@ async def get_analytics_dashboard(
         )
     
     # Fetch user's bots
-    bots = await db.bots.find({"user_id": user["email"]}).to_list(100)
+    bots = await db.bots.find({"user_id": user.user_id}).to_list(100)
     
     # Calculate aggregate metrics
     total_pnl = 0.0
