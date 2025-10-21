@@ -22,24 +22,7 @@ const Assets = () => {
   const [total, setTotal] = useState(0);
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-  useEffect(() => {
-    const initializeAssets = async () => {
-      // Auto-populate assets on first load
-      try {
-        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/populate-assets`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        });
-      } catch (error) {
-        console.error("Asset initialization:", error);
-      }
-    };
-
-    initializeAssets();
-  }, []);
+  // Assets are now auto-populated by backend on startup
 
   useEffect(() => {
     const fetchAssets = async () => {

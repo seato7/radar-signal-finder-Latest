@@ -22,6 +22,13 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Opportunity Radar API")
     await init_db()
     await init_admin()
+    
+    # Auto-populate assets if empty
+    from backend.db import get_db
+    from backend.routers.assets_populate import auto_populate_assets
+    db = get_db()
+    await auto_populate_assets(db)
+    
     metrics.increment("app_starts")
     yield
     # Shutdown

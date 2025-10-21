@@ -172,9 +172,35 @@ COMPREHENSIVE_ASSETS = [
     {"ticker": "NEAR", "name": "NEAR Protocol", "exchange": "CRYPTO"},
 ]
 
+async def auto_populate_assets(db):
+    """Auto-populate database with comprehensive list of stocks and cryptocurrencies on startup"""
+    try:
+        # Check if assets already exist
+        count = await db.assets.count_documents({})
+        if count > 0:
+            return
+        
+        from datetime import datetime
+        assets_with_metadata = [
+            {
+                **asset,
+                "metadata": {
+                    "auto_populated": True,
+                    "created_at": datetime.utcnow()
+                }
+            }
+            for asset in COMPREHENSIVE_ASSETS
+        ]
+        
+        # Insert all assets
+        await db.assets.insert_many(assets_with_metadata)
+        print(f"✅ Auto-populated {len(COMPREHENSIVE_ASSETS)} assets")
+    except Exception as e:
+        print(f"⚠️ Error auto-populating assets: {str(e)}")
+
 @router.post("/populate")
 async def populate_assets():
-    """Auto-populate assets collection with comprehensive stock and crypto data"""
+    """Manually populate assets collection with comprehensive stock and crypto data"""
     db = get_db()
     
     # Check if assets already exist

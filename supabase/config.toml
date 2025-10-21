@@ -1,4 +1,10 @@
 project_id = "detxhoqiarohjevedmxh"
 
-[functions.populate-assets]
+[functions.check-subscription]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = false
+
+[functions.customer-portal]
 verify_jwt = false
