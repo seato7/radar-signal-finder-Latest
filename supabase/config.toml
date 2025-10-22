@@ -38,3 +38,24 @@ verify_jwt = false
 
 [functions.generate-pdf-report]
 verify_jwt = false
+
+[functions.ingest-reddit-sentiment]
+verify_jwt = false
+
+[functions.ingest-congressional-trades]
+verify_jwt = false
+
+[functions.ingest-stocktwits]
+verify_jwt = false
+
+[functions.ingest-google-trends]
+verify_jwt = false
+
+[functions.ingest-patents]
+verify_jwt = false
+
+[functions.ingest-short-interest]
+verify_jwt = false
+
+[functions.ingest-earnings]
+verify_jwt = false
