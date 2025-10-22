@@ -23,30 +23,19 @@ async function searchWeb(query: string): Promise<string> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.1-sonar-small-128k-online',
+        model: 'sonar',
         messages: [
-          {
-            role: 'system',
-            content: 'You are a financial news analyst. Provide concise, factual summaries of recent market news and developments. Focus on material events, earnings, policy changes, and market-moving news. Include specific dates and figures when available.'
-          },
           {
             role: 'user',
             content: query
           }
-        ],
-        temperature: 0.2,
-        top_p: 0.9,
-        max_tokens: 1000,
-        return_images: false,
-        return_related_questions: false,
-        search_recency_filter: 'week',
-        frequency_penalty: 1,
-        presence_penalty: 0
+        ]
       }),
     });
 
     if (!response.ok) {
-      console.error('Perplexity API error:', response.status);
+      const errorText = await response.text();
+      console.error('Perplexity API error:', response.status, errorText);
       return '[Web search temporarily unavailable]';
     }
 
