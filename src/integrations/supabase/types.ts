@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      breaking_news: {
+        Row: {
+          created_at: string | null
+          headline: string
+          id: string
+          metadata: Json | null
+          published_at: string | null
+          relevance_score: number | null
+          sentiment_score: number | null
+          source: string | null
+          summary: string | null
+          ticker: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          headline: string
+          id?: string
+          metadata?: Json | null
+          published_at?: string | null
+          relevance_score?: number | null
+          sentiment_score?: number | null
+          source?: string | null
+          summary?: string | null
+          ticker: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          headline?: string
+          id?: string
+          metadata?: Json | null
+          published_at?: string | null
+          relevance_score?: number | null
+          sentiment_score?: number | null
+          source?: string | null
+          summary?: string | null
+          ticker?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
       congressional_trades: {
         Row: {
           amount_max: number | null
@@ -92,6 +134,105 @@ export type Database = {
           revenue_surprise?: number | null
           sentiment_score?: number | null
           ticker?: string
+        }
+        Relationships: []
+      }
+      job_postings: {
+        Row: {
+          company: string
+          created_at: string | null
+          department: string | null
+          growth_indicator: number | null
+          id: string
+          job_title: string | null
+          location: string | null
+          metadata: Json | null
+          posted_date: string | null
+          posting_count: number | null
+          role_type: string | null
+          seniority_level: string | null
+          ticker: string
+        }
+        Insert: {
+          company: string
+          created_at?: string | null
+          department?: string | null
+          growth_indicator?: number | null
+          id?: string
+          job_title?: string | null
+          location?: string | null
+          metadata?: Json | null
+          posted_date?: string | null
+          posting_count?: number | null
+          role_type?: string | null
+          seniority_level?: string | null
+          ticker: string
+        }
+        Update: {
+          company?: string
+          created_at?: string | null
+          department?: string | null
+          growth_indicator?: number | null
+          id?: string
+          job_title?: string | null
+          location?: string | null
+          metadata?: Json | null
+          posted_date?: string | null
+          posting_count?: number | null
+          role_type?: string | null
+          seniority_level?: string | null
+          ticker?: string
+        }
+        Relationships: []
+      }
+      options_flow: {
+        Row: {
+          created_at: string | null
+          expiration_date: string | null
+          flow_type: string | null
+          id: string
+          implied_volatility: number | null
+          metadata: Json | null
+          open_interest: number | null
+          option_type: string | null
+          premium: number | null
+          sentiment: string | null
+          strike_price: number | null
+          ticker: string
+          trade_date: string | null
+          volume: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          expiration_date?: string | null
+          flow_type?: string | null
+          id?: string
+          implied_volatility?: number | null
+          metadata?: Json | null
+          open_interest?: number | null
+          option_type?: string | null
+          premium?: number | null
+          sentiment?: string | null
+          strike_price?: number | null
+          ticker: string
+          trade_date?: string | null
+          volume?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          expiration_date?: string | null
+          flow_type?: string | null
+          id?: string
+          implied_volatility?: number | null
+          metadata?: Json | null
+          open_interest?: number | null
+          option_type?: string | null
+          premium?: number | null
+          sentiment?: string | null
+          strike_price?: number | null
+          ticker?: string
+          trade_date?: string | null
+          volume?: number | null
         }
         Relationships: []
       }
@@ -236,6 +377,87 @@ export type Database = {
           sentiment_score?: number | null
           source?: string
           ticker?: string
+        }
+        Relationships: []
+      }
+      supply_chain_signals: {
+        Row: {
+          change_percentage: number | null
+          created_at: string | null
+          id: string
+          indicator: string | null
+          metadata: Json | null
+          metric_name: string | null
+          metric_value: number | null
+          report_date: string
+          signal_type: string
+          ticker: string
+        }
+        Insert: {
+          change_percentage?: number | null
+          created_at?: string | null
+          id?: string
+          indicator?: string | null
+          metadata?: Json | null
+          metric_name?: string | null
+          metric_value?: number | null
+          report_date: string
+          signal_type: string
+          ticker: string
+        }
+        Update: {
+          change_percentage?: number | null
+          created_at?: string | null
+          id?: string
+          indicator?: string | null
+          metadata?: Json | null
+          metric_name?: string | null
+          metric_value?: number | null
+          report_date?: string
+          signal_type?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
+      twitter_signals: {
+        Row: {
+          bearish_count: number | null
+          bullish_count: number | null
+          created_at: string | null
+          id: string
+          influencer_mentions: number | null
+          mention_count: number | null
+          metadata: Json | null
+          sentiment_score: number | null
+          ticker: string
+          top_tweets: Json | null
+          tweet_volume: number | null
+        }
+        Insert: {
+          bearish_count?: number | null
+          bullish_count?: number | null
+          created_at?: string | null
+          id?: string
+          influencer_mentions?: number | null
+          mention_count?: number | null
+          metadata?: Json | null
+          sentiment_score?: number | null
+          ticker: string
+          top_tweets?: Json | null
+          tweet_volume?: number | null
+        }
+        Update: {
+          bearish_count?: number | null
+          bullish_count?: number | null
+          created_at?: string | null
+          id?: string
+          influencer_mentions?: number | null
+          mention_count?: number | null
+          metadata?: Json | null
+          sentiment_score?: number | null
+          ticker?: string
+          top_tweets?: Json | null
+          tweet_volume?: number | null
         }
         Relationships: []
       }
