@@ -99,6 +99,63 @@ const Home = () => {
         }
       />
 
+      {/* How It Works Section */}
+      <Card className="shadow-data border-primary/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-primary" />
+            How Opportunity Radar Works
+          </CardTitle>
+          <CardDescription>
+            Multi-signal investment analysis combining 11+ alternative data sources
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <h4 className="font-semibold mb-2">📊 Core Data Sources (MongoDB Backend)</h4>
+            <ul className="text-sm text-muted-foreground space-y-1 ml-4">
+              <li>• <strong>13F Holdings</strong>: Hedge fund and institutional investor positions</li>
+              <li>• <strong>Form 4 Filings</strong>: Insider buying and selling by company executives</li>
+              <li>• <strong>Policy Feeds</strong>: Government policy changes affecting markets</li>
+              <li>• <strong>ETF Flows</strong>: Money flowing into and out of ETFs</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="font-semibold mb-2">🔍 Alternative Data Sources (Supabase)</h4>
+            <ul className="text-sm text-muted-foreground space-y-1 ml-4">
+              <li>• <strong>Social Sentiment</strong>: Reddit & StockTwits sentiment analysis</li>
+              <li>• <strong>Congressional Trades</strong>: Real-time tracking of Congress stock trades</li>
+              <li>• <strong>Patent Filings</strong>: Technology innovation indicators from USPTO</li>
+              <li>• <strong>Search Trends</strong>: Google search volume changes</li>
+              <li>• <strong>Short Interest</strong>: Short squeeze potential indicators</li>
+              <li>• <strong>Earnings Sentiment</strong>: Post-earnings reaction analysis</li>
+              <li>• <strong>Breaking News</strong>: Real-time web search via Perplexity AI</li>
+            </ul>
+          </div>
+
+          <div className="pt-2 border-t">
+            <h4 className="font-semibold mb-2">💡 How to Use</h4>
+            <div className="text-sm text-muted-foreground space-y-2">
+              <p>
+                <strong>1. Automated Updates:</strong> All data sources refresh automatically (hourly for social data, daily for others)
+              </p>
+              <p>
+                <strong>2. Manual Refresh:</strong> Visit <strong>Data Sources</strong> page to manually trigger any ingestion
+              </p>
+              <p>
+                <strong>3. AI Analysis:</strong> Ask the <strong>AI Assistant</strong> questions like "What's happening with NVDA?" 
+                to get comprehensive analysis across all 11 data sources
+              </p>
+              <p>
+                <strong>4. Explore Signals:</strong> Use <strong>Radar</strong> and <strong>Themes</strong> pages to discover 
+                investment opportunities where multiple signals converge
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* User Plan Status Card */}
       <Card className="shadow-data border-primary/50">
         <CardHeader>
