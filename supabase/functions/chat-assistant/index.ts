@@ -74,7 +74,65 @@ serve(async (req) => {
     let webSearchResults = '';
     
     try {
-      // Fetch recent themes and signals
+      // Fetch Supabase alternative data sources
+      const [socialData, congressData, patentData, trendsData, shortsData, earningsData] = await Promise.all([
+        supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(20),
+        supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(20),
+        supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
+        supabase.from('search_trends').select('*').order('period_start', { ascending: false }).limit(10),
+        supabase.from('short_interest').select('*').order('report_date', { ascending: false }).limit(10),
+        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(10)
+      ]);
+
+      // Add social sentiment data
+      if (socialData.data && socialData.data.length > 0) {
+        marketData += `\n\nSOCIAL SENTIMENT (Reddit & StockTwits):\n`;
+        socialData.data.forEach((signal: any) => {
+          marketData += `- ${signal.ticker} (${signal.source}): Sentiment ${(signal.sentiment_score * 100).toFixed(0)}%, ${signal.mention_count} mentions, ${signal.bullish_count} bullish/${signal.bearish_count} bearish\n`;
+        });
+      }
+
+      // Add congressional trades
+      if (congressData.data && congressData.data.length > 0) {
+        marketData += `\n\nCONGRESSIONAL TRADES:\n`;
+        congressData.data.forEach((trade: any) => {
+          marketData += `- ${trade.ticker}: ${trade.representative} (${trade.party}) ${trade.transaction_type} $${trade.amount_min?.toLocaleString()}-${trade.amount_max?.toLocaleString()} on ${new Date(trade.transaction_date).toLocaleDateString()}\n`;
+        });
+      }
+
+      // Add patent filings
+      if (patentData.data && patentData.data.length > 0) {
+        marketData += `\n\nRECENT PATENT FILINGS:\n`;
+        patentData.data.forEach((patent: any) => {
+          marketData += `- ${patent.ticker}: ${patent.patent_title} (${patent.technology_category})\n`;
+        });
+      }
+
+      // Add search trends
+      if (trendsData.data && trendsData.data.length > 0) {
+        marketData += `\n\nSEARCH TRENDS:\n`;
+        trendsData.data.forEach((trend: any) => {
+          marketData += `- ${trend.ticker}: ${trend.search_volume?.toLocaleString()} searches, ${trend.trend_change > 0 ? '+' : ''}${trend.trend_change?.toFixed(1)}% change\n`;
+        });
+      }
+
+      // Add short interest
+      if (shortsData.data && shortsData.data.length > 0) {
+        marketData += `\n\nSHORT INTEREST:\n`;
+        shortsData.data.forEach((short: any) => {
+          marketData += `- ${short.ticker}: ${short.float_percentage?.toFixed(1)}% of float, ${short.days_to_cover?.toFixed(1)} days to cover\n`;
+        });
+      }
+
+      // Add earnings sentiment
+      if (earningsData.data && earningsData.data.length > 0) {
+        marketData += `\n\nEARNINGS SENTIMENT:\n`;
+        earningsData.data.forEach((earning: any) => {
+          marketData += `- ${earning.ticker} (${earning.quarter}): Sentiment ${(earning.sentiment_score * 100).toFixed(0)}%, EPS surprise ${earning.earnings_surprise > 0 ? '+' : ''}${earning.earnings_surprise?.toFixed(2)}%\n`;
+        });
+      }
+      
+      // Fetch recent themes and signals from backend
       const radarResponse = await fetch(`${backendUrl}/api/radar?days=7`);
       if (radarResponse.ok) {
         const radarData = await radarResponse.json();
@@ -115,7 +173,7 @@ serve(async (req) => {
     }
 
     // Build system prompt with real market data AND web search
-    const systemPrompt = `You are an expert investment analyst assistant for Opportunity Radar, a platform that tracks investment signals across policy changes, institutional holdings (13F filings), insider transactions (Form 4), ETF flows, and market momentum.
+    const systemPrompt = `You are an expert investment analyst assistant for Opportunity Radar, a platform that tracks investment signals across multiple alternative data sources.
 
 PROPRIETARY MARKET DATA (Your Platform's Multi-Signal Analysis):
 ${marketData}
@@ -126,22 +184,42 @@ ${webSearchResults}
 Additional Context:
 ${context ? JSON.stringify(context, null, 2) : 'No additional context provided'}
 
+Data Sources Available:
+1. **Institutional Holdings**: 13F filings showing hedge fund/institutional positions
+2. **Insider Transactions**: Form 4 filings of insider buying/selling
+3. **Policy Changes**: Government policy signals affecting markets
+4. **ETF Flows**: Money flows into/out of ETFs
+5. **Social Sentiment**: Reddit and StockTwits sentiment analysis
+6. **Congressional Trades**: Real-time tracking of Congress member stock trades
+7. **Patent Filings**: Technology innovation indicators from USPTO
+8. **Search Trends**: Google search volume changes
+9. **Short Interest**: Short squeeze potential indicators
+10. **Earnings Sentiment**: Post-earnings reaction analysis
+11. **Breaking News**: Real-time web search via Perplexity
+
 Your role:
-- COMBINE both proprietary signals (from Opportunity Radar) AND breaking news (from web search)
-- Cross-validate: If web news mentions a ticker, check if it appears in our signals
-- Identify convergence: Breaking news + multiple signals = HIGH CONVICTION opportunity
+- COMBINE all available data sources for comprehensive analysis
+- Cross-validate: Look for convergence across multiple signals
+- Identify high-conviction opportunities where multiple signals align
 - Explain complex financial data in clear, actionable terms
 - Be concise but thorough (2-4 sentences for most responses)
-- ALWAYS cite specific sources: "According to our 13F data..." or "Breaking news shows..."
-- Distinguish between our proprietary data vs. public news
+- ALWAYS cite specific sources: "According to congressional trades..." or "Social sentiment shows..."
+- Distinguish between proprietary data types and breaking news
 
 Analysis Framework:
-1. Check proprietary signals first (13F, Form 4, Policy, ETF flows)
-2. Validate with breaking news from web search
-3. Look for convergence (multiple signal types + news = strongest opportunities)
-4. Provide conviction level based on signal diversity
+1. Check ALL alternative data sources (social, congressional, patents, trends, shorts, earnings)
+2. Validate with institutional signals (13F, Form 4, Policy, ETF flows)
+3. Cross-reference with breaking news from web search
+4. Look for convergence (multiple signal types + news = strongest opportunities)
+5. Provide conviction level based on signal diversity and alignment
 
-Remember: You have BOTH proprietary multi-signal data AND real-time web search. This dual-source approach is your competitive advantage.`;
+Signal Strength Hierarchy:
+- **HIGHEST**: 5+ signal types align + breaking news confirmation
+- **HIGH**: 3-4 signal types align
+- **MEDIUM**: 2 signal types align
+- **LOW**: Single signal type only
+
+Remember: You have access to 11 different data sources. The more sources that align on a ticker, the higher your conviction should be.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
