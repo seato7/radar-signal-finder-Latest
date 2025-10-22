@@ -53,7 +53,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, context } = await req.json();
+    const { messages, context, generateImage } = await req.json();
     
     // Initialize Supabase client to fetch real data
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -210,8 +210,42 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
+    // Check if user wants image generation
+    const lastMessage = messages[messages.length - 1]?.content || '';
+    const wantsImage = generateImage || 
+      /\b(generate|create|make|show|visualize|chart|graph|image|picture)\b.*\b(image|chart|graph|visualization|picture)\b/i.test(lastMessage);
+
+    // If image generation is requested, use the image model
+    if (wantsImage) {
+      console.log('Image generation requested');
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash-image-preview',
+          messages: messages,
+          modalities: ['image', 'text']
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Image generation error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return new Response(
+        JSON.stringify(data),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Build system prompt with real market data AND web search
     const systemPrompt = `You are an expert investment analyst assistant for Opportunity Radar, a platform that tracks investment signals across multiple alternative data sources.
+
+**IMAGE GENERATION CAPABILITY**: You CAN generate images, charts, and visualizations! When users ask to "create a chart", "generate an image", "visualize data", etc., tell them you can do it and they should request it explicitly.
 
 PROPRIETARY MARKET DATA (Your Platform's Multi-Signal Analysis):
 ${marketData}

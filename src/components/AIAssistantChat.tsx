@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  images?: string[];
 }
 
 interface AIAssistantChatProps {
@@ -52,46 +53,66 @@ export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
         }
       );
 
-      if (!response.ok || !response.body) {
-        throw new Error('Failed to start chat stream');
+      if (!response.ok) {
+        throw new Error('Failed to start chat');
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-      let textBuffer = '';
+      const contentType = response.headers.get('content-type');
+      
+      // Check if it's a JSON response (image generation)
+      if (contentType?.includes('application/json')) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const images = data.choices?.[0]?.message?.images?.map((img: any) => img.image_url?.url) || [];
+        
+        setMessages([...newMessages, { 
+          role: 'assistant', 
+          content: content || 'Here\'s your generated image:', 
+          images 
+        }]);
+      } else {
+        // Streaming response
+        if (!response.body) {
+          throw new Error('No response body');
+        }
 
-      // Add empty assistant message
-      setMessages([...newMessages, { role: 'assistant', content: '' }]);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let assistantMessage = '';
+        let textBuffer = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        // Add empty assistant message
+        setMessages([...newMessages, { role: 'assistant', content: '' }]);
 
-        textBuffer += decoder.decode(value, { stream: true });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        let newlineIndex;
-        while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
+          textBuffer += decoder.decode(value, { stream: true });
 
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (line.startsWith(':') || line.trim() === '') continue;
-          if (!line.startsWith('data: ')) continue;
+          let newlineIndex;
+          while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+            let line = textBuffer.slice(0, newlineIndex);
+            textBuffer = textBuffer.slice(newlineIndex + 1);
 
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') break;
+            if (line.endsWith('\r')) line = line.slice(0, -1);
+            if (line.startsWith(':') || line.trim() === '') continue;
+            if (!line.startsWith('data: ')) continue;
 
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              assistantMessage += content;
-              setMessages([...newMessages, { role: 'assistant', content: assistantMessage }]);
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === '[DONE]') break;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                assistantMessage += content;
+                setMessages([...newMessages, { role: 'assistant', content: assistantMessage }]);
+              }
+            } catch {
+              textBuffer = line + '\n' + textBuffer;
+              break;
             }
-          } catch {
-            textBuffer = line + '\n' + textBuffer;
-            break;
           }
         }
       }
@@ -160,6 +181,7 @@ export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
             <div className="text-center text-muted-foreground py-8">
               <p className="mb-2">👋 Hi! I'm your AI investment analyst.</p>
               <p className="text-sm">Ask me about themes, signals, or market opportunities!</p>
+              <p className="text-xs mt-4">✨ I can also generate charts and visualizations!</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -175,7 +197,19 @@ export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
                         : 'bg-muted'
                     }`}
                   >
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    {msg.content && <p className="text-sm whitespace-pre-wrap">{msg.content}</p>}
+                    {msg.images && msg.images.length > 0 && (
+                      <div className="mt-2 space-y-2">
+                        {msg.images.map((imgUrl, imgIdx) => (
+                          <img 
+                            key={imgIdx}
+                            src={imgUrl} 
+                            alt="Generated visualization" 
+                            className="rounded-lg max-w-full"
+                          />
+                        ))}
+                      </div>
+                    )}
                     {msg.role === 'assistant' && msg.content && (
                       <Button
                         size="sm"
