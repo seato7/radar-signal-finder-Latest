@@ -22,28 +22,44 @@ const Assets = () => {
   const [total, setTotal] = useState(0);
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-  // Assets are now auto-populated by backend on startup
+  const fetchAssets = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      params.append('limit', '500');
+      if (searchTerm) {
+        params.append('search', searchTerm);
+      }
+      
+      // Add trailing slash to fix 307 redirect
+      const response = await fetch(`${API_BASE}/api/assets/?${params}`);
+      const data = await response.json();
+      setAssets(data.assets || []);
+      setTotal(data.total || 0);
+    } catch (error) {
+      console.error("Failed to fetch assets:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePopulate = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/api/assets/populate`, {
+        method: 'POST'
+      });
+      await response.json();
+      // Refetch assets
+      await fetchAssets();
+    } catch (error) {
+      console.error("Failed to populate assets:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchAssets = async () => {
-      try {
-        setLoading(true);
-        const params = new URLSearchParams();
-        params.append('limit', '500');
-        if (searchTerm) {
-          params.append('search', searchTerm);
-        }
-        
-        const response = await fetch(`${API_BASE}/api/assets?${params}`);
-        const data = await response.json();
-        setAssets(data.assets || []);
-        setTotal(data.total || 0);
-      } catch (error) {
-        console.error("Failed to fetch assets:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
 
     const debounce = setTimeout(() => {
       fetchAssets();
@@ -97,8 +113,15 @@ const Assets = () => {
         </div>
       ) : assets.length === 0 ? (
         <Card className="shadow-data">
-          <CardContent className="pt-6 text-center text-muted-foreground">
-            No assets found. Try a different search term or run the data ingest pipeline.
+          <CardContent className="pt-6 text-center">
+            <div className="text-muted-foreground mb-4">
+              No assets found. {!searchTerm && "Click below to populate assets."}
+            </div>
+            {!searchTerm && (
+              <Button onClick={handlePopulate} disabled={loading}>
+                Populate Assets
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
