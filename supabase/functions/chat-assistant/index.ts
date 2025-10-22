@@ -7,6 +7,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Web search function using Perplexity
+async function searchWeb(query: string): Promise<string> {
+  const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY');
+  if (!PERPLEXITY_API_KEY) {
+    return '[Web search unavailable - API key not configured]';
+  }
+
+  try {
+    console.log('Performing web search for:', query);
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-sonar-large-128k-online',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a financial news analyst. Provide concise, factual summaries of recent market news and developments. Focus on material events, earnings, policy changes, and market-moving news. Include specific dates and figures when available.'
+          },
+          {
+            role: 'user',
+            content: query
+          }
+        ],
+        temperature: 0.2,
+        top_p: 0.9,
+        max_tokens: 1000,
+        search_recency_filter: 'week',
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Perplexity API error:', response.status);
+      return '[Web search temporarily unavailable]';
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '[No results found]';
+  } catch (error) {
+    console.error('Web search error:', error);
+    return '[Web search error]';
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -24,6 +71,8 @@ serve(async (req) => {
     const backendUrl = Deno.env.get('BACKEND_URL') || 'https://opportunity-radar-api-production.up.railway.app';
     
     let marketData = '';
+    let webSearchResults = '';
+    
     try {
       // Fetch recent themes and signals
       const radarResponse = await fetch(`${backendUrl}/api/radar?days=7`);
@@ -49,6 +98,12 @@ serve(async (req) => {
           marketData += `- ${asset.ticker} (${asset.name}): Score ${asset.combined_score?.toFixed(1) || 'N/A'}\n`;
         });
       }
+      
+      // Perform web search for breaking news on top tickers
+      const userQuery = messages[messages.length - 1]?.content || '';
+      const searchQuery = `Latest financial news and market developments: ${userQuery}`;
+      webSearchResults = await searchWeb(searchQuery);
+      
     } catch (error) {
       console.error('Error fetching market data:', error);
       marketData = '\n\n[Note: Real-time data temporarily unavailable]';
@@ -59,25 +114,34 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    // Build system prompt with real market data
+    // Build system prompt with real market data AND web search
     const systemPrompt = `You are an expert investment analyst assistant for Opportunity Radar, a platform that tracks investment signals across policy changes, institutional holdings (13F filings), insider transactions (Form 4), ETF flows, and market momentum.
 
-REAL-TIME MARKET DATA:
+PROPRIETARY MARKET DATA (Your Platform's Multi-Signal Analysis):
 ${marketData}
+
+LATEST WEB SEARCH RESULTS (Breaking News & Market Developments):
+${webSearchResults}
 
 Additional Context:
 ${context ? JSON.stringify(context, null, 2) : 'No additional context provided'}
 
 Your role:
-- Answer questions using the REAL-TIME DATA provided above
-- Identify specific opportunities from the themes and signals listed
+- COMBINE both proprietary signals (from Opportunity Radar) AND breaking news (from web search)
+- Cross-validate: If web news mentions a ticker, check if it appears in our signals
+- Identify convergence: Breaking news + multiple signals = HIGH CONVICTION opportunity
 - Explain complex financial data in clear, actionable terms
-- Provide investment insights based on the multi-signal data
 - Be concise but thorough (2-4 sentences for most responses)
-- ALWAYS cite specific tickers, themes, and data points from the real-time data
-- If asked about "biggest gainers" or "top opportunities", reference the actual assets and themes above
+- ALWAYS cite specific sources: "According to our 13F data..." or "Breaking news shows..."
+- Distinguish between our proprietary data vs. public news
 
-Remember: You have access to real market data. Use it to provide specific, actionable insights.`;
+Analysis Framework:
+1. Check proprietary signals first (13F, Form 4, Policy, ETF flows)
+2. Validate with breaking news from web search
+3. Look for convergence (multiple signal types + news = strongest opportunities)
+4. Provide conviction level based on signal diversity
+
+Remember: You have BOTH proprietary multi-signal data AND real-time web search. This dual-source approach is your competitive advantage.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
