@@ -14,7 +14,231 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      congressional_trades: {
+        Row: {
+          amount_max: number | null
+          amount_min: number | null
+          chamber: string | null
+          created_at: string | null
+          filed_date: string
+          id: string
+          metadata: Json | null
+          party: string | null
+          representative: string
+          ticker: string
+          transaction_date: string
+          transaction_type: string | null
+        }
+        Insert: {
+          amount_max?: number | null
+          amount_min?: number | null
+          chamber?: string | null
+          created_at?: string | null
+          filed_date: string
+          id?: string
+          metadata?: Json | null
+          party?: string | null
+          representative: string
+          ticker: string
+          transaction_date: string
+          transaction_type?: string | null
+        }
+        Update: {
+          amount_max?: number | null
+          amount_min?: number | null
+          chamber?: string | null
+          created_at?: string | null
+          filed_date?: string
+          id?: string
+          metadata?: Json | null
+          party?: string | null
+          representative?: string
+          ticker?: string
+          transaction_date?: string
+          transaction_type?: string | null
+        }
+        Relationships: []
+      }
+      earnings_sentiment: {
+        Row: {
+          created_at: string | null
+          earnings_date: string | null
+          earnings_surprise: number | null
+          id: string
+          metadata: Json | null
+          quarter: string | null
+          revenue_surprise: number | null
+          sentiment_score: number | null
+          ticker: string
+        }
+        Insert: {
+          created_at?: string | null
+          earnings_date?: string | null
+          earnings_surprise?: number | null
+          id?: string
+          metadata?: Json | null
+          quarter?: string | null
+          revenue_surprise?: number | null
+          sentiment_score?: number | null
+          ticker: string
+        }
+        Update: {
+          created_at?: string | null
+          earnings_date?: string | null
+          earnings_surprise?: number | null
+          id?: string
+          metadata?: Json | null
+          quarter?: string | null
+          revenue_surprise?: number | null
+          sentiment_score?: number | null
+          ticker?: string
+        }
+        Relationships: []
+      }
+      patent_filings: {
+        Row: {
+          company: string | null
+          created_at: string | null
+          filing_date: string | null
+          id: string
+          metadata: Json | null
+          patent_number: string | null
+          patent_title: string | null
+          technology_category: string | null
+          ticker: string
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string | null
+          filing_date?: string | null
+          id?: string
+          metadata?: Json | null
+          patent_number?: string | null
+          patent_title?: string | null
+          technology_category?: string | null
+          ticker: string
+        }
+        Update: {
+          company?: string | null
+          created_at?: string | null
+          filing_date?: string | null
+          id?: string
+          metadata?: Json | null
+          patent_number?: string | null
+          patent_title?: string | null
+          technology_category?: string | null
+          ticker?: string
+        }
+        Relationships: []
+      }
+      search_trends: {
+        Row: {
+          created_at: string | null
+          id: string
+          keyword: string
+          period_end: string
+          period_start: string
+          region: string | null
+          search_volume: number | null
+          ticker: string
+          trend_change: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          keyword: string
+          period_end: string
+          period_start: string
+          region?: string | null
+          search_volume?: number | null
+          ticker: string
+          trend_change?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          keyword?: string
+          period_end?: string
+          period_start?: string
+          region?: string | null
+          search_volume?: number | null
+          ticker?: string
+          trend_change?: number | null
+        }
+        Relationships: []
+      }
+      short_interest: {
+        Row: {
+          created_at: string | null
+          days_to_cover: number | null
+          float_percentage: number | null
+          id: string
+          metadata: Json | null
+          report_date: string
+          short_volume: number | null
+          ticker: string
+        }
+        Insert: {
+          created_at?: string | null
+          days_to_cover?: number | null
+          float_percentage?: number | null
+          id?: string
+          metadata?: Json | null
+          report_date: string
+          short_volume?: number | null
+          ticker: string
+        }
+        Update: {
+          created_at?: string | null
+          days_to_cover?: number | null
+          float_percentage?: number | null
+          id?: string
+          metadata?: Json | null
+          report_date?: string
+          short_volume?: number | null
+          ticker?: string
+        }
+        Relationships: []
+      }
+      social_signals: {
+        Row: {
+          bearish_count: number | null
+          bullish_count: number | null
+          created_at: string | null
+          id: string
+          mention_count: number | null
+          metadata: Json | null
+          post_volume: number | null
+          sentiment_score: number | null
+          source: string
+          ticker: string
+        }
+        Insert: {
+          bearish_count?: number | null
+          bullish_count?: number | null
+          created_at?: string | null
+          id?: string
+          mention_count?: number | null
+          metadata?: Json | null
+          post_volume?: number | null
+          sentiment_score?: number | null
+          source: string
+          ticker: string
+        }
+        Update: {
+          bearish_count?: number | null
+          bullish_count?: number | null
+          created_at?: string | null
+          id?: string
+          mention_count?: number | null
+          metadata?: Json | null
+          post_volume?: number | null
+          sentiment_score?: number | null
+          source?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
