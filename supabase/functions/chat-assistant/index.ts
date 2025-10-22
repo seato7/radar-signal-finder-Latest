@@ -213,11 +213,20 @@ serve(async (req) => {
     // Check if user wants image generation
     const lastMessage = messages[messages.length - 1]?.content || '';
     const wantsImage = generateImage || 
-      /\b(generate|create|make|show|visualize|chart|graph|image|picture)\b.*\b(image|chart|graph|visualization|picture)\b/i.test(lastMessage);
+      /\b(generate|create|make|show|visualize|draw)\b.*\b(image|chart|graph|visualization|picture)\b/i.test(lastMessage) ||
+      /\b(chart|graph|visualization)\b/i.test(lastMessage);
 
     // If image generation is requested, use the image model
     if (wantsImage) {
-      console.log('Image generation requested');
+      console.log('Image generation requested for:', lastMessage);
+      
+      // Create a specific prompt for image generation with market data context
+      const imagePrompt = `Create a professional financial chart/visualization for the following request: "${lastMessage}". 
+      
+Context: ${marketData.substring(0, 2000)}
+
+Make it suitable for investment analysis with clear labels, professional styling, and relevant financial data.`;
+
       const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -226,16 +235,24 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: 'google/gemini-2.5-flash-image-preview',
-          messages: messages,
+          messages: [
+            {
+              role: 'user',
+              content: imagePrompt
+            }
+          ],
           modalities: ['image', 'text']
         }),
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Image generation error:', response.status, errorText);
         throw new Error(`Image generation error: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('Image generation response:', JSON.stringify(data).substring(0, 200));
       return new Response(
         JSON.stringify(data),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -245,7 +262,7 @@ serve(async (req) => {
     // Build system prompt with real market data AND web search
     const systemPrompt = `You are an expert investment analyst assistant for Opportunity Radar, a platform that tracks investment signals across multiple alternative data sources.
 
-**IMAGE GENERATION CAPABILITY**: You CAN generate images, charts, and visualizations! When users ask to "create a chart", "generate an image", "visualize data", etc., tell them you can do it and they should request it explicitly.
+**IMAGE GENERATION**: You have the ability to generate charts and visualizations. When users ask you to create a chart, graph, or visualization, simply acknowledge their request - the system will automatically generate the image for them.
 
 PROPRIETARY MARKET DATA (Your Platform's Multi-Signal Analysis):
 ${marketData}
