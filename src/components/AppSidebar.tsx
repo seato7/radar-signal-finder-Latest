@@ -1,4 +1,4 @@
-import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw } from "lucide-react";
+import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 
 const navigationItems = [
   { title: "Dashboard", url: "/", icon: Home },
+  { title: "AI Assistant", url: "/assistant", icon: Sparkles },
   { title: "Alerts", url: "/alerts", icon: Bell },
   { title: "Radar", url: "/radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },

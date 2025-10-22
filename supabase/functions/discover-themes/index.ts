@@ -12,31 +12,41 @@ serve(async (req) => {
   }
 
   try {
-    const { signals, themeName, days } = await req.json();
+    const { unmappedSignals, existingThemes } = await req.json();
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    // Prepare signal data for AI analysis
-    const signalSummary = signals.map((s: any) => ({
+    const signalSummary = unmappedSignals.slice(0, 20).map((s: any) => ({
       type: s.signal_type,
       text: s.value_text,
       date: s.observed_at
     }));
 
-    const prompt = `Analyze these investment signals for the theme "${themeName}" from the last ${days} days and provide a concise 2-3 sentence "Why Now?" summary explaining the current investment opportunity:
+    const prompt = `Analyze these recent investment signals that don't fit existing themes and identify emerging opportunities:
 
-Signals:
+Unmapped Signals:
 ${JSON.stringify(signalSummary, null, 2)}
 
-Focus on:
-1. What's driving momentum now
-2. Key catalysts (policy, institutional activity, insider moves, fund flows)
-3. Why this is timely
+Existing Themes (avoid duplicating):
+${existingThemes.map((t: any) => t.name).join(', ')}
 
-Provide a clear, professional summary suitable for investors.`;
+Identify 1-3 potential NEW investment themes based on:
+1. Clustering of similar signals
+2. Emerging regulatory/policy trends
+3. Institutional positioning patterns
+4. Market momentum in specific sectors
+
+For each potential theme, provide:
+- Theme Name (2-4 words)
+- Description (1 sentence)
+- Why it's timely (1 sentence)
+- Suggested keywords for tracking (5-8 keywords)
+- Confidence Level (High/Medium/Low)
+
+Only suggest themes with at least 3 supporting signals.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -49,7 +59,7 @@ Provide a clear, professional summary suitable for investors.`;
         messages: [
           {
             role: 'system',
-            content: 'You are a professional investment analyst. Provide clear, concise summaries of market opportunities based on signal data. Keep responses under 100 words.'
+            content: 'You are a market analyst identifying emerging investment themes from signal patterns.'
           },
           {
             role: 'user',
@@ -60,33 +70,19 @@ Provide a clear, professional summary suitable for investors.`;
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: 'AI credits exhausted. Please add credits to your workspace.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      const errorText = await response.text();
-      console.error('AI gateway error:', response.status, errorText);
       throw new Error(`AI gateway error: ${response.status}`);
     }
 
     const data = await response.json();
-    const summary = data.choices[0].message.content;
+    const suggestions = data.choices[0].message.content;
 
     return new Response(
-      JSON.stringify({ summary }),
+      JSON.stringify({ suggestions }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Error in analyze-theme:', error);
+    console.error('Error in discover-themes:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

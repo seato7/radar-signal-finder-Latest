@@ -11,3 +11,30 @@ verify_jwt = false
 
 [functions.analyze-theme]
 verify_jwt = false
+
+[functions.chat-assistant]
+verify_jwt = false
+
+[functions.explain-signal]
+verify_jwt = false
+
+[functions.generate-alert-narrative]
+verify_jwt = false
+
+[functions.analyze-backtest]
+verify_jwt = false
+
+[functions.assess-risk]
+verify_jwt = false
+
+[functions.discover-themes]
+verify_jwt = false
+
+[functions.generate-digest]
+verify_jwt = false
+
+[functions.text-to-speech]
+verify_jwt = false
+
+[functions.generate-pdf-report]
+verify_jwt = false
