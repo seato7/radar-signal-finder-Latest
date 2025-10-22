@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.customer-portal]
 verify_jwt = false
+
+[functions.analyze-theme]
+verify_jwt = false

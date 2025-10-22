@@ -1,12 +1,14 @@
-"""Why now? summaries - rule-based, attributed explanations for themes"""
+"""Why now? summaries - AI-powered explanations for themes with rule-based fallback"""
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from backend.db import get_db
+import os
+import httpx
 
 async def get_why_now_summary(theme_id: str, days: int = 14) -> Dict:
     """
     Generate a 1-2 sentence "why now?" summary for a theme.
-    Rule-based: no LLM, just counting signal types + citing sources.
+    Uses AI-powered analysis with rule-based fallback.
     
     Args:
         theme_id: Theme ID to summarize
@@ -32,14 +34,15 @@ async def get_why_now_summary(theme_id: str, days: int = 14) -> Dict:
     if not signals:
         return {"summary": "", "citations": []}
     
-    # Count by type
-    type_counts = {}
+    # Get theme name for context
+    from bson import ObjectId
+    theme = await db.themes.find_one({"_id": ObjectId(theme_id)})
+    theme_name = theme.get("name", "Unknown Theme") if theme else "Unknown Theme"
+    
+    # Build citations first (needed for both AI and fallback)
     citations = []
     
     for s in signals:
-        sig_type = s.get("signal_type", "unknown")
-        type_counts[sig_type] = type_counts.get(sig_type, 0) + 1
-        
         # Add citation
         oa_citation = s.get("oa_citation", {})
         title = s.get("value_text", "") or oa_citation.get("source", "Signal")
@@ -50,6 +53,58 @@ async def get_why_now_summary(theme_id: str, days: int = 14) -> Dict:
                 "title": title[:80],  # Truncate long titles
                 "url": url
             })
+    
+    # Try AI-powered summary first
+    from backend.config import settings
+    supabase_url = settings.SUPABASE_URL
+    use_ai = os.getenv("USE_AI_SUMMARIES", "1") == "1"
+    
+    if use_ai and supabase_url:
+        try:
+            # Prepare signal data for AI
+            signal_data = [
+                {
+                    "signal_type": s.get("signal_type"),
+                    "value_text": s.get("value_text", ""),
+                    "observed_at": s.get("observed_at").isoformat() if s.get("observed_at") else None
+                }
+                for s in signals
+            ]
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{supabase_url}/functions/v1/analyze-theme",
+                    json={
+                        "signals": signal_data,
+                        "themeName": theme_name,
+                        "days": days
+                    },
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    ai_summary = data.get("summary", "")
+                    
+                    # Add citation markers to AI summary
+                    citation_markers = "".join([f"[{i+1}]" for i in range(min(len(citations), 3))])
+                    if citation_markers and ai_summary:
+                        ai_summary += f" {citation_markers}"
+                    
+                    if ai_summary:
+                        return {
+                            "summary": ai_summary,
+                            "citations": citations,
+                            "ai_powered": True
+                        }
+        except Exception as e:
+            print(f"⚠️ AI summary failed, falling back to rule-based: {str(e)}")
+    
+    # Fallback to rule-based summary
+    type_counts = {}
+    for s in signals:
+        sig_type = s.get("signal_type", "unknown")
+        type_counts[sig_type] = type_counts.get(sig_type, 0) + 1
     
     # Build summary text
     summary_parts = []
@@ -88,5 +143,6 @@ async def get_why_now_summary(theme_id: str, days: int = 14) -> Dict:
     
     return {
         "summary": summary,
-        "citations": citations
+        "citations": citations,
+        "ai_powered": False
     }
