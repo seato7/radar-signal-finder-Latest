@@ -59,3 +59,18 @@ verify_jwt = false
 
 [functions.ingest-earnings]
 verify_jwt = false
+
+[functions.ingest-breaking-news]
+verify_jwt = false
+
+[functions.ingest-twitter]
+verify_jwt = false
+
+[functions.ingest-options-flow]
+verify_jwt = false
+
+[functions.ingest-job-postings]
+verify_jwt = false
+
+[functions.ingest-supply-chain]
+verify_jwt = false
