@@ -305,7 +305,7 @@ export default function DataSources() {
           </div>
         ) : (
           <Tabs defaultValue="social" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6 xl:grid-cols-9 gap-2">
+            <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 xl:grid-cols-10 gap-2">
               <TabsTrigger value="social">
                 <Users className="h-4 w-4 mr-2" />
                 Social
@@ -342,6 +342,10 @@ export default function DataSources() {
                 <Briefcase className="h-4 w-4 mr-2" />
                 Jobs
               </TabsTrigger>
+              <TabsTrigger value="supply">
+                <Package className="h-4 w-4 mr-2" />
+                Supply
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="social" className="space-y-4">
@@ -349,7 +353,7 @@ export default function DataSources() {
                 <CardHeader>
                   <CardTitle>Social Media Sentiment</CardTitle>
                   <CardDescription>
-                    Reddit and StockTwits sentiment data • Updates: Every hour
+                    Reddit, StockTwits, and Twitter sentiment data • Updates: Every hour
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -357,13 +361,13 @@ export default function DataSources() {
                     <Info className="h-4 w-4" />
                     <AlertTitle>What This Shows</AlertTitle>
                     <AlertDescription>
-                      Social sentiment tracks retail investor sentiment from Reddit (r/wallstreetbets, r/stocks) and StockTwits. 
+                      Social sentiment tracks retail investor sentiment from Reddit (r/wallstreetbets, r/stocks), StockTwits, and Twitter. 
                       High bullish sentiment + institutional buying = strong conviction opportunity. Watch for sentiment spikes 
                       before major moves.
                     </AlertDescription>
                   </Alert>
                   <div className="space-y-4">
-                    {socialSignals.length === 0 ? (
+                    {socialSignals.length === 0 && twitterSignals.length === 0 ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
                         <Button onClick={() => runIngestion('ingest-stocktwits', 'StockTwits')} size="sm">
@@ -371,22 +375,40 @@ export default function DataSources() {
                         </Button>
                       </div>
                     ) : (
-                      socialSignals.map((signal) => (
-                        <div key={signal.id} className="flex items-center justify-between border-b pb-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">{signal.ticker}</span>
-                              <Badge variant="outline">{signal.source}</Badge>
+                      <>
+                        {socialSignals.map((signal) => (
+                          <div key={signal.id} className="flex items-center justify-between border-b pb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">{signal.ticker}</span>
+                                <Badge variant="outline">{signal.source}</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {signal.mention_count} mentions • {signal.bullish_count} bullish • {signal.bearish_count} bearish
+                              </p>
                             </div>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {signal.mention_count} mentions • {signal.bullish_count} bullish • {signal.bearish_count} bearish
-                            </p>
+                            <div className={`text-xl font-bold ${getSentimentColor(signal.sentiment_score)}`}>
+                              {signal.sentiment_score > 0 ? '+' : ''}{(signal.sentiment_score * 100).toFixed(0)}%
+                            </div>
                           </div>
-                          <div className={`text-xl font-bold ${getSentimentColor(signal.sentiment_score)}`}>
-                            {signal.sentiment_score > 0 ? '+' : ''}{(signal.sentiment_score * 100).toFixed(0)}%
+                        ))}
+                        {twitterSignals.map((signal) => (
+                          <div key={signal.id} className="flex items-center justify-between border-b pb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold">{signal.ticker}</span>
+                                <Badge variant="outline">Twitter</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {signal.mention_count} mentions • {signal.bullish_count} bullish • {signal.bearish_count} bearish • {signal.influencer_mentions} influencer mentions
+                              </p>
+                            </div>
+                            <div className={`text-xl font-bold ${getSentimentColor(signal.sentiment_score)}`}>
+                              {signal.sentiment_score > 0 ? '+' : ''}{(signal.sentiment_score * 100).toFixed(0)}%
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        ))}
+                      </>
                     )}
                   </div>
                 </CardContent>
@@ -785,6 +807,63 @@ export default function DataSources() {
                               </p>
                               <p className={`text-sm ${job.growth_indicator > 0 ? 'text-green-600' : job.growth_indicator < 0 ? 'text-red-600' : 'text-yellow-600'}`}>
                                 {job.growth_indicator > 0 ? '+' : ''}{job.growth_indicator}% growth
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="supply" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Supply Chain Signals</CardTitle>
+                  <CardDescription>
+                    Supply chain metrics and indicators • Updates: Daily
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Alert className="mb-4">
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>What This Shows</AlertTitle>
+                    <AlertDescription>
+                      Supply chain data tracks production metrics, inventory levels, shipping times, and other operational indicators. 
+                      Improving supply chain metrics often signal expanding production and increased demand, while deteriorating metrics 
+                      may indicate challenges ahead.
+                    </AlertDescription>
+                  </Alert>
+                  <div className="space-y-4">
+                    {supplyChain.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-supply-chain', 'Supply Chain')} size="sm">
+                          Load Supply Chain Data
+                        </Button>
+                      </div>
+                    ) : (
+                      supplyChain.map((signal) => (
+                        <div key={signal.id} className="border-b pb-4 last:border-0">
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="outline">{signal.ticker}</Badge>
+                                <Badge variant="secondary" className="capitalize">{signal.signal_type}</Badge>
+                              </div>
+                              <h4 className="font-semibold mb-1">{signal.metric_name}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {signal.indicator} • {new Date(signal.report_date).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold text-lg">
+                                {signal.metric_value?.toFixed(2)}
+                              </p>
+                              <p className={`text-sm ${signal.change_percentage > 0 ? 'text-green-600' : signal.change_percentage < 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                                {signal.change_percentage > 0 ? '+' : ''}{signal.change_percentage?.toFixed(1)}%
                               </p>
                             </div>
                           </div>
