@@ -63,7 +63,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-sonar-small-128k-online',
+          model: 'sonar',
           messages: [{
             role: 'user',
             content: `What is the current search interest trend for ${ticker} stock over the past 30 days? Provide a numerical estimate of relative search volume (0-100) and percentage change. Format: VOLUME: X, CHANGE: Y%`

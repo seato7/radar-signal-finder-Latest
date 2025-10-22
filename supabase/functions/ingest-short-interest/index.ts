@@ -64,7 +64,7 @@ serve(async (req) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'llama-3.1-sonar-small-128k-online',
+            model: 'sonar',
             messages: [{
               role: 'user',
               content: `What is the current short interest percentage of float and days to cover for ${ticker} stock? Format: SHORT_FLOAT: X%, DAYS_TO_COVER: Y`

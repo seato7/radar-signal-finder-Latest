@@ -64,7 +64,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.1-sonar-small-128k-online',
+          model: 'sonar',
           messages: [{
             role: 'user',
             content: `What were ${ticker}'s most recent earnings results? Include EPS surprise %, revenue surprise %, and overall sentiment (positive/negative/neutral). Format: QUARTER: QX 2024, EPS_SURPRISE: X%, REV_SURPRISE: Y%, SENTIMENT: positive/negative/neutral`
