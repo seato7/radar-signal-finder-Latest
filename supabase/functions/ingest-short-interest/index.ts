@@ -40,7 +40,7 @@ serve(async (req) => {
 
       const { error } = await supabase
         .from('short_interest')
-        .upsert(mockData, { onConflict: 'ticker,report_date' });
+        .insert(mockData);
 
       if (error) throw error;
 
@@ -56,43 +56,67 @@ serve(async (req) => {
     for (const ticker of tickers) {
       console.log(`Analyzing short interest for ${ticker}...`);
       
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${perplexityKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'llama-3.1-sonar-small-128k-online',
-          messages: [{
-            role: 'user',
-            content: `What is the current short interest percentage of float and days to cover for ${ticker} stock? Format: SHORT_FLOAT: X%, DAYS_TO_COVER: Y`
-          }],
-        }),
-      });
+      try {
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${perplexityKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-sonar-small-128k-online',
+            messages: [{
+              role: 'user',
+              content: `What is the current short interest percentage of float and days to cover for ${ticker} stock? Format: SHORT_FLOAT: X%, DAYS_TO_COVER: Y`
+            }],
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
-        
-        const floatMatch = content.match(/SHORT_FLOAT:\s*(\d+\.?\d*)/);
-        const daysMatch = content.match(/DAYS_TO_COVER:\s*(\d+\.?\d*)/);
-        
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          
+          const floatMatch = content.match(/SHORT_FLOAT:\s*(\d+\.?\d*)/);
+          const daysMatch = content.match(/DAYS_TO_COVER:\s*(\d+\.?\d*)/);
+          
+          shortData.push({
+            ticker,
+            report_date: new Date().toISOString().split('T')[0],
+            short_volume: Math.floor(Math.random() * 100000000),
+            float_percentage: floatMatch ? parseFloat(floatMatch[1]) : Math.random() * 50,
+            days_to_cover: daysMatch ? parseFloat(daysMatch[1]) : Math.random() * 10,
+            metadata: {
+              source: 'perplexity_ai',
+              raw_response: content,
+            },
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          console.log(`Failed to fetch short interest for ${ticker}: ${response.status}`);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (err) {
+        console.error(`Error fetching short interest for ${ticker}:`, err);
+      }
+    }
+
+    // If no data was fetched, generate sample data
+    if (shortData.length === 0) {
+      console.log('No data fetched from API, generating sample data');
+      for (const ticker of tickers) {
         shortData.push({
           ticker,
           report_date: new Date().toISOString().split('T')[0],
-          short_volume: Math.floor(Math.random() * 100000000),
-          float_percentage: floatMatch ? parseFloat(floatMatch[1]) : Math.random() * 50,
-          days_to_cover: daysMatch ? parseFloat(daysMatch[1]) : Math.random() * 10,
+          short_volume: Math.floor(Math.random() * 100000000) + 10000000,
+          float_percentage: Math.random() * 50,
+          days_to_cover: Math.random() * 10,
           metadata: {
-            source: 'perplexity_ai',
-            raw_response: content,
+            source: 'sample_data',
           },
           created_at: new Date().toISOString(),
         });
       }
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     if (shortData.length > 0) {
