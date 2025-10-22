@@ -41,7 +41,7 @@ serve(async (req) => {
 
       const { error } = await supabase
         .from('earnings_sentiment')
-        .upsert(mockData, { onConflict: 'ticker,quarter' });
+        .insert(mockData);
 
       if (error) throw error;
 

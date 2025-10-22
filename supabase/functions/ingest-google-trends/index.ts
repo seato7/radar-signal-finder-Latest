@@ -40,7 +40,7 @@ serve(async (req) => {
 
       const { error } = await supabase
         .from('search_trends')
-        .upsert(trends, { onConflict: 'ticker,keyword,period_start,period_end' });
+        .insert(trends);
 
       if (error) throw error;
 
