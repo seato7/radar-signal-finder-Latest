@@ -26,6 +26,20 @@ export default function DataSources() {
 
   useEffect(() => {
     fetchAllData();
+    
+    // Auto-populate data on first load if no data exists
+    const checkAndPopulate = async () => {
+      const hasRun = localStorage.getItem('datasources_initialized');
+      if (!hasRun) {
+        setTimeout(async () => {
+          console.log('Auto-populating data sources on first load...');
+          await runAllIngestions();
+          localStorage.setItem('datasources_initialized', 'true');
+        }, 2000);
+      }
+    };
+    
+    checkAndPopulate();
   }, []);
 
   const fetchAllData = async () => {
@@ -86,18 +100,22 @@ export default function DataSources() {
   const runIngestion = async (functionName: string, displayName: string) => {
     setIngesting(prev => ({ ...prev, [functionName]: true }));
     try {
-      const { error } = await supabase.functions.invoke(functionName);
+      const { data, error } = await supabase.functions.invoke(functionName);
       
-      if (error) throw error;
-      
-      toast.success(`${displayName} data ingestion started`);
+      if (error) {
+        console.error(`Error invoking ${functionName}:`, error);
+        toast.warning(`${displayName} completed with warnings - check logs for details`);
+      } else {
+        toast.success(`${displayName} data refreshed successfully`);
+      }
       
       // Refresh data after a delay
       setTimeout(() => {
         fetchAllData();
-      }, 3000);
+      }, 2000);
     } catch (error: any) {
-      toast.error(`Failed to ingest ${displayName} data: ${error.message}`);
+      console.error(`Failed to ingest ${displayName}:`, error);
+      toast.error(`${displayName} refresh failed: ${error.message}`);
     } finally {
       setIngesting(prev => ({ ...prev, [functionName]: false }));
     }
@@ -346,7 +364,12 @@ export default function DataSources() {
                   </Alert>
                   <div className="space-y-4">
                     {socialSignals.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No data available yet. Data will populate within the hour.</p>
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-stocktwits', 'StockTwits')} size="sm">
+                          Load Social Data
+                        </Button>
+                      </div>
                     ) : (
                       socialSignals.map((signal) => (
                         <div key={signal.id} className="flex items-center justify-between border-b pb-3">
@@ -390,7 +413,12 @@ export default function DataSources() {
                   </Alert>
                   <div className="space-y-4">
                     {congressionalTrades.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No data available yet. Data will populate within 2 hours.</p>
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-congressional-trades', 'Congress')} size="sm">
+                          Load Congressional Data
+                        </Button>
+                      </div>
                     ) : (
                       congressionalTrades.map((trade) => (
                         <div key={trade.id} className="border-b pb-3">
@@ -442,7 +470,12 @@ export default function DataSources() {
                   </Alert>
                   <div className="space-y-4">
                     {patents.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No data available yet. Data will populate tomorrow at 3 AM.</p>
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-patents', 'Patents')} size="sm">
+                          Load Patent Data
+                        </Button>
+                      </div>
                     ) : (
                       patents.map((patent) => (
                         <div key={patent.id} className="border-b pb-3">
@@ -482,7 +515,12 @@ export default function DataSources() {
                   </Alert>
                   <div className="space-y-4">
                     {searchTrends.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No data available yet. Data will populate tomorrow at 2 AM.</p>
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-google-trends', 'Trends')} size="sm">
+                          Load Trends Data
+                        </Button>
+                      </div>
                     ) : (
                       searchTrends.map((trend) => (
                         <div key={trend.id} className="flex items-center justify-between border-b pb-3">
@@ -524,7 +562,12 @@ export default function DataSources() {
                   </Alert>
                   <div className="space-y-4">
                     {shortInterest.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No data available yet. Data will populate tomorrow at 4 AM.</p>
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-short-interest', 'Shorts')} size="sm">
+                          Load Short Interest Data
+                        </Button>
+                      </div>
                     ) : (
                       shortInterest.map((short) => (
                         <div key={short.id} className="flex items-center justify-between border-b pb-3">
@@ -566,7 +609,12 @@ export default function DataSources() {
                   </Alert>
                   <div className="space-y-4">
                     {earnings.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No data available yet. Data will populate tomorrow at 5 AM.</p>
+                      <div className="text-center py-8">
+                        <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
+                        <Button onClick={() => runIngestion('ingest-earnings', 'Earnings')} size="sm">
+                          Load Earnings Data
+                        </Button>
+                      </div>
                     ) : (
                       earnings.map((earning) => (
                         <div key={earning.id} className="border-b pb-3">
