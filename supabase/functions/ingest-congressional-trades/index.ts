@@ -52,14 +52,16 @@ serve(async (req) => {
           transaction_date: new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           amount_min: amountMin,
           amount_max: amountMax,
-          asset_description: `${ticker} - Common Stock`,
+          metadata: {
+            asset_description: `${ticker} - Common Stock`,
+          },
           created_at: new Date().toISOString(),
         });
       }
 
       const { error } = await supabase
         .from('congressional_trades')
-        .upsert(records, { onConflict: 'ticker,representative,transaction_date,transaction_type' });
+        .insert(records);
 
       if (error) throw error;
 
@@ -94,10 +96,7 @@ serve(async (req) => {
     if (records.length > 0) {
       const { error } = await supabase
         .from('congressional_trades')
-        .upsert(records, { 
-          onConflict: 'representative,ticker,transaction_date',
-          ignoreDuplicates: true 
-        });
+        .insert(records);
 
       if (error) {
         console.error('Database error:', error);

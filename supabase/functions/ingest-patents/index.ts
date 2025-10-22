@@ -61,6 +61,10 @@ serve(async (req) => {
               patent_title: titles[Math.floor(Math.random() * titles.length)],
               filing_date: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
               technology_category: technologies[Math.floor(Math.random() * technologies.length)],
+              metadata: {
+                status: 'granted',
+                inventors: ['Sample Inventor'],
+              },
               created_at: new Date().toISOString(),
             });
           }
@@ -98,10 +102,7 @@ serve(async (req) => {
     if (patents.length > 0) {
       const { error } = await supabase
         .from('patent_filings')
-        .upsert(patents, { 
-          onConflict: 'ticker,patent_number',
-          ignoreDuplicates: true 
-        });
+        .insert(patents);
 
       if (error) {
         console.error('Database error:', error);
