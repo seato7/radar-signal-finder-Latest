@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 export default function DataSources() {
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("social");
   const [ingesting, setIngesting] = useState<Record<string, boolean>>({});
   const [socialSignals, setSocialSignals] = useState<any[]>([]);
   const [congressionalTrades, setCongressionalTrades] = useState<any[]>([]);
@@ -304,7 +305,7 @@ export default function DataSources() {
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <Tabs defaultValue="social" className="space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 xl:grid-cols-10 gap-2">
               <TabsTrigger value="social">
                 <Users className="h-4 w-4 mr-2" />
