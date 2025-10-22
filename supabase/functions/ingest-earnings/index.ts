@@ -108,9 +108,12 @@ serve(async (req) => {
     if (earnings.length > 0) {
       const { error } = await supabase
         .from('earnings_sentiment')
-        .upsert(earnings, { onConflict: 'ticker,quarter' });
+        .insert(earnings);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
       console.log(`Inserted ${earnings.length} earnings records`);
     }
 

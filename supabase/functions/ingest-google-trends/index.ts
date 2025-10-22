@@ -97,9 +97,12 @@ serve(async (req) => {
     if (trends.length > 0) {
       const { error } = await supabase
         .from('search_trends')
-        .upsert(trends, { onConflict: 'ticker,keyword,period_start,period_end' });
+        .insert(trends);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
       console.log(`Inserted ${trends.length} trend records`);
     }
 

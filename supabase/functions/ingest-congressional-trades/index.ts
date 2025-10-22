@@ -43,13 +43,17 @@ serve(async (req) => {
         const amountMin = Math.floor(Math.random() * 50000) + 1000;
         const amountMax = amountMin + Math.floor(Math.random() * 100000);
         const daysAgo = Math.floor(Math.random() * 30);
+        const transactionDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const filedDaysAgo = Math.max(0, daysAgo - Math.floor(Math.random() * 10));
+        const filedDate = new Date(now.getTime() - filedDaysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         
         records.push({
           ticker,
           representative: rep.name,
           party: rep.party,
           transaction_type: transactionType,
-          transaction_date: new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          transaction_date: transactionDate,
+          filed_date: filedDate,
           amount_min: amountMin,
           amount_max: amountMax,
           metadata: {

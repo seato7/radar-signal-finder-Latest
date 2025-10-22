@@ -16,11 +16,51 @@ serve(async (req) => {
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY')!;
+    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
     const newsItems = [];
+
+    // If no API key, use sample data
+    if (!perplexityKey) {
+      console.log('No Perplexity API key, generating sample news data');
+      const headlines = [
+        'Company announces record quarterly earnings',
+        'New product launch exceeds expectations',
+        'Stock reaches all-time high on positive sentiment',
+        'Analyst upgrades rating citing strong fundamentals',
+        'Partnership deal announced with major tech firm'
+      ];
+
+      for (const ticker of tickers) {
+        for (let i = 0; i < 2; i++) {
+          newsItems.push({
+            ticker,
+            headline: headlines[Math.floor(Math.random() * headlines.length)],
+            summary: 'Sample breaking news item for demonstration purposes.',
+            source: 'Market Wire',
+            url: null,
+            published_at: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+            sentiment_score: (Math.random() * 2) - 1,
+            relevance_score: 0.8,
+            metadata: { sample: true },
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      const { error } = await supabase
+        .from('breaking_news')
+        .insert(newsItems);
+
+      if (error) throw error;
+
+      return new Response(
+        JSON.stringify({ success: true, count: newsItems.length, note: 'Sample data used' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     for (const ticker of tickers) {
       console.log(`Fetching breaking news for ${ticker}...`);
@@ -29,7 +69,7 @@ serve(async (req) => {
         const response = await fetch('https://api.perplexity.ai/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${perplexityKey}`,
+            'Authorization': `Bearer ${perplexityKey!}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

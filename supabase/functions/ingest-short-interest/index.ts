@@ -98,9 +98,12 @@ serve(async (req) => {
     if (shortData.length > 0) {
       const { error } = await supabase
         .from('short_interest')
-        .upsert(shortData, { onConflict: 'ticker,report_date' });
+        .insert(shortData);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
       console.log(`Inserted ${shortData.length} short interest records`);
     }
 
