@@ -81,7 +81,7 @@ serve(async (req) => {
     if (signals.length > 0) {
       const { error } = await supabase
         .from('social_signals')
-        .upsert(signals, { onConflict: 'ticker,source' });
+        .insert(signals);
 
       if (error) {
         console.error('Database error:', error);

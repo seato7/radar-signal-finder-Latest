@@ -75,13 +75,18 @@ serve(async (req) => {
     
     try {
       // Fetch Supabase alternative data sources
-      const [socialData, congressData, patentData, trendsData, shortsData, earningsData] = await Promise.all([
+      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, twitterData, optionsData, jobsData, supplyData] = await Promise.all([
         supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(20),
         supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(20),
         supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
         supabase.from('search_trends').select('*').order('period_start', { ascending: false }).limit(10),
         supabase.from('short_interest').select('*').order('report_date', { ascending: false }).limit(10),
-        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(10)
+        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(10),
+        supabase.from('breaking_news').select('*').order('published_at', { ascending: false }).limit(15),
+        supabase.from('twitter_signals').select('*').order('created_at', { ascending: false }).limit(15),
+        supabase.from('options_flow').select('*').order('trade_date', { ascending: false }).limit(10),
+        supabase.from('job_postings').select('*').order('posted_date', { ascending: false }).limit(10),
+        supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(10)
       ]);
 
       // Add social sentiment data
@@ -89,6 +94,22 @@ serve(async (req) => {
         marketData += `\n\nSOCIAL SENTIMENT (Reddit & StockTwits):\n`;
         socialData.data.forEach((signal: any) => {
           marketData += `- ${signal.ticker} (${signal.source}): Sentiment ${(signal.sentiment_score * 100).toFixed(0)}%, ${signal.mention_count} mentions, ${signal.bullish_count} bullish/${signal.bearish_count} bearish\n`;
+        });
+      }
+
+      // Add Twitter signals
+      if (twitterData.data && twitterData.data.length > 0) {
+        marketData += `\n\nTWITTER SIGNALS:\n`;
+        twitterData.data.forEach((signal: any) => {
+          marketData += `- ${signal.ticker}: ${signal.tweet_volume} tweets, Sentiment ${(signal.sentiment_score * 100).toFixed(0)}%, ${signal.bullish_count} bullish/${signal.bearish_count} bearish\n`;
+        });
+      }
+
+      // Add breaking news
+      if (newsData.data && newsData.data.length > 0) {
+        marketData += `\n\nBREAKING NEWS:\n`;
+        newsData.data.forEach((news: any) => {
+          marketData += `- ${news.ticker}: ${news.headline} (${news.source}, ${(news.sentiment_score * 100).toFixed(0)}% sentiment)\n`;
         });
       }
 
@@ -129,6 +150,30 @@ serve(async (req) => {
         marketData += `\n\nEARNINGS SENTIMENT:\n`;
         earningsData.data.forEach((earning: any) => {
           marketData += `- ${earning.ticker} (${earning.quarter}): Sentiment ${(earning.sentiment_score * 100).toFixed(0)}%, EPS surprise ${earning.earnings_surprise > 0 ? '+' : ''}${earning.earnings_surprise?.toFixed(2)}%\n`;
+        });
+      }
+
+      // Add options flow
+      if (optionsData.data && optionsData.data.length > 0) {
+        marketData += `\n\nOPTIONS FLOW:\n`;
+        optionsData.data.forEach((option: any) => {
+          marketData += `- ${option.ticker}: ${option.flow_type} ${option.option_type} $${option.strike_price} exp ${new Date(option.expiration_date).toLocaleDateString()}, Premium $${(option.premium / 1000000).toFixed(2)}M (${option.sentiment})\n`;
+        });
+      }
+
+      // Add job postings
+      if (jobsData.data && jobsData.data.length > 0) {
+        marketData += `\n\nJOB POSTINGS:\n`;
+        jobsData.data.forEach((job: any) => {
+          marketData += `- ${job.ticker} (${job.company}): ${job.posting_count} ${job.role_type} openings, ${job.growth_indicator > 0 ? '+' : ''}${job.growth_indicator}% growth\n`;
+        });
+      }
+
+      // Add supply chain signals
+      if (supplyData.data && supplyData.data.length > 0) {
+        marketData += `\n\nSUPPLY CHAIN SIGNALS:\n`;
+        supplyData.data.forEach((signal: any) => {
+          marketData += `- ${signal.ticker}: ${signal.signal_type} - ${signal.metric_name}: ${signal.metric_value}, ${signal.change_percentage > 0 ? '+' : ''}${signal.change_percentage}% (${signal.indicator})\n`;
         });
       }
       

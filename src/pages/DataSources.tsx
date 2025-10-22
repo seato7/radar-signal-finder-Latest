@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, TrendingUp, Users, FileText, Search, Shield, Newspaper, RefreshCw, Info } from "lucide-react";
+import { Loader2, TrendingUp, Users, FileText, Search, Shield, Newspaper, RefreshCw, Info, DollarSign, Briefcase, Package } from "lucide-react";
 import { toast } from "sonner";
 
 export default function DataSources() {
@@ -18,6 +18,11 @@ export default function DataSources() {
   const [searchTrends, setSearchTrends] = useState<any[]>([]);
   const [shortInterest, setShortInterest] = useState<any[]>([]);
   const [earnings, setEarnings] = useState<any[]>([]);
+  const [breakingNews, setBreakingNews] = useState<any[]>([]);
+  const [twitterSignals, setTwitterSignals] = useState<any[]>([]);
+  const [optionsFlow, setOptionsFlow] = useState<any[]>([]);
+  const [jobPostings, setJobPostings] = useState<any[]>([]);
+  const [supplyChain, setSupplyChain] = useState<any[]>([]);
 
   useEffect(() => {
     fetchAllData();
@@ -27,13 +32,18 @@ export default function DataSources() {
     try {
       setLoading(true);
 
-      const [social, congressional, patentData, trends, shorts, earningsData] = await Promise.all([
+      const [social, congressional, patentData, trends, shorts, earningsData, news, twitter, options, jobs, supply] = await Promise.all([
         supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(50),
         supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(50),
         supabase.from('search_trends').select('*').order('period_start', { ascending: false }).limit(50),
         supabase.from('short_interest').select('*').order('report_date', { ascending: false }).limit(50),
-        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(50)
+        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(50),
+        supabase.from('breaking_news').select('*').order('published_at', { ascending: false }).limit(50),
+        supabase.from('twitter_signals').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('options_flow').select('*').order('trade_date', { ascending: false }).limit(50),
+        supabase.from('job_postings').select('*').order('posted_date', { ascending: false }).limit(50),
+        supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(50)
       ]);
 
       if (social.error) throw social.error;
@@ -42,6 +52,11 @@ export default function DataSources() {
       if (trends.error) throw trends.error;
       if (shorts.error) throw shorts.error;
       if (earningsData.error) throw earningsData.error;
+      if (news.error) throw news.error;
+      if (twitter.error) throw twitter.error;
+      if (options.error) throw options.error;
+      if (jobs.error) throw jobs.error;
+      if (supply.error) throw supply.error;
 
       setSocialSignals(social.data || []);
       setCongressionalTrades(congressional.data || []);
@@ -49,6 +64,11 @@ export default function DataSources() {
       setSearchTrends(trends.data || []);
       setShortInterest(shorts.data || []);
       setEarnings(earningsData.data || []);
+      setBreakingNews(news.data || []);
+      setTwitterSignals(twitter.data || []);
+      setOptionsFlow(options.data || []);
+      setJobPostings(jobs.data || []);
+      setSupplyChain(supply.data || []);
     } catch (error: any) {
       toast.error("Failed to load data sources");
       console.error(error);
@@ -92,7 +112,12 @@ export default function DataSources() {
       { name: 'ingest-google-trends', display: 'Google Trends' },
       { name: 'ingest-patents', display: 'Patents' },
       { name: 'ingest-short-interest', display: 'Short Interest' },
-      { name: 'ingest-earnings', display: 'Earnings' }
+      { name: 'ingest-earnings', display: 'Earnings' },
+      { name: 'ingest-breaking-news', display: 'Breaking News' },
+      { name: 'ingest-twitter', display: 'Twitter' },
+      { name: 'ingest-options-flow', display: 'Options Flow' },
+      { name: 'ingest-job-postings', display: 'Job Postings' },
+      { name: 'ingest-supply-chain', display: 'Supply Chain' }
     ];
 
     for (const func of functions) {
@@ -204,6 +229,51 @@ export default function DataSources() {
                 {ingesting['ingest-earnings'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Earnings
               </Button>
+              
+              <Button 
+                onClick={() => runIngestion('ingest-breaking-news', 'News')}
+                disabled={ingesting['ingest-breaking-news']}
+                variant="outline"
+              >
+                {ingesting['ingest-breaking-news'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                News
+              </Button>
+              
+              <Button 
+                onClick={() => runIngestion('ingest-twitter', 'Twitter')}
+                disabled={ingesting['ingest-twitter']}
+                variant="outline"
+              >
+                {ingesting['ingest-twitter'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Twitter
+              </Button>
+              
+              <Button 
+                onClick={() => runIngestion('ingest-options-flow', 'Options')}
+                disabled={ingesting['ingest-options-flow']}
+                variant="outline"
+              >
+                {ingesting['ingest-options-flow'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Options
+              </Button>
+              
+              <Button 
+                onClick={() => runIngestion('ingest-job-postings', 'Jobs')}
+                disabled={ingesting['ingest-job-postings']}
+                variant="outline"
+              >
+                {ingesting['ingest-job-postings'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Jobs
+              </Button>
+              
+              <Button 
+                onClick={() => runIngestion('ingest-supply-chain', 'Supply Chain')}
+                disabled={ingesting['ingest-supply-chain']}
+                variant="outline"
+              >
+                {ingesting['ingest-supply-chain'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Supply
+              </Button>
             </div>
             <p className="text-sm text-muted-foreground mt-4">
               💡 <strong>Tip:</strong> Data refreshes automatically every hour for social sources, every 2 hours for congressional trades, 
@@ -217,7 +287,7 @@ export default function DataSources() {
           </div>
         ) : (
           <Tabs defaultValue="social" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6 xl:grid-cols-9 gap-2">
               <TabsTrigger value="social">
                 <Users className="h-4 w-4 mr-2" />
                 Social
@@ -241,6 +311,18 @@ export default function DataSources() {
               <TabsTrigger value="earnings">
                 <Newspaper className="h-4 w-4 mr-2" />
                 Earnings
+              </TabsTrigger>
+              <TabsTrigger value="news">
+                <Newspaper className="h-4 w-4 mr-2" />
+                News
+              </TabsTrigger>
+              <TabsTrigger value="options">
+                <DollarSign className="h-4 w-4 mr-2" />
+                Options
+              </TabsTrigger>
+              <TabsTrigger value="jobs">
+                <Briefcase className="h-4 w-4 mr-2" />
+                Jobs
               </TabsTrigger>
             </TabsList>
 
@@ -504,6 +586,157 @@ export default function DataSources() {
                               </p>
                               <p className="text-sm text-muted-foreground">
                                 EPS: {earning.earnings_surprise > 0 ? '+' : ''}{earning.earnings_surprise?.toFixed(2)}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="news" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Breaking News</CardTitle>
+                  <CardDescription>
+                    Real-time market-moving news detected by AI
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {breakingNews.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">
+                        No breaking news available yet. Click "Refresh All Data" to fetch latest news.
+                      </p>
+                    ) : (
+                      breakingNews.map((news) => (
+                        <div key={news.id} className="border-b pb-4 last:border-0">
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="outline">{news.ticker}</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {news.source}
+                                </span>
+                              </div>
+                              <h4 className="font-semibold mb-2">{news.headline}</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{news.summary}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(news.published_at).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`font-semibold ${getSentimentColor(news.sentiment_score)}`}>
+                                {news.sentiment_score > 0 ? 'Bullish' : news.sentiment_score < 0 ? 'Bearish' : 'Neutral'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Relevance: {(news.relevance_score * 100).toFixed(0)}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="options" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Options Flow</CardTitle>
+                  <CardDescription>
+                    Large options trades indicating institutional positioning
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {optionsFlow.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">
+                        No options flow data available yet. Click "Refresh All Data" to fetch latest data.
+                      </p>
+                    ) : (
+                      optionsFlow.map((option) => (
+                        <div key={option.id} className="border-b pb-4 last:border-0">
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="outline">{option.ticker}</Badge>
+                                <Badge variant={option.sentiment === 'bullish' ? 'default' : 'destructive'}>
+                                  {option.option_type.toUpperCase()}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground capitalize">
+                                  {option.flow_type}
+                                </span>
+                              </div>
+                              <p className="text-sm">
+                                Strike: ${option.strike_price} | Exp: {new Date(option.expiration_date).toLocaleDateString()}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                Volume: {option.volume.toLocaleString()} | OI: {option.open_interest.toLocaleString()}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(option.trade_date).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold text-lg">
+                                ${(option.premium / 1000000).toFixed(2)}M
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                IV: {(option.implied_volatility * 100).toFixed(0)}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="jobs" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Job Postings</CardTitle>
+                  <CardDescription>
+                    Company hiring trends as a leading indicator of growth
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {jobPostings.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">
+                        No job postings data available yet. Click "Refresh All Data" to fetch latest data.
+                      </p>
+                    ) : (
+                      jobPostings.map((job) => (
+                        <div key={job.id} className="border-b pb-4 last:border-0">
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="outline">{job.ticker}</Badge>
+                                <Badge variant="secondary" className="capitalize">{job.role_type}</Badge>
+                              </div>
+                              <h4 className="font-semibold mb-1">{job.job_title}</h4>
+                              <p className="text-sm text-muted-foreground mb-2">
+                                {job.company} • {job.department} • {job.location}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Posted: {new Date(job.posted_date).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold text-lg">
+                                {job.posting_count} openings
+                              </p>
+                              <p className={`text-sm ${job.growth_indicator > 0 ? 'text-green-600' : job.growth_indicator < 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                                {job.growth_indicator > 0 ? '+' : ''}{job.growth_indicator}% growth
                               </p>
                             </div>
                           </div>
