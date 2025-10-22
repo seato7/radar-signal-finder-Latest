@@ -18,12 +18,21 @@ interface AIAssistantChatProps {
 }
 
 export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // Load conversation history from localStorage on mount
+    const saved = localStorage.getItem('ai-chat-history');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Save conversation history to localStorage whenever messages change
+  useEffect(() => {
+    localStorage.setItem('ai-chat-history', JSON.stringify(messages));
+  }, [messages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -133,6 +142,15 @@ export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
     streamChat(input);
   };
 
+  const clearHistory = () => {
+    setMessages([]);
+    localStorage.removeItem('ai-chat-history');
+    toast({
+      title: 'History cleared',
+      description: 'Conversation history has been cleared.',
+    });
+  };
+
   const speakMessage = async (text: string) => {
     if (isSpeaking) return;
     
@@ -170,10 +188,22 @@ export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
   return (
     <Card className="h-[600px] flex flex-col">
       <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          AI Investment Assistant
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            AI Investment Assistant
+          </CardTitle>
+          {messages.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearHistory}
+              className="text-xs"
+            >
+              Clear History
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col p-0">
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
