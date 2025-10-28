@@ -449,7 +449,10 @@ export default function DataSources() {
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-semibold">{trade.ticker}</span>
-                                <Badge variant={trade.transaction_type === 'purchase' ? 'default' : 'destructive'}>
+                                <Badge 
+                                  variant={trade.transaction_type === 'buy' ? 'default' : 'destructive'}
+                                  className={trade.transaction_type === 'buy' ? 'bg-green-600 hover:bg-green-700' : ''}
+                                >
                                   {trade.transaction_type}
                                 </Badge>
                               </div>
