@@ -35,7 +35,7 @@ function generateOAuthSignature(
   return signature;
 }
 
-function generateOAuthHeader(method: string, url: string): string {
+function generateOAuthHeader(method: string, url: string, queryParams: Record<string, string> = {}): string {
   const oauthParams = {
     oauth_consumer_key: API_KEY!,
     oauth_nonce: Math.random().toString(36).substring(2),
@@ -45,10 +45,13 @@ function generateOAuthHeader(method: string, url: string): string {
     oauth_version: "1.0",
   };
 
+  // Merge OAuth params with query params for signature generation
+  const allParams = { ...oauthParams, ...queryParams };
+
   const signature = generateOAuthSignature(
     method,
     url,
-    oauthParams,
+    allParams,
     API_SECRET!,
     ACCESS_TOKEN_SECRET!
   );
@@ -72,17 +75,18 @@ function generateOAuthHeader(method: string, url: string): string {
 
 async function searchTweets(query: string) {
   const baseUrl = "https://api.twitter.com/2/tweets/search/recent";
-  const params = new URLSearchParams({
+  const queryParams = {
     query: query,
     max_results: "100",
     "tweet.fields": "created_at,public_metrics"
-  });
+  };
   
+  const params = new URLSearchParams(queryParams);
   const method = "GET";
   const fullUrl = `${baseUrl}?${params.toString()}`;
   
-  // Generate OAuth header with base URL only (no query params in signature for GET with query string)
-  const oauthHeader = generateOAuthHeader(method, baseUrl);
+  // Generate OAuth header including query params in signature
+  const oauthHeader = generateOAuthHeader(method, baseUrl, queryParams);
   
   const response = await fetch(fullUrl, {
     method: method,
