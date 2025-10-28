@@ -67,8 +67,10 @@ serve(async (req) => {
           model: 'sonar',
           messages: [{
             role: 'user',
-            content: `What were ${ticker}'s most recent earnings results? Include EPS surprise %, revenue surprise %, and overall sentiment (positive/negative/neutral). Format: QUARTER: QX 2024, EPS_SURPRISE: X%, REV_SURPRISE: Y%, SENTIMENT: positive/negative/neutral`
+            content: `${ticker} latest earnings: QUARTER|EPS_SURPRISE_PCT|REV_SURPRISE_PCT|SENTIMENT(positive/negative/neutral). Be concise.`
           }],
+          temperature: 0.1,
+          max_tokens: 200,
         }),
       });
 

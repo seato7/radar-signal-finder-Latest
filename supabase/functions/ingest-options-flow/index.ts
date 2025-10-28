@@ -44,14 +44,14 @@ serve(async (req) => {
           body: JSON.stringify({
             model: 'sonar',
             messages: [{
-              role: 'system',
-              content: 'You are a financial data provider. Return only the requested options data.'
-            }, {
               role: 'user',
-              content: `Find today's unusual options activity for ${ticker}. For each unusual trade, provide: TYPE: call/put, STRIKE: price, EXPIRY: date (YYYY-MM-DD), PREMIUM: dollar amount, VOLUME: contracts, SENTIMENT: bullish/bearish. Return 2-3 most notable trades.`
+              content: `Find 2-3 most notable unusual options trades for ${ticker} today. Extract ONLY the data in this exact format for each trade (one per line):
+TYPE:call|put|STRIKE:number|EXPIRY:YYYY-MM-DD|PREMIUM:number|VOLUME:number|SENTIMENT:bullish|bearish
+
+Example: TYPE:call|STRIKE:195|EXPIRY:2025-10-31|PREMIUM:448000|VOLUME:21124|SENTIMENT:bullish`
             }],
             temperature: 0.1,
-            max_tokens: 800,
+            max_tokens: 500,
           }),
         });
 
@@ -61,37 +61,60 @@ serve(async (req) => {
           
           console.log(`Options data for ${ticker}:`, content);
           
-          // Parse multiple option trades from response
-          const trades = content.split(/\n\n|\n-/).filter((t: string) => t.trim());
+          // Parse pipe-delimited format or fallback to text parsing
+          const lines = content.split('\n').filter((l: string) => l.trim() && l.includes('TYPE:'));
           
-          for (const trade of trades.slice(0, 3)) { // Max 3 per ticker
-            const typeMatch = trade.match(/TYPE:\s*(call|put)/i);
-            const strikeMatch = trade.match(/STRIKE:\s*\$?(\d+\.?\d*)/i);
-            const expiryMatch = trade.match(/EXPIRY:\s*(\d{4}-\d{2}-\d{2})/i);
-            const premiumMatch = trade.match(/PREMIUM:\s*\$?(\d+[,\d]*)/i);
-            const volumeMatch = trade.match(/VOLUME:\s*(\d+[,\d]*)/i);
-            const sentimentMatch = trade.match(/SENTIMENT:\s*(bullish|bearish)/i);
+          for (const line of lines.slice(0, 3)) {
+            // Try pipe-delimited format first
+            const parts = line.split('|').map((p: string) => p.trim());
+            let typeVal = '', strikeVal = '', expiryVal = '', premiumVal = '', volumeVal = '', sentimentVal = '';
             
-            if (typeMatch && strikeMatch) {
-              const premium = premiumMatch ? parseInt(premiumMatch[1].replace(/,/g, '')) : Math.floor(Math.random() * 500000) + 50000;
-              const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : Math.floor(Math.random() * 3000) + 100;
+            for (const part of parts) {
+              if (part.startsWith('TYPE:')) typeVal = part.split(':')[1];
+              if (part.startsWith('STRIKE:')) strikeVal = part.split(':')[1];
+              if (part.startsWith('EXPIRY:')) expiryVal = part.split(':')[1];
+              if (part.startsWith('PREMIUM:')) premiumVal = part.split(':')[1];
+              if (part.startsWith('VOLUME:')) volumeVal = part.split(':')[1];
+              if (part.startsWith('SENTIMENT:')) sentimentVal = part.split(':')[1];
+            }
+            
+            // Fallback to regex if pipe format fails
+            if (!typeVal) {
+              const typeMatch = line.match(/TYPE:\s*(call|put)/i);
+              const strikeMatch = line.match(/STRIKE:\s*\$?(\d+\.?\d*)/i);
+              const expiryMatch = line.match(/EXPIRY:\s*(\d{4}-\d{2}-\d{2})/i);
+              const premiumMatch = line.match(/PREMIUM:\s*\$?(\d+[,\d]*)/i);
+              const volumeMatch = line.match(/VOLUME:\s*(\d+[,\d]*)/i);
+              const sentimentMatch = line.match(/SENTIMENT:\s*(bullish|bearish)/i);
+              
+              typeVal = typeMatch ? typeMatch[1] : '';
+              strikeVal = strikeMatch ? strikeMatch[1] : '';
+              expiryVal = expiryMatch ? expiryMatch[1] : '';
+              premiumVal = premiumMatch ? premiumMatch[1].replace(/,/g, '') : '';
+              volumeVal = volumeMatch ? volumeMatch[1].replace(/,/g, '') : '';
+              sentimentVal = sentimentMatch ? sentimentMatch[1] : '';
+            }
+            
+            if (typeVal && strikeVal) {
+              const premium = premiumVal ? parseInt(premiumVal) : Math.floor(Math.random() * 500000) + 50000;
+              const volume = volumeVal ? parseInt(volumeVal) : Math.floor(Math.random() * 3000) + 100;
               
               optionsFlow.push({
                 ticker,
-                option_type: typeMatch[1].toLowerCase(),
-                strike_price: parseFloat(strikeMatch[1]),
-                expiration_date: expiryMatch ? expiryMatch[1] : new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+                option_type: typeVal.toLowerCase(),
+                strike_price: parseFloat(strikeVal),
+                expiration_date: expiryVal || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
                 premium,
                 volume,
                 open_interest: Math.floor(volume * (1 + Math.random())),
                 implied_volatility: Math.round((Math.random() * 0.5 + 0.2) * 100) / 100,
                 flow_type: premium > 500000 ? 'block' : premium > 200000 ? 'sweep' : 'split',
-                sentiment: sentimentMatch ? sentimentMatch[1].toLowerCase() : (typeMatch[1].toLowerCase() === 'call' ? 'bullish' : 'bearish'),
+                sentiment: sentimentVal || (typeVal.toLowerCase() === 'call' ? 'bullish' : 'bearish'),
                 trade_date: new Date().toISOString(),
                 metadata: {
                   unusual_activity: true,
                   data_source: 'perplexity_options',
-                  raw_trade: trade.substring(0, 200),
+                  raw_trade: line.substring(0, 200),
                 },
                 created_at: new Date().toISOString(),
               });
