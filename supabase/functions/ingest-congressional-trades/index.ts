@@ -25,16 +25,22 @@ serve(async (req) => {
     let trades = [];
     
     try {
-      // Use Financial Modeling Prep as primary source (more reliable)
-      const fmpResponse = await fetch('https://financialmodelingprep.com/api/v4/senate-trading?apikey=demo');
+      // Use QuiverQuant-style public congressional trading data
+      const response = await fetch('https://www.quiverquant.com/sources/senatetrading', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
       
-      if (fmpResponse.ok) {
-        const fmpData = await fmpResponse.json();
-        trades = fmpData.slice(0, 100); // Get recent 100 trades
-        console.log(`Fetched ${trades.length} trades from FMP`);
+      if (response.ok) {
+        const html = await response.text();
+        // Parse the HTML table data (QuiverQuant provides this publicly)
+        console.log('Fetched congressional trading page');
+        // For now, use fallback until we implement HTML parsing
+        throw new Error('HTML parsing not implemented yet');
       }
     } catch (e) {
-      console.error('FMP API failed:', e);
+      console.error('QuiverQuant scraping failed:', e);
     }
     
     // Fallback: Try House Stock Watcher

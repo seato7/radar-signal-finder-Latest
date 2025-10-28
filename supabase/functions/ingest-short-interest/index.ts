@@ -21,7 +21,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Track high short interest stocks
-    const tickers = ['GME', 'AMC', 'BBBY', 'TSLA', 'NVDA', 'AAPL', 'MSFT', 'SPY'];
+    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL'];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured');
@@ -89,7 +89,8 @@ serve(async (req) => {
           console.log(`Failed to fetch short interest for ${ticker}: ${response.status}`);
         }
 
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Reduced rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
         console.error(`Error fetching short interest for ${ticker}:`, err);
       }

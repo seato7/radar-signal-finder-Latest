@@ -19,7 +19,7 @@ serve(async (req) => {
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META'];
+    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT'];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured');
@@ -97,7 +97,8 @@ serve(async (req) => {
           }
         }
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Reduced rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
         console.error(`Error processing ${ticker}:`, err);
       }

@@ -71,11 +71,20 @@ function generateOAuthHeader(method: string, url: string): string {
 }
 
 async function searchTweets(query: string) {
-  const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=100&tweet.fields=created_at,public_metrics`;
-  const method = "GET";
-  const oauthHeader = generateOAuthHeader(method, url);
+  const baseUrl = "https://api.twitter.com/2/tweets/search/recent";
+  const params = new URLSearchParams({
+    query: query,
+    max_results: "100",
+    "tweet.fields": "created_at,public_metrics"
+  });
   
-  const response = await fetch(url, {
+  const method = "GET";
+  const fullUrl = `${baseUrl}?${params.toString()}`;
+  
+  // Generate OAuth header with base URL only (no query params in signature for GET with query string)
+  const oauthHeader = generateOAuthHeader(method, baseUrl);
+  
+  const response = await fetch(fullUrl, {
     method: method,
     headers: {
       Authorization: oauthHeader,

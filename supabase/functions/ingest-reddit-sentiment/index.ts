@@ -46,7 +46,7 @@ serve(async (req) => {
 
       const { error } = await supabase
         .from('social_signals')
-        .upsert(signals, { onConflict: 'ticker,source,created_at' });
+        .insert(signals);
 
       if (error) throw error;
 
@@ -90,7 +90,7 @@ serve(async (req) => {
 
       const { error } = await supabase
         .from('social_signals')
-        .upsert(signals, { onConflict: 'ticker,source,created_at' });
+        .insert(signals);
 
       if (error) throw error;
 
@@ -179,7 +179,7 @@ serve(async (req) => {
     if (records.length > 0) {
       const { error } = await supabase
         .from('social_signals')
-        .upsert(records, { onConflict: 'ticker,source' });
+        .insert(records);
 
       if (error) {
         console.error('Database error:', error);
