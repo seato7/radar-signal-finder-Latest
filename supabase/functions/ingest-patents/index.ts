@@ -16,102 +16,114 @@ serve(async (req) => {
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const companies = [
-      { name: 'Apple', ticker: 'AAPL', assignee: 'Apple Inc' },
-      { name: 'Microsoft', ticker: 'MSFT', assignee: 'Microsoft Corporation' },
-      { name: 'Google', ticker: 'GOOGL', assignee: 'Google LLC' },
-      { name: 'Amazon', ticker: 'AMZN', assignee: 'Amazon Technologies' },
-      { name: 'Tesla', ticker: 'TSLA', assignee: 'Tesla Inc' },
-      { name: 'Meta', ticker: 'META', assignee: 'Meta Platforms' },
-      { name: 'NVIDIA', ticker: 'NVDA', assignee: 'NVIDIA Corporation' },
+      { name: 'Apple', ticker: 'AAPL' },
+      { name: 'Microsoft', ticker: 'MSFT' },
+      { name: 'NVIDIA', ticker: 'NVDA' },
     ];
+
+    if (!perplexityKey) {
+      console.log('Perplexity API key not configured');
+      return new Response(
+        JSON.stringify({ error: 'Perplexity API key required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const patents = [];
 
     for (const company of companies) {
-      console.log(`Fetching patents for ${company.name} via PatentsView...`);
+      console.log(`Fetching patents for ${company.name} via Perplexity...`);
       
       try {
-        // Use PatentsView API v1 with proper POST body structure
-        const requestBody = {
-          q: {
-            _and: [
-              { assignee_organization: company.assignee }
-            ]
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${perplexityKey}`,
+            'Content-Type': 'application/json',
           },
-          f: [
-            "patent_number",
-            "patent_title", 
-            "patent_date",
-            "cpc_group_title",
-            "inventor_first_name",
-            "inventor_last_name"
-          ],
-          s: [{ patent_date: "desc" }],
-          o: { per_page: 20 }
-        };
+          body: JSON.stringify({
+            model: 'sonar',
+            messages: [{
+              role: 'system',
+              content: 'You are a patent research assistant. Return only the requested data in the exact format specified.'
+            }, {
+              role: 'user',
+              content: `Get 3 most recent patent filings for ${company.name} from USPTO or Google Patents. For each patent provide: PATENT_NUMBER: (e.g. US20250123456), TITLE: (patent title), DATE: (filing date YYYY-MM-DD), CATEGORY: (technology category like AI/ML, Hardware, Software), INVENTORS: (inventor names). Use real current data.`
+            }],
+            temperature: 0.1,
+            max_tokens: 800,
+          }),
+        });
 
-        const response = await fetch(
-          'https://search.patentsview.org/api/v1/patent/',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'OpportunityRadar/1.0 (Educational Research)'
-            },
-            body: JSON.stringify(requestBody)
+        if (response.ok) {
+          const data = await response.json();
+          let content = data.choices?.[0]?.message?.content || '';
+          
+          console.log(`Perplexity response for ${company.name}:`, content);
+          
+          // Parse the response for patent data
+          const lines = content.split('\n');
+          let currentPatent: any = {};
+          
+          for (const line of lines) {
+            const numberMatch = line.match(/PATENT_NUMBER:\s*([A-Z0-9]+)/i);
+            const titleMatch = line.match(/TITLE:\s*(.+)/i);
+            const dateMatch = line.match(/DATE:\s*(\d{4}-\d{2}-\d{2})/i);
+            const categoryMatch = line.match(/CATEGORY:\s*(.+)/i);
+            const inventorsMatch = line.match(/INVENTORS?:\s*(.+)/i);
+            
+            if (numberMatch) {
+              if (currentPatent.patent_number) {
+                patents.push({
+                  ticker: company.ticker,
+                  company: company.name,
+                  patent_number: currentPatent.patent_number,
+                  patent_title: currentPatent.patent_title || 'Untitled',
+                  filing_date: currentPatent.filing_date || new Date().toISOString().split('T')[0],
+                  technology_category: currentPatent.technology_category || 'General',
+                  metadata: {
+                    inventors: currentPatent.inventors || ['Unknown'],
+                    data_source: 'perplexity_uspto',
+                  },
+                  created_at: new Date().toISOString(),
+                });
+              }
+              currentPatent = { patent_number: numberMatch[1] };
+            }
+            if (titleMatch) currentPatent.patent_title = titleMatch[1].trim();
+            if (dateMatch) currentPatent.filing_date = dateMatch[1];
+            if (categoryMatch) currentPatent.technology_category = categoryMatch[1].trim();
+            if (inventorsMatch) currentPatent.inventors = inventorsMatch[1].split(',').map((i: string) => i.trim());
           }
-        );
-
-        if (!response.ok) {
-          console.log(`PatentsView API failed for ${company.name}: ${response.status}`);
-          const errorText = await response.text();
-          console.log(`Error response: ${errorText}`);
-          continue;
+          
+          // Add last patent
+          if (currentPatent.patent_number) {
+            patents.push({
+              ticker: company.ticker,
+              company: company.name,
+              patent_number: currentPatent.patent_number,
+              patent_title: currentPatent.patent_title || 'Untitled',
+              filing_date: currentPatent.filing_date || new Date().toISOString().split('T')[0],
+              technology_category: currentPatent.technology_category || 'General',
+              metadata: {
+                inventors: currentPatent.inventors || ['Unknown'],
+                data_source: 'perplexity_uspto',
+              },
+              created_at: new Date().toISOString(),
+            });
+          }
         }
 
-        const data = await response.json();
-        const results = data.patents || [];
-        console.log(`Found ${results.length} patents for ${company.name}`);
-
-        for (const patent of results) {
-          const inventors = [];
-          if (patent.inventors && patent.inventors.length > 0) {
-            inventors.push(...patent.inventors.map((inv: any) => 
-              `${inv.inventor_first_name || ''} ${inv.inventor_last_name || ''}`.trim()
-            ));
-          }
-
-          const techCategory = patent.cpcs && patent.cpcs.length > 0 
-            ? patent.cpcs[0].cpc_group_title || 'General'
-            : 'General';
-
-          patents.push({
-            ticker: company.ticker,
-            company: company.assignee,
-            patent_number: patent.patent_number || 'PENDING',
-            patent_title: patent.patent_title || 'Untitled',
-            filing_date: patent.patent_date || new Date().toISOString().split('T')[0],
-            technology_category: techCategory,
-            metadata: {
-              inventors: inventors.length > 0 ? inventors : ['Unknown'],
-              data_source: 'patentsview_api',
-              patent_date: patent.patent_date,
-            },
-            created_at: new Date().toISOString(),
-          });
-        }
-
-        // Rate limiting - be respectful to free API
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
         console.error(`Error processing ${company.name}:`, err);
       }
     }
 
-    // Insert into database
     if (patents.length > 0) {
       const { error } = await supabase
         .from('patent_filings')
@@ -123,39 +135,6 @@ serve(async (req) => {
       }
 
       console.log(`Inserted ${patents.length} real patent records`);
-    } else {
-      console.log('No patents fetched - using sample data as fallback');
-      
-      // Generate sample data as fallback
-      const samplePatents = [];
-      for (const company of companies) {
-        for (let i = 0; i < 5; i++) {
-          samplePatents.push({
-            ticker: company.ticker,
-            company: company.assignee,
-            patent_number: `US${Math.floor(Math.random() * 1000000) + 10000000}`,
-            patent_title: `${company.name} Innovation ${i + 1}`,
-            filing_date: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            technology_category: ['Software', 'Hardware', 'AI/ML', 'Networking'][Math.floor(Math.random() * 4)],
-            metadata: {
-              inventors: ['Sample Inventor'],
-              data_source: 'sample_fallback',
-            },
-            created_at: new Date().toISOString(),
-          });
-        }
-      }
-
-      const { error } = await supabase
-        .from('patent_filings')
-        .insert(samplePatents);
-
-      if (error) throw error;
-
-      return new Response(
-        JSON.stringify({ success: true, count: samplePatents.length, note: 'Sample data used as fallback' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     return new Response(

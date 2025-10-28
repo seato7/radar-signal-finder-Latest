@@ -16,121 +16,105 @@ serve(async (req) => {
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Try multiple sources for congressional trades
-    console.log('Fetching from official Senate/House disclosures...');
-    
-    // First try: Senate disclosures (efdsearch.senate.gov)
-    let trades = [];
-    
-    try {
-      // Use QuiverQuant-style public congressional trading data
-      const response = await fetch('https://www.quiverquant.com/sources/senatetrading', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      if (response.ok) {
-        const html = await response.text();
-        // Parse the HTML table data (QuiverQuant provides this publicly)
-        console.log('Fetched congressional trading page');
-        // For now, use fallback until we implement HTML parsing
-        throw new Error('HTML parsing not implemented yet');
-      }
-    } catch (e) {
-      console.error('QuiverQuant scraping failed:', e);
+    if (!perplexityKey) {
+      console.log('Perplexity API key not configured');
+      return new Response(
+        JSON.stringify({ error: 'Perplexity API key required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
+
+    console.log('Fetching recent congressional trades via Perplexity...');
     
-    // Fallback: Try House Stock Watcher
-    if (trades.length === 0) {
-      try {
-        const hswResponse = await fetch('https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json');
-        if (hswResponse.ok) {
-          trades = await hswResponse.json();
-          console.log(`Fetched ${trades.length} trades from House Stock Watcher`);
-        }
-      } catch (e) {
-        console.error('House Stock Watcher API failed:', e);
-      }
-    }
-    
-    if (trades.length === 0) {
-      console.log('All Congressional APIs failed, using sample data');
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${perplexityKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sonar',
+        messages: [{
+          role: 'system',
+          content: 'You are a congressional trading data provider. Return only the requested data in the exact format specified.'
+        }, {
+          role: 'user',
+          content: `Get 10 most recent congressional stock trades from Senate/House disclosures. For each trade provide: REPRESENTATIVE: (full name), TICKER: (stock symbol), TYPE: (buy or sell), DATE: (transaction date YYYY-MM-DD), AMOUNT_MIN: (minimum dollar amount), AMOUNT_MAX: (maximum dollar amount), PARTY: (Democrat or Republican). Use real current data from congressional disclosure reports.`
+        }],
+        temperature: 0.1,
+        max_tokens: 1500,
+      }),
+    });
+
+    const records = [];
+
+    if (response.ok) {
+      const data = await response.json();
+      let content = data.choices?.[0]?.message?.content || '';
       
-      const tickers = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'JPM', 'BAC', 'WMT'];
-      const representatives = [
-        { name: 'Nancy Pelosi', party: 'Democrat' },
-        { name: 'Dan Crenshaw', party: 'Republican' },
-        { name: 'Josh Gottheimer', party: 'Democrat' },
-        { name: 'Brian Higgins', party: 'Democrat' },
-        { name: 'Roger Williams', party: 'Republican' },
-      ];
+      console.log('Perplexity response:', content);
       
-      const records = [];
-      const now = new Date();
+      const lines = content.split('\n');
+      let currentTrade: any = {};
       
-      for (let i = 0; i < 20; i++) {
-        const ticker = tickers[Math.floor(Math.random() * tickers.length)];
-        const rep = representatives[Math.floor(Math.random() * representatives.length)];
-        const transactionType = Math.random() > 0.5 ? 'buy' : 'sell';
-        const amountMin = Math.floor(Math.random() * 50000) + 1000;
-        const amountMax = amountMin + Math.floor(Math.random() * 100000);
-        const daysAgo = Math.floor(Math.random() * 30);
-        const transactionDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const filedDaysAgo = Math.max(0, daysAgo - Math.floor(Math.random() * 10));
-        const filedDate = new Date(now.getTime() - filedDaysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      for (const line of lines) {
+        const repMatch = line.match(/REPRESENTATIVE:\s*(.+)/i);
+        const tickerMatch = line.match(/TICKER:\s*([A-Z]+)/i);
+        const typeMatch = line.match(/TYPE:\s*(buy|sell)/i);
+        const dateMatch = line.match(/DATE:\s*(\d{4}-\d{2}-\d{2})/i);
+        const minMatch = line.match(/AMOUNT_MIN:\s*\$?([\d,]+)/i);
+        const maxMatch = line.match(/AMOUNT_MAX:\s*\$?([\d,]+)/i);
+        const partyMatch = line.match(/PARTY:\s*(Democrat|Republican)/i);
         
+        if (repMatch) {
+          if (currentTrade.representative && currentTrade.ticker) {
+            records.push({
+              ticker: currentTrade.ticker,
+              representative: currentTrade.representative,
+              party: currentTrade.party || 'Unknown',
+              transaction_type: currentTrade.transaction_type || 'buy',
+              transaction_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
+              filed_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
+              amount_min: currentTrade.amount_min || null,
+              amount_max: currentTrade.amount_max || null,
+              metadata: {
+                data_source: 'perplexity_congressional',
+              },
+              created_at: new Date().toISOString(),
+            });
+          }
+          currentTrade = { representative: repMatch[1].trim() };
+        }
+        if (tickerMatch) currentTrade.ticker = tickerMatch[1];
+        if (typeMatch) currentTrade.transaction_type = typeMatch[1].toLowerCase();
+        if (dateMatch) currentTrade.transaction_date = dateMatch[1];
+        if (minMatch) currentTrade.amount_min = parseInt(minMatch[1].replace(/,/g, ''));
+        if (maxMatch) currentTrade.amount_max = parseInt(maxMatch[1].replace(/,/g, ''));
+        if (partyMatch) currentTrade.party = partyMatch[1];
+      }
+      
+      // Add last trade
+      if (currentTrade.representative && currentTrade.ticker) {
         records.push({
-          ticker,
-          representative: rep.name,
-          party: rep.party,
-          transaction_type: transactionType,
-          transaction_date: transactionDate,
-          filed_date: filedDate,
-          amount_min: amountMin,
-          amount_max: amountMax,
+          ticker: currentTrade.ticker,
+          representative: currentTrade.representative,
+          party: currentTrade.party || 'Unknown',
+          transaction_type: currentTrade.transaction_type || 'buy',
+          transaction_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
+          filed_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
+          amount_min: currentTrade.amount_min || null,
+          amount_max: currentTrade.amount_max || null,
           metadata: {
-            asset_description: `${ticker} - Common Stock`,
+            data_source: 'perplexity_congressional',
           },
           created_at: new Date().toISOString(),
         });
       }
-
-      const { error } = await supabase
-        .from('congressional_trades')
-        .insert(records);
-
-      if (error) throw error;
-
-      return new Response(
-        JSON.stringify({ success: true, count: records.length, note: 'Sample data used' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
-    console.log(`Processing ${trades.length} congressional trades`);
-
-    // Parse and transform the data
-    const records = trades.slice(0, 1000).map((trade: any) => ({
-      representative: trade.representative || 'Unknown',
-      ticker: trade.ticker || 'N/A',
-      transaction_date: trade.transaction_date || new Date().toISOString().split('T')[0],
-      filed_date: trade.disclosure_date || new Date().toISOString().split('T')[0],
-      transaction_type: trade.type?.toLowerCase() === 'purchase' ? 'buy' : trade.type?.toLowerCase() === 'sale' ? 'sell' : trade.type?.toLowerCase() || 'buy',
-      amount_min: trade.amount ? parseFloat(trade.amount.split('-')[0].replace(/[^0-9.]/g, '')) : null,
-      amount_max: trade.amount ? parseFloat(trade.amount.split('-')[1]?.replace(/[^0-9.]/g, '') || trade.amount.replace(/[^0-9.]/g, '')) : null,
-      party: trade.party || null,
-      chamber: trade.chamber || null,
-      metadata: {
-        asset_description: trade.asset_description,
-        ptr_link: trade.ptr_link,
-      },
-      created_at: new Date().toISOString(),
-    })).filter((r: any) => r.ticker && r.ticker !== 'N/A' && r.ticker !== '--');
-
-    // Insert into database
     if (records.length > 0) {
       const { error } = await supabase
         .from('congressional_trades')

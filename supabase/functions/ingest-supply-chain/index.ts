@@ -19,7 +19,7 @@ serve(async (req) => {
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT'];
+    const tickers = ['AAPL', 'TSLA', 'NVDA'];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured');

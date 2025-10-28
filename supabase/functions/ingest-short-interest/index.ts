@@ -21,7 +21,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Track high short interest stocks
-    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL'];
+    const tickers = ['AAPL', 'TSLA', 'NVDA'];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured');
