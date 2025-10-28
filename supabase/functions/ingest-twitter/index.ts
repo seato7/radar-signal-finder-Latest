@@ -121,7 +121,8 @@ serve(async (req) => {
       console.log(`Fetching Twitter data for ${ticker}...`);
       
       try {
-        const data = await searchTweets(`$${ticker}`);
+        // Use ticker + "stock" to avoid cashtag operator which requires elevated access
+        const data = await searchTweets(`${ticker} stock`);
         
         if (!data || !data.data) {
           console.log(`No Twitter data for ${ticker}`);
@@ -176,7 +177,8 @@ serve(async (req) => {
           created_at: new Date().toISOString(),
         });
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Increased delay to avoid rate limits (Twitter API has 300 requests per 15 min = 1 per 3 seconds)
+        await new Promise(resolve => setTimeout(resolve, 3500));
       } catch (err) {
         console.error(`Error processing ${ticker}:`, err);
       }
