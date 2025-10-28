@@ -77,11 +77,11 @@ serve(async (req) => {
             messages: [
               {
                 role: 'system',
-                content: 'You are a financial news analyzer. Provide concise, factual news headlines with sentiment scores.'
+                content: 'You are a financial data provider. Return only the requested data without explanations.'
               },
               {
                 role: 'user',
-                content: `Find the top 3 most recent breaking news items for ${ticker} in the last 24 hours. For each news item, provide: headline, brief summary (1 sentence), source, and sentiment score from -1 (bearish) to 1 (bullish). Format as JSON array.`
+                content: `List 3 recent news headlines for ${ticker} stock from the last 24 hours. For each, provide: HEADLINE: [headline text], SUMMARY: [one sentence], SOURCE: [source name], SENTIMENT: [number from -1 to 1]. Separate each news item with "---".`
               }
             ],
             temperature: 0.2,
@@ -95,33 +95,33 @@ serve(async (req) => {
         }
 
         const data = await response.json();
-        let content = data.choices[0].message.content;
+        const content = data.choices[0].message.content;
         
-        // Strip markdown code blocks if present
-        content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        // Split by separator and parse each news item
+        const newsBlocks = content.split('---').filter((block: string) => block.trim());
         
-        try {
-          const parsedNews = JSON.parse(content);
-          const newsArray = Array.isArray(parsedNews) ? parsedNews : [parsedNews];
+        for (const block of newsBlocks) {
+          const headlineMatch = block.match(/HEADLINE:\s*(.+?)(?=SUMMARY:|$)/s);
+          const summaryMatch = block.match(/SUMMARY:\s*(.+?)(?=SOURCE:|$)/s);
+          const sourceMatch = block.match(/SOURCE:\s*(.+?)(?=SENTIMENT:|$)/s);
+          const sentimentMatch = block.match(/SENTIMENT:\s*(-?\d+\.?\d*)/);
           
-          for (const item of newsArray) {
+          if (headlineMatch) {
             newsItems.push({
               ticker,
-              headline: item.headline || item.title || 'Breaking News',
-              summary: item.summary || item.description || '',
-              source: item.source || 'Perplexity',
-              url: item.url || null,
+              headline: headlineMatch[1].trim(),
+              summary: summaryMatch ? summaryMatch[1].trim() : 'No summary available',
+              source: sourceMatch ? sourceMatch[1].trim() : 'Perplexity',
+              url: null,
               published_at: new Date().toISOString(),
-              sentiment_score: item.sentiment_score || item.sentiment || 0,
-              relevance_score: item.relevance_score || 0.8,
+              sentiment_score: sentimentMatch ? parseFloat(sentimentMatch[1]) : 0,
+              relevance_score: 0.8,
               metadata: {
-                raw_content: item
+                raw_content: block
               },
               created_at: new Date().toISOString(),
             });
           }
-        } catch (err) {
-          console.error(`Error parsing news for ${ticker}:`, err);
         }
 
         await new Promise(resolve => setTimeout(resolve, 2000));
