@@ -16,54 +16,108 @@ serve(async (req) => {
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const adzunaAppId = Deno.env.get('ADZUNA_APP_ID');
+    const adzunaAppKey = Deno.env.get('ADZUNA_APP_KEY');
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const companies = [
-      { ticker: 'AAPL', name: 'Apple Inc.' },
-      { ticker: 'TSLA', name: 'Tesla Inc.' },
-      { ticker: 'NVDA', name: 'NVIDIA Corporation' },
-      { ticker: 'MSFT', name: 'Microsoft Corporation' },
-      { ticker: 'GOOGL', name: 'Google LLC' },
-      { ticker: 'AMZN', name: 'Amazon.com Inc.' },
-      { ticker: 'META', name: 'Meta Platforms Inc.' },
+      { ticker: 'AAPL', name: 'Apple' },
+      { ticker: 'TSLA', name: 'Tesla' },
+      { ticker: 'NVDA', name: 'NVIDIA' },
+      { ticker: 'MSFT', name: 'Microsoft' },
+      { ticker: 'GOOGL', name: 'Google' },
+      { ticker: 'AMZN', name: 'Amazon' },
+      { ticker: 'META', name: 'Meta' },
     ];
 
-    const roleTypes = ['engineering', 'sales', 'operations', 'marketing', 'finance', 'product'];
-    const departments = ['AI/ML', 'Cloud', 'Hardware', 'Software', 'Data', 'Security'];
-    const seniorities = ['entry', 'mid', 'senior', 'principal', 'director'];
+    if (!adzunaAppId || !adzunaAppKey) {
+      console.log('Adzuna API credentials not configured');
+      return new Response(
+        JSON.stringify({ error: 'Adzuna API credentials required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     const jobPostings = [];
 
     for (const company of companies) {
-      // Generate 3-8 job posting categories per company
-      const count = Math.floor(Math.random() * 6) + 3;
+      console.log(`Fetching job postings for ${company.name}...`);
       
-      for (let i = 0; i < count; i++) {
-        const roleType = roleTypes[Math.floor(Math.random() * roleTypes.length)];
-        const department = departments[Math.floor(Math.random() * departments.length)];
-        const seniority = seniorities[Math.floor(Math.random() * seniorities.length)];
-        const postingCount = Math.floor(Math.random() * 50) + 5;
+      try {
+        // Search for jobs from this company
+        const query = encodeURIComponent(company.name);
+        const url = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${adzunaAppId}&app_key=${adzunaAppKey}&what=${query}&content-type=application/json`;
         
-        // Growth indicator: -20% to +100%
-        const growthIndicator = Math.round((Math.random() * 120 - 20) * 10) / 10;
+        const response = await fetch(url);
         
-        jobPostings.push({
-          ticker: company.ticker,
-          company: company.name,
-          job_title: `${seniority.charAt(0).toUpperCase() + seniority.slice(1)} ${department} ${roleType.charAt(0).toUpperCase() + roleType.slice(1)}`,
-          department,
-          location: ['Remote', 'San Francisco', 'New York', 'Austin', 'Seattle'][Math.floor(Math.random() * 5)],
-          posting_count: postingCount,
-          role_type: roleType,
-          seniority_level: seniority,
-          posted_date: new Date().toISOString().split('T')[0],
-          growth_indicator: growthIndicator,
-          metadata: {
-            source: 'aggregated_job_boards',
-            trend: growthIndicator > 20 ? 'rapid_growth' : growthIndicator > 0 ? 'growth' : 'decline',
-          },
-          created_at: new Date().toISOString(),
-        });
+        if (!response.ok) {
+          console.log(`Adzuna API failed for ${company.name}: ${response.status}`);
+          continue;
+        }
+
+        const data = await response.json();
+        const jobs = data.results || [];
+        console.log(`Found ${jobs.length} jobs for ${company.name}`);
+        
+        // Group jobs by department/category
+        const jobsByCategory = new Map();
+        
+        for (const job of jobs) {
+          const title = job.title || 'Unknown Position';
+          const location = job.location?.display_name || 'Remote';
+          const category = job.category?.label || 'General';
+          
+          // Determine role type and seniority from title
+          const titleLower = title.toLowerCase();
+          let roleType = 'other';
+          let seniority = 'mid';
+          
+          if (titleLower.includes('engineer') || titleLower.includes('developer')) roleType = 'engineering';
+          else if (titleLower.includes('sales') || titleLower.includes('account')) roleType = 'sales';
+          else if (titleLower.includes('market')) roleType = 'marketing';
+          else if (titleLower.includes('product')) roleType = 'product';
+          else if (titleLower.includes('data') || titleLower.includes('analyst')) roleType = 'data';
+          
+          if (titleLower.includes('senior') || titleLower.includes('lead') || titleLower.includes('principal')) seniority = 'senior';
+          else if (titleLower.includes('junior') || titleLower.includes('entry')) seniority = 'entry';
+          else if (titleLower.includes('director') || titleLower.includes('vp') || titleLower.includes('head')) seniority = 'director';
+          
+          const key = `${category}-${roleType}-${seniority}`;
+          
+          if (!jobsByCategory.has(key)) {
+            jobsByCategory.set(key, {
+              ticker: company.ticker,
+              company: company.name,
+              job_title: title,
+              department: category,
+              location: location,
+              posting_count: 1,
+              role_type: roleType,
+              seniority_level: seniority,
+              posted_date: job.created ? new Date(job.created).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              growth_indicator: 0, // Calculate based on historical data
+              metadata: {
+                source: 'adzuna_api',
+                salary_min: job.salary_min || null,
+                salary_max: job.salary_max || null,
+                description: job.description?.substring(0, 200),
+                company_display_name: job.company?.display_name,
+              },
+              created_at: new Date().toISOString(),
+            });
+          } else {
+            const existing = jobsByCategory.get(key);
+            existing.posting_count++;
+          }
+        }
+        
+        jobPostings.push(...Array.from(jobsByCategory.values()));
+        
+        // Rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (err) {
+        console.error(`Error processing ${company.name}:`, err);
       }
     }
 
@@ -77,7 +131,7 @@ serve(async (req) => {
         throw error;
       }
 
-      console.log(`Inserted ${jobPostings.length} job posting records`);
+      console.log(`Inserted ${jobPostings.length} real job posting records`);
     }
 
     return new Response(

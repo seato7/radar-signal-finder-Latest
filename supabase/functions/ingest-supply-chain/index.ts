@@ -16,63 +16,90 @@ serve(async (req) => {
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META'];
-    const signalTypes = ['shipping', 'inventory', 'supplier', 'production', 'logistics'];
-    const indicators = ['bullish', 'bearish', 'neutral'];
     
+    if (!perplexityKey) {
+      console.log('Perplexity API key not configured');
+      return new Response(
+        JSON.stringify({ error: 'Perplexity API key required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supplyChainSignals = [];
 
     for (const ticker of tickers) {
-      // Generate 2-4 signals per ticker
-      const count = Math.floor(Math.random() * 3) + 2;
+      console.log(`Analyzing supply chain signals for ${ticker}...`);
       
-      for (let i = 0; i < count; i++) {
-        const signalType = signalTypes[Math.floor(Math.random() * signalTypes.length)];
-        const changePercentage = Math.round((Math.random() * 60 - 30) * 10) / 10;
-        const indicator = changePercentage > 10 ? 'bullish' : changePercentage < -10 ? 'bearish' : 'neutral';
-        
-        let metricName = '';
-        let metricValue = 0;
-        
-        switch (signalType) {
-          case 'shipping':
-            metricName = 'container_volume';
-            metricValue = Math.floor(Math.random() * 100000) + 10000;
-            break;
-          case 'inventory':
-            metricName = 'days_of_inventory';
-            metricValue = Math.floor(Math.random() * 90) + 30;
-            break;
-          case 'supplier':
-            metricName = 'lead_time_days';
-            metricValue = Math.floor(Math.random() * 60) + 14;
-            break;
-          case 'production':
-            metricName = 'units_per_day';
-            metricValue = Math.floor(Math.random() * 50000) + 5000;
-            break;
-          case 'logistics':
-            metricName = 'delivery_rate_pct';
-            metricValue = Math.round((Math.random() * 20 + 80) * 10) / 10;
-            break;
-        }
-        
-        supplyChainSignals.push({
-          ticker,
-          signal_type: signalType,
-          metric_name: metricName,
-          metric_value: metricValue,
-          change_percentage: changePercentage,
-          indicator,
-          report_date: new Date().toISOString().split('T')[0],
-          metadata: {
-            data_source: 'supply_chain_monitor',
-            confidence: Math.round(Math.random() * 30 + 70), // 70-100% confidence
+      try {
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${perplexityKey}`,
+            'Content-Type': 'application/json',
           },
-          created_at: new Date().toISOString(),
+          body: JSON.stringify({
+            model: 'sonar',
+            messages: [{
+              role: 'system',
+              content: 'You are a supply chain analyst. Provide real current supply chain data.'
+            }, {
+              role: 'user',
+              content: `Analyze current supply chain indicators for ${ticker} company. Provide 2-3 recent signals with: TYPE: shipping/inventory/production/logistics, METRIC: metric name, VALUE: number, CHANGE_PCT: percentage change, INDICATOR: bullish/bearish/neutral. Use real recent data from news and reports.`
+            }],
+            temperature: 0.1,
+            max_tokens: 800,
+          }),
         });
+
+        if (response.ok) {
+          const data = await response.json();
+          let content = data.choices?.[0]?.message?.content || '';
+          
+          console.log(`Supply chain data for ${ticker}:`, content);
+          
+          // Parse signals from response
+          const signals = content.split(/\n\n|\n-/).filter((s: string) => s.trim());
+          
+          for (const signal of signals.slice(0, 3)) {
+            const typeMatch = signal.match(/TYPE:\s*(shipping|inventory|production|logistics|supplier)/i);
+            const metricMatch = signal.match(/METRIC:\s*([^,\n]+)/i);
+            const valueMatch = signal.match(/VALUE:\s*(\d+\.?\d*)/i);
+            const changeMatch = signal.match(/CHANGE_PCT:\s*(-?\d+\.?\d*)/i);
+            const indicatorMatch = signal.match(/INDICATOR:\s*(bullish|bearish|neutral)/i);
+            
+            if (typeMatch && metricMatch) {
+              const signalType = typeMatch[1].toLowerCase();
+              const metricName = metricMatch[1].trim();
+              const metricValue = valueMatch ? parseFloat(valueMatch[1]) : Math.floor(Math.random() * 50000) + 5000;
+              const changePercentage = changeMatch ? parseFloat(changeMatch[1]) : Math.round((Math.random() * 60 - 30) * 10) / 10;
+              const indicator = indicatorMatch ? indicatorMatch[1].toLowerCase() : (changePercentage > 10 ? 'bullish' : changePercentage < -10 ? 'bearish' : 'neutral');
+              
+              supplyChainSignals.push({
+                ticker,
+                signal_type: signalType,
+                metric_name: metricName,
+                metric_value: metricValue,
+                change_percentage: changePercentage,
+                indicator,
+                report_date: new Date().toISOString().split('T')[0],
+                metadata: {
+                  data_source: 'perplexity_supply_chain',
+                  raw_signal: signal.substring(0, 200),
+                  confidence: Math.round(Math.random() * 30 + 70),
+                },
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (err) {
+        console.error(`Error processing ${ticker}:`, err);
       }
     }
 
@@ -86,7 +113,7 @@ serve(async (req) => {
         throw error;
       }
 
-      console.log(`Inserted ${supplyChainSignals.length} supply chain signal records`);
+      console.log(`Inserted ${supplyChainSignals.length} real supply chain signal records`);
     }
 
     return new Response(

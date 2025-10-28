@@ -24,33 +24,14 @@ serve(async (req) => {
     const tickers = ['GME', 'AMC', 'BBBY', 'TSLA', 'NVDA', 'AAPL', 'MSFT', 'SPY'];
     
     if (!perplexityKey) {
-      console.log('Perplexity API key not configured, using mock data');
-      
-      const mockData = tickers.map(ticker => ({
-        ticker,
-        report_date: new Date().toISOString().split('T')[0],
-        short_volume: Math.floor(Math.random() * 100000000) + 10000000,
-        float_percentage: Math.random() * 50,
-        days_to_cover: Math.random() * 10,
-        metadata: {
-          source: 'mock_data',
-        },
-        created_at: new Date().toISOString(),
-      }));
-
-      const { error } = await supabase
-        .from('short_interest')
-        .insert(mockData);
-
-      if (error) throw error;
-
+      console.log('Perplexity API key not configured');
       return new Response(
-        JSON.stringify({ success: true, count: mockData.length, note: 'Mock data used' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Perplexity API key required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Use Perplexity to get short interest data
+    // Use Perplexity to get real-time short interest data from FINRA and other sources
     const shortData = [];
     
     for (const ticker of tickers) {
@@ -66,9 +47,14 @@ serve(async (req) => {
           body: JSON.stringify({
             model: 'sonar',
             messages: [{
+              role: 'system',
+              content: 'You are a financial data provider. Return only the requested data in the exact format specified.'
+            }, {
               role: 'user',
-              content: `What is the current short interest percentage of float and days to cover for ${ticker} stock? Format: SHORT_FLOAT: X%, DAYS_TO_COVER: Y`
+              content: `Get the latest FINRA short interest data for ${ticker}. Provide: SHORT_FLOAT: X% (percentage of float), SHORT_VOLUME: Y (number of shares), DAYS_TO_COVER: Z (days to cover). Use real current data from FINRA reports.`
             }],
+            temperature: 0.1,
+            max_tokens: 500,
           }),
         });
 
@@ -76,21 +62,26 @@ serve(async (req) => {
           const data = await response.json();
           let content = data.choices?.[0]?.message?.content || '';
           
-          // Strip markdown formatting if present
-          content = content.replace(/```\s*/g, '').trim();
+          console.log(`Perplexity response for ${ticker}:`, content);
           
-          const floatMatch = content.match(/SHORT_FLOAT:\s*(\d+\.?\d*)/);
-          const daysMatch = content.match(/DAYS_TO_COVER:\s*(\d+\.?\d*)/);
+          const floatMatch = content.match(/SHORT_FLOAT:\s*(\d+\.?\d*)/i);
+          const volumeMatch = content.match(/SHORT_VOLUME:\s*(\d+[,\d]*)/i);
+          const daysMatch = content.match(/DAYS_TO_COVER:\s*(\d+\.?\d*)/i);
+          
+          const shortVolume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : null;
+          const floatPercentage = floatMatch ? parseFloat(floatMatch[1]) : null;
+          const daysToCover = daysMatch ? parseFloat(daysMatch[1]) : null;
           
           shortData.push({
             ticker,
             report_date: new Date().toISOString().split('T')[0],
-            short_volume: Math.floor(Math.random() * 100000000),
-            float_percentage: floatMatch ? parseFloat(floatMatch[1]) : Math.random() * 50,
-            days_to_cover: daysMatch ? parseFloat(daysMatch[1]) : Math.random() * 10,
+            short_volume: shortVolume,
+            float_percentage: floatPercentage,
+            days_to_cover: daysToCover,
             metadata: {
-              source: 'perplexity_ai',
+              source: 'perplexity_finra',
               raw_response: content,
+              data_quality: 'real',
             },
             created_at: new Date().toISOString(),
           });
@@ -98,27 +89,9 @@ serve(async (req) => {
           console.log(`Failed to fetch short interest for ${ticker}: ${response.status}`);
         }
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 1500));
       } catch (err) {
         console.error(`Error fetching short interest for ${ticker}:`, err);
-      }
-    }
-
-    // If no data was fetched, generate sample data
-    if (shortData.length === 0) {
-      console.log('No data fetched from API, generating sample data');
-      for (const ticker of tickers) {
-        shortData.push({
-          ticker,
-          report_date: new Date().toISOString().split('T')[0],
-          short_volume: Math.floor(Math.random() * 100000000) + 10000000,
-          float_percentage: Math.random() * 50,
-          days_to_cover: Math.random() * 10,
-          metadata: {
-            source: 'sample_data',
-          },
-          created_at: new Date().toISOString(),
-        });
       }
     }
 
@@ -131,7 +104,7 @@ serve(async (req) => {
         console.error('Database error:', error);
         throw error;
       }
-      console.log(`Inserted ${shortData.length} short interest records`);
+      console.log(`Inserted ${shortData.length} real short interest records`);
     }
 
     return new Response(
