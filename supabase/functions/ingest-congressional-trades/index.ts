@@ -39,7 +39,7 @@ serve(async (req) => {
       for (let i = 0; i < 20; i++) {
         const ticker = tickers[Math.floor(Math.random() * tickers.length)];
         const rep = representatives[Math.floor(Math.random() * representatives.length)];
-        const transactionType = Math.random() > 0.5 ? 'purchase' : 'sale';
+        const transactionType = Math.random() > 0.5 ? 'buy' : 'sell';
         const amountMin = Math.floor(Math.random() * 50000) + 1000;
         const amountMax = amountMin + Math.floor(Math.random() * 100000);
         const daysAgo = Math.floor(Math.random() * 30);
@@ -84,7 +84,7 @@ serve(async (req) => {
       ticker: trade.ticker || 'N/A',
       transaction_date: trade.transaction_date || new Date().toISOString().split('T')[0],
       filed_date: trade.disclosure_date || new Date().toISOString().split('T')[0],
-      transaction_type: trade.type || 'unknown',
+      transaction_type: trade.type?.toLowerCase() === 'purchase' ? 'buy' : trade.type?.toLowerCase() === 'sale' ? 'sell' : trade.type || 'buy',
       amount_min: trade.amount ? parseFloat(trade.amount.split('-')[0].replace(/[^0-9.]/g, '')) : null,
       amount_max: trade.amount ? parseFloat(trade.amount.split('-')[1]?.replace(/[^0-9.]/g, '') || trade.amount.replace(/[^0-9.]/g, '')) : null,
       party: trade.party || null,
