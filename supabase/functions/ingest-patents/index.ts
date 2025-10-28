@@ -20,78 +20,89 @@ serve(async (req) => {
 
     // Major tech companies to track
     const companies = [
-      { name: 'Apple Inc', ticker: 'AAPL' },
-      { name: 'Microsoft Corporation', ticker: 'MSFT' },
-      { name: 'Alphabet Inc', ticker: 'GOOGL' },
-      { name: 'Amazon Technologies', ticker: 'AMZN' },
-      { name: 'Tesla Inc', ticker: 'TSLA' },
-      { name: 'Meta Platforms', ticker: 'META' },
-      { name: 'NVIDIA Corporation', ticker: 'NVDA' },
+      { name: 'Apple', ticker: 'AAPL', assignee: 'Apple Inc' },
+      { name: 'Microsoft', ticker: 'MSFT', assignee: 'Microsoft Corporation' },
+      { name: 'Google', ticker: 'GOOGL', assignee: 'Google LLC' },
+      { name: 'Amazon', ticker: 'AMZN', assignee: 'Amazon Technologies' },
+      { name: 'Tesla', ticker: 'TSLA', assignee: 'Tesla Inc' },
+      { name: 'Meta', ticker: 'META', assignee: 'Meta Platforms' },
+      { name: 'NVIDIA', ticker: 'NVDA', assignee: 'NVIDIA Corporation' },
     ];
 
     const patents = [];
 
     for (const company of companies) {
-      console.log(`Fetching patents for ${company.name}...`);
+      console.log(`Fetching patents for ${company.name} via PatentsView...`);
       
       try {
-        // USPTO API - public patent data
-        const searchQuery = encodeURIComponent(company.name);
+        // Use PatentsView API - free and comprehensive
+        const query = {
+          "q": {
+            "assignee_organization": company.assignee
+          },
+          "f": [
+            "patent_number",
+            "patent_title",
+            "patent_date",
+            "cpc_group_title",
+            "inventor_first_name",
+            "inventor_last_name"
+          ],
+          "s": [{"patent_date": "desc"}],
+          "o": {"per_page": 20}
+        };
+
         const response = await fetch(
-          `https://developer.uspto.gov/ibd-api/v1/patent/application?searchText=${searchQuery}&start=0&rows=20`,
+          'https://search.patentsview.org/api/v1/patent/',
           {
+            method: 'POST',
             headers: {
-              'Accept': 'application/json',
+              'Content-Type': 'application/json',
             },
+            body: JSON.stringify(query)
           }
         );
 
         if (!response.ok) {
-          console.log(`Failed to fetch patents for ${company.name}: ${response.status}, using sample data`);
-          
-          // Generate sample patent data for this company
-          const technologies = ['Artificial Intelligence', 'Machine Learning', 'Quantum Computing', 'Neural Networks'];
-          const titles = ['Advanced Processing System', 'Neural Network Architecture', 'Machine Learning Algorithm', 'Data Processing Method'];
-          
-          for (let i = 0; i < 3; i++) {
-            patents.push({
-              ticker: company.ticker,
-              company: company.name,
-              patent_number: `US${Math.floor(Math.random() * 10000000) + 10000000}`,
-              patent_title: titles[Math.floor(Math.random() * titles.length)],
-              filing_date: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              technology_category: technologies[Math.floor(Math.random() * technologies.length)],
-              metadata: {
-                status: 'granted',
-                inventors: ['Sample Inventor'],
-              },
-              created_at: new Date().toISOString(),
-            });
-          }
+          console.log(`PatentsView API failed for ${company.name}: ${response.status}`);
           continue;
         }
 
         const data = await response.json();
-        const results = data.response?.docs || [];
+        const results = data.patents || [];
+        console.log(`Found ${results.length} patents for ${company.name}`);
 
         for (const patent of results) {
+          // Extract inventor names
+          const inventors = [];
+          if (patent.inventors && patent.inventors.length > 0) {
+            inventors.push(...patent.inventors.map((inv: any) => 
+              `${inv.inventor_first_name || ''} ${inv.inventor_last_name || ''}`.trim()
+            ));
+          }
+
+          // Get technology category from CPC classification
+          const techCategory = patent.cpcs && patent.cpcs.length > 0 
+            ? patent.cpcs[0].cpc_group_title || 'General'
+            : 'General';
+
           patents.push({
             ticker: company.ticker,
-            company: company.name,
-            patent_number: patent.patentNumber || patent.applicationNumber || 'PENDING',
-            patent_title: patent.inventionTitle || 'Untitled',
-            filing_date: patent.appFilingDate || new Date().toISOString().split('T')[0],
-            technology_category: patent.primaryClass || 'General',
+            company: company.assignee,
+            patent_number: patent.patent_number || 'PENDING',
+            patent_title: patent.patent_title || 'Untitled',
+            filing_date: patent.patent_date || new Date().toISOString().split('T')[0],
+            technology_category: techCategory,
             metadata: {
-              inventors: patent.inventorName,
-              abstract: patent.inventionAbstract?.slice(0, 500),
-              status: patent.patentNumber ? 'granted' : 'pending',
+              inventors: inventors.length > 0 ? inventors : ['Unknown'],
+              data_source: 'patentsview_api',
+              patent_date: patent.patent_date,
             },
             created_at: new Date().toISOString(),
           });
         }
 
-        // Rate limiting
+        // Rate limiting - be respectful to free API
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (err) {
         console.error(`Error processing ${company.name}:`, err);
@@ -109,7 +120,9 @@ serve(async (req) => {
         throw error;
       }
 
-      console.log(`Inserted ${patents.length} patent records`);
+      console.log(`Inserted ${patents.length} real patent records`);
+    } else {
+      console.log('No patents fetched - API may be down');
     }
 
     return new Response(

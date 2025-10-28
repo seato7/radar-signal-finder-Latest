@@ -18,11 +18,40 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch from House Stock Watcher API (free public API)
-    const response = await fetch('https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json');
+    // Try multiple sources for congressional trades
+    console.log('Fetching from official Senate/House disclosures...');
     
-    if (!response.ok) {
-      console.log('Congressional API failed, using sample data');
+    // First try: Senate disclosures (efdsearch.senate.gov)
+    let trades = [];
+    
+    try {
+      // Use Financial Modeling Prep as primary source (more reliable)
+      const fmpResponse = await fetch('https://financialmodelingprep.com/api/v4/senate-trading?apikey=demo');
+      
+      if (fmpResponse.ok) {
+        const fmpData = await fmpResponse.json();
+        trades = fmpData.slice(0, 100); // Get recent 100 trades
+        console.log(`Fetched ${trades.length} trades from FMP`);
+      }
+    } catch (e) {
+      console.error('FMP API failed:', e);
+    }
+    
+    // Fallback: Try House Stock Watcher
+    if (trades.length === 0) {
+      try {
+        const hswResponse = await fetch('https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json');
+        if (hswResponse.ok) {
+          trades = await hswResponse.json();
+          console.log(`Fetched ${trades.length} trades from House Stock Watcher`);
+        }
+      } catch (e) {
+        console.error('House Stock Watcher API failed:', e);
+      }
+    }
+    
+    if (trades.length === 0) {
+      console.log('All Congressional APIs failed, using sample data');
       
       const tickers = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'TSLA', 'META', 'JPM', 'BAC', 'WMT'];
       const representatives = [
@@ -75,8 +104,7 @@ serve(async (req) => {
       );
     }
 
-    const trades = await response.json();
-    console.log(`Fetched ${trades.length} congressional trades`);
+    console.log(`Processing ${trades.length} congressional trades`);
 
     // Parse and transform the data
     const records = trades.slice(0, 1000).map((trade: any) => ({
