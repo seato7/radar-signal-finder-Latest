@@ -74,7 +74,10 @@ serve(async (req) => {
 
       if (response.ok) {
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
+        let content = data.choices?.[0]?.message?.content || '';
+        
+        // Strip markdown formatting if present
+        content = content.replace(/```\s*/g, '').trim();
         
         const quarterMatch = content.match(/QUARTER:\s*(Q\d\s*\d{4})/);
         const epsMatch = content.match(/EPS_SURPRISE:\s*(-?\d+\.?\d*)/);

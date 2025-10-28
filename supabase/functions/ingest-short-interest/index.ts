@@ -74,7 +74,10 @@ serve(async (req) => {
 
         if (response.ok) {
           const data = await response.json();
-          const content = data.choices?.[0]?.message?.content || '';
+          let content = data.choices?.[0]?.message?.content || '';
+          
+          // Strip markdown formatting if present
+          content = content.replace(/```\s*/g, '').trim();
           
           const floatMatch = content.match(/SHORT_FLOAT:\s*(\d+\.?\d*)/);
           const daysMatch = content.match(/DAYS_TO_COVER:\s*(\d+\.?\d*)/);

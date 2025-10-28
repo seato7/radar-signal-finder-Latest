@@ -95,7 +95,10 @@ serve(async (req) => {
         }
 
         const data = await response.json();
-        const content = data.choices[0].message.content;
+        let content = data.choices[0].message.content;
+        
+        // Strip markdown code blocks if present
+        content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
         
         try {
           const parsedNews = JSON.parse(content);
