@@ -84,7 +84,7 @@ serve(async (req) => {
       ticker: trade.ticker || 'N/A',
       transaction_date: trade.transaction_date || new Date().toISOString().split('T')[0],
       filed_date: trade.disclosure_date || new Date().toISOString().split('T')[0],
-      transaction_type: trade.type?.toLowerCase() === 'purchase' ? 'buy' : trade.type?.toLowerCase() === 'sale' ? 'sell' : trade.type || 'buy',
+      transaction_type: trade.type?.toLowerCase() === 'purchase' ? 'buy' : trade.type?.toLowerCase() === 'sale' ? 'sell' : trade.type?.toLowerCase() || 'buy',
       amount_min: trade.amount ? parseFloat(trade.amount.split('-')[0].replace(/[^0-9.]/g, '')) : null,
       amount_max: trade.amount ? parseFloat(trade.amount.split('-')[1]?.replace(/[^0-9.]/g, '') || trade.amount.replace(/[^0-9.]/g, '')) : null,
       party: trade.party || null,
