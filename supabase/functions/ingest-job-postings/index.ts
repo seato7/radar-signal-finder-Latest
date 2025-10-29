@@ -12,14 +12,36 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Starting job postings ingestion...');
-    
+    // Require authentication
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Verify user is authenticated
+    const authClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Starting job postings ingestion for user ${user.id}...`);
+    
     const adzunaAppId = Deno.env.get('ADZUNA_APP_ID');
     const adzunaAppKey = Deno.env.get('ADZUNA_APP_KEY');
-    
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const companies = [
       { ticker: 'AAPL', name: 'Apple' },
