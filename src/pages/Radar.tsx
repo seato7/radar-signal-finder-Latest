@@ -59,7 +59,7 @@ const Radar = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Opportunity Radar"
+        title="Insider Pulse"
         description="Live scanning for high-probability signals"
       />
 

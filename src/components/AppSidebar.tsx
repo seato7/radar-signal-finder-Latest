@@ -58,7 +58,7 @@ export function AppSidebar() {
       <div className="flex items-center justify-between p-4 border-b border-border">
         {!isCollapsed && (
           <h2 className="text-lg font-bold bg-gradient-chrome bg-clip-text text-transparent">
-            Opportunity Radar
+            Insider Pulse
           </h2>
         )}
         <SidebarTrigger className="ml-auto" />

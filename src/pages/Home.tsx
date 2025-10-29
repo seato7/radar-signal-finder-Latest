@@ -84,7 +84,7 @@ const Home = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Opportunity Radar Control"
+        title="Insider Pulse Control"
         description="Run ETL pipelines and monitor system health"
         action={
           <Button
@@ -104,7 +104,7 @@ const Home = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Database className="h-5 w-5 text-primary" />
-            How Opportunity Radar Works
+            How Insider Pulse Works
           </CardTitle>
           <CardDescription>
             Multi-signal investment analysis combining 11+ alternative data sources

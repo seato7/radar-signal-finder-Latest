@@ -8,7 +8,7 @@ const Help = () => {
     <div className="space-y-6">
       <PageHeader
         title="Help & Documentation"
-        description="Understanding Opportunity Radar's scoring and features"
+        description="Understanding Insider Pulse's scoring and features"
       />
 
       <Card className="shadow-data">
@@ -22,7 +22,7 @@ const Help = () => {
               <AccordionTrigger>How are opportunity scores calculated?</AccordionTrigger>
               <AccordionContent className="text-muted-foreground space-y-2">
                 <p>
-                  Opportunity Radar uses a weighted scoring model with eight main components:
+                  Insider Pulse uses a weighted scoring model with eight main components:
                 </p>
                 <ul className="list-disc pl-6 space-y-1">
                   <li><strong>PolicyMomentum (1.0):</strong> Regulatory & policy signals</li>
@@ -61,7 +61,7 @@ const Help = () => {
             <AccordionItem value="item-4">
               <AccordionTrigger>How does ETL idempotency work?</AccordionTrigger>
               <AccordionContent className="text-muted-foreground">
-                Every data point ingested by Opportunity Radar is assigned a deterministic checksum.
+                Every data point ingested by Insider Pulse is assigned a deterministic checksum.
                 This ensures that the same data is never processed twice, maintaining data integrity
                 and preventing duplicate signals even if ETL jobs are re-run.
               </AccordionContent>
