@@ -47,15 +47,7 @@ export default function DataSources() {
     try {
       setLoading(true);
 
-      const [social, congressional, patentData, trends, shorts, earningsData, news, twitter, options, jobs, supply] = await Promise.all([
-        supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(50),
-        supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(50),
-        supabase.from('search_trends').select('*').order('period_start', { ascending: false }).limit(50),
-        supabase.from('short_interest').select('*').order('report_date', { ascending: false }).limit(50),
-        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(50),
-        supabase.from('breaking_news').select('*').order('published_at', { ascending: false }).limit(50),
-        supabase.from('twitter_signals').select('*').order('created_at', { ascending: false }).limit(50),
+      const [social, congressional, patentData, trends, shorts, earningsData, news, options, jobs, supply] = await Promise.all([
         supabase.from('options_flow').select('*').order('trade_date', { ascending: false }).limit(50),
         supabase.from('job_postings').select('*').order('posted_date', { ascending: false }).limit(50),
         supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(50)
@@ -68,7 +60,7 @@ export default function DataSources() {
       if (shorts.error) throw shorts.error;
       if (earningsData.error) throw earningsData.error;
       if (news.error) throw news.error;
-      if (twitter.error) throw twitter.error;
+      
       if (options.error) throw options.error;
       if (jobs.error) throw jobs.error;
       if (supply.error) throw supply.error;
@@ -80,7 +72,7 @@ export default function DataSources() {
       setShortInterest(shorts.data || []);
       setEarnings(earningsData.data || []);
       setBreakingNews(news.data || []);
-      setTwitterSignals(twitter.data || []);
+      
       setOptionsFlow(options.data || []);
       setJobPostings(jobs.data || []);
       setSupplyChain(supply.data || []);
@@ -133,7 +125,7 @@ export default function DataSources() {
       { name: 'ingest-short-interest', display: 'Short Interest' },
       { name: 'ingest-earnings', display: 'Earnings' },
       { name: 'ingest-breaking-news', display: 'Breaking News' },
-      { name: 'ingest-twitter', display: 'Twitter' },
+      
       { name: 'ingest-options-flow', display: 'Options Flow' },
       { name: 'ingest-job-postings', display: 'Job Postings' },
       { name: 'ingest-supply-chain', display: 'Supply Chain' }
@@ -354,7 +346,7 @@ export default function DataSources() {
                 <CardHeader>
                   <CardTitle>Social Media Sentiment</CardTitle>
                   <CardDescription>
-                    Reddit, StockTwits, and Twitter sentiment data • Updates: Every hour
+                    Reddit and StockTwits sentiment data • Updates: Every hour
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -362,13 +354,13 @@ export default function DataSources() {
                     <Info className="h-4 w-4" />
                     <AlertTitle>What This Shows</AlertTitle>
                     <AlertDescription>
-                      Social sentiment tracks retail investor sentiment from Reddit (r/wallstreetbets, r/stocks), StockTwits, and Twitter. 
+                      Social sentiment tracks retail investor sentiment from Reddit (r/wallstreetbets, r/stocks) and StockTwits. 
                       High bullish sentiment + institutional buying = strong conviction opportunity. Watch for sentiment spikes 
                       before major moves.
                     </AlertDescription>
                   </Alert>
                   <div className="space-y-4">
-                    {socialSignals.length === 0 && twitterSignals.length === 0 ? (
+                    {socialSignals.length === 0 ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground mb-2">No data available yet.</p>
                         <Button onClick={() => runIngestion('ingest-stocktwits', 'StockTwits')} size="sm">

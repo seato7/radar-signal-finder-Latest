@@ -68,15 +68,7 @@ serve(async (req) => {
     
     try {
       // Fetch Supabase alternative data sources
-      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, twitterData, optionsData, jobsData, supplyData] = await Promise.all([
-        supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(20),
-        supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(20),
-        supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
-        supabase.from('search_trends').select('*').order('period_start', { ascending: false }).limit(10),
-        supabase.from('short_interest').select('*').order('report_date', { ascending: false }).limit(10),
-        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(10),
-        supabase.from('breaking_news').select('*').order('published_at', { ascending: false }).limit(15),
-        supabase.from('twitter_signals').select('*').order('created_at', { ascending: false }).limit(15),
+      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, optionsData, jobsData, supplyData] = await Promise.all([
         supabase.from('options_flow').select('*').order('trade_date', { ascending: false }).limit(10),
         supabase.from('job_postings').select('*').order('posted_date', { ascending: false }).limit(10),
         supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(10)
