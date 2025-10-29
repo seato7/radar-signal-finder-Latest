@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     
+    # Broker encryption key (separate from JWT secret for security)
+    BROKER_ENCRYPTION_KEY: Optional[str] = None  # For encrypting broker API keys
+    
     # Supabase configuration (for edge function calls)
     SUPABASE_URL: Optional[str] = None
     
