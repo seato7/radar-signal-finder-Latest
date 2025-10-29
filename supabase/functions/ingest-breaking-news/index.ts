@@ -1,9 +1,30 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// Validation schema for Perplexity API responses
+const PerplexityResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({
+      content: z.string().max(10000),
+    }),
+  })).min(1),
+});
+
+// Sanitize and validate sentiment score
+const validateSentiment = (score: number): number => {
+  if (isNaN(score) || !isFinite(score)) return 0;
+  return Math.max(-1, Math.min(1, score));
+};
+
+// Sanitize ticker symbol
+const sanitizeTicker = (ticker: string): string => {
+  return ticker.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 10);
 };
 
 serve(async (req) => {
@@ -117,11 +138,21 @@ serve(async (req) => {
           continue;
         }
 
-        const data = await response.json();
-        const content = data.choices[0].message.content;
+        const rawData = await response.json();
         
-        // Split by separator and parse each news item
-        const newsBlocks = content.split('---').filter((block: string) => block.trim());
+        // Validate API response structure
+        let validatedData;
+        try {
+          validatedData = PerplexityResponseSchema.parse(rawData);
+        } catch (validationError) {
+          console.error(`Perplexity API response validation failed for ${ticker}:`, validationError);
+          continue;
+        }
+        
+        const content = validatedData.choices[0].message.content;
+        
+        // Split by separator and parse each news item (limit to 10 blocks)
+        const newsBlocks = content.split('---').filter((block: string) => block.trim()).slice(0, 10);
         
         for (const block of newsBlocks) {
           const headlineMatch = block.match(/HEADLINE:\s*(.+?)(?=SUMMARY:|$)/s);
@@ -131,16 +162,16 @@ serve(async (req) => {
           
           if (headlineMatch) {
             newsItems.push({
-              ticker,
-              headline: headlineMatch[1].trim(),
-              summary: summaryMatch ? summaryMatch[1].trim() : 'No summary available',
-              source: sourceMatch ? sourceMatch[1].trim() : 'Perplexity',
+              ticker: sanitizeTicker(ticker),
+              headline: headlineMatch[1].trim().substring(0, 500),
+              summary: summaryMatch ? summaryMatch[1].trim().substring(0, 1000) : 'No summary available',
+              source: sourceMatch ? sourceMatch[1].trim().substring(0, 200) : 'Perplexity',
               url: null,
               published_at: new Date().toISOString(),
-              sentiment_score: sentimentMatch ? parseFloat(sentimentMatch[1]) : 0,
+              sentiment_score: sentimentMatch ? validateSentiment(parseFloat(sentimentMatch[1])) : 0,
               relevance_score: 0.8,
               metadata: {
-                raw_content: block
+                raw_content: block.substring(0, 2000) // Limit metadata size
               },
               created_at: new Date().toISOString(),
             });

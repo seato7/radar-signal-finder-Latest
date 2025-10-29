@@ -57,8 +57,8 @@ class AlpacaAdapter:
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    logger.error(f"Alpaca account error: {response.text}")
-                    return {"error": response.text}
+                    logger.error(f"Alpaca account error: {response.status_code} - {response.text}")
+                    return {"error": "Could not retrieve account information"}
         except Exception as e:
             logger.error(f"Error fetching Alpaca account: {e}")
             return {"error": str(e)}
@@ -190,8 +190,8 @@ class AlpacaAdapter:
                     logger.info(f"Order placed: {order['id']} - {side} {qty or notional} {symbol}")
                     return order
                 else:
-                    logger.error(f"Alpaca order error: {response.text}")
-                    return {"error": response.text}
+                    logger.error(f"Alpaca order error: {response.status_code} - {response.text}")
+                    return {"error": "Could not place order. Please check your order parameters and try again."}
         except Exception as e:
             logger.error(f"Error placing order: {e}")
             return {"error": str(e)}
@@ -260,8 +260,8 @@ class AlpacaAdapter:
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    logger.error(f"Error closing position: {response.text}")
-                    return {"error": response.text}
+                    logger.error(f"Error closing position: {response.status_code} - {response.text}")
+                    return {"error": "Could not close position"}
         except Exception as e:
             logger.error(f"Error closing position: {e}")
             return {"error": str(e)}

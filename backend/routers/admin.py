@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.db import get_db
 from backend.auth import require_admin, TokenData
+from backend.models_admin import AdminActionRequest
 from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
@@ -193,41 +194,51 @@ async def get_audit_log(limit: int = 100, db=Depends(get_db)):
         "payment_events": subs
     }
 
-@router.get("/make-admin/{email}", dependencies=[Depends(require_admin)])
-async def make_user_admin(email: str, current_user: TokenData = Depends(require_admin), db=Depends(get_db)):
+@router.post("/make-admin")
+async def make_user_admin(
+    data: AdminActionRequest,
+    current_user: TokenData = Depends(require_admin),
+    db=Depends(get_db)
+):
     """Promote a user to admin role - requires admin authentication"""
     from backend.models_auth import UserRole
     
     # Find user by email
-    user = await db.users.find_one({"email": email})
+    user = await db.users.find_one({"email": data.email})
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     # Update role to admin
     result = await db.users.update_one(
-        {"email": email},
+        {"email": data.email},
         {"$set": {"role": UserRole.ADMIN.value, "updated_at": datetime.utcnow()}}
     )
     
     # Log admin action
     import logging
     logger = logging.getLogger(__name__)
-    logger.warning(f"Admin {current_user.email} promoted {email} to admin role")
+    logger.warning(
+        f"Admin {current_user.email} promoted {data.email} to admin role. "
+        f"Reason: {data.reason or 'Not provided'}"
+    )
     
     return {
         "status": "success",
-        "message": f"Successfully promoted {email} to admin",
-        "email": email,
-        "new_role": UserRole.ADMIN.value
+        "message": f"Successfully promoted {data.email} to admin",
+        "email": data.email
     }
 
-@router.get("/upgrade-premium/{email}", dependencies=[Depends(require_admin)])
-async def upgrade_user_to_premium(email: str, current_user: TokenData = Depends(require_admin), db=Depends(get_db)):
+@router.post("/upgrade-premium")
+async def upgrade_user_to_premium(
+    data: AdminActionRequest,
+    current_user: TokenData = Depends(require_admin),
+    db=Depends(get_db)
+):
     """Upgrade a user to premium plan - requires admin authentication"""
     
     # Find user by email
-    user = await db.users.find_one({"email": email})
+    user = await db.users.find_one({"email": data.email})
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -267,23 +278,28 @@ async def upgrade_user_to_premium(email: str, current_user: TokenData = Depends(
     # Log admin action
     import logging
     logger = logging.getLogger(__name__)
-    logger.warning(f"Admin {current_user.email} upgraded {email} to premium")
+    logger.warning(
+        f"Admin {current_user.email} upgraded {data.email} to premium. "
+        f"Reason: {data.reason or 'Not provided'}"
+    )
     
     return {
         "status": "success",
         "message": message,
-        "email": email,
-        "plan": "premium",
-        "expires_at": (datetime.utcnow() + timedelta(days=365)).isoformat()
+        "email": data.email
     }
 
-@router.get("/setup/{email}", dependencies=[Depends(require_admin)])
-async def full_setup(email: str, current_user: TokenData = Depends(require_admin), db=Depends(get_db)):
+@router.post("/setup")
+async def full_setup(
+    data: AdminActionRequest,
+    current_user: TokenData = Depends(require_admin),
+    db=Depends(get_db)
+):
     """Complete setup - make admin AND upgrade to premium - requires admin authentication"""
     from backend.models_auth import UserRole
     
     # Find user by email
-    user = await db.users.find_one({"email": email})
+    user = await db.users.find_one({"email": data.email})
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Please register first.")
@@ -292,7 +308,7 @@ async def full_setup(email: str, current_user: TokenData = Depends(require_admin
     
     # 1. Update role to admin
     await db.users.update_one(
-        {"email": email},
+        {"email": data.email},
         {"$set": {"role": UserRole.ADMIN.value, "updated_at": datetime.utcnow()}}
     )
     
@@ -325,13 +341,13 @@ async def full_setup(email: str, current_user: TokenData = Depends(require_admin
     # Log admin action
     import logging
     logger = logging.getLogger(__name__)
-    logger.warning(f"Admin {current_user.email} performed full setup for {email}")
+    logger.warning(
+        f"Admin {current_user.email} performed full setup for {data.email}. "
+        f"Reason: {data.reason or 'Not provided'}"
+    )
     
     return {
         "status": "success",
-        "message": f"Successfully set up {email} as admin with premium plan",
-        "email": email,
-        "role": UserRole.ADMIN.value,
-        "plan": "premium",
-        "expires_at": (datetime.utcnow() + timedelta(days=365)).isoformat()
+        "message": f"Successfully set up {data.email} as admin with premium plan",
+        "email": data.email
     }

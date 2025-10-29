@@ -69,8 +69,13 @@ const Admin = () => {
   const handleUpgradeUser = async (email: string, action: string) => {
     const token = localStorage.getItem('auth_token');
     try {
-      const response = await fetch(`${API_BASE}/api/admin/${action}/${email}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const response = await fetch(`${API_BASE}/api/admin/${action}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
       });
       
       if (response.ok) {
