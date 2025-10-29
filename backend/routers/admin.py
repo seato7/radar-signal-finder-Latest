@@ -86,6 +86,89 @@ async def get_admin_metrics(db=Depends(get_db)):
         }
     }
 
+@router.get("/users", dependencies=[Depends(require_admin)])
+async def get_all_users(
+    role: str = None, 
+    is_active: bool = None,
+    limit: int = 100,
+    db=Depends(get_db)
+):
+    """Get list of all users with optional filters"""
+    
+    # Build query filter
+    query = {}
+    if role:
+        query["role"] = role
+    if is_active is not None:
+        query["is_active"] = is_active
+    
+    # Get users
+    users = await db.users.find(query).sort("created_at", -1).limit(limit).to_list(length=limit)
+    
+    # Convert ObjectIds to strings and remove sensitive data
+    user_list = []
+    for user in users:
+        user_list.append({
+            "id": str(user["_id"]),
+            "email": user.get("email"),
+            "role": user.get("role", "free"),
+            "is_active": user.get("is_active", True),
+            "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
+            "updated_at": user.get("updated_at").isoformat() if user.get("updated_at") else None,
+        })
+    
+    return {
+        "users": user_list,
+        "total": len(user_list)
+    }
+
+@router.get("/user-stats", dependencies=[Depends(require_admin)])
+async def get_user_stats(db=Depends(get_db)):
+    """Get user growth and activity statistics"""
+    
+    # Count by role
+    total_users = await db.users.count_documents({})
+    free_users = await db.users.count_documents({"role": "free"})
+    lite_users = await db.users.count_documents({"role": "lite"})
+    pro_users = await db.users.count_documents({"role": "pro"})
+    admin_users = await db.users.count_documents({"role": "admin"})
+    active_users = await db.users.count_documents({"is_active": True})
+    
+    # Recent signups (last 7 days, 30 days)
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+    
+    signups_7d = await db.users.count_documents({"created_at": {"$gte": week_ago}})
+    signups_30d = await db.users.count_documents({"created_at": {"$gte": month_ago}})
+    
+    # Get recent signups with details
+    recent_signups = await db.users.find().sort("created_at", -1).limit(10).to_list(length=10)
+    recent_list = []
+    for user in recent_signups:
+        recent_list.append({
+            "id": str(user["_id"]),
+            "email": user.get("email"),
+            "role": user.get("role", "free"),
+            "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
+        })
+    
+    return {
+        "totals": {
+            "all_users": total_users,
+            "free": free_users,
+            "lite": lite_users,
+            "pro": pro_users,
+            "admin": admin_users,
+            "active": active_users
+        },
+        "growth": {
+            "signups_7d": signups_7d,
+            "signups_30d": signups_30d
+        },
+        "recent_signups": recent_list
+    }
+
 @router.get("/audit", dependencies=[Depends(require_admin)])
 async def get_audit_log(limit: int = 100, db=Depends(get_db)):
     """Get recent bot actions and payment events"""
