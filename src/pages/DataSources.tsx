@@ -48,6 +48,13 @@ export default function DataSources() {
       setLoading(true);
 
       const [social, congressional, patentData, trends, shorts, earningsData, news, options, jobs, supply] = await Promise.all([
+        supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(50),
+        supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(50),
+        supabase.from('search_trends').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('short_interest').select('*').order('report_date', { ascending: false }).limit(50),
+        supabase.from('earnings_sentiment').select('*').order('earnings_date', { ascending: false }).limit(50),
+        supabase.from('breaking_news').select('*').order('published_at', { ascending: false }).limit(50),
         supabase.from('options_flow').select('*').order('trade_date', { ascending: false }).limit(50),
         supabase.from('job_postings').select('*').order('posted_date', { ascending: false }).limit(50),
         supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(50)
@@ -378,22 +385,6 @@ export default function DataSources() {
                               </div>
                               <p className="text-sm text-muted-foreground mt-1">
                                 {signal.mention_count} mentions • {signal.bullish_count} bullish • {signal.bearish_count} bearish
-                              </p>
-                            </div>
-                            <div className={`text-xl font-bold ${getSentimentColor(signal.sentiment_score)}`}>
-                              {signal.sentiment_score > 0 ? '+' : ''}{(signal.sentiment_score * 100).toFixed(0)}%
-                            </div>
-                          </div>
-                        ))}
-                        {twitterSignals.map((signal) => (
-                          <div key={signal.id} className="flex items-center justify-between border-b pb-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold">{signal.ticker}</span>
-                                <Badge variant="outline">Twitter</Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {signal.mention_count} mentions • {signal.bullish_count} bullish • {signal.bearish_count} bearish • {signal.influencer_mentions} influencer mentions
                               </p>
                             </div>
                             <div className={`text-xl font-bold ${getSentimentColor(signal.sentiment_score)}`}>

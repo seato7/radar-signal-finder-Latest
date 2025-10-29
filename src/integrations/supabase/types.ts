@@ -419,48 +419,6 @@ export type Database = {
         }
         Relationships: []
       }
-      twitter_signals: {
-        Row: {
-          bearish_count: number | null
-          bullish_count: number | null
-          created_at: string | null
-          id: string
-          influencer_mentions: number | null
-          mention_count: number | null
-          metadata: Json | null
-          sentiment_score: number | null
-          ticker: string
-          top_tweets: Json | null
-          tweet_volume: number | null
-        }
-        Insert: {
-          bearish_count?: number | null
-          bullish_count?: number | null
-          created_at?: string | null
-          id?: string
-          influencer_mentions?: number | null
-          mention_count?: number | null
-          metadata?: Json | null
-          sentiment_score?: number | null
-          ticker: string
-          top_tweets?: Json | null
-          tweet_volume?: number | null
-        }
-        Update: {
-          bearish_count?: number | null
-          bullish_count?: number | null
-          created_at?: string | null
-          id?: string
-          influencer_mentions?: number | null
-          mention_count?: number | null
-          metadata?: Json | null
-          sentiment_score?: number | null
-          ticker?: string
-          top_tweets?: Json | null
-          tweet_volume?: number | null
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
