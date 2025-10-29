@@ -2,18 +2,25 @@
 Initialize admin user on startup
 """
 import asyncio
+import os
 from backend.db import get_db
 from backend.auth import get_password_hash
 from backend.models_auth import UserRole
 from datetime import datetime, timedelta
 
-ADMIN_EMAIL = "danseaton7@gmail.com"
-ADMIN_PASSWORD = "#Cricket4life"
+# SECURITY: Never hardcode credentials. Use environment variables.
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 async def init_admin():
     """Create or update admin user with premium subscription"""
     import logging
     logger = logging.getLogger(__name__)
+    
+    # Skip admin initialization if credentials not set
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        logger.info("⏭️  Skipping admin initialization - ADMIN_EMAIL or ADMIN_PASSWORD not set in environment")
+        return
     
     try:
         logger.info(f"🔧 Starting admin initialization for {ADMIN_EMAIL}")

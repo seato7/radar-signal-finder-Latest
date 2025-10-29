@@ -110,22 +110,27 @@ async def get_audit_log(limit: int = 100, db=Depends(get_db)):
         "payment_events": subs
     }
 
-@router.get("/make-admin/{email}")
-async def make_user_admin(email: str, db=Depends(get_db)):
-    """Promote a user to admin role - temporary endpoint for setup"""
+@router.get("/make-admin/{email}", dependencies=[Depends(require_admin)])
+async def make_user_admin(email: str, current_user: TokenData = Depends(require_admin), db=Depends(get_db)):
+    """Promote a user to admin role - requires admin authentication"""
     from backend.models_auth import UserRole
     
     # Find user by email
     user = await db.users.find_one({"email": email})
     
     if not user:
-        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found")
+        raise HTTPException(status_code=404, detail="User not found")
     
     # Update role to admin
     result = await db.users.update_one(
         {"email": email},
-        {"$set": {"role": UserRole.ADMIN.value}}
+        {"$set": {"role": UserRole.ADMIN.value, "updated_at": datetime.utcnow()}}
     )
+    
+    # Log admin action
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Admin {current_user.email} promoted {email} to admin role")
     
     return {
         "status": "success",
@@ -134,15 +139,15 @@ async def make_user_admin(email: str, db=Depends(get_db)):
         "new_role": UserRole.ADMIN.value
     }
 
-@router.get("/upgrade-premium/{email}")
-async def upgrade_user_to_premium(email: str, db=Depends(get_db)):
-    """Upgrade a user to premium plan - temporary endpoint for setup"""
+@router.get("/upgrade-premium/{email}", dependencies=[Depends(require_admin)])
+async def upgrade_user_to_premium(email: str, current_user: TokenData = Depends(require_admin), db=Depends(get_db)):
+    """Upgrade a user to premium plan - requires admin authentication"""
     
     # Find user by email
     user = await db.users.find_one({"email": email})
     
     if not user:
-        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found")
+        raise HTTPException(status_code=404, detail="User not found")
     
     user_id = str(user["_id"])
     
@@ -176,6 +181,11 @@ async def upgrade_user_to_premium(email: str, db=Depends(get_db)):
         result = await db.subscriptions.insert_one(subscription)
         message = "Created new premium subscription"
     
+    # Log admin action
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Admin {current_user.email} upgraded {email} to premium")
+    
     return {
         "status": "success",
         "message": message,
@@ -184,23 +194,23 @@ async def upgrade_user_to_premium(email: str, db=Depends(get_db)):
         "expires_at": (datetime.utcnow() + timedelta(days=365)).isoformat()
     }
 
-@router.get("/setup/{email}")
-async def full_setup(email: str, db=Depends(get_db)):
-    """Complete setup - make admin AND upgrade to premium"""
+@router.get("/setup/{email}", dependencies=[Depends(require_admin)])
+async def full_setup(email: str, current_user: TokenData = Depends(require_admin), db=Depends(get_db)):
+    """Complete setup - make admin AND upgrade to premium - requires admin authentication"""
     from backend.models_auth import UserRole
     
     # Find user by email
     user = await db.users.find_one({"email": email})
     
     if not user:
-        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found. Please login first.")
+        raise HTTPException(status_code=404, detail="User not found. Please register first.")
     
     user_id = str(user["_id"])
     
     # 1. Update role to admin
     await db.users.update_one(
         {"email": email},
-        {"$set": {"role": UserRole.ADMIN.value}}
+        {"$set": {"role": UserRole.ADMIN.value, "updated_at": datetime.utcnow()}}
     )
     
     # 2. Update/create premium subscription
@@ -228,6 +238,11 @@ async def full_setup(email: str, db=Depends(get_db)):
             "expires_at": datetime.utcnow() + timedelta(days=365)
         }
         await db.subscriptions.insert_one(subscription)
+    
+    # Log admin action
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Admin {current_user.email} performed full setup for {email}")
     
     return {
         "status": "success",

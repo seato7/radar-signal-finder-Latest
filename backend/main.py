@@ -41,24 +41,30 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Global exception handler
+# Global exception handler - prevents information leakage
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    # Log detailed error server-side for debugging
     logger.error(
-        f"Unhandled exception: {str(exc)}",
+        f"Unhandled exception: {type(exc).__name__}: {str(exc)}",
         exc_info=True,
         extra={
             "extra_fields": {
                 "path": request.url.path,
-                "method": request.method
+                "method": request.method,
+                "client_host": request.client.host if request.client else "unknown"
             }
         }
     )
     metrics.increment("unhandled_exceptions")
     
+    # Return generic error to client (no internal details)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"}
+        content={
+            "detail": "An error occurred processing your request",
+            "error_code": "INTERNAL_ERROR"
+        }
     )
 
 # CORS - strict: only FRONTEND_PUBLIC_URL allowed
@@ -76,8 +82,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
 
 # Routers

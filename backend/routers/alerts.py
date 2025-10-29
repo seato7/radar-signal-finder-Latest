@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
 from backend.db import get_db
 from backend.config import settings
 from backend.services.alerts import check_and_fire_alerts
@@ -6,8 +7,17 @@ from backend.services.payments import get_plans
 from backend.auth import get_current_user
 from typing import Dict
 from datetime import datetime
+import re
 
 router = APIRouter()
+
+class ThemeSubscription(BaseModel):
+    theme_id: str = Field(..., min_length=1, max_length=100, description="Theme ID to subscribe to")
+    
+    @property
+    def validated_id(self) -> str:
+        """Return sanitized theme_id (alphanumeric, hyphens, underscores only)"""
+        return re.sub(r'[^a-zA-Z0-9_-]', '', self.theme_id)
 
 @router.get("")
 async def get_alerts(user=Depends(get_current_user), db=Depends(get_db)):
@@ -61,11 +71,13 @@ async def run_alert_check():
 
 @router.post("/subscribe")
 async def subscribe_to_theme(
-    theme_id: str = Body(...),
+    data: ThemeSubscription,
     user=Depends(get_current_user),
     db=Depends(get_db)
 ):
     """Subscribe to alerts for a specific theme"""
+    theme_id = data.validated_id
+    
     # Check user's subscription plan and alert limits
     subscription = await db.subscriptions.find_one({"user_id": user.user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
@@ -78,7 +90,7 @@ async def subscribe_to_theme(
     if max_alerts != -1 and alert_count >= max_alerts:
         raise HTTPException(
             status_code=403,
-            detail=f"Alert limit reached. Your {user_plan} plan allows {max_alerts} alerts. Upgrade to add more."
+            detail=f"Alert limit reached. Upgrade your plan to add more alerts."
         )
     
     # Check if already subscribed
@@ -89,7 +101,7 @@ async def subscribe_to_theme(
     })
     
     if existing:
-        raise HTTPException(400, "Already subscribed to this theme")
+        raise HTTPException(status_code=400, detail="Already subscribed to this theme")
     
     # Create alert subscription
     alert_doc = {

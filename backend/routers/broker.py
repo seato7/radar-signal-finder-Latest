@@ -49,45 +49,42 @@ async def _validate_broker_credentials(exchange: str, api_key: str, secret_key: 
 
 @router.post("/keys")
 async def add_broker_key(
-    data: Dict[str, str],
+    data: BrokerKeyAdd,
     user=Depends(get_current_user),
     db=Depends(get_db)
 ):
     """Add and validate a new broker API key"""
-    exchange = data.get("exchange", "alpaca")
-    label = data.get("label", f"{exchange.title()} Account")
-    api_key = data.get("api_key")
-    secret_key = data.get("secret_key")
-    paper_mode = data.get("paper_mode", True)
     
-    if not api_key or not secret_key:
-        raise HTTPException(400, "API key and secret are required")
-    
-    # Validate based on exchange
-    is_valid = await _validate_broker_credentials(exchange, api_key, secret_key, paper_mode)
+    # Validate credentials with broker
+    is_valid = await _validate_broker_credentials(
+        data.exchange, 
+        data.api_key, 
+        data.secret_key, 
+        data.paper_mode
+    )
     if not is_valid:
-        raise HTTPException(400, f"Invalid {exchange} credentials or could not connect")
+        raise HTTPException(status_code=400, detail="Could not validate credentials")
     
     # Check if key already exists
     existing = await db.api_keys.find_one({
         "user_id": user.email,
-        "exchange": exchange,
-        "key_id": api_key
+        "exchange": data.exchange,
+        "key_id": data.api_key
     })
     
     if existing:
-        raise HTTPException(400, "This API key is already connected")
+        raise HTTPException(status_code=400, detail="API key already connected")
     
     # Encrypt and store
-    encrypted_secret = encrypt_secret(secret_key)
+    encrypted_secret = encrypt_data(data.secret_key)
     
     key_doc = {
         "user_id": user.email,
-        "label": label,
-        "exchange": exchange,
-        "key_id": api_key,
+        "label": data.label,
+        "exchange": data.exchange,
+        "key_id": data.api_key,
         "secret_enc": encrypted_secret,
-        "paper_mode": paper_mode,
+        "paper_mode": data.paper_mode,
         "created_at": datetime.utcnow()
     }
     
