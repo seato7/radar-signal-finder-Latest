@@ -20,7 +20,6 @@ export default function DataSources() {
   const [shortInterest, setShortInterest] = useState<any[]>([]);
   const [earnings, setEarnings] = useState<any[]>([]);
   const [breakingNews, setBreakingNews] = useState<any[]>([]);
-  const [twitterSignals, setTwitterSignals] = useState<any[]>([]);
   const [optionsFlow, setOptionsFlow] = useState<any[]>([]);
   const [jobPostings, setJobPostings] = useState<any[]>([]);
   const [supplyChain, setSupplyChain] = useState<any[]>([]);
@@ -255,15 +254,6 @@ export default function DataSources() {
               >
                 {ingesting['ingest-breaking-news'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 News
-              </Button>
-              
-              <Button 
-                onClick={() => runIngestion('ingest-twitter', 'Twitter')}
-                disabled={ingesting['ingest-twitter']}
-                variant="outline"
-              >
-                {ingesting['ingest-twitter'] && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Twitter
               </Button>
               
               <Button 
