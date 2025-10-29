@@ -4,10 +4,19 @@ from backend.auth import get_current_user
 from backend.models_bots import ApiKey
 from backend.utils.encryption import encrypt_secret, decrypt_secret
 from typing import Dict, List
+from pydantic import BaseModel, Field
 import httpx
 from datetime import datetime
 
 router = APIRouter(prefix="/api/broker", tags=["broker"])
+
+class BrokerKeyAdd(BaseModel):
+    """Input validation for adding broker API keys"""
+    exchange: str = Field(..., min_length=1, max_length=50, pattern="^[a-z]+$")
+    label: str = Field(..., min_length=1, max_length=100)
+    api_key: str = Field(..., min_length=1, max_length=500)
+    secret_key: str = Field(..., min_length=1, max_length=500)
+    paper_mode: bool = True
 
 async def _validate_broker_credentials(exchange: str, api_key: str, secret_key: str, paper_mode: bool) -> bool:
     """Validate broker credentials by testing connection"""
@@ -76,7 +85,7 @@ async def add_broker_key(
         raise HTTPException(status_code=400, detail="API key already connected")
     
     # Encrypt and store
-    encrypted_secret = encrypt_data(data.secret_key)
+    encrypted_secret = encrypt_secret(data.secret_key)
     
     key_doc = {
         "user_id": user.email,
