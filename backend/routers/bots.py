@@ -29,6 +29,12 @@ async def create_bot(
     user_id = current_user.user_id
     subscription = await db.subscriptions.find_one({"user_id": user_id})
     user_plan = subscription.get("plan", "free") if subscription else "free"
+    
+    # Debug logging
+    from backend.logging_config import get_logger
+    logger = get_logger(__name__)
+    logger.info(f"🔍 Bot creation attempt - user_id: {user_id}, subscription found: {subscription is not None}, plan: {user_plan}")
+    
     plan_features = get_plans()[user_plan]["features"]
     
     # Count user's existing bots by type

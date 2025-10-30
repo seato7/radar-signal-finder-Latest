@@ -84,9 +84,10 @@ const Bots = () => {
         setFormData({ name: "", strategy: "grid", tickers: "", mode: "paper", params: {} });
         fetchBots(); // Reload bots
       } else {
+        console.error('Bot creation failed:', response.status, data);
         toast({ 
           title: "Failed to create bot", 
-          description: data.detail || "Unknown error",
+          description: data.detail || JSON.stringify(data) || "Unknown error",
           variant: "destructive" 
         });
       }
