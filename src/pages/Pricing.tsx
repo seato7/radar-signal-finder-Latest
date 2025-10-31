@@ -4,10 +4,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
 
 const Pricing = () => {
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-  const { userPlan } = useAuth();
+  const { userPlan, refreshSubscription } = useAuth();
+
+  // Refresh subscription status when returning from checkout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      // Wait a moment for Stripe to process, then refresh
+      setTimeout(() => {
+        refreshSubscription?.();
+      }, 2000);
+    }
+  }, [refreshSubscription]);
 
   const plans = [
     {

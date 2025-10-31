@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TrendingUp, Info, Bell, ArrowRight, Lock, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { PLAN_LIMITS, checkPlanLimit } from "@/lib/planLimits";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router-dom";
 
@@ -16,24 +17,6 @@ interface ThemeScore {
   as_of: string;
 }
 
-interface PlanLimits {
-  free: number;
-  lite: number;
-  starter: number;
-  pro: number;
-  premium: number;
-  enterprise: number;
-}
-
-const THEME_LIMITS: PlanLimits = {
-  free: 1,
-  lite: 2,
-  starter: 3,
-  pro: -1, // unlimited
-  premium: -1,
-  enterprise: -1
-};
-
 const Themes = () => {
   const [themes, setThemes] = useState<ThemeScore[]>([]);
   const [loadingThemes, setLoadingThemes] = useState(true);
@@ -43,7 +26,7 @@ const Themes = () => {
   const { token, isAuthenticated, userPlan } = useAuth();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-  const userThemeLimit = THEME_LIMITS[userPlan as keyof PlanLimits] || 1;
+  const userThemeLimit = PLAN_LIMITS[userPlan]?.max_themes || 1;
   const hasUnlimitedThemes = userThemeLimit === -1;
 
   useEffect(() => {

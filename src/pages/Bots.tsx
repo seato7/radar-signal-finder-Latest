@@ -8,11 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, Square, TrendingUp, TrendingDown, Activity, ArrowUpCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
+import { PLAN_LIMITS, checkPlanLimit } from "@/lib/planLimits";
+import { Link } from "react-router-dom";
 
 const Bots = () => {
   const { toast } = useToast();
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, userPlan } = useAuth();
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   
   const [bots, setBots] = useState<any[]>([]);
@@ -25,6 +27,10 @@ const Bots = () => {
     mode: "paper",
     params: {}
   });
+
+  const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
+  const liveBotCount = bots.filter(b => b.mode === 'live').length;
+  const canCreateLiveBot = planLimits.max_bots === -1 || liveBotCount < planLimits.max_bots;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -56,6 +62,16 @@ const Bots = () => {
       toast({ 
         title: "Authentication required",
         description: "Please log in to create bots",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    // Check plan limits for live bots
+    if (formData.mode === 'live' && !canCreateLiveBot) {
+      toast({ 
+        title: "Plan limit reached",
+        description: `Your ${userPlan} plan allows ${planLimits.max_bots} live bot${planLimits.max_bots === 1 ? '' : 's'}. Upgrade to create more.`,
         variant: "destructive" 
       });
       return;
@@ -127,6 +143,16 @@ const Bots = () => {
       return;
     }
 
+    // Check plan limits before upgrading
+    if (!canCreateLiveBot) {
+      toast({ 
+        title: "Plan limit reached",
+        description: `Your ${userPlan} plan allows ${planLimits.max_bots} live bot${planLimits.max_bots === 1 ? '' : 's'}. Upgrade to Pro or Premium for more.`,
+        variant: "destructive" 
+      });
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE}/api/bots/${botId}/upgrade_to_live`, { 
         method: 'POST',
@@ -159,6 +185,28 @@ const Bots = () => {
         title="Trading Bots"
         description="Manage your automated trading strategies - paper trading and live trading"
       />
+
+      {/* Plan Limit Banner */}
+      {planLimits.max_bots !== -1 && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">
+                  Live Bot Limit: {liveBotCount} / {planLimits.max_bots === -1 ? '∞' : planLimits.max_bots}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Your {userPlan} plan allows {planLimits.max_bots} live trading bot{planLimits.max_bots === 1 ? '' : 's'}. 
+                  {planLimits.max_bots !== -1 && " Upgrade to Pro or Premium for more."}
+                </p>
+              </div>
+              <Link to="/pricing">
+                <Button size="sm">Upgrade Plan</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="shadow-data">

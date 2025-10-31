@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { AlertCircle, AlertTriangle, Info, CheckCircle2, Settings } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 
 const alerts = [
   {
