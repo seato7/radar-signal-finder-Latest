@@ -65,7 +65,7 @@ class ApiKey(BaseModel):
 class Subscription(BaseModel):
     id: str = Field(default_factory=lambda: None)
     user_id: str
-    plan: Literal["free", "lite", "starter", "pro", "enterprise"]
+    plan: Literal["free", "lite", "starter", "pro", "premium", "enterprise"]
     status: Literal["active", "canceled", "past_due"]
     stripe_customer_id: Optional[str] = None
     stripe_sub_id: Optional[str] = None
