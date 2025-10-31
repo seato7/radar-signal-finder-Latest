@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const Bots = () => {
   const { toast } = useToast();
-  const { isAuthenticated, userPlan } = useAuth();
+  const { isAuthenticated, userPlan, planLoading } = useAuth();
   
   const [bots, setBots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +28,8 @@ const Bots = () => {
     params: {}
   });
 
+  console.log('Current userPlan:', userPlan, 'planLoading:', planLoading);
+  
   const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
   const liveBotCount = bots.filter(b => b.mode === 'live').length;
   const canCreateLiveBot = planLimits.max_bots === -1 || liveBotCount < planLimits.max_bots;

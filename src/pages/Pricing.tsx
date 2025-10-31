@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 
 const Pricing = () => {
   const { userPlan, refreshSubscription } = useAuth();
+  
+  console.log('Pricing page - userPlan:', userPlan);
 
   // Refresh subscription status when returning from checkout
   useEffect(() => {
