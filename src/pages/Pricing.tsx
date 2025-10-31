@@ -112,20 +112,6 @@ const Pricing = () => {
       ],
       cta: "Contact Sales",
       plan_id: "enterprise"
-    },
-    {
-      name: "Admin",
-      price: "∞",
-      period: "",
-      description: "Full platform access",
-      features: [
-        "Unlimited everything",
-        "All features unlocked",
-        "Full system access",
-        "Development privileges"
-      ],
-      cta: "Current Plan",
-      plan_id: "admin"
     }
   ];
 
@@ -189,11 +175,11 @@ const Pricing = () => {
               </ul>
               <Button 
                 className="w-full" 
-                variant={plan.plan_id === userPlan ? "outline" : "default"}
+                variant={plan.plan_id === userPlan || userPlan === 'admin' ? "outline" : "default"}
                 onClick={() => handleCheckout(plan.plan_id)}
-                disabled={plan.plan_id === userPlan}
+                disabled={plan.plan_id === userPlan || userPlan === 'admin'}
               >
-                {plan.plan_id === userPlan ? "Current Plan" : plan.cta}
+                {plan.plan_id === userPlan || userPlan === 'admin' ? "Current Plan" : plan.cta}
               </Button>
             </CardContent>
           </Card>
