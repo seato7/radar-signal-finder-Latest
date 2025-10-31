@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TrendingUp, Info, Bell, ArrowRight, Lock, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router-dom";
 
 interface ThemeScore {
