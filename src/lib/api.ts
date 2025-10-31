@@ -18,11 +18,10 @@ class ApiClient {
   async getHealthWeights(): Promise<ScoringWeights> {
     // Return default weights - this can be moved to edge function if needed
     return {
-      theme_momentum: 0.3,
-      signal_quality: 0.25,
-      data_freshness: 0.2,
-      signal_diversity: 0.15,
-      magnitude: 0.1
+      momentum: 0.3,
+      sentiment: 0.25,
+      volume: 0.2,
+      decay_factor: 0.98
     };
   }
 
