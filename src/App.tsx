@@ -22,7 +22,7 @@ import Bots from "./pages/Bots";
 import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
-import Login from "./pages/Login";
+import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import CheckStatus from "./pages/CheckStatus";
@@ -40,7 +40,7 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
           <Routes>
-            <Route path="/login" element={<Login />} />
+            <Route path="/auth" element={<Auth />} />
             <Route
               path="/*"
               element={

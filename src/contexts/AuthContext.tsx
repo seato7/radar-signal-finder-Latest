@@ -1,179 +1,60 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { User, Session } from '@supabase/supabase-js';
 import { toast } from 'sonner';
-
-interface User {
-  id: string;
-  email: string;
-  role: string;
-  is_active: boolean;
-  created_at: string;
-  plan?: string;
-}
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
+  session: Session | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
-  userPlan: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token'));
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if token exists and fetch user data
-    if (token) {
-      fetchUser();
+    // Set up auth state listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }
+    );
+
+    // Then check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error(error.message);
     } else {
-      setLoading(false);
+      toast.success('Logged out successfully');
     }
-  }, [token]);
-
-  const fetchUser = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch user');
-      }
-
-      const userData = await response.json();
-      setUser(userData);
-    } catch (error) {
-      console.error('Error fetching user:', error);
-      logout();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const login = async (email: string, password: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Login failed');
-      }
-
-      const data = await response.json();
-      const newToken = data.access_token;
-      localStorage.setItem('auth_token', newToken);
-      
-      // Fetch user data immediately after login
-      const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${newToken}`,
-        },
-      });
-
-      if (!userResponse.ok) {
-        throw new Error('Failed to fetch user data');
-      }
-
-      const userData = await userResponse.json();
-      
-      // Update state with both token and user before navigating
-      setToken(newToken);
-      setUser(userData);
-      
-      toast.success('Logged in successfully');
-      
-      // Small delay to ensure state updates before navigation
-      setTimeout(() => navigate('/'), 100);
-    } catch (error: any) {
-      toast.error(error.message || 'Login failed');
-      throw error;
-    }
-  };
-
-  const register = async (email: string, password: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Registration failed');
-      }
-
-      const data = await response.json();
-      const newToken = data.access_token;
-      localStorage.setItem('auth_token', newToken);
-      
-      // Fetch user data immediately after registration
-      const userResponse = await fetch(`${API_BASE}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${newToken}`,
-        },
-      });
-
-      if (!userResponse.ok) {
-        throw new Error('Failed to fetch user data');
-      }
-
-      const userData = await userResponse.json();
-      
-      // Update state with both token and user before navigating
-      setToken(newToken);
-      setUser(userData);
-      
-      toast.success('Account created successfully');
-      
-      // Small delay to ensure state updates before navigation
-      setTimeout(() => navigate('/'), 100);
-    } catch (error: any) {
-      toast.error(error.message || 'Registration failed');
-      throw error;
-    }
-  };
-
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('auth_token');
-    toast.info('Logged out');
-    navigate('/login');
   };
 
   return (
-    <AuthContext.Provider
-      value={{
+    <AuthContext.Provider 
+      value={{ 
         user,
-        token,
-        loading,
-        login,
-        register,
-        logout,
-        isAuthenticated: !!token && !!user,
-        userPlan: user?.plan || 'free',
+        session,
+        loading, 
+        logout, 
+        isAuthenticated: !!user 
       }}
     >
       {children}

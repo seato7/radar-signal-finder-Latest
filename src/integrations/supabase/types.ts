@@ -14,6 +14,77 @@ export type Database = {
   }
   public: {
     Tables: {
+      alerts: {
+        Row: {
+          created_at: string | null
+          dont_miss: Json | null
+          id: string
+          positives: string[] | null
+          score: number
+          status: Database["public"]["Enums"]["alert_status"] | null
+          theme_id: string
+          theme_name: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          dont_miss?: Json | null
+          id?: string
+          positives?: string[] | null
+          score: number
+          status?: Database["public"]["Enums"]["alert_status"] | null
+          theme_id: string
+          theme_name: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          dont_miss?: Json | null
+          id?: string
+          positives?: string[] | null
+          score?: number
+          status?: Database["public"]["Enums"]["alert_status"] | null
+          theme_id?: string
+          theme_name?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alerts_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assets: {
+        Row: {
+          created_at: string | null
+          exchange: string
+          id: string
+          metadata: Json | null
+          name: string
+          ticker: string
+        }
+        Insert: {
+          created_at?: string | null
+          exchange: string
+          id?: string
+          metadata?: Json | null
+          name: string
+          ticker: string
+        }
+        Update: {
+          created_at?: string | null
+          exchange?: string
+          id?: string
+          metadata?: Json | null
+          name?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
       breaking_news: {
         Row: {
           created_at: string | null
@@ -272,6 +343,44 @@ export type Database = {
         }
         Relationships: []
       }
+      prices: {
+        Row: {
+          asset_id: string | null
+          checksum: string
+          close: number
+          created_at: string | null
+          date: string
+          id: string
+          ticker: string
+        }
+        Insert: {
+          asset_id?: string | null
+          checksum: string
+          close: number
+          created_at?: string | null
+          date: string
+          id?: string
+          ticker: string
+        }
+        Update: {
+          asset_id?: string | null
+          checksum?: string
+          close?: number
+          created_at?: string | null
+          date?: string
+          id?: string
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prices_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       search_trends: {
         Row: {
           created_at: string | null
@@ -341,6 +450,54 @@ export type Database = {
         }
         Relationships: []
       }
+      signals: {
+        Row: {
+          asset_id: string | null
+          checksum: string
+          citation: Json
+          created_at: string | null
+          direction: Database["public"]["Enums"]["signal_direction"] | null
+          id: string
+          magnitude: number | null
+          observed_at: string
+          raw: Json | null
+          signal_type: string
+          source_id: string | null
+          theme_id: string | null
+          value_text: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          checksum: string
+          citation: Json
+          created_at?: string | null
+          direction?: Database["public"]["Enums"]["signal_direction"] | null
+          id?: string
+          magnitude?: number | null
+          observed_at: string
+          raw?: Json | null
+          signal_type: string
+          source_id?: string | null
+          theme_id?: string | null
+          value_text?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          checksum?: string
+          citation?: Json
+          created_at?: string | null
+          direction?: Database["public"]["Enums"]["signal_direction"] | null
+          id?: string
+          magnitude?: number | null
+          observed_at?: string
+          raw?: Json | null
+          signal_type?: string
+          source_id?: string | null
+          theme_id?: string | null
+          value_text?: string | null
+        }
+        Relationships: []
+      }
       social_signals: {
         Row: {
           bearish_count: number | null
@@ -377,6 +534,33 @@ export type Database = {
           sentiment_score?: number | null
           source?: string
           ticker?: string
+        }
+        Relationships: []
+      }
+      sources: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_fetched: string | null
+          metadata: Json | null
+          type: string
+          url: string
+        }
+        Insert: {
+          created_at?: string | null
+          id: string
+          last_fetched?: string | null
+          metadata?: Json | null
+          type: string
+          url: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_fetched?: string | null
+          metadata?: Json | null
+          type?: string
+          url?: string
         }
         Relationships: []
       }
@@ -419,6 +603,39 @@ export type Database = {
         }
         Relationships: []
       }
+      themes: {
+        Row: {
+          alpha: number | null
+          contributors: Json | null
+          created_at: string | null
+          id: string
+          keywords: string[]
+          metadata: Json | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          alpha?: number | null
+          contributors?: Json | null
+          created_at?: string | null
+          id?: string
+          keywords?: string[]
+          metadata?: Json | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          alpha?: number | null
+          contributors?: Json | null
+          created_at?: string | null
+          id?: string
+          keywords?: string[]
+          metadata?: Json | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           granted_at: string | null
@@ -443,6 +660,30 @@ export type Database = {
         }
         Relationships: []
       }
+      watchlist: {
+        Row: {
+          created_at: string | null
+          id: string
+          tickers: string[] | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          tickers?: string[] | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          tickers?: string[] | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -461,7 +702,9 @@ export type Database = {
       }
     }
     Enums: {
+      alert_status: "active" | "dismissed"
       app_role: "free" | "lite" | "pro" | "admin"
+      signal_direction: "up" | "down" | "neutral"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -589,7 +832,9 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      alert_status: ["active", "dismissed"],
       app_role: ["free", "lite", "pro", "admin"],
+      signal_direction: ["up", "down", "neutral"],
     },
   },
 } as const
