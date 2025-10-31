@@ -112,6 +112,20 @@ const Pricing = () => {
       ],
       cta: "Contact Sales",
       plan_id: "enterprise"
+    },
+    {
+      name: "Admin",
+      price: "∞",
+      period: "",
+      description: "Full platform access",
+      features: [
+        "Unlimited everything",
+        "All features unlocked",
+        "Full system access",
+        "Development privileges"
+      ],
+      cta: "Current Plan",
+      plan_id: "admin"
     }
   ];
 
