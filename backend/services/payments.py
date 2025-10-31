@@ -16,6 +16,7 @@ PLANS = {
         "features": {
             "max_bots": 0,
             "max_alerts": 1,
+            "max_themes": 1,
             "paper_bots": 1,
             "exports": ["csv"],
             "backtest_days": 30
@@ -29,6 +30,7 @@ PLANS = {
         "features": {
             "max_bots": 0,
             "max_alerts": 10,
+            "max_themes": 2,
             "paper_bots": 3,
             "exports": ["csv"],
             "backtest_days": 90
@@ -42,6 +44,7 @@ PLANS = {
         "features": {
             "max_bots": 3,
             "max_alerts": 25,
+            "max_themes": 3,
             "paper_bots": -1,
             "live_eligible": True,
             "exports": ["csv", "parquet"],
@@ -56,6 +59,7 @@ PLANS = {
         "features": {
             "max_bots": 10,
             "max_alerts": -1,
+            "max_themes": -1,
             "paper_bots": -1,
             "live_eligible": True,
             "exports": ["csv", "parquet"],
@@ -70,6 +74,7 @@ PLANS = {
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
+            "max_themes": -1,
             "paper_bots": -1,
             "live_eligible": True,
             "exports": ["csv", "parquet"],
@@ -83,6 +88,7 @@ PLANS = {
         "features": {
             "max_bots": -1,
             "max_alerts": -1,
+            "max_themes": -1,
             "paper_bots": -1,
             "live_eligible": True,
             "exports": ["csv", "parquet"],
