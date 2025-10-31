@@ -65,6 +65,15 @@ export const PLAN_LIMITS: PlanLimits = {
     live_eligible: true,
     exports: ["csv", "parquet"],
     backtest_days: -1
+  },
+  admin: {
+    max_bots: -1,
+    max_alerts: -1,
+    max_themes: -1,
+    paper_bots: -1,
+    live_eligible: true,
+    exports: ["csv", "parquet"],
+    backtest_days: -1
   }
 };
 
