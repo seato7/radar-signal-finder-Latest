@@ -85,6 +85,186 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_logs: {
+        Row: {
+          bot_id: string
+          created_at: string
+          id: string
+          level: string
+          message: string
+          metadata: Json | null
+        }
+        Insert: {
+          bot_id: string
+          created_at?: string
+          id?: string
+          level: string
+          message: string
+          metadata?: Json | null
+        }
+        Update: {
+          bot_id?: string
+          created_at?: string
+          id?: string
+          level?: string
+          message?: string
+          metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_logs_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_orders: {
+        Row: {
+          bot_id: string
+          broker_order_id: string | null
+          created_at: string
+          id: string
+          mode: string
+          price: number
+          qty: number
+          reason: string | null
+          side: string
+          slippage_applied: number | null
+          status: string | null
+          ticker: string
+        }
+        Insert: {
+          bot_id: string
+          broker_order_id?: string | null
+          created_at?: string
+          id?: string
+          mode?: string
+          price: number
+          qty: number
+          reason?: string | null
+          side: string
+          slippage_applied?: number | null
+          status?: string | null
+          ticker: string
+        }
+        Update: {
+          bot_id?: string
+          broker_order_id?: string | null
+          created_at?: string
+          id?: string
+          mode?: string
+          price?: number
+          qty?: number
+          reason?: string | null
+          side?: string
+          slippage_applied?: number | null
+          status?: string | null
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_orders_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_positions: {
+        Row: {
+          avg_price: number
+          bot_id: string
+          created_at: string
+          id: string
+          mode: string
+          qty: number
+          realized_pnl: number | null
+          ticker: string
+          unrealized_pnl: number | null
+          updated_at: string
+        }
+        Insert: {
+          avg_price?: number
+          bot_id: string
+          created_at?: string
+          id?: string
+          mode?: string
+          qty?: number
+          realized_pnl?: number | null
+          ticker: string
+          unrealized_pnl?: number | null
+          updated_at?: string
+        }
+        Update: {
+          avg_price?: number
+          bot_id?: string
+          created_at?: string
+          id?: string
+          mode?: string
+          qty?: number
+          realized_pnl?: number | null
+          ticker?: string
+          unrealized_pnl?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_positions_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bots: {
+        Row: {
+          created_at: string
+          id: string
+          mode: string
+          name: string
+          params: Json
+          risk_policy: Json
+          status: string
+          strategy: string
+          theme_subscriptions: Json | null
+          tickers: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mode?: string
+          name: string
+          params?: Json
+          risk_policy?: Json
+          status?: string
+          strategy: string
+          theme_subscriptions?: Json | null
+          tickers?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mode?: string
+          name?: string
+          params?: Json
+          risk_policy?: Json
+          status?: string
+          strategy?: string
+          theme_subscriptions?: Json | null
+          tickers?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       breaking_news: {
         Row: {
           created_at: string | null
@@ -124,6 +304,39 @@ export type Database = {
           summary?: string | null
           ticker?: string
           url?: string | null
+        }
+        Relationships: []
+      }
+      broker_keys: {
+        Row: {
+          api_key_encrypted: string
+          created_at: string
+          exchange: string
+          id: string
+          paper_mode: boolean
+          secret_key_encrypted: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          api_key_encrypted: string
+          created_at?: string
+          exchange: string
+          id?: string
+          paper_mode?: boolean
+          secret_key_encrypted: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          api_key_encrypted?: string
+          created_at?: string
+          exchange?: string
+          id?: string
+          paper_mode?: boolean
+          secret_key_encrypted?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
