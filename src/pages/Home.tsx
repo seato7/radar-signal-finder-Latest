@@ -278,7 +278,8 @@ const Home = () => {
 
       <Card className="shadow-data">
         <CardHeader>
-          <CardTitle>Quick Start Guide</CardTitle>
+          <CardTitle>Getting Started</CardTitle>
+          <CardDescription>Your first steps to discovering investment opportunities</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3">
@@ -287,9 +288,9 @@ const Home = () => {
                 1
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Seed Canonical Themes</h4>
+                <h4 className="font-medium text-foreground">Refresh Market Data</h4>
                 <p className="text-sm text-muted-foreground">
-                  Run <code className="px-1 py-0.5 bg-muted rounded text-xs">make seed</code> in terminal to load the 3 themes
+                  Click "Run Data Ingest" above to fetch the latest market signals across all 11+ data sources
                 </p>
               </div>
             </div>
@@ -298,9 +299,9 @@ const Home = () => {
                 2
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Run Data Ingest</h4>
+                <h4 className="font-medium text-foreground">Discover Investment Themes</h4>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Data Ingest" to fetch latest signals from configured data sources
+                  Visit the <strong>Themes</strong> page to see investment opportunities where multiple signals converge
                 </p>
               </div>
             </div>
@@ -309,9 +310,9 @@ const Home = () => {
                 3
               </div>
               <div>
-                <h4 className="font-medium text-foreground">Explore Results</h4>
+                <h4 className="font-medium text-foreground">Set Up Alerts & Bots</h4>
                 <p className="text-sm text-muted-foreground">
-                  Navigate to Radar or Themes page to see scored opportunities
+                  Create custom <strong>Alerts</strong> to track specific opportunities, or deploy <strong>Trading Bots</strong> to automate your strategies
                 </p>
               </div>
             </div>
