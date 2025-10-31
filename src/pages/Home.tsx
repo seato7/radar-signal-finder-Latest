@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Play, Database, RefreshCw } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ThemeScore {
   id: string;
@@ -19,13 +20,15 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [themes, setThemes] = useState<ThemeScore[]>([]);
   const [loadingThemes, setLoadingThemes] = useState(false);
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
-      const response = await fetch(`${API_BASE}/api/radar/themes?days=45`);
-      const data = await response.json();
+      const { data, error } = await supabase.functions.invoke('get-themes', {
+        body: { days: 45 }
+      });
+      
+      if (error) throw error;
       setThemes(data.slice(0, 3)); // Top 3 themes
     } catch (error) {
       console.error("Failed to fetch themes:", error);
@@ -41,31 +44,18 @@ const Home = () => {
   const runIngest = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/ingest/run?mode=real`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const data = await response.json();
-      const parts = [];
-      if (data.policy_feeds?.inserted) parts.push(`${data.policy_feeds.inserted} policy`);
-      if (data.form4_insiders?.inserted) parts.push(`${data.form4_insiders.inserted} insider`);
-      if (data.etf_flows?.inserted) parts.push(`${data.etf_flows.inserted} flow`);
-      
+      // Note: Data ingestion now runs automatically via scheduled edge functions
+      // This manual trigger is kept for backward compatibility
       toast({
-        title: "Data Ingest Complete",
-        description: parts.length > 0 ? `Created: ${parts.join(', ')}` : 'Data sources processed',
+        title: "Data Sources Active",
+        description: "All data sources are automatically refreshed. Visit Data Sources page for manual updates.",
       });
 
       setTimeout(() => fetchThemes(), 1000);
     } catch (error) {
       toast({
-        title: "Ingest Failed",
-        description: error instanceof Error ? error.message : "Could not connect to backend",
+        title: "Error",
+        description: "Could not refresh themes",
         variant: "destructive"
       });
     } finally {

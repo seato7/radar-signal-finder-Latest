@@ -8,6 +8,7 @@ import { AlertCircle, AlertTriangle, Info, CheckCircle2, Settings } from "lucide
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const alerts = [
   {
@@ -93,24 +94,19 @@ const Alerts = () => {
 
     setIsSaving(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/alerts/thresholds`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const { error } = await supabase.functions.invoke('manage-alert-settings', {
+        body: {
           score_threshold: parseFloat(scoreThreshold),
           min_positives: parseInt(minPositives)
-        })
+        }
       });
       
-      if (response.ok) {
-        toast({
-          title: "Thresholds updated",
-          description: "Alert thresholds saved successfully"
-        });
-      }
+      if (error) throw error;
+      
+      toast({
+        title: "Thresholds updated",
+        description: "Alert thresholds saved successfully"
+      });
     } catch (error) {
       toast({
         title: "Error",

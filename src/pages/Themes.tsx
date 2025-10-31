@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PLAN_LIMITS, checkPlanLimit } from "@/lib/planLimits";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ThemeScore {
   id: string;
@@ -24,29 +25,29 @@ const Themes = () => {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const { toast } = useToast();
   const { token, isAuthenticated, userPlan } = useAuth();
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   const userThemeLimit = PLAN_LIMITS[userPlan]?.max_themes || 1;
   const hasUnlimitedThemes = userThemeLimit === -1;
 
   useEffect(() => {
     fetchThemes();
-  }, [API_BASE]);
+  }, []);
 
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
-      const response = await fetch(`${API_BASE}/api/radar/themes?days=45`);
-      if (response.ok) {
-        const data = await response.json();
-        setThemes(data);
-        
-        // Fetch "why now?" for accessible themes
-        const accessibleThemes = hasUnlimitedThemes ? data : data.slice(0, userThemeLimit);
-        accessibleThemes.forEach((theme: ThemeScore) => {
-          fetchWhyNow(theme.id, theme.name);
-        });
-      }
+      const { data, error } = await supabase.functions.invoke('get-themes', {
+        body: { days: 45 }
+      });
+      
+      if (error) throw error;
+      setThemes(data);
+      
+      // Fetch "why now?" for accessible themes
+      const accessibleThemes = hasUnlimitedThemes ? data : data.slice(0, userThemeLimit);
+      accessibleThemes.forEach((theme: ThemeScore) => {
+        fetchWhyNow(theme.id, theme.name);
+      });
     } catch (error) {
       console.error("Failed to fetch themes:", error);
       toast({
@@ -61,11 +62,12 @@ const Themes = () => {
 
   const fetchWhyNow = async (themeId: string, themeName: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/themes/${themeId}/why_now`);
-      if (response.ok) {
-        const data = await response.json();
-        setWhyNowData(prev => ({ ...prev, [themeName]: data }));
-      }
+      const { data, error } = await supabase.functions.invoke('explain-theme', {
+        body: { theme_id: themeId }
+      });
+      
+      if (error) throw error;
+      setWhyNowData(prev => ({ ...prev, [themeName]: data }));
     } catch (error) {
       console.error(`Failed to fetch why now for ${themeName}:`, error);
     }
@@ -83,32 +85,23 @@ const Themes = () => {
 
     setSubscribing(themeId);
     try {
-      const response = await fetch(`${API_BASE}/api/alerts/subscribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ theme_id: themeId })
+      const { error } = await supabase.functions.invoke('manage-alert-settings', {
+        body: { 
+          action: 'subscribe',
+          theme_id: themeId 
+        }
       });
 
-      if (response.ok) {
-        toast({
-          title: "Subscribed!",
-          description: `You'll receive alerts for ${themeName}`
-        });
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Subscription failed",
-          description: error.detail || "Failed to subscribe",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
+      if (error) throw error;
+
       toast({
-        title: "Error",
-        description: "Failed to subscribe to alerts",
+        title: "Subscribed!",
+        description: `You'll receive alerts for ${themeName}`
+      });
+    } catch (error: any) {
+      toast({
+        title: "Subscription failed",
+        description: error.message || "Failed to subscribe",
         variant: "destructive"
       });
     } finally {

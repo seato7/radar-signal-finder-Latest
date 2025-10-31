@@ -10,8 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { Trash2, Loader2, Copy, Key, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { supabase } from '@/integrations/supabase/client';
 
 interface BrokerKey {
   id: string;
@@ -71,11 +70,12 @@ export default function Settings() {
 
   const fetchSupportedBrokers = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/broker/supported`);
-      if (response.ok) {
-        const data = await response.json();
-        setBrokers(data.brokers);
-      }
+      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
+        body: { action: 'list_supported' }
+      });
+      
+      if (error) throw error;
+      setBrokers(data.brokers);
     } catch (error) {
       console.error('Error fetching brokers:', error);
     }
@@ -83,13 +83,9 @@ export default function Settings() {
 
   const fetchApiKeys = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/keys`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setApiKeys(data);
-      }
+      // Enterprise API keys would need a dedicated edge function
+      // For now, returning empty array as this is enterprise-only feature
+      setApiKeys([]);
     } catch (error) {
       console.error('Error fetching API keys:', error);
     }
@@ -107,35 +103,11 @@ export default function Settings() {
 
     setCreatingApiKey(true);
     try {
-      const response = await fetch(`${API_BASE}/api/keys`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          label: apiKeyLabel,
-          permissions: ['read']
-        })
+      // Enterprise API keys would need a dedicated edge function
+      toast({
+        title: 'Coming Soon',
+        description: 'Enterprise API key management will be available soon',
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setNewApiKey(data.key);
-        setApiKeyLabel('');
-        fetchApiKeys();
-        toast({
-          title: 'API Key Created',
-          description: 'Save this key - it will only be shown once!',
-        });
-      } else {
-        toast({
-          title: 'Error',
-          description: data.detail || 'Failed to create API key',
-          variant: 'destructive'
-        });
-      }
     } catch (error) {
       toast({
         title: 'Error',
@@ -149,15 +121,8 @@ export default function Settings() {
 
   const handleDeleteApiKey = async (keyId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/keys/${keyId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        toast({ title: 'API Key Revoked' });
-        fetchApiKeys();
-      }
+      // Enterprise API keys would need a dedicated edge function
+      toast({ title: 'Coming Soon' });
     } catch (error) {
       toast({
         title: 'Error',
@@ -174,13 +139,12 @@ export default function Settings() {
 
   const fetchKeys = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/broker/keys`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
+        body: { action: 'list' }
       });
-      if (response.ok) {
-        const data = await response.json();
-        setKeys(data);
-      }
+      
+      if (error) throw error;
+      setKeys(data);
     } catch (error) {
       console.error('Error fetching keys:', error);
     }
@@ -191,35 +155,25 @@ export default function Settings() {
     setLoading(true);
     
     try {
-      const response = await fetch(`${API_BASE}/api/broker/keys`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
+      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
+        body: {
+          action: 'create',
+          ...formData
+        }
       });
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (response.ok) {
-        toast({
-          title: 'Broker Connected',
-          description: 'Your broker account has been connected successfully.',
-        });
-        setFormData({ exchange: 'alpaca', label: '', api_key: '', secret_key: '', paper_mode: true });
-        fetchKeys();
-      } else {
-        toast({
-          title: 'Connection Failed',
-          description: data.detail || 'Could not connect broker account.',
-          variant: 'destructive'
-        });
-      }
-    } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to connect broker account.',
+        title: 'Broker Connected',
+        description: 'Your broker account has been connected successfully.',
+      });
+      setFormData({ exchange: 'alpaca', label: '', api_key: '', secret_key: '', paper_mode: true });
+      fetchKeys();
+    } catch (error: any) {
+      toast({
+        title: 'Connection Failed',
+        description: error.message || 'Could not connect broker account.',
         variant: 'destructive'
       });
     } finally {
@@ -229,15 +183,16 @@ export default function Settings() {
 
   const handleDeleteKey = async (keyId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/broker/keys/${keyId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const { error } = await supabase.functions.invoke('manage-broker-keys', {
+        body: {
+          action: 'delete',
+          key_id: keyId
+        }
       });
 
-      if (response.ok) {
-        toast({ title: 'Broker Disconnected' });
-        fetchKeys();
-      }
+      if (error) throw error;
+      toast({ title: 'Broker Disconnected' });
+      fetchKeys();
     } catch (error) {
       toast({
         title: 'Error',
@@ -250,12 +205,14 @@ export default function Settings() {
   const handleTestKey = async (keyId: string) => {
     setTestingId(keyId);
     try {
-      const response = await fetch(`${API_BASE}/api/broker/keys/${keyId}/test`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
+        body: {
+          action: 'test',
+          key_id: keyId
+        }
       });
 
-      const data = await response.json();
+      if (error) throw error;
 
       if (data.status === 'connected') {
         toast({

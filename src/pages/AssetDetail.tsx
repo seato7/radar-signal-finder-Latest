@@ -7,6 +7,7 @@ import { Star, ExternalLink, Clock, TrendingUp, TrendingDown } from "lucide-reac
 import { useParams, Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface WhereToBuy {
   name: string;
@@ -36,14 +37,16 @@ const AssetDetail = () => {
   const [loading, setLoading] = useState(true);
   const [score, setScore] = useState<number>(92.5);
   const [ranking, setRanking] = useState<number>(12);
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const { toast } = useToast();
 
   useEffect(() => {
     const fetchAsset = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/assets/by-ticker/${ticker}`);
-        const data = await response.json();
+        const { data, error } = await supabase.functions.invoke('get-assets', {
+          body: { ticker }
+        });
+        
+        if (error) throw error;
         setAsset(data);
       } catch (error) {
         console.error("Failed to fetch asset:", error);

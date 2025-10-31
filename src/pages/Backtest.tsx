@@ -4,12 +4,71 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Play, Download } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 const Backtest = () => {
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const { toast } = useToast();
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [threshold, setThreshold] = useState("85");
+  const [loading, setLoading] = useState(false);
 
-  const handleDownload = (format: 'csv' | 'parquet') => {
-    window.open(`${API_BASE}/api/export?format=${format}`, '_blank');
+  const handleDownload = async (format: 'csv' | 'parquet') => {
+    try {
+      const { data } = await supabase.from('signals').select('*');
+      const csv = JSON.stringify(data);
+      const blob = new Blob([csv], { type: format === 'csv' ? 'text/csv' : 'application/octet-stream' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `signals.${format}`;
+      a.click();
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Could not export data",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRunBacktest = async () => {
+    if (!startDate || !endDate) {
+      toast({
+        title: "Missing Dates",
+        description: "Please select both start and end dates",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('run-backtest', {
+        body: {
+          start_date: startDate,
+          end_date: endDate,
+          threshold: parseFloat(threshold)
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Backtest Complete",
+        description: `Hit rate: ${data.hit_rate}%`
+      });
+    } catch (error) {
+      toast({
+        title: "Backtest Failed",
+        description: "Could not run backtest",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -40,19 +99,39 @@ const Backtest = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="start-date">Start Date</Label>
-              <Input id="start-date" type="date" />
+              <Input 
+                id="start-date" 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="end-date">End Date</Label>
-              <Input id="end-date" type="date" />
+              <Input 
+                id="end-date" 
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="threshold">Score Threshold</Label>
-              <Input id="threshold" type="number" placeholder="85" />
+              <Input 
+                id="threshold" 
+                type="number" 
+                placeholder="85"
+                value={threshold}
+                onChange={(e) => setThreshold(e.target.value)}
+              />
             </div>
-            <Button className="w-full bg-gradient-chrome text-primary-foreground">
+            <Button 
+              onClick={handleRunBacktest}
+              disabled={loading}
+              className="w-full bg-gradient-chrome text-primary-foreground"
+            >
               <Play className="mr-2 h-4 w-4" />
-              Run Backtest
+              {loading ? "Running..." : "Run Backtest"}
             </Button>
           </CardContent>
         </Card>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Search, TrendingUp, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Asset {
   id: string;
@@ -20,20 +21,18 @@ const Assets = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [total, setTotal] = useState(0);
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   const fetchAssets = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      params.append('limit', '500');
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
+      const { data, error } = await supabase.functions.invoke('get-assets', {
+        body: { 
+          limit: 500,
+          search: searchTerm || undefined
+        }
+      });
       
-      // Add trailing slash to fix 307 redirect
-      const response = await fetch(`${API_BASE}/api/assets/?${params}`);
-      const data = await response.json();
+      if (error) throw error;
       setAssets(data.assets || []);
       setTotal(data.total || 0);
     } catch (error) {
@@ -46,11 +45,11 @@ const Assets = () => {
   const handlePopulate = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/api/assets/populate`, {
-        method: 'POST'
+      const { error } = await supabase.functions.invoke('populate-assets', {
+        body: {}
       });
-      await response.json();
-      // Refetch assets
+      
+      if (error) throw error;
       await fetchAssets();
     } catch (error) {
       console.error("Failed to populate assets:", error);

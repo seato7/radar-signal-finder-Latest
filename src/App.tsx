@@ -25,7 +25,6 @@ import Help from "./pages/Help";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
-import CheckStatus from "./pages/CheckStatus";
 import Assistant from "./pages/Assistant";
 import NotFound from "./pages/NotFound";
 
@@ -78,7 +77,6 @@ const App = () => (
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/assistant" element={<Assistant />} />
-                            <Route path="/check-status" element={<CheckStatus />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
