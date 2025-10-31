@@ -11,11 +11,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { PLAN_LIMITS, checkPlanLimit } from "@/lib/planLimits";
 import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 const Bots = () => {
   const { toast } = useToast();
-  const { token, isAuthenticated, userPlan } = useAuth();
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const { isAuthenticated, userPlan } = useAuth();
   
   const [bots, setBots] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,15 +39,15 @@ const Bots = () => {
   }, [isAuthenticated]);
 
   const fetchBots = async () => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     
     try {
-      const response = await fetch(`${API_BASE}/api/bots`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const { data, error } = await supabase
+        .from('bots')
+        .select('*')
+        .order('created_at', { ascending: false });
       
-      if (response.ok) {
-        const data = await response.json();
+      if (!error && data) {
         setBots(data);
       }
     } catch (error) {
@@ -58,7 +58,7 @@ const Bots = () => {
   };
 
   const handleCreate = async () => {
-    if (!isAuthenticated || !token) {
+    if (!isAuthenticated) {
       toast({ 
         title: "Authentication required",
         description: "Please log in to create bots",
@@ -78,42 +78,39 @@ const Bots = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/bots/create`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) throw new Error('Not authenticated');
+
+      const { data, error } = await supabase
+        .from('bots')
+        .insert({
           name: formData.name,
           strategy: formData.strategy,
           mode: formData.mode,
           tickers: formData.tickers.split(',').map(t => t.trim()),
-          params: formData.params
+          params: formData.params,
+          user_id: user.id,
+          status: 'stopped'
         })
-      });
+        .select()
+        .single();
       
-      const data = await response.json();
+      if (error) throw error;
       
-      if (response.ok) {
-        toast({ title: "Bot created successfully" });
-        setFormData({ name: "", strategy: "grid", tickers: "", mode: "paper", params: {} });
-        fetchBots(); // Reload bots
-      } else {
-        console.error('Bot creation failed:', response.status, data);
-        toast({ 
-          title: "Failed to create bot", 
-          description: data.detail || JSON.stringify(data) || "Unknown error",
-          variant: "destructive" 
-        });
-      }
+      toast({ title: "Bot created successfully" });
+      setFormData({ name: "", strategy: "grid", tickers: "", mode: "paper", params: {} });
+      fetchBots();
     } catch (error) {
-      toast({ title: "Failed to create bot", variant: "destructive" });
+      toast({ 
+        title: "Failed to create bot", 
+        description: (error as Error).message,
+        variant: "destructive" 
+      });
     }
   };
 
   const handleBotAction = async (botId: string, action: string) => {
-    if (!isAuthenticated || !token) {
+    if (!isAuthenticated) {
       toast({ 
         title: "Authentication required",
         description: "Please log in to control bots",
@@ -123,19 +120,28 @@ const Bots = () => {
     }
 
     try {
-      await fetch(`${API_BASE}/api/bots/${botId}/${action}`, { 
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const newStatus = action === 'start' ? 'running' : action === 'pause' ? 'paused' : 'stopped';
+      
+      const { error } = await supabase
+        .from('bots')
+        .update({ status: newStatus })
+        .eq('id', botId);
+      
+      if (error) throw error;
+      
       toast({ title: `Bot ${action}ed` });
-      fetchBots(); // Reload bots
+      fetchBots();
     } catch (error) {
-      toast({ title: `Failed to ${action} bot`, variant: "destructive" });
+      toast({ 
+        title: `Failed to ${action} bot`,
+        description: (error as Error).message,
+        variant: "destructive" 
+      });
     }
   };
 
   const handleUpgradeToLive = async (botId: string) => {
-    if (!isAuthenticated || !token) {
+    if (!isAuthenticated) {
       toast({ 
         title: "Authentication required",
         variant: "destructive" 
@@ -154,28 +160,24 @@ const Bots = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/bots/${botId}/upgrade_to_live`, { 
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const { error } = await supabase
+        .from('bots')
+        .update({ mode: 'live' })
+        .eq('id', botId);
+      
+      if (error) throw error;
+      
+      toast({ 
+        title: "Upgraded to live trading",
+        description: "Bot is now using real money" 
       });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        toast({ 
-          title: "Upgraded to live trading",
-          description: "Bot is now using real money" 
-        });
-        fetchBots(); // Reload bots
-      } else {
-        toast({ 
-          title: "Upgrade failed", 
-          description: data.detail || "Unknown error",
-          variant: "destructive" 
-        });
-      }
+      fetchBots();
     } catch (error) {
-      toast({ title: "Failed to upgrade bot", variant: "destructive" });
+      toast({ 
+        title: "Upgrade failed",
+        description: (error as Error).message,
+        variant: "destructive" 
+      });
     }
   };
 

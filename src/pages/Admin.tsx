@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Activity, Users, Bot, AlertCircle, TrendingUp, Shield, Database, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const Admin = () => {
   const navigate = useNavigate();
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const [metrics, setMetrics] = useState<any>(null);
   const [userStats, setUserStats] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
@@ -21,40 +21,31 @@ const Admin = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const token = localStorage.getItem('auth_token');
-      if (!token) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         toast.error('Please login to access admin panel');
-        navigate('/login');
+        navigate('/auth');
         return;
       }
 
       try {
-        const headers = {
-          'Authorization': `Bearer ${token}`,
-        };
-
         const [metricsRes, userStatsRes, usersRes, auditRes] = await Promise.all([
-          fetch(`${API_BASE}/api/admin/metrics`, { headers }),
-          fetch(`${API_BASE}/api/admin/user-stats`, { headers }),
-          fetch(`${API_BASE}/api/admin/users`, { headers }),
-          fetch(`${API_BASE}/api/admin/audit`, { headers })
+          supabase.functions.invoke('admin-metrics/metrics'),
+          supabase.functions.invoke('admin-metrics/user-stats'),
+          supabase.functions.invoke('admin-metrics/users'),
+          supabase.functions.invoke('admin-metrics/audit')
         ]);
         
-        if (!metricsRes.ok || !userStatsRes.ok || !usersRes.ok || !auditRes.ok) {
+        if (metricsRes.error || userStatsRes.error || usersRes.error || auditRes.error) {
           toast.error('Unauthorized access - Admin privileges required');
-          navigate('/login');
+          navigate('/auth');
           return;
         }
 
-        const metricsData = await metricsRes.json();
-        const userStatsData = await userStatsRes.json();
-        const usersData = await usersRes.json();
-        const auditData = await auditRes.json();
-        
-        setMetrics(metricsData);
-        setUserStats(userStatsData);
-        setUsers(usersData.users || []);
-        setAudit(auditData.bot_actions || []);
+        setMetrics(metricsRes.data);
+        setUserStats(userStatsRes.data);
+        setUsers(usersRes.data.users || []);
+        setAudit(auditRes.data.bot_actions || []);
       } catch (error) {
         console.error("Failed to fetch admin data:", error);
         toast.error('Failed to load admin data');
@@ -67,20 +58,13 @@ const Admin = () => {
   }, [navigate]);
 
   const handleUpgradeUser = async (email: string, action: string) => {
-    const token = localStorage.getItem('auth_token');
     try {
-      const response = await fetch(`${API_BASE}/api/admin/${action}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email })
+      const { error } = await supabase.functions.invoke(`admin-metrics/${action}`, {
+        body: { email }
       });
       
-      if (response.ok) {
+      if (!error) {
         toast.success(`Successfully ${action === 'make-admin' ? 'promoted to admin' : 'upgraded to premium'}: ${email}`);
-        // Refresh data
         window.location.reload();
       } else {
         toast.error('Failed to update user');

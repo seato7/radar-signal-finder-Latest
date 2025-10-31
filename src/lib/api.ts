@@ -1,89 +1,98 @@
 import type { Opportunity, Alert, BacktestResult, WatchlistItem, ScoringWeights } from '@/types/api';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { supabase } from '@/integrations/supabase/client';
 
 class ApiClient {
-  private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem('auth_token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    };
-  }
-
-  private async fetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers: {
-        ...this.getAuthHeaders(),
-        ...options?.headers,
-      },
+  private async invokeFunction<T>(functionName: string, body?: any): Promise<T> {
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: body || {}
     });
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+    if (error) {
+      throw new Error(`API Error: ${error.message}`);
     }
 
-    return response.json();
+    return data as T;
   }
 
   // Health & Config
   async getHealthWeights(): Promise<ScoringWeights> {
-    return this.fetch('/healthz/weights');
+    // Return default weights - this can be moved to edge function if needed
+    return {
+      theme_momentum: 0.3,
+      signal_quality: 0.25,
+      data_freshness: 0.2,
+      signal_diversity: 0.15,
+      magnitude: 0.1
+    };
   }
 
-  // Opportunities
+  // Opportunities - These are computed from signals/themes
   async getOpportunities(params?: { limit?: number; theme?: string }): Promise<Opportunity[]> {
-    const query = new URLSearchParams(params as any).toString();
-    return this.fetch(`/opportunities${query ? `?${query}` : ''}`);
+    return this.invokeFunction('get-assets', params);
   }
 
   async getOpportunity(id: string): Promise<Opportunity> {
-    return this.fetch(`/opportunities/${id}`);
+    return this.invokeFunction('get-assets', { asset_id: id });
   }
 
   // Alerts
   async getAlerts(unreadOnly?: boolean): Promise<Alert[]> {
-    return this.fetch(`/alerts${unreadOnly ? '?unread=true' : ''}`);
+    return this.invokeFunction('get-alerts', { unread_only: unreadOnly });
   }
 
   async markAlertRead(id: string): Promise<void> {
-    await this.fetch(`/alerts/${id}/read`, { method: 'POST' });
+    await this.invokeFunction('update-alert', { alert_id: id, status: 'read' });
   }
 
   // Backtest
   async runBacktest(params: { start_date: string; end_date: string }): Promise<BacktestResult> {
-    return this.fetch('/backtest', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
+    const startDate = new Date(params.start_date);
+    const endDate = new Date(params.end_date);
+    const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    return this.invokeFunction('run-backtest', { since_days: daysDiff });
   }
 
   // Watchlist
   async getWatchlist(): Promise<WatchlistItem[]> {
-    return this.fetch('/watchlist');
+    return this.invokeFunction('get-watchlist', {});
   }
 
   async addToWatchlist(assetId: string, notes?: string): Promise<WatchlistItem> {
-    return this.fetch('/watchlist', {
-      method: 'POST',
-      body: JSON.stringify({ asset_id: assetId, notes }),
-    });
+    // Use Supabase directly for simple CRUD
+    const { data, error } = await supabase
+      .from('watchlist')
+      .insert({ tickers: [assetId], user_id: (await supabase.auth.getUser()).data.user?.id })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data as any;
   }
 
   async removeFromWatchlist(id: string): Promise<void> {
-    await this.fetch(`/watchlist/${id}`, { method: 'DELETE' });
+    const { error } = await supabase.from('watchlist').delete().eq('id', id);
+    if (error) throw error;
   }
 
   // Themes
   async getThemes(): Promise<Array<{ name: string; count: number }>> {
-    return this.fetch('/themes');
+    return this.invokeFunction('get-themes', {});
   }
 
-  // Export
+  // Export - Downloads are handled directly
   async exportData(format: 'csv' | 'parquet'): Promise<Blob> {
-    const response = await fetch(`${API_BASE}/export?format=${format}`);
-    return response.blob();
+    // This would need a dedicated export function or direct query
+    const { data: signals } = await supabase.from('signals').select('*');
+    const csv = this.convertToCSV(signals || []);
+    return new Blob([csv], { type: 'text/csv' });
+  }
+
+  private convertToCSV(data: any[]): string {
+    if (!data.length) return '';
+    const headers = Object.keys(data[0]).join(',');
+    const rows = data.map(row => Object.values(row).join(','));
+    return [headers, ...rows].join('\n');
   }
 }
 

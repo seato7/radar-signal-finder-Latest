@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Check } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const Pricing = () => {
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   const { userPlan, refreshSubscription } = useAuth();
 
   // Refresh subscription status when returning from checkout
@@ -122,19 +122,16 @@ const Pricing = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/payments/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('manage-payments', {
+        body: {
+          action: 'checkout',
           plan: planId,
-          user_id: "default",
           success_url: window.location.origin + "/pricing?success=true",
           cancel_url: window.location.origin + "/pricing?canceled=true"
-        })
+        }
       });
 
-      const data = await response.json();
-      if (data.url) {
+      if (!error && data?.url) {
         window.location.href = data.url;
       }
     } catch (error) {
