@@ -1,1 +1,7 @@
 project_id = "detxhoqiarohjevedmxh"
+
+[functions.discover-themes]
+verify_jwt = false
+
+[functions.mine-and-discover-themes]
+verify_jwt = false

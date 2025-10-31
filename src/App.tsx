@@ -16,6 +16,7 @@ import Backtest from "./pages/Backtest";
 import Assets from "./pages/Assets";
 import AssetDetail from "./pages/AssetDetail";
 import Themes from "./pages/Themes";
+import ThemeDiscovery from "./pages/ThemeDiscovery";
 import DataSources from "./pages/DataSources";
 import Bots from "./pages/Bots";
 import Pricing from "./pages/Pricing";
@@ -61,6 +62,7 @@ const App = () => (
                             <Route path="/assets" element={<Assets />} />
                             <Route path="/asset/:ticker" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
+                            <Route path="/theme-discovery" element={<ThemeDiscovery />} />
                             <Route path="/data-sources" element={<DataSources />} />
                             <Route path="/bots" element={<Bots />} />
                             <Route path="/pricing" element={<Pricing />} />
