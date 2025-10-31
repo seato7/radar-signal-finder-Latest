@@ -30,10 +30,10 @@ const Admin = () => {
 
       try {
         const [metricsRes, userStatsRes, usersRes, auditRes] = await Promise.all([
-          supabase.functions.invoke('admin-metrics/metrics'),
-          supabase.functions.invoke('admin-metrics/user-stats'),
-          supabase.functions.invoke('admin-metrics/users'),
-          supabase.functions.invoke('admin-metrics/audit')
+          supabase.functions.invoke('admin-metrics', { body: { action: 'metrics' } }),
+          supabase.functions.invoke('admin-metrics', { body: { action: 'user-stats' } }),
+          supabase.functions.invoke('admin-metrics', { body: { action: 'users' } }),
+          supabase.functions.invoke('admin-metrics', { body: { action: 'audit' } })
         ]);
         
         if (metricsRes.error || userStatsRes.error || usersRes.error || auditRes.error) {
@@ -59,8 +59,8 @@ const Admin = () => {
 
   const handleUpgradeUser = async (email: string, action: string) => {
     try {
-      const { error } = await supabase.functions.invoke(`admin-metrics/${action}`, {
-        body: { email }
+      const { error } = await supabase.functions.invoke('admin-metrics', {
+        body: { action, email }
       });
       
       if (!error) {

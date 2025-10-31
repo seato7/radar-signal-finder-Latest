@@ -32,10 +32,9 @@ serve(async (req) => {
       throw new Error('Admin access required');
     }
 
-    const endpoint = new URL(req.url).pathname.split('/').pop();
+    const { action, email } = await req.json();
 
-    // Get system metrics
-    if (endpoint === 'metrics' || req.url.includes('/metrics')) {
+    if (action === 'metrics') {
       const [botsRes, alertsRes, subscriptionsRes] = await Promise.all([
         supabaseClient.from('bots').select('status, created_at'),
         supabaseClient.from('alerts').select('created_at'),
@@ -63,8 +62,7 @@ serve(async (req) => {
       });
     }
 
-    // Get user statistics
-    if (endpoint === 'user-stats' || req.url.includes('/user-stats')) {
+    if (action === 'user-stats') {
       const { data: users } = await supabaseClient.auth.admin.listUsers();
       const { data: roles } = await supabaseClient.from('user_roles').select('*');
 
@@ -103,8 +101,7 @@ serve(async (req) => {
       });
     }
 
-    // Get all users
-    if (endpoint === 'users' || req.url.includes('/users')) {
+    if (action === 'users') {
       const { data: users } = await supabaseClient.auth.admin.listUsers();
       const { data: roles } = await supabaseClient.from('user_roles').select('*');
 
@@ -124,8 +121,7 @@ serve(async (req) => {
       });
     }
 
-    // Get audit logs
-    if (endpoint === 'audit' || req.url.includes('/audit')) {
+    if (action === 'audit') {
       const { data: logs } = await supabaseClient
         .from('bot_logs')
         .select('*')
@@ -142,33 +138,26 @@ serve(async (req) => {
       });
     }
 
-    // Admin actions
-    if (req.method === 'POST') {
-      const body = await req.json();
-      const action = endpoint;
+    if (action === 'make-admin' || action === 'upgrade-premium') {
+      const { data: targetUser } = await supabaseClient.auth.admin.listUsers();
+      const foundUser = targetUser?.users.find(u => u.email === email);
+      
+      if (!foundUser) throw new Error('User not found');
 
-      if (action === 'make-admin' || action === 'upgrade-premium') {
-        const { email } = body;
-        const { data: targetUser } = await supabaseClient.auth.admin.listUsers();
-        const user = targetUser?.users.find(u => u.email === email);
-        
-        if (!user) throw new Error('User not found');
+      const newRole = action === 'make-admin' ? 'admin' : 'pro';
+      
+      await supabaseClient
+        .from('user_roles')
+        .update({ role: newRole, granted_by: user.id })
+        .eq('user_id', foundUser.id);
 
-        const newRole = action === 'make-admin' ? 'admin' : 'pro';
-        
-        await supabaseClient
-          .from('user_roles')
-          .update({ role: newRole, granted_by: user.id })
-          .eq('user_id', user.id);
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return new Response(JSON.stringify({ error: 'Invalid endpoint' }), {
-      status: 404,
+    return new Response(JSON.stringify({ error: 'Invalid action' }), {
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
