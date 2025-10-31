@@ -40,19 +40,24 @@ serve(async (req) => {
 
     // Get metrics
     if (url.pathname.endsWith('/metrics')) {
-      const [alertsCount, assetsCount, themesCount, usersCount] = await Promise.all([
+      const [alertsCount, assetsCount, themesCount, usersCount, signalsCount] = await Promise.all([
         supabaseClient.from('alerts').select('*', { count: 'exact', head: true }),
         supabaseClient.from('assets').select('*', { count: 'exact', head: true }),
         supabaseClient.from('themes').select('*', { count: 'exact', head: true }),
-        supabaseClient.from('user_roles').select('*', { count: 'exact', head: true })
+        supabaseClient.from('user_roles').select('*', { count: 'exact', head: true }),
+        supabaseClient.from('signals').select('*', { count: 'exact', head: true })
       ]);
 
-      // Get recent alerts (24h)
       const oneDayAgo = new Date();
       oneDayAgo.setDate(oneDayAgo.getDate() - 1);
       
       const { count: recentAlerts } = await supabaseClient
         .from('alerts')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', oneDayAgo.toISOString());
+      
+      const { count: recentSignals } = await supabaseClient
+        .from('signals')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', oneDayAgo.toISOString());
 
@@ -61,8 +66,9 @@ serve(async (req) => {
         total_assets: assetsCount.count || 0,
         total_themes: themesCount.count || 0,
         total_users: usersCount.count || 0,
-        active_bots: 0,
-        recent_alerts_24h: recentAlerts || 0
+        total_signals: signalsCount.count || 0,
+        recent_alerts_24h: recentAlerts || 0,
+        recent_signals_24h: recentSignals || 0
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

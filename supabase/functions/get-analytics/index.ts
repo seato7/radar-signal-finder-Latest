@@ -34,21 +34,28 @@ serve(async (req) => {
       throw new Error('Advanced Analytics requires Pro or Admin plan');
     }
 
-    // Get user's alerts for analytics
+    // Get user's alerts and signals for analytics
     const { data: alerts } = await supabaseClient
       .from('alerts')
       .select(`
         *,
-        themes!inner(name)
+        themes(name)
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
+      .limit(1000);
+
+    const { data: signals } = await supabaseClient
+      .from('signals')
+      .select('*')
+      .order('observed_at', { ascending: false })
       .limit(1000);
 
     // Calculate metrics
     const totalAlerts = alerts?.length || 0;
     const activeAlerts = alerts?.filter(a => a.status === 'active').length || 0;
     const dismissedAlerts = alerts?.filter(a => a.status === 'dismissed').length || 0;
+    const totalSignals = signals?.length || 0;
     
     // Average score
     const avgScore = alerts?.reduce((sum, a) => sum + (a.score || 0), 0) / (totalAlerts || 1);
@@ -58,6 +65,13 @@ serve(async (req) => {
     alerts?.forEach(alert => {
       const themeName = alert.themes?.name || 'Unknown';
       themeDistribution[themeName] = (themeDistribution[themeName] || 0) + 1;
+    });
+
+    // Signal type distribution
+    const signalTypeDistribution: Record<string, number> = {};
+    signals?.forEach(signal => {
+      const type = signal.signal_type || 'unknown';
+      signalTypeDistribution[type] = (signalTypeDistribution[type] || 0) + 1;
     });
 
     // Time series (last 30 days)
@@ -74,19 +88,33 @@ serve(async (req) => {
       dailyAlerts[date] = (dailyAlerts[date] || 0) + 1;
     });
 
+    // Performance metrics from signals
+    const upSignals = signals?.filter(s => s.direction === 'up').length || 0;
+    const downSignals = signals?.filter(s => s.direction === 'down').length || 0;
+    const avgMagnitude = signals?.reduce((sum, s) => sum + (s.magnitude || 0), 0) / (totalSignals || 1);
+
     return new Response(JSON.stringify({
       summary: {
         total_alerts: totalAlerts,
         active_alerts: activeAlerts,
         dismissed_alerts: dismissedAlerts,
         avg_score: avgScore.toFixed(2),
+        total_signals: totalSignals,
+        up_signals: upSignals,
+        down_signals: downSignals,
+        avg_magnitude: avgMagnitude.toFixed(2)
       },
       theme_distribution: themeDistribution,
+      signal_type_distribution: signalTypeDistribution,
       daily_alerts: dailyAlerts,
       top_themes: Object.entries(themeDistribution)
         .sort(([, a], [, b]) => b - a)
         .slice(0, 5)
-        .map(([name, count]) => ({ name, count }))
+        .map(([name, count]) => ({ name, count })),
+      top_signal_types: Object.entries(signalTypeDistribution)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10)
+        .map(([type, count]) => ({ type, count }))
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
