@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, Square, TrendingUp, TrendingDown, Activity, ArrowUpCircle } from "lucide-react";
+import { Play, Pause, Square, TrendingUp, TrendingDown, Activity, ArrowUpCircle, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { PLAN_LIMITS, checkPlanLimit } from "@/lib/planLimits";
@@ -183,6 +183,34 @@ const Bots = () => {
     }
   };
 
+  const handleDelete = async (botId: string) => {
+    if (!isAuthenticated) {
+      toast({ 
+        title: "Authentication required",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('bots')
+        .delete()
+        .eq('id', botId);
+      
+      if (error) throw error;
+      
+      toast({ title: "Bot deleted successfully" });
+      fetchBots();
+    } catch (error) {
+      toast({ 
+        title: "Failed to delete bot",
+        description: (error as Error).message,
+        variant: "destructive" 
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -352,6 +380,10 @@ const Bots = () => {
                       Upgrade to Live
                     </Button>
                   )}
+                  <Button size="sm" variant="destructive" onClick={() => handleDelete(bot.id)}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Delete
+                  </Button>
                 </div>
               </div>
             ))
