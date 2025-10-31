@@ -60,9 +60,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Fetch real-time market data from backend API
-    const backendUrl = Deno.env.get('BACKEND_URL') || 'https://opportunity-radar-api-production.up.railway.app';
-    
+    // Fetch real-time market data from Supabase
     let marketData = '';
     let webSearchResults = '';
     
@@ -161,28 +159,45 @@ serve(async (req) => {
         });
       }
       
-      // Fetch recent themes and signals from backend
-      const radarResponse = await fetch(`${backendUrl}/api/radar?days=7`);
-      if (radarResponse.ok) {
-        const radarData = await radarResponse.json();
-        marketData += `\n\nRECENT THEMES (Last 7 Days):\n`;
-        radarData.themes?.slice(0, 10).forEach((theme: any) => {
-          marketData += `- ${theme.name}: ${theme.signal_count} signals, Score: ${theme.combined_score?.toFixed(1) || 'N/A'}\n`;
-        });
-        
-        marketData += `\n\nTOP SIGNALS:\n`;
-        radarData.top_signals?.slice(0, 15).forEach((signal: any) => {
-          marketData += `- ${signal.ticker} (${signal.signal_type}): ${signal.summary || signal.headline || 'N/A'}\n`;
+      // Fetch recent themes and signals from Supabase
+      const { data: themes } = await supabase
+        .from('themes')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(10);
+      
+      if (themes && themes.length > 0) {
+        marketData += `\n\nRECENT THEMES:\n`;
+        themes.forEach((theme: any) => {
+          marketData += `- ${theme.name}: ${theme.keywords?.join(', ')}\n`;
         });
       }
       
-      // Fetch top assets
-      const assetsResponse = await fetch(`${backendUrl}/api/assets?limit=20`);
-      if (assetsResponse.ok) {
-        const assetsData = await assetsResponse.json();
+      // Fetch top signals
+      const { data: topSignals } = await supabase
+        .from('signals')
+        .select('*, assets(ticker, name)')
+        .order('observed_at', { ascending: false })
+        .limit(15);
+      
+      if (topSignals && topSignals.length > 0) {
+        marketData += `\n\nTOP SIGNALS:\n`;
+        topSignals.forEach((signal: any) => {
+          marketData += `- ${signal.assets?.ticker || 'Unknown'} (${signal.signal_type})\n`;
+        });
+      }
+      
+      // Fetch top assets by recent activity
+      const { data: assets } = await supabase
+        .from('assets')
+        .select('*, signals(count)')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      if (assets && assets.length > 0) {
         marketData += `\n\nTOP ASSETS:\n`;
-        assetsData.assets?.slice(0, 20).forEach((asset: any) => {
-          marketData += `- ${asset.ticker} (${asset.name}): Score ${asset.combined_score?.toFixed(1) || 'N/A'}\n`;
+        assets.forEach((asset: any) => {
+          marketData += `- ${asset.ticker} (${asset.name})\n`;
         });
       }
       

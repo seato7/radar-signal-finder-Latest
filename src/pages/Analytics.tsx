@@ -4,16 +4,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { TrendingUp, TrendingDown, Activity, DollarSign, Target, AlertCircle } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Analytics() {
-  const { token, userPlan } = useAuth();
+  const { userPlan } = useAuth();
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (userPlan !== 'premium' && userPlan !== 'enterprise') {
+    if (userPlan !== 'premium' && userPlan !== 'enterprise' && userPlan !== 'admin') {
       setLoading(false);
       return;
     }
@@ -23,12 +22,9 @@ export default function Analytics() {
 
   const fetchAnalytics = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/analytics/dashboard`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const { data, error } = await supabase.functions.invoke('get-analytics');
       
-      if (response.ok) {
-        const data = await response.json();
+      if (!error && data) {
         setAnalytics(data);
       }
     } catch (error) {
@@ -38,7 +34,7 @@ export default function Analytics() {
     }
   };
 
-  if (userPlan !== 'premium' && userPlan !== 'enterprise') {
+  if (userPlan !== 'premium' && userPlan !== 'enterprise' && userPlan !== 'admin') {
     return (
       <div className="container mx-auto p-6">
         <PageHeader

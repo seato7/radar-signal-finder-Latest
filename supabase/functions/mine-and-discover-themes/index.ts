@@ -14,7 +14,6 @@ serve(async (req) => {
 
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    const MONGO_BACKEND_URL = Deno.env.get('VITE_API_URL') || 'http://localhost:8000';
     
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
@@ -122,10 +121,12 @@ serve(async (req) => {
       );
     }
 
-    // Fetch existing themes from MongoDB backend
-    const existingThemesResponse = await fetch(`${MONGO_BACKEND_URL}/api/radar/themes?days=365`);
-    const existingThemes = await existingThemesResponse.json();
-    const existingThemeNames = existingThemes.map((t: any) => t.name);
+    // Fetch existing themes from Supabase
+    const { data: existingThemes } = await supabase
+      .from('themes')
+      .select('name')
+      .order('created_at', { ascending: false });
+    const existingThemeNames = (existingThemes || []).map((t: any) => t.name);
 
     // Use AI to discover themes from patterns
     const prompt = `Analyze these high-activity tickers with cross-source signals and identify emerging investment themes:
@@ -223,18 +224,25 @@ Requirements:
 
     console.log(`Parsed ${discoveredThemes.length} themes from AI response`);
 
-    // Create themes in MongoDB via backend API
+    // Create themes in Supabase
     const createdThemes = [];
     for (const theme of discoveredThemes) {
       try {
-        const createResponse = await fetch(`${MONGO_BACKEND_URL}/api/themes/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(theme),
-        });
+        const { data: created, error } = await supabase
+          .from('themes')
+          .insert({
+            name: theme.name,
+            keywords: theme.keywords || [],
+            alpha: 1.0,
+            metadata: {
+              discovered: true,
+              tickers: theme.tickers || []
+            }
+          })
+          .select()
+          .single();
         
-        if (createResponse.ok) {
-          const created = await createResponse.json();
+        if (!error && created) {
           createdThemes.push(created);
           console.log(`Created theme: ${theme.name}`);
         }

@@ -21,100 +21,136 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     if (authError || !user) throw new Error('Unauthorized');
 
-    // Check if user has premium/pro plan
-    const { data: roleData } = await supabaseClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
+    // Get all bot orders and positions for the user
+    const { data: bots } = await supabaseClient
+      .from('bots')
+      .select('id, name, strategy')
+      .eq('user_id', user.id);
 
-    const userPlan = roleData?.role || 'free';
-    
-    if (!['pro', 'admin'].includes(userPlan)) {
-      throw new Error('Advanced Analytics requires Pro or Admin plan');
+    if (!bots || bots.length === 0) {
+      return new Response(JSON.stringify({
+        total_pnl: 0,
+        win_rate: 0,
+        total_trades: 0,
+        max_drawdown: 0,
+        bot_performance: [],
+        sharpe_ratio: 0,
+        volatility: 0,
+        profit_factor: 0
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Get user's alerts and signals for analytics
-    const { data: alerts } = await supabaseClient
-      .from('alerts')
-      .select(`
-        *,
-        themes(name)
-      `)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1000);
+    const botIds = bots.map(b => b.id);
 
-    const { data: signals } = await supabaseClient
-      .from('signals')
+    // Get all orders for these bots
+    const { data: orders } = await supabaseClient
+      .from('bot_orders')
       .select('*')
-      .order('observed_at', { ascending: false })
-      .limit(1000);
+      .in('bot_id', botIds);
 
-    // Calculate metrics
-    const totalAlerts = alerts?.length || 0;
-    const activeAlerts = alerts?.filter(a => a.status === 'active').length || 0;
-    const dismissedAlerts = alerts?.filter(a => a.status === 'dismissed').length || 0;
-    const totalSignals = signals?.length || 0;
+    // Get all positions for these bots
+    const { data: positions } = await supabaseClient
+      .from('bot_positions')
+      .select('*')
+      .in('bot_id', botIds);
+
+    // Calculate analytics
+    let totalPnl = 0;
+    let totalTrades = orders?.length || 0;
+    let winningTrades = 0;
+    const botPerformance: any[] = [];
+
+    // Per-bot analytics
+    for (const bot of bots) {
+      const botOrders = orders?.filter(o => o.bot_id === bot.id) || [];
+      const botPositions = positions?.filter(p => p.bot_id === bot.id) || [];
+      
+      let botPnl = 0;
+      let botWins = 0;
+
+      // Calculate PnL from positions
+      for (const pos of botPositions) {
+        botPnl += (pos.realized_pnl || 0) + (pos.unrealized_pnl || 0);
+      }
+
+      // Simple win calculation: compare buy and sell prices
+      const buyOrders = botOrders.filter(o => o.side === 'buy');
+      const sellOrders = botOrders.filter(o => o.side === 'sell');
+      
+      for (const sell of sellOrders) {
+        const matchingBuy = buyOrders.find(b => b.ticker === sell.ticker);
+        if (matchingBuy && sell.price > matchingBuy.price) {
+          botWins++;
+        }
+      }
+
+      totalPnl += botPnl;
+      winningTrades += botWins;
+
+      botPerformance.push({
+        bot_id: bot.id,
+        name: bot.name,
+        strategy: bot.strategy,
+        trades: botOrders.length,
+        pnl: botPnl,
+        win_rate: botOrders.length > 0 ? (botWins / botOrders.length) * 100 : 0
+      });
+    }
+
+    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
     
-    // Average score
-    const avgScore = alerts?.reduce((sum, a) => sum + (a.score || 0), 0) / (totalAlerts || 1);
-
-    // Theme distribution
-    const themeDistribution: Record<string, number> = {};
-    alerts?.forEach(alert => {
-      const themeName = alert.themes?.name || 'Unknown';
-      themeDistribution[themeName] = (themeDistribution[themeName] || 0) + 1;
-    });
-
-    // Signal type distribution
-    const signalTypeDistribution: Record<string, number> = {};
-    signals?.forEach(signal => {
-      const type = signal.signal_type || 'unknown';
-      signalTypeDistribution[type] = (signalTypeDistribution[type] || 0) + 1;
-    });
-
-    // Time series (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // Calculate max drawdown (simplified)
+    let peak = 0;
+    let maxDrawdown = 0;
+    let runningPnl = 0;
     
-    const recentAlerts = alerts?.filter(a => 
-      new Date(a.created_at) >= thirtyDaysAgo
-    ) || [];
+    if (orders) {
+      const sortedOrders = orders.sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      
+      for (const order of sortedOrders) {
+        // Simplified PnL calculation
+        if (order.side === 'sell') {
+          runningPnl += order.price * order.qty;
+        } else {
+          runningPnl -= order.price * order.qty;
+        }
+        
+        if (runningPnl > peak) {
+          peak = runningPnl;
+        }
+        
+        const drawdown = ((peak - runningPnl) / Math.max(peak, 1)) * 100;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+        }
+      }
+    }
 
-    const dailyAlerts: Record<string, number> = {};
-    recentAlerts.forEach(alert => {
-      const date = new Date(alert.created_at).toISOString().split('T')[0];
-      dailyAlerts[date] = (dailyAlerts[date] || 0) + 1;
-    });
+    // Calculate Sharpe ratio (simplified - assumes risk-free rate of 0)
+    const returns = botPerformance.map(b => b.pnl);
+    const avgReturn = returns.reduce((a, b) => a + b, 0) / Math.max(returns.length, 1);
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / Math.max(returns.length, 1);
+    const stdDev = Math.sqrt(variance);
+    const sharpeRatio = stdDev > 0 ? avgReturn / stdDev : 0;
 
-    // Performance metrics from signals
-    const upSignals = signals?.filter(s => s.direction === 'up').length || 0;
-    const downSignals = signals?.filter(s => s.direction === 'down').length || 0;
-    const avgMagnitude = signals?.reduce((sum, s) => sum + (s.magnitude || 0), 0) / (totalSignals || 1);
+    // Calculate profit factor
+    const profits = returns.filter(r => r > 0).reduce((a, b) => a + b, 0);
+    const losses = Math.abs(returns.filter(r => r < 0).reduce((a, b) => a + b, 0));
+    const profitFactor = losses > 0 ? profits / losses : profits > 0 ? 999 : 0;
 
     return new Response(JSON.stringify({
-      summary: {
-        total_alerts: totalAlerts,
-        active_alerts: activeAlerts,
-        dismissed_alerts: dismissedAlerts,
-        avg_score: avgScore.toFixed(2),
-        total_signals: totalSignals,
-        up_signals: upSignals,
-        down_signals: downSignals,
-        avg_magnitude: avgMagnitude.toFixed(2)
-      },
-      theme_distribution: themeDistribution,
-      signal_type_distribution: signalTypeDistribution,
-      daily_alerts: dailyAlerts,
-      top_themes: Object.entries(themeDistribution)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-        .map(([name, count]) => ({ name, count })),
-      top_signal_types: Object.entries(signalTypeDistribution)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 10)
-        .map(([type, count]) => ({ type, count }))
+      total_pnl: totalPnl,
+      win_rate: winRate,
+      total_trades: totalTrades,
+      max_drawdown: maxDrawdown,
+      bot_performance: botPerformance,
+      sharpe_ratio: sharpeRatio,
+      volatility: stdDev,
+      profit_factor: profitFactor
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
