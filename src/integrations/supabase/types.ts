@@ -60,27 +60,45 @@ export type Database = {
       }
       assets: {
         Row: {
+          asset_class: string | null
+          base_currency: string | null
+          contract_size: number | null
           created_at: string | null
           exchange: string
           id: string
           metadata: Json | null
           name: string
+          pip_value: number | null
+          quote_currency: string | null
+          spread_typical: number | null
           ticker: string
         }
         Insert: {
+          asset_class?: string | null
+          base_currency?: string | null
+          contract_size?: number | null
           created_at?: string | null
           exchange: string
           id?: string
           metadata?: Json | null
           name: string
+          pip_value?: number | null
+          quote_currency?: string | null
+          spread_typical?: number | null
           ticker: string
         }
         Update: {
+          asset_class?: string | null
+          base_currency?: string | null
+          contract_size?: number | null
           created_at?: string | null
           exchange?: string
           id?: string
           metadata?: Json | null
           name?: string
+          pip_value?: number | null
+          quote_currency?: string | null
+          spread_typical?: number | null
           ticker?: string
         }
         Relationships: []
@@ -309,32 +327,41 @@ export type Database = {
       }
       broker_keys: {
         Row: {
+          account_type: string | null
           api_key_encrypted: string
+          broker_name: string | null
           created_at: string
           exchange: string
           id: string
           paper_mode: boolean
           secret_key_encrypted: string
+          supported_assets: string[] | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          account_type?: string | null
           api_key_encrypted: string
+          broker_name?: string | null
           created_at?: string
           exchange: string
           id?: string
           paper_mode?: boolean
           secret_key_encrypted: string
+          supported_assets?: string[] | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          account_type?: string | null
           api_key_encrypted?: string
+          broker_name?: string | null
           created_at?: string
           exchange?: string
           id?: string
           paper_mode?: boolean
           secret_key_encrypted?: string
+          supported_assets?: string[] | null
           updated_at?: string
           user_id?: string
         }
@@ -385,6 +412,74 @@ export type Database = {
         }
         Relationships: []
       }
+      cot_reports: {
+        Row: {
+          asset_id: string | null
+          commercial_long: number | null
+          commercial_net: number | null
+          commercial_short: number | null
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          net_position_change: number | null
+          noncommercial_long: number | null
+          noncommercial_net: number | null
+          noncommercial_short: number | null
+          nonreportable_long: number | null
+          nonreportable_net: number | null
+          nonreportable_short: number | null
+          report_date: string
+          sentiment: string | null
+          ticker: string
+        }
+        Insert: {
+          asset_id?: string | null
+          commercial_long?: number | null
+          commercial_net?: number | null
+          commercial_short?: number | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          net_position_change?: number | null
+          noncommercial_long?: number | null
+          noncommercial_net?: number | null
+          noncommercial_short?: number | null
+          nonreportable_long?: number | null
+          nonreportable_net?: number | null
+          nonreportable_short?: number | null
+          report_date: string
+          sentiment?: string | null
+          ticker: string
+        }
+        Update: {
+          asset_id?: string | null
+          commercial_long?: number | null
+          commercial_net?: number | null
+          commercial_short?: number | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          net_position_change?: number | null
+          noncommercial_long?: number | null
+          noncommercial_net?: number | null
+          noncommercial_short?: number | null
+          nonreportable_long?: number | null
+          nonreportable_net?: number | null
+          nonreportable_short?: number | null
+          report_date?: string
+          sentiment?: string | null
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cot_reports_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       earnings_sentiment: {
         Row: {
           created_at: string | null
@@ -420,6 +515,190 @@ export type Database = {
           ticker?: string
         }
         Relationships: []
+      }
+      economic_indicators: {
+        Row: {
+          country: string
+          created_at: string | null
+          forecast_value: number | null
+          id: string
+          impact: string | null
+          indicator_type: string
+          metadata: Json | null
+          previous_value: number | null
+          release_date: string
+          source: string | null
+          value: number
+        }
+        Insert: {
+          country: string
+          created_at?: string | null
+          forecast_value?: number | null
+          id?: string
+          impact?: string | null
+          indicator_type: string
+          metadata?: Json | null
+          previous_value?: number | null
+          release_date: string
+          source?: string | null
+          value: number
+        }
+        Update: {
+          country?: string
+          created_at?: string | null
+          forecast_value?: number | null
+          id?: string
+          impact?: string | null
+          indicator_type?: string
+          metadata?: Json | null
+          previous_value?: number | null
+          release_date?: string
+          source?: string | null
+          value?: number
+        }
+        Relationships: []
+      }
+      forex_sentiment: {
+        Row: {
+          asset_id: string | null
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          news_count: number | null
+          news_sentiment_score: number | null
+          retail_long_pct: number | null
+          retail_sentiment: string | null
+          retail_short_pct: number | null
+          social_mentions: number | null
+          social_sentiment_score: number | null
+          source: string | null
+          ticker: string
+          timestamp: string
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          news_count?: number | null
+          news_sentiment_score?: number | null
+          retail_long_pct?: number | null
+          retail_sentiment?: string | null
+          retail_short_pct?: number | null
+          social_mentions?: number | null
+          social_sentiment_score?: number | null
+          source?: string | null
+          ticker: string
+          timestamp?: string
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          news_count?: number | null
+          news_sentiment_score?: number | null
+          retail_long_pct?: number | null
+          retail_sentiment?: string | null
+          retail_short_pct?: number | null
+          social_mentions?: number | null
+          social_sentiment_score?: number | null
+          source?: string | null
+          ticker?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forex_sentiment_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      forex_technicals: {
+        Row: {
+          asset_id: string | null
+          atr_14: number | null
+          bollinger_lower: number | null
+          bollinger_middle: number | null
+          bollinger_upper: number | null
+          close_price: number | null
+          created_at: string | null
+          ema_200: number | null
+          ema_50: number | null
+          id: string
+          ma_crossover: string | null
+          macd_crossover: string | null
+          macd_histogram: number | null
+          macd_line: number | null
+          macd_signal: number | null
+          metadata: Json | null
+          rsi_14: number | null
+          rsi_signal: string | null
+          sma_200: number | null
+          sma_50: number | null
+          ticker: string
+          timestamp: string
+        }
+        Insert: {
+          asset_id?: string | null
+          atr_14?: number | null
+          bollinger_lower?: number | null
+          bollinger_middle?: number | null
+          bollinger_upper?: number | null
+          close_price?: number | null
+          created_at?: string | null
+          ema_200?: number | null
+          ema_50?: number | null
+          id?: string
+          ma_crossover?: string | null
+          macd_crossover?: string | null
+          macd_histogram?: number | null
+          macd_line?: number | null
+          macd_signal?: number | null
+          metadata?: Json | null
+          rsi_14?: number | null
+          rsi_signal?: string | null
+          sma_200?: number | null
+          sma_50?: number | null
+          ticker: string
+          timestamp?: string
+        }
+        Update: {
+          asset_id?: string | null
+          atr_14?: number | null
+          bollinger_lower?: number | null
+          bollinger_middle?: number | null
+          bollinger_upper?: number | null
+          close_price?: number | null
+          created_at?: string | null
+          ema_200?: number | null
+          ema_50?: number | null
+          id?: string
+          ma_crossover?: string | null
+          macd_crossover?: string | null
+          macd_histogram?: number | null
+          macd_line?: number | null
+          macd_signal?: number | null
+          metadata?: Json | null
+          rsi_14?: number | null
+          rsi_signal?: string | null
+          sma_200?: number | null
+          sma_50?: number | null
+          ticker?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forex_technicals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       job_postings: {
         Row: {
@@ -899,7 +1178,18 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      interest_rate_differentials: {
+        Row: {
+          country_a: string | null
+          country_b: string | null
+          differential: number | null
+          differential_signal: string | null
+          rate_a: number | null
+          rate_b: number | null
+          release_date: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       get_user_role: {

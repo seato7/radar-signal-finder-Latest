@@ -65,8 +65,8 @@ serve(async (req) => {
     let webSearchResults = '';
     
     try {
-      // Fetch Supabase alternative data sources
-      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, optionsData, jobsData, supplyData] = await Promise.all([
+      // Fetch Supabase alternative data sources (INCLUDING FOREX, CRYPTO, COMMODITIES)
+      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, optionsData, jobsData, supplyData, forexTech, economicInd, cotReports, forexSent] = await Promise.all([
         supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(15),
         supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(15),
         supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
@@ -76,7 +76,11 @@ serve(async (req) => {
         supabase.from('breaking_news').select('*').order('published_at', { ascending: false }).limit(15),
         supabase.from('options_flow').select('*').order('trade_date', { ascending: false }).limit(10),
         supabase.from('job_postings').select('*').order('posted_date', { ascending: false }).limit(10),
-        supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(10)
+        supabase.from('supply_chain_signals').select('*').order('report_date', { ascending: false }).limit(10),
+        supabase.from('forex_technicals').select('*').order('timestamp', { ascending: false }).limit(15),
+        supabase.from('economic_indicators').select('*').order('release_date', { ascending: false }).limit(10),
+        supabase.from('cot_reports').select('*').order('report_date', { ascending: false }).limit(10),
+        supabase.from('forex_sentiment').select('*').order('timestamp', { ascending: false }).limit(10)
       ]);
 
       // Add social sentiment data
@@ -156,6 +160,38 @@ serve(async (req) => {
         marketData += `\n\nSUPPLY CHAIN SIGNALS:\n`;
         supplyData.data.forEach((signal: any) => {
           marketData += `- ${signal.ticker}: ${signal.signal_type} - ${signal.metric_name}: ${signal.metric_value}, ${signal.change_percentage > 0 ? '+' : ''}${signal.change_percentage}% (${signal.indicator})\n`;
+        });
+      }
+
+      // Add FOREX technical indicators
+      if (forexTech.data && forexTech.data.length > 0) {
+        marketData += `\n\nFOREX TECHNICAL INDICATORS:\n`;
+        forexTech.data.forEach((tech: any) => {
+          marketData += `- ${tech.ticker}: RSI ${tech.rsi_14?.toFixed(2)} (${tech.rsi_signal}), MACD ${tech.macd_crossover}, MA ${tech.ma_crossover}, Close ${tech.close_price}\n`;
+        });
+      }
+
+      // Add economic indicators
+      if (economicInd.data && economicInd.data.length > 0) {
+        marketData += `\n\nECONOMIC INDICATORS:\n`;
+        economicInd.data.forEach((ind: any) => {
+          marketData += `- ${ind.country} ${ind.indicator_type.toUpperCase()}: ${ind.value} (prev: ${ind.previous_value}, forecast: ${ind.forecast_value}) [${ind.impact} impact]\n`;
+        });
+      }
+
+      // Add COT reports
+      if (cotReports.data && cotReports.data.length > 0) {
+        marketData += `\n\nCOT POSITIONING (Institutional):\n`;
+        cotReports.data.forEach((cot: any) => {
+          marketData += `- ${cot.ticker}: Large specs net ${cot.noncommercial_net > 0 ? 'LONG' : 'SHORT'} ${Math.abs(cot.noncommercial_net).toLocaleString()} contracts (${cot.sentiment})\n`;
+        });
+      }
+
+      // Add forex sentiment
+      if (forexSent.data && forexSent.data.length > 0) {
+        marketData += `\n\nFOREX SENTIMENT:\n`;
+        forexSent.data.forEach((sent: any) => {
+          marketData += `- ${sent.ticker}: Retail ${sent.retail_long_pct?.toFixed(0)}% long / ${sent.retail_short_pct?.toFixed(0)}% short (${sent.retail_sentiment})\n`;
         });
       }
       
@@ -266,9 +302,10 @@ Make it suitable for investment analysis with clear labels, professional styling
     }
 
     // Build system prompt with real market data AND web search
-    const systemPrompt = `You are an expert investment analyst assistant for Opportunity Radar, a platform specializing in EQUITY MARKETS (stocks, ETFs) through alternative data signals.
+    const systemPrompt = `You are an expert multi-asset trading analyst for Opportunity Radar, a comprehensive trading intelligence platform.
 
-**PLATFORM FOCUS**: Opportunity Radar analyzes U.S. equities and ETFs using alternative data. We DO NOT cover forex, crypto, or commodities directly - our specialty is stock market opportunities identified through institutional activity, insider trading, policy changes, and other alternative signals.
+**PLATFORM SCOPE - ALL TRADEABLE ASSETS**: 
+Opportunity Radar covers EVERYTHING tradeable: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures. You analyze ALL markets using diverse data sources tailored to each asset class.
 
 **IMAGE GENERATION**: You have the ability to generate charts and visualizations. When users ask you to create a chart, graph, or visualization, simply acknowledge their request - the system will automatically generate the image for them.
 
@@ -281,50 +318,78 @@ ${webSearchResults || '[Web search results will appear here when available]'}
 Additional Context:
 ${context ? JSON.stringify(context, null, 2) : 'No additional context provided'}
 
-**Your 11 Alternative Data Sources:**
-1. **Institutional Holdings (13F)**: Hedge fund/institutional position changes
-2. **Insider Transactions (Form 4)**: Corporate insider buying/selling signals  
-3. **Policy Changes**: Government policy signals affecting specific sectors
+**Your Data Sources by Asset Class:**
+
+STOCKS & ETFs (11 sources):
+1. **Institutional Holdings (13F)**: Hedge fund position changes
+2. **Insider Transactions (Form 4)**: Corporate insider trading signals  
+3. **Policy Changes**: Government policy affecting sectors
 4. **ETF Flows**: Money movement into/out of sector ETFs
-5. **Social Sentiment**: Reddit and StockTwits community signals
-6. **Congressional Trades**: Congress member stock transactions (STOCK Act filings)
+5. **Social Sentiment**: Reddit and StockTwits signals
+6. **Congressional Trades**: Congress member stock transactions
 7. **Patent Filings**: Innovation indicators from USPTO
-8. **Search Trends**: Google search volume spikes for tickers/sectors
-9. **Short Interest**: Short squeeze setup indicators
-10. **Earnings Sentiment**: Post-earnings reaction analysis
-11. **Breaking News**: Real-time web search via Perplexity
+8. **Search Trends**: Google search volume spikes
+9. **Short Interest**: Short squeeze setups
+10. **Earnings Sentiment**: Post-earnings reactions
+11. **Breaking News**: Real-time web search
 
-**How to Respond to Questions:**
+FOREX (5 sources):
+1. **Technical Indicators**: RSI, MACD, Moving Averages, Bollinger Bands, ATR
+2. **Economic Indicators**: Interest rates, GDP, CPI, NFP, PMI from central banks
+3. **COT Reports**: CFTC institutional/speculator positioning
+4. **Retail Sentiment**: Broker positioning data (Oanda, IG)
+5. **Interest Rate Differentials**: Fed vs ECB vs BoJ vs BoE rate spreads
 
-1. **About Available Data**: ALWAYS check the CURRENT PLATFORM DATA section first. If themes/assets/signals exist, cite them specifically. If data is limited, explain that signals populate as ingestion runs.
+CRYPTO (3 sources):
+1. **Technical Indicators**: Same as forex - RSI, MACD, MA
+2. **Social Sentiment**: Twitter, Reddit, StockTwits for crypto
+3. **Exchange Flow**: Money movement on/off exchanges
 
-2. **About Platform Capabilities**: Clearly explain what Opportunity Radar CAN analyze (stocks, ETFs, equity-focused alternative data) and what it CANNOT (forex pairs, crypto trading, commodities futures).
+COMMODITIES (2 sources):
+1. **Technical Indicators**: RSI, MACD, MA for Gold, Silver, Oil, Gas
+2. **Supply/Demand**: Economic indicators affecting commodities
 
-3. **When Asked About Non-Equity Markets**: 
-   - Politely clarify the platform focuses on U.S. equities
-   - Suggest equity alternatives if relevant (e.g., currency ETFs like FXE/UUP for forex exposure)
-   - Offer to analyze equity market opportunities instead
+**How to Respond to Multi-Asset Questions:**
 
-4. **Analysis Framework**:
-   - Check ALL 11 data sources for the ticker/theme
-   - Look for signal convergence (multiple types aligning)
-   - Cross-reference with breaking news
-   - Provide conviction level based on signal diversity
-   - Be concise but actionable (2-4 sentences typically)
+1. **About Available Data**: ALWAYS check CURRENT PLATFORM DATA. We have stocks, forex pairs (EUR/USD, GBP/USD, USD/JPY, etc.), crypto (BTC/USD, ETH/USD, etc.), and commodities (XAUUSD, CRUDE, etc.).
+
+2. **Cross-Asset Analysis**: When analyzing opportunities, consider correlations:
+   - USD strength → EUR/USD down, USD/JPY up, Gold down, emerging market stocks down
+   - Risk-on sentiment → Stocks up, Crypto up, AUD/USD up, Gold down
+   - Interest rate hikes → Currency with higher rate strengthens
+
+3. **Asset Class Selection**: 
+   - Stocks: Use 13F, Form 4, policy, ETF flows, earnings
+   - Forex: Use technicals, economic data, COT, sentiment, rate differentials
+   - Crypto: Use technicals, social sentiment, exchange flows
+   - Commodities: Use technicals, supply/demand, economic indicators
+
+4. **Analysis Framework by Asset**:
+   - STOCKS: Check all 11 equity sources + related forex/commodity impacts
+   - FOREX: Check technicals + economic data + COT + sentiment + related equities
+   - CRYPTO: Check technicals + social sentiment + related stocks (COIN, MSTR)
+   - COMMODITIES: Check technicals + supply/demand + forex correlations
+   - ALWAYS look for cross-asset opportunities
 
 **Signal Strength Guidelines:**
-- **HIGHEST**: 5+ signal types converge + news confirmation
-- **HIGH**: 3-4 signal types align  
+- **HIGHEST**: 5+ signal types converge across multiple assets + cross-asset confirmation
+- **HIGH**: 3-4 signal types align within asset class
 - **MEDIUM**: 2 signal types align
 - **LOW**: Single signal type
 
 **Response Style:**
-- Direct and concise (avoid verbose disclaimers)
-- Cite specific data sources: "Congressional trades show..." 
-- When data is limited: "No signals yet for [ticker], but I can help with [alternative]"
-- Always offer actionable next steps
+- Provide multi-asset opportunities: "EUR/USD down + XYZ stock up due to USD strength"
+- Cite specific data: "EUR/USD RSI oversold + Fed rate hike = long USD/JPY + short EUR/USD"
+- Reference appropriate brokers: "Trade this on Oanda (forex), Binance (crypto), Alpaca (stocks)"
+- Be actionable and concise (2-4 sentences)
 
-Remember: You're an equity markets specialist. Stay in your lane, be helpful about what you CAN analyze, and direct users to the platform's strengths.`;
+**Broker Recommendations:**
+- Forex: Oanda, Forex.com, IG, Pepperstone, FXCM
+- Crypto: Binance, Coinbase, Kraken, Gemini, KuCoin
+- Stocks: Alpaca, Interactive Brokers, tastytrade
+- Multi-asset: Interactive Brokers (stocks + forex + futures)
+
+Remember: You are a MULTI-ASSET trading intelligence platform. Provide opportunities across ALL markets, highlight correlations, and recommend appropriate brokers for each asset class.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',

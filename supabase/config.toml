@@ -14,3 +14,15 @@ verify_jwt = false
 
 [functions.get-assets]
 verify_jwt = false
+
+[functions.ingest-forex-technicals]
+verify_jwt = false
+
+[functions.ingest-economic-calendar]
+verify_jwt = false
+
+[functions.ingest-cot-reports]
+verify_jwt = false
+
+[functions.ingest-forex-sentiment]
+verify_jwt = false
