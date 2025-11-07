@@ -1,0 +1,174 @@
+name: Data Ingestion Cron Jobs
+
+on:
+  schedule:
+    # Daily @ 4PM EST (9PM UTC) - Market Close
+    - cron: '0 21 * * *'
+    # Weekly @ Friday 6PM EST (11PM UTC)
+    - cron: '0 23 * * 5'
+    # Every 6 hours
+    - cron: '0 */6 * * *'
+  
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: 'Job type to run'
+        required: true
+        type: choice
+        options:
+          - daily_market_close
+          - weekly_economic
+          - six_hourly
+          - all
+
+env:
+  SUPABASE_URL: https://detxhoqiarohjevedmxh.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+jobs:
+  determine-schedule:
+    runs-on: ubuntu-latest
+    outputs:
+      run_daily: ${{ steps.schedule.outputs.run_daily }}
+      run_weekly: ${{ steps.schedule.outputs.run_weekly }}
+      run_six_hourly: ${{ steps.schedule.outputs.run_six_hourly }}
+    steps:
+      - name: Determine what to run
+        id: schedule
+        run: |
+          HOUR=$(date -u +%H)
+          DAY=$(date -u +%u)
+          
+          # Default all to false
+          echo "run_daily=false" >> $GITHUB_OUTPUT
+          echo "run_weekly=false" >> $GITHUB_OUTPUT
+          echo "run_six_hourly=false" >> $GITHUB_OUTPUT
+          
+          # Manual dispatch
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            case "${{ inputs.job_type }}" in
+              daily_market_close)
+                echo "run_daily=true" >> $GITHUB_OUTPUT
+                ;;
+              weekly_economic)
+                echo "run_weekly=true" >> $GITHUB_OUTPUT
+                ;;
+              six_hourly)
+                echo "run_six_hourly=true" >> $GITHUB_OUTPUT
+                ;;
+              all)
+                echo "run_daily=true" >> $GITHUB_OUTPUT
+                echo "run_weekly=true" >> $GITHUB_OUTPUT
+                echo "run_six_hourly=true" >> $GITHUB_OUTPUT
+                ;;
+            esac
+          else
+            # Scheduled runs
+            # Daily at 21:00 UTC (4PM EST)
+            if [ "$HOUR" == "21" ]; then
+              echo "run_daily=true" >> $GITHUB_OUTPUT
+            fi
+            
+            # Weekly Friday at 23:00 UTC (6PM EST)
+            if [ "$HOUR" == "23" ] && [ "$DAY" == "5" ]; then
+              echo "run_weekly=true" >> $GITHUB_OUTPUT
+            fi
+            
+            # Every 6 hours (0, 6, 12, 18)
+            if [ $((HOUR % 6)) -eq 0 ]; then
+              echo "run_six_hourly=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  daily-market-close:
+    needs: determine-schedule
+    if: needs.determine-schedule.outputs.run_daily == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        function: [ingest-prices-yahoo, ingest-advanced-technicals, ingest-pattern-recognition]
+    steps:
+      - name: Run ${{ matrix.function }}
+        run: |
+          curl -X POST "$SUPABASE_URL/functions/v1/${{ matrix.function }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            --fail-with-body || exit 1
+        timeout-minutes: 10
+
+  weekly-economic:
+    needs: determine-schedule
+    if: needs.determine-schedule.outputs.run_weekly == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        function: [ingest-cot-cftc, ingest-fred-economics]
+    steps:
+      - name: Run ${{ matrix.function }}
+        run: |
+          curl -X POST "$SUPABASE_URL/functions/v1/${{ matrix.function }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            --fail-with-body || exit 1
+        timeout-minutes: 15
+
+  six-hourly:
+    needs: determine-schedule
+    if: needs.determine-schedule.outputs.run_six_hourly == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        function: [ingest-ai-research, ingest-forex-sentiment, generate-alerts]
+    steps:
+      - name: Run ${{ matrix.function }}
+        run: |
+          curl -X POST "$SUPABASE_URL/functions/v1/${{ matrix.function }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            --fail-with-body || exit 1
+        timeout-minutes: 20
+
+  check-alerts:
+    needs: [daily-market-close, weekly-economic, six-hourly]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for ETL failures and alerts
+        run: |
+          response=$(curl -s "$SUPABASE_URL/functions/v1/api-alerts-errors" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")
+          
+          echo "Alert Response:"
+          echo "$response" | jq '.'
+          
+          critical_count=$(echo "$response" | jq -r '.summary.critical // 0')
+          
+          if [ "$critical_count" -gt 0 ]; then
+            echo "::error::$critical_count critical alerts detected!"
+            exit 1
+          fi
+
+  notify-failure:
+    needs: [daily-market-close, weekly-economic, six-hourly]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "🚨 Data Ingestion Job Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*GitHub Actions Data Ingestion Failed*\n\nWorkflow: ${{ github.workflow }}\nRun: ${{ github.run_id }}\nTriggered by: ${{ github.event_name }}"
+                  }
+                }
+              ]
+            }'
