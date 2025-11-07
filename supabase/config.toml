@@ -72,6 +72,12 @@ verify_jwt = false
 [functions.health-metrics]
 verify_jwt = false
 
+[functions.compute-signal-scores]
+verify_jwt = false
+
+[functions.api-signals]
+verify_jwt = false
+
 [functions.ingest-ai-research]
 verify_jwt = false
 

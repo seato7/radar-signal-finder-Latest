@@ -1483,6 +1483,36 @@ export type Database = {
           },
         ]
       }
+      scoring_config: {
+        Row: {
+          config_name: string
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          updated_at: string | null
+          weights: Json
+        }
+        Insert: {
+          config_name: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string | null
+          weights?: Json
+        }
+        Update: {
+          config_name?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          updated_at?: string | null
+          weights?: Json
+        }
+        Relationships: []
+      }
       search_trends: {
         Row: {
           created_at: string | null
@@ -1554,9 +1584,11 @@ export type Database = {
       }
       signals: {
         Row: {
+          asset_class: string | null
           asset_id: string | null
           checksum: string
           citation: Json
+          composite_score: number | null
           confidence_score: number | null
           created_at: string | null
           direction: Database["public"]["Enums"]["signal_direction"] | null
@@ -1564,7 +1596,9 @@ export type Database = {
           magnitude: number | null
           observed_at: string
           raw: Json | null
+          score_factors: Json | null
           signal_category: string | null
+          signal_classification: string | null
           signal_type: string
           source_id: string | null
           theme_id: string | null
@@ -1572,9 +1606,11 @@ export type Database = {
           value_text: string | null
         }
         Insert: {
+          asset_class?: string | null
           asset_id?: string | null
           checksum: string
           citation: Json
+          composite_score?: number | null
           confidence_score?: number | null
           created_at?: string | null
           direction?: Database["public"]["Enums"]["signal_direction"] | null
@@ -1582,7 +1618,9 @@ export type Database = {
           magnitude?: number | null
           observed_at: string
           raw?: Json | null
+          score_factors?: Json | null
           signal_category?: string | null
+          signal_classification?: string | null
           signal_type: string
           source_id?: string | null
           theme_id?: string | null
@@ -1590,9 +1628,11 @@ export type Database = {
           value_text?: string | null
         }
         Update: {
+          asset_class?: string | null
           asset_id?: string | null
           checksum?: string
           citation?: Json
+          composite_score?: number | null
           confidence_score?: number | null
           created_at?: string | null
           direction?: Database["public"]["Enums"]["signal_direction"] | null
@@ -1600,7 +1640,9 @@ export type Database = {
           magnitude?: number | null
           observed_at?: string
           raw?: Json | null
+          score_factors?: Json | null
           signal_category?: string | null
+          signal_classification?: string | null
           signal_type?: string
           source_id?: string | null
           theme_id?: string | null
