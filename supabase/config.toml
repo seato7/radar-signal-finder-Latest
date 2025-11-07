@@ -41,3 +41,21 @@ verify_jwt = false
 
 [functions.ingest-news-sentiment]
 verify_jwt = false
+
+[functions.ingest-prices-yahoo]
+verify_jwt = false
+
+[functions.ingest-search-trends]
+verify_jwt = false
+
+[functions.ingest-dark-pool]
+verify_jwt = false
+
+[functions.ingest-smart-money]
+verify_jwt = false
+
+[functions.ingest-diagnostics]
+verify_jwt = false
+
+[functions.ingest-orchestrator]
+verify_jwt = false
