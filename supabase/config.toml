@@ -26,3 +26,18 @@ verify_jwt = false
 
 [functions.ingest-forex-sentiment]
 verify_jwt = false
+
+[functions.ingest-advanced-technicals]
+verify_jwt = false
+
+[functions.ingest-crypto-onchain]
+verify_jwt = false
+
+[functions.generate-ai-research]
+verify_jwt = false
+
+[functions.ingest-pattern-recognition]
+verify_jwt = false
+
+[functions.ingest-news-sentiment]
+verify_jwt = false

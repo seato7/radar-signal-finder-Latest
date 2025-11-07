@@ -65,8 +65,8 @@ serve(async (req) => {
     let webSearchResults = '';
     
     try {
-      // Fetch Supabase alternative data sources (INCLUDING FOREX, CRYPTO, COMMODITIES)
-      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, optionsData, jobsData, supplyData, forexTech, economicInd, cotReports, forexSent] = await Promise.all([
+      // Fetch Supabase alternative data sources (INCLUDING ALL ENHANCED SIGNALS)
+      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, optionsData, jobsData, supplyData, forexTech, economicInd, cotReports, forexSent, advancedTech, darkPool, cryptoOnchain, smartMoney, newsSentiment, patterns, aiReports] = await Promise.all([
         supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(15),
         supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(15),
         supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
@@ -80,7 +80,14 @@ serve(async (req) => {
         supabase.from('forex_technicals').select('*').order('timestamp', { ascending: false }).limit(15),
         supabase.from('economic_indicators').select('*').order('release_date', { ascending: false }).limit(10),
         supabase.from('cot_reports').select('*').order('report_date', { ascending: false }).limit(10),
-        supabase.from('forex_sentiment').select('*').order('timestamp', { ascending: false }).limit(10)
+        supabase.from('forex_sentiment').select('*').order('timestamp', { ascending: false }).limit(10),
+        supabase.from('advanced_technicals').select('*').order('timestamp', { ascending: false }).limit(15),
+        supabase.from('dark_pool_activity').select('*').order('trade_date', { ascending: false }).limit(10),
+        supabase.from('crypto_onchain_metrics').select('*').order('timestamp', { ascending: false }).limit(10),
+        supabase.from('smart_money_flow').select('*').order('timestamp', { ascending: false }).limit(10),
+        supabase.from('news_sentiment_aggregate').select('*').order('date', { ascending: false }).limit(10),
+        supabase.from('pattern_recognition').select('*').eq('status', 'confirmed').order('detected_at', { ascending: false }).limit(10),
+        supabase.from('ai_research_reports').select('*').order('generated_at', { ascending: false }).limit(5)
       ]);
 
       // Add social sentiment data
@@ -192,6 +199,62 @@ serve(async (req) => {
         marketData += `\n\nFOREX SENTIMENT:\n`;
         forexSent.data.forEach((sent: any) => {
           marketData += `- ${sent.ticker}: Retail ${sent.retail_long_pct?.toFixed(0)}% long / ${sent.retail_short_pct?.toFixed(0)}% short (${sent.retail_sentiment})\n`;
+        });
+      }
+
+      // Add ADVANCED TECHNICAL INDICATORS
+      if (advancedTech.data && advancedTech.data.length > 0) {
+        marketData += `\n\nADVANCED TECHNICAL ANALYSIS:\n`;
+        advancedTech.data.forEach((tech: any) => {
+          marketData += `- ${tech.ticker} (${tech.asset_class}): ${tech.trend_strength}, VWAP $${tech.vwap?.toFixed(2)}, ${tech.breakout_signal}, Stoch ${tech.stochastic_signal}\n`;
+        });
+      }
+
+      // Add DARK POOL ACTIVITY (stocks only)
+      if (darkPool.data && darkPool.data.length > 0) {
+        marketData += `\n\nDARK POOL ACTIVITY:\n`;
+        darkPool.data.forEach((dp: any) => {
+          marketData += `- ${dp.ticker}: ${dp.dark_pool_percentage?.toFixed(1)}% dark pool (${dp.signal_type}, ${dp.signal_strength})\n`;
+        });
+      }
+
+      // Add CRYPTO ON-CHAIN METRICS
+      if (cryptoOnchain.data && cryptoOnchain.data.length > 0) {
+        marketData += `\n\nCRYPTO ON-CHAIN METRICS:\n`;
+        cryptoOnchain.data.forEach((onchain: any) => {
+          marketData += `- ${onchain.ticker}: ${onchain.active_addresses?.toLocaleString()} active addresses, ${onchain.whale_signal} whales, Exchange flow: ${onchain.exchange_flow_signal}, Fear&Greed: ${onchain.fear_greed_index}\n`;
+        });
+      }
+
+      // Add SMART MONEY FLOW
+      if (smartMoney.data && smartMoney.data.length > 0) {
+        marketData += `\n\nSMART MONEY FLOW:\n`;
+        smartMoney.data.forEach((sm: any) => {
+          marketData += `- ${sm.ticker}: Smart money ${sm.smart_money_signal}, MFI ${sm.mfi?.toFixed(1)} (${sm.mfi_signal}), A/D trend: ${sm.ad_trend}\n`;
+        });
+      }
+
+      // Add NEWS SENTIMENT AGGREGATES
+      if (newsSentiment.data && newsSentiment.data.length > 0) {
+        marketData += `\n\nNEWS SENTIMENT ANALYSIS:\n`;
+        newsSentiment.data.forEach((ns: any) => {
+          marketData += `- ${ns.ticker}: ${ns.sentiment_label} (${ns.total_articles} articles, ${(ns.sentiment_score * 100).toFixed(0)}% score, buzz: ${ns.buzz_score?.toFixed(0)})\n`;
+        });
+      }
+
+      // Add PATTERN RECOGNITION
+      if (patterns.data && patterns.data.length > 0) {
+        marketData += `\n\nCONFIRMED CHART PATTERNS:\n`;
+        patterns.data.forEach((pattern: any) => {
+          marketData += `- ${pattern.ticker}: ${pattern.pattern_type.replace('_', ' ').toUpperCase()} (${pattern.pattern_category}, ${pattern.confidence_score}% confidence, R:R ${pattern.risk_reward_ratio?.toFixed(2)})\n`;
+        });
+      }
+
+      // Add AI RESEARCH REPORTS
+      if (aiReports.data && aiReports.data.length > 0) {
+        marketData += `\n\nRECENT AI RESEARCH REPORTS:\n`;
+        aiReports.data.forEach((report: any) => {
+          marketData += `- ${report.ticker}: ${report.recommendation.toUpperCase()} (${report.confidence_score}% confidence, ${report.report_type})\n`;
         });
       }
       

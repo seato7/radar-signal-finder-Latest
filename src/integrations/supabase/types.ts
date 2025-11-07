@@ -14,6 +14,219 @@ export type Database = {
   }
   public: {
     Tables: {
+      advanced_technicals: {
+        Row: {
+          adx: number | null
+          asset_class: string
+          asset_id: string | null
+          breakout_signal: string | null
+          created_at: string | null
+          current_price: number | null
+          fib_0: number | null
+          fib_1000: number | null
+          fib_236: number | null
+          fib_382: number | null
+          fib_500: number | null
+          fib_618: number | null
+          fib_786: number | null
+          id: string
+          metadata: Json | null
+          obv: number | null
+          price_vs_vwap_pct: number | null
+          resistance_1: number | null
+          resistance_2: number | null
+          resistance_3: number | null
+          stochastic_d: number | null
+          stochastic_k: number | null
+          stochastic_signal: string | null
+          support_1: number | null
+          support_2: number | null
+          support_3: number | null
+          ticker: string
+          timestamp: string
+          trend_strength: string | null
+          volume_24h: number | null
+          volume_change_pct: number | null
+          vwap: number | null
+        }
+        Insert: {
+          adx?: number | null
+          asset_class: string
+          asset_id?: string | null
+          breakout_signal?: string | null
+          created_at?: string | null
+          current_price?: number | null
+          fib_0?: number | null
+          fib_1000?: number | null
+          fib_236?: number | null
+          fib_382?: number | null
+          fib_500?: number | null
+          fib_618?: number | null
+          fib_786?: number | null
+          id?: string
+          metadata?: Json | null
+          obv?: number | null
+          price_vs_vwap_pct?: number | null
+          resistance_1?: number | null
+          resistance_2?: number | null
+          resistance_3?: number | null
+          stochastic_d?: number | null
+          stochastic_k?: number | null
+          stochastic_signal?: string | null
+          support_1?: number | null
+          support_2?: number | null
+          support_3?: number | null
+          ticker: string
+          timestamp?: string
+          trend_strength?: string | null
+          volume_24h?: number | null
+          volume_change_pct?: number | null
+          vwap?: number | null
+        }
+        Update: {
+          adx?: number | null
+          asset_class?: string
+          asset_id?: string | null
+          breakout_signal?: string | null
+          created_at?: string | null
+          current_price?: number | null
+          fib_0?: number | null
+          fib_1000?: number | null
+          fib_236?: number | null
+          fib_382?: number | null
+          fib_500?: number | null
+          fib_618?: number | null
+          fib_786?: number | null
+          id?: string
+          metadata?: Json | null
+          obv?: number | null
+          price_vs_vwap_pct?: number | null
+          resistance_1?: number | null
+          resistance_2?: number | null
+          resistance_3?: number | null
+          stochastic_d?: number | null
+          stochastic_k?: number | null
+          stochastic_signal?: string | null
+          support_1?: number | null
+          support_2?: number | null
+          support_3?: number | null
+          ticker?: string
+          timestamp?: string
+          trend_strength?: string | null
+          volume_24h?: number | null
+          volume_change_pct?: number | null
+          vwap?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "advanced_technicals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "advanced_technicals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_research_reports: {
+        Row: {
+          asset_class: string
+          asset_id: string | null
+          confidence_score: number | null
+          created_at: string | null
+          data_sources: string[] | null
+          executive_summary: string
+          expires_at: string | null
+          fundamental_analysis: string | null
+          generated_at: string | null
+          generated_by: string | null
+          id: string
+          key_findings: Json | null
+          metadata: Json | null
+          recommendation: string | null
+          report_type: string
+          risk_assessment: string | null
+          sentiment_analysis: string | null
+          signal_count: number | null
+          stop_loss: number | null
+          target_price: number | null
+          technical_analysis: string | null
+          ticker: string
+          time_horizon: string | null
+        }
+        Insert: {
+          asset_class: string
+          asset_id?: string | null
+          confidence_score?: number | null
+          created_at?: string | null
+          data_sources?: string[] | null
+          executive_summary: string
+          expires_at?: string | null
+          fundamental_analysis?: string | null
+          generated_at?: string | null
+          generated_by?: string | null
+          id?: string
+          key_findings?: Json | null
+          metadata?: Json | null
+          recommendation?: string | null
+          report_type: string
+          risk_assessment?: string | null
+          sentiment_analysis?: string | null
+          signal_count?: number | null
+          stop_loss?: number | null
+          target_price?: number | null
+          technical_analysis?: string | null
+          ticker: string
+          time_horizon?: string | null
+        }
+        Update: {
+          asset_class?: string
+          asset_id?: string | null
+          confidence_score?: number | null
+          created_at?: string | null
+          data_sources?: string[] | null
+          executive_summary?: string
+          expires_at?: string | null
+          fundamental_analysis?: string | null
+          generated_at?: string | null
+          generated_by?: string | null
+          id?: string
+          key_findings?: Json | null
+          metadata?: Json | null
+          recommendation?: string | null
+          report_type?: string
+          risk_assessment?: string | null
+          sentiment_analysis?: string | null
+          signal_count?: number | null
+          stop_loss?: number | null
+          target_price?: number | null
+          technical_analysis?: string | null
+          ticker?: string
+          time_horizon?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_research_reports_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "ai_research_reports_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alerts: {
         Row: {
           created_at: string | null
@@ -475,6 +688,187 @@ export type Database = {
             foreignKeyName: "cot_reports_asset_id_fkey"
             columns: ["asset_id"]
             isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "cot_reports_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crypto_onchain_metrics: {
+        Row: {
+          active_addresses: number | null
+          active_addresses_change_pct: number | null
+          asset_id: string | null
+          created_at: string | null
+          exchange_flow_signal: string | null
+          exchange_inflow: number | null
+          exchange_net_flow: number | null
+          exchange_outflow: number | null
+          fear_greed_index: number | null
+          hash_rate: number | null
+          hash_rate_change_pct: number | null
+          hodl_waves: Json | null
+          id: string
+          large_transaction_volume: number | null
+          long_term_holder_supply_pct: number | null
+          metadata: Json | null
+          mvrv_ratio: number | null
+          nvt_ratio: number | null
+          source: string | null
+          supply_on_exchanges: number | null
+          supply_on_exchanges_pct: number | null
+          ticker: string
+          timestamp: string
+          transaction_count: number | null
+          transaction_count_change_pct: number | null
+          whale_signal: string | null
+          whale_transaction_count: number | null
+        }
+        Insert: {
+          active_addresses?: number | null
+          active_addresses_change_pct?: number | null
+          asset_id?: string | null
+          created_at?: string | null
+          exchange_flow_signal?: string | null
+          exchange_inflow?: number | null
+          exchange_net_flow?: number | null
+          exchange_outflow?: number | null
+          fear_greed_index?: number | null
+          hash_rate?: number | null
+          hash_rate_change_pct?: number | null
+          hodl_waves?: Json | null
+          id?: string
+          large_transaction_volume?: number | null
+          long_term_holder_supply_pct?: number | null
+          metadata?: Json | null
+          mvrv_ratio?: number | null
+          nvt_ratio?: number | null
+          source?: string | null
+          supply_on_exchanges?: number | null
+          supply_on_exchanges_pct?: number | null
+          ticker: string
+          timestamp?: string
+          transaction_count?: number | null
+          transaction_count_change_pct?: number | null
+          whale_signal?: string | null
+          whale_transaction_count?: number | null
+        }
+        Update: {
+          active_addresses?: number | null
+          active_addresses_change_pct?: number | null
+          asset_id?: string | null
+          created_at?: string | null
+          exchange_flow_signal?: string | null
+          exchange_inflow?: number | null
+          exchange_net_flow?: number | null
+          exchange_outflow?: number | null
+          fear_greed_index?: number | null
+          hash_rate?: number | null
+          hash_rate_change_pct?: number | null
+          hodl_waves?: Json | null
+          id?: string
+          large_transaction_volume?: number | null
+          long_term_holder_supply_pct?: number | null
+          metadata?: Json | null
+          mvrv_ratio?: number | null
+          nvt_ratio?: number | null
+          source?: string | null
+          supply_on_exchanges?: number | null
+          supply_on_exchanges_pct?: number | null
+          ticker?: string
+          timestamp?: string
+          transaction_count?: number | null
+          transaction_count_change_pct?: number | null
+          whale_signal?: string | null
+          whale_transaction_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crypto_onchain_metrics_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "crypto_onchain_metrics_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dark_pool_activity: {
+        Row: {
+          asset_id: string | null
+          created_at: string | null
+          dark_pool_percentage: number | null
+          dark_pool_volume: number | null
+          dp_to_lit_ratio: number | null
+          id: string
+          metadata: Json | null
+          price_at_trade: number | null
+          price_impact_estimate: number | null
+          signal_strength: string | null
+          signal_type: string | null
+          source: string | null
+          ticker: string
+          total_volume: number | null
+          trade_date: string
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string | null
+          dark_pool_percentage?: number | null
+          dark_pool_volume?: number | null
+          dp_to_lit_ratio?: number | null
+          id?: string
+          metadata?: Json | null
+          price_at_trade?: number | null
+          price_impact_estimate?: number | null
+          signal_strength?: string | null
+          signal_type?: string | null
+          source?: string | null
+          ticker: string
+          total_volume?: number | null
+          trade_date: string
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string | null
+          dark_pool_percentage?: number | null
+          dark_pool_volume?: number | null
+          dp_to_lit_ratio?: number | null
+          id?: string
+          metadata?: Json | null
+          price_at_trade?: number | null
+          price_impact_estimate?: number | null
+          signal_strength?: string | null
+          signal_type?: string | null
+          source?: string | null
+          ticker?: string
+          total_volume?: number | null
+          trade_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dark_pool_activity_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "dark_pool_activity_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
@@ -612,6 +1006,13 @@ export type Database = {
             foreignKeyName: "forex_sentiment_asset_id_fkey"
             columns: ["asset_id"]
             isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "forex_sentiment_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
@@ -695,6 +1096,13 @@ export type Database = {
             foreignKeyName: "forex_technicals_asset_id_fkey"
             columns: ["asset_id"]
             isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "forex_technicals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
@@ -747,6 +1155,78 @@ export type Database = {
           ticker?: string
         }
         Relationships: []
+      }
+      news_sentiment_aggregate: {
+        Row: {
+          asset_id: string | null
+          buzz_change_pct: number | null
+          buzz_score: number | null
+          created_at: string | null
+          date: string
+          id: string
+          metadata: Json | null
+          negative_articles: number | null
+          neutral_articles: number | null
+          positive_articles: number | null
+          sentiment_by_source: Json | null
+          sentiment_label: string | null
+          sentiment_score: number | null
+          ticker: string
+          total_articles: number | null
+          trending_keywords: string[] | null
+        }
+        Insert: {
+          asset_id?: string | null
+          buzz_change_pct?: number | null
+          buzz_score?: number | null
+          created_at?: string | null
+          date: string
+          id?: string
+          metadata?: Json | null
+          negative_articles?: number | null
+          neutral_articles?: number | null
+          positive_articles?: number | null
+          sentiment_by_source?: Json | null
+          sentiment_label?: string | null
+          sentiment_score?: number | null
+          ticker: string
+          total_articles?: number | null
+          trending_keywords?: string[] | null
+        }
+        Update: {
+          asset_id?: string | null
+          buzz_change_pct?: number | null
+          buzz_score?: number | null
+          created_at?: string | null
+          date?: string
+          id?: string
+          metadata?: Json | null
+          negative_articles?: number | null
+          neutral_articles?: number | null
+          positive_articles?: number | null
+          sentiment_by_source?: Json | null
+          sentiment_label?: string | null
+          sentiment_score?: number | null
+          ticker?: string
+          total_articles?: number | null
+          trending_keywords?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_sentiment_aggregate_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "news_sentiment_aggregate_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       options_flow: {
         Row: {
@@ -835,6 +1315,84 @@ export type Database = {
         }
         Relationships: []
       }
+      pattern_recognition: {
+        Row: {
+          asset_id: string | null
+          confidence_score: number | null
+          created_at: string | null
+          detected_at: string
+          entry_price: number | null
+          historical_success_rate: number | null
+          id: string
+          metadata: Json | null
+          pattern_category: string | null
+          pattern_completion_pct: number | null
+          pattern_type: string
+          risk_reward_ratio: number | null
+          status: string | null
+          stop_loss_price: number | null
+          target_price: number | null
+          ticker: string
+          timeframe: string | null
+          volume_confirmed: boolean | null
+        }
+        Insert: {
+          asset_id?: string | null
+          confidence_score?: number | null
+          created_at?: string | null
+          detected_at?: string
+          entry_price?: number | null
+          historical_success_rate?: number | null
+          id?: string
+          metadata?: Json | null
+          pattern_category?: string | null
+          pattern_completion_pct?: number | null
+          pattern_type: string
+          risk_reward_ratio?: number | null
+          status?: string | null
+          stop_loss_price?: number | null
+          target_price?: number | null
+          ticker: string
+          timeframe?: string | null
+          volume_confirmed?: boolean | null
+        }
+        Update: {
+          asset_id?: string | null
+          confidence_score?: number | null
+          created_at?: string | null
+          detected_at?: string
+          entry_price?: number | null
+          historical_success_rate?: number | null
+          id?: string
+          metadata?: Json | null
+          pattern_category?: string | null
+          pattern_completion_pct?: number | null
+          pattern_type?: string
+          risk_reward_ratio?: number | null
+          status?: string | null
+          stop_loss_price?: number | null
+          target_price?: number | null
+          ticker?: string
+          timeframe?: string | null
+          volume_confirmed?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pattern_recognition_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "pattern_recognition_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       prices: {
         Row: {
           asset_id: string | null
@@ -864,6 +1422,13 @@ export type Database = {
           ticker?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "prices_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
           {
             foreignKeyName: "prices_asset_id_fkey"
             columns: ["asset_id"]
@@ -947,48 +1512,147 @@ export type Database = {
           asset_id: string | null
           checksum: string
           citation: Json
+          confidence_score: number | null
           created_at: string | null
           direction: Database["public"]["Enums"]["signal_direction"] | null
           id: string
           magnitude: number | null
           observed_at: string
           raw: Json | null
+          signal_category: string | null
           signal_type: string
           source_id: string | null
           theme_id: string | null
+          time_horizon: string | null
           value_text: string | null
         }
         Insert: {
           asset_id?: string | null
           checksum: string
           citation: Json
+          confidence_score?: number | null
           created_at?: string | null
           direction?: Database["public"]["Enums"]["signal_direction"] | null
           id?: string
           magnitude?: number | null
           observed_at: string
           raw?: Json | null
+          signal_category?: string | null
           signal_type: string
           source_id?: string | null
           theme_id?: string | null
+          time_horizon?: string | null
           value_text?: string | null
         }
         Update: {
           asset_id?: string | null
           checksum?: string
           citation?: Json
+          confidence_score?: number | null
           created_at?: string | null
           direction?: Database["public"]["Enums"]["signal_direction"] | null
           id?: string
           magnitude?: number | null
           observed_at?: string
           raw?: Json | null
+          signal_category?: string | null
           signal_type?: string
           source_id?: string | null
           theme_id?: string | null
+          time_horizon?: string | null
           value_text?: string | null
         }
         Relationships: []
+      }
+      smart_money_flow: {
+        Row: {
+          ad_line: number | null
+          ad_trend: string | null
+          asset_class: string
+          asset_id: string | null
+          cmf: number | null
+          cmf_signal: string | null
+          created_at: string | null
+          id: string
+          institutional_buy_volume: number | null
+          institutional_net_flow: number | null
+          institutional_sell_volume: number | null
+          metadata: Json | null
+          mfi: number | null
+          mfi_signal: string | null
+          retail_buy_volume: number | null
+          retail_net_flow: number | null
+          retail_sell_volume: number | null
+          smart_money_index: number | null
+          smart_money_signal: string | null
+          source: string | null
+          ticker: string
+          timestamp: string
+        }
+        Insert: {
+          ad_line?: number | null
+          ad_trend?: string | null
+          asset_class: string
+          asset_id?: string | null
+          cmf?: number | null
+          cmf_signal?: string | null
+          created_at?: string | null
+          id?: string
+          institutional_buy_volume?: number | null
+          institutional_net_flow?: number | null
+          institutional_sell_volume?: number | null
+          metadata?: Json | null
+          mfi?: number | null
+          mfi_signal?: string | null
+          retail_buy_volume?: number | null
+          retail_net_flow?: number | null
+          retail_sell_volume?: number | null
+          smart_money_index?: number | null
+          smart_money_signal?: string | null
+          source?: string | null
+          ticker: string
+          timestamp?: string
+        }
+        Update: {
+          ad_line?: number | null
+          ad_trend?: string | null
+          asset_class?: string
+          asset_id?: string | null
+          cmf?: number | null
+          cmf_signal?: string | null
+          created_at?: string | null
+          id?: string
+          institutional_buy_volume?: number | null
+          institutional_net_flow?: number | null
+          institutional_sell_volume?: number | null
+          metadata?: Json | null
+          mfi?: number | null
+          mfi_signal?: string | null
+          retail_buy_volume?: number | null
+          retail_net_flow?: number | null
+          retail_sell_volume?: number | null
+          smart_money_index?: number | null
+          smart_money_signal?: string | null
+          source?: string | null
+          ticker?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "smart_money_flow_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "smart_money_flow_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       social_signals: {
         Row: {
@@ -1178,6 +1842,25 @@ export type Database = {
       }
     }
     Views: {
+      asset_signal_summary: {
+        Row: {
+          active_patterns: number | null
+          asset_class: string | null
+          asset_id: string | null
+          current_price: number | null
+          exchange: string | null
+          flow_signals: number | null
+          institutional_signals: number | null
+          last_signal_at: string | null
+          name: string | null
+          news_sentiment: number | null
+          sentiment_signals: number | null
+          technical_signals: number | null
+          ticker: string | null
+          trend: string | null
+        }
+        Relationships: []
+      }
       interest_rate_differentials: {
         Row: {
           country_a: string | null
