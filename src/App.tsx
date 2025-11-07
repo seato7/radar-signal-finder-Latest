@@ -26,6 +26,7 @@ import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import Assistant from "./pages/Assistant";
+import DataIngestion from "./pages/DataIngestion";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -77,6 +78,7 @@ const App = () => (
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/assistant" element={<Assistant />} />
+                            <Route path="/data-ingestion" element={<DataIngestion />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
