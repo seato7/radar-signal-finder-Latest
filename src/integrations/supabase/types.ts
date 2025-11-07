@@ -237,7 +237,7 @@ export type Database = {
           status: Database["public"]["Enums"]["alert_status"] | null
           theme_id: string
           theme_name: string
-          user_id: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string | null
@@ -248,7 +248,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["alert_status"] | null
           theme_id: string
           theme_name: string
-          user_id?: string | null
+          user_id: string
         }
         Update: {
           created_at?: string | null
@@ -259,7 +259,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["alert_status"] | null
           theme_id?: string
           theme_name?: string
-          user_id?: string | null
+          user_id?: string
         }
         Relationships: [
           {
