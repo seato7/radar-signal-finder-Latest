@@ -1850,11 +1850,13 @@ export type Database = {
           current_price: number | null
           exchange: string | null
           flow_signals: number | null
+          insider_signals: number | null
           institutional_signals: number | null
           last_signal_at: string | null
           name: string | null
-          news_sentiment: number | null
+          news_sentiment: string | null
           sentiment_signals: number | null
+          smart_money_flow: number | null
           technical_signals: number | null
           ticker: string | null
           trend: string | null
