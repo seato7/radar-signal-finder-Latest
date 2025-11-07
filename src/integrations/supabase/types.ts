@@ -1108,6 +1108,51 @@ export type Database = {
           },
         ]
       }
+      ingest_logs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          duration_seconds: number | null
+          error_message: string | null
+          etl_name: string
+          id: string
+          metadata: Json | null
+          rows_inserted: number | null
+          rows_skipped: number | null
+          rows_updated: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          error_message?: string | null
+          etl_name: string
+          id?: string
+          metadata?: Json | null
+          rows_inserted?: number | null
+          rows_skipped?: number | null
+          rows_updated?: number | null
+          started_at?: string
+          status: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          error_message?: string | null
+          etl_name?: string
+          id?: string
+          metadata?: Json | null
+          rows_inserted?: number | null
+          rows_skipped?: number | null
+          rows_updated?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
       job_postings: {
         Row: {
           company: string
