@@ -59,3 +59,15 @@ verify_jwt = false
 
 [functions.ingest-orchestrator]
 verify_jwt = false
+
+[functions.ingest-cot-cftc]
+verify_jwt = false
+
+[functions.ingest-fred-economics]
+verify_jwt = false
+
+[functions.ingest-finra-darkpool]
+verify_jwt = false
+
+[functions.health-metrics]
+verify_jwt = false

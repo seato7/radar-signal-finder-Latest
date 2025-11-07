@@ -34,9 +34,21 @@ Deno.serve(async (req) => {
         const range = '30d'; // last 30 days
         
         // Yahoo Finance API (free, no key required)
+        // Yahoo Finance API v8 - includes OHLCV data
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${period}&range=${range}`;
         
-        const response = await fetch(yahooUrl);
+        const response = await fetch(yahooUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        
+        if (!response.ok) {
+          console.log(`Yahoo Finance returned ${response.status} for ${symbol}`);
+          skipped++;
+          continue;
+        }
+        
         const data = await response.json();
         
         if (!data?.chart?.result?.[0]) {
