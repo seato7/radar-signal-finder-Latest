@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { CryptoOnChainMetricsSchema, PerplexityResponseSchema, safeValidate } from "../_shared/zod-schemas.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -92,8 +93,17 @@ hash_rate: [number if applicable]`
           continue;
         }
 
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
+        const rawData = await response.json();
+        
+        // CRITICAL: Validate Perplexity response
+        const validation = safeValidate(PerplexityResponseSchema, rawData, 'Perplexity AI');
+        if (!validation.success) {
+          console.error(`Invalid Perplexity response for ${asset.ticker}: ${validation.error}`);
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          continue;
+        }
+        
+        const content = validation.data.choices[0].message.content;
 
         // Parse the response
         const activeAddresses = parseInt(content.match(/active_addresses:\s*(\d+)/)?.[1] || '0');

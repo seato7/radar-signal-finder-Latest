@@ -1,5 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { YahooResponseSchema, PerplexityResponseSchema, safeValidate } from "../_shared/zod-schemas.ts";
+import { redisCache } from "../_shared/redis-cache.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,7 +23,6 @@ Deno.serve(async (req) => {
   await logger.start();
 
   try {
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
@@ -35,21 +36,36 @@ Deno.serve(async (req) => {
     
     let inserted = 0;
     let skipped = 0;
+    let fallbackUsed = 0;
+    let cacheHits = 0;
     const errors: string[] = [];
+    const startTime = Date.now();
     
     // Process each asset
     for (const asset of assets) {
       try {
         const symbol = asset.ticker;
-        const period = '1d'; // daily
-        const range = '1y'; // last 1 year for 250+ trading days
         
-        // Yahoo Finance API (free, no key required)
-        // Yahoo Finance API v8 - includes OHLCV data
+        // Check Redis cache first (5s TTL)
+        const cacheKey = `prices:${symbol}`;
+        const cached = await redisCache.get(cacheKey);
+        
+        if (cached.hit && cached.data) {
+          console.log(`✅ Cache HIT for ${symbol} (${cached.age_seconds?.toFixed(1)}s old)`);
+          cacheHits++;
+          inserted += cached.data.length || 0;
+          continue;
+        }
+        
+        console.log(`❌ Cache MISS for ${symbol}`);
+        
+        const period = '1d';
+        const range = '1y';
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${period}&range=${range}`;
         
         let data = null;
         let fetchError = null;
+        let sourceUsed = 'Yahoo Finance';
 
         // Try Yahoo Finance first
         try {
@@ -60,7 +76,16 @@ Deno.serve(async (req) => {
           });
           
           if (response.ok) {
-            data = await response.json();
+            const rawData = await response.json();
+            
+            // CRITICAL: Validate Yahoo Finance response
+            const validation = safeValidate(YahooResponseSchema, rawData, 'Yahoo Finance');
+            if (validation.success) {
+              data = validation.data;
+            } else {
+              fetchError = `Invalid Yahoo response: ${validation.error}`;
+              console.error(fetchError);
+            }
           } else {
             fetchError = `Yahoo Finance returned ${response.status}`;
           }
@@ -74,6 +99,9 @@ Deno.serve(async (req) => {
           
           const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
           const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+          
+          fallbackUsed++;
+          sourceUsed = perplexityApiKey ? 'Perplexity' : 'Lovable AI';
           
           if (perplexityApiKey || lovableApiKey) {
             const aiKey = perplexityApiKey || lovableApiKey;
@@ -103,8 +131,17 @@ Deno.serve(async (req) => {
               });
 
               if (aiResponse.ok) {
-                const aiData = await aiResponse.json();
-                const content = aiData.choices?.[0]?.message?.content || '';
+                const rawAiData = await aiResponse.json();
+                
+                // CRITICAL: Validate AI response
+                const aiValidation = safeValidate(PerplexityResponseSchema, rawAiData, 'AI Fallback');
+                if (!aiValidation.success) {
+                  console.error(`Invalid AI response for ${symbol}: ${aiValidation.error}`);
+                  skipped++;
+                  continue;
+                }
+                
+                const content = aiValidation.data.choices[0].message.content;
                 const price = parseFloat(content.match(/price:\s*([\d.]+)/)?.[1] || '0');
                 
                 if (price > 0) {
@@ -115,6 +152,15 @@ Deno.serve(async (req) => {
                     new TextEncoder().encode(`${symbol}|${today}|${price}`)
                   ).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
                   
+                  const priceData = [{
+                    ticker: symbol,
+                    asset_id: asset.id,
+                    date: today,
+                    close: price,
+                    checksum,
+                    last_updated_at: new Date().toISOString(),
+                  }];
+                  
                   await fetch(`${supabaseUrl}/rest/v1/prices`, {
                     method: 'POST',
                     headers: {
@@ -123,14 +169,11 @@ Deno.serve(async (req) => {
                       'Content-Type': 'application/json',
                       'Prefer': 'resolution=ignore-duplicates'
                     },
-                    body: JSON.stringify({
-                      ticker: symbol,
-                      asset_id: asset.id,
-                      date: today,
-                      close: price,
-                      checksum,
-                    })
+                    body: JSON.stringify(priceData[0])
                   });
+                  
+                  // Cache the fallback result
+                  await redisCache.set(cacheKey, priceData, sourceUsed);
                   
                   inserted++;
                   await new Promise(resolve => setTimeout(resolve, 1500));
@@ -150,12 +193,14 @@ Deno.serve(async (req) => {
         const timestamps = result.timestamp || [];
         const quote = result.indicators.quote[0];
         
+        const priceDataBatch = [];
+        
         // Process each price point
         for (let i = 0; i < timestamps.length; i++) {
           const date = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
           const close = quote.close[i];
           
-          if (!close) continue;
+          if (!close || close <= 0) continue;
           
           // Generate checksum for idempotency
           const checksum = await crypto.subtle.digest(
@@ -163,15 +208,18 @@ Deno.serve(async (req) => {
             new TextEncoder().encode(`${symbol}|${date}|${close}`)
           ).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
           
-          const priceData = {
+          priceDataBatch.push({
             ticker: symbol,
             asset_id: asset.id,
             date,
             close,
             checksum,
-          };
-          
-          // Upsert with checksum conflict resolution
+            last_updated_at: new Date().toISOString(),
+          });
+        }
+        
+        // Batch insert for performance
+        if (priceDataBatch.length > 0) {
           const upsertRes = await fetch(`${supabaseUrl}/rest/v1/prices`, {
             method: 'POST',
             headers: {
@@ -180,13 +228,16 @@ Deno.serve(async (req) => {
               'Content-Type': 'application/json',
               'Prefer': 'resolution=ignore-duplicates'
             },
-            body: JSON.stringify(priceData)
+            body: JSON.stringify(priceDataBatch)
           });
           
           if (upsertRes.ok) {
-            inserted++;
+            inserted += priceDataBatch.length;
+            
+            // Cache the Yahoo Finance result
+            await redisCache.set(cacheKey, priceDataBatch, sourceUsed);
           } else {
-            skipped++;
+            skipped += priceDataBatch.length;
           }
         }
         
@@ -200,9 +251,10 @@ Deno.serve(async (req) => {
     }
     
     await logger.success({
-      source_used: 'Yahoo Finance',
-      cache_hit: false,
-      fallback_count: 0,
+      source_used: fallbackUsed > 0 ? 'Yahoo Finance + AI Fallback' : 'Yahoo Finance',
+      cache_hit: cacheHits > 0,
+      fallback_count: fallbackUsed,
+      latency_ms: Date.now() - startTime,
       rows_inserted: inserted,
       rows_skipped: skipped,
     });
