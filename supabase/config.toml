@@ -15,6 +15,15 @@ verify_jwt = false
 [functions.ingest-smart-money]
 verify_jwt = false
 
+[functions.ingest-breaking-news]
+verify_jwt = false
+
+[functions.ingest-advanced-technicals]
+verify_jwt = false
+
+[functions.ingest-crypto-onchain]
+verify_jwt = false
+
 [functions.mine-and-discover-themes]
 verify_jwt = false
 
