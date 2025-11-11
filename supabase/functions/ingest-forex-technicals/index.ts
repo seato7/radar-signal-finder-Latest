@@ -50,10 +50,11 @@ serve(async (req) => {
 
     for (const pair of forexPairs) {
       try {
-        const symbol = pair.ticker.replace('/', '');
+        // Alpha Vantage uses format: from_currency=EUR&to_currency=USD
+        const [fromCurrency, toCurrency] = pair.ticker.split('/');
         
         // Fetch technical indicators from Alpha Vantage
-        const indicators = await fetchTechnicalIndicators(symbol);
+        const indicators = await fetchTechnicalIndicators(fromCurrency, toCurrency, pair.ticker);
         
         if (!indicators) {
           console.log(`⚠️ No data for ${pair.ticker}`);
@@ -154,45 +155,88 @@ serve(async (req) => {
   }
 });
 
-async function fetchTechnicalIndicators(symbol: string): Promise<TechnicalIndicators | null> {
+async function fetchTechnicalIndicators(fromCurrency: string, toCurrency: string, ticker: string): Promise<TechnicalIndicators | null> {
   try {
-    // Fetch RSI
-    const rsiUrl = `https://www.alphavantage.co/query?function=RSI&symbol=${symbol}&interval=daily&time_period=14&series_type=close&apikey=${ALPHA_VANTAGE_API_KEY}`;
-    const rsiResp = await fetch(rsiUrl);
-    const rsiData = await rsiResp.json();
+    // For forex pairs, use FX_DAILY to get price data first
+    const fxUrl = `https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=${fromCurrency}&to_symbol=${toCurrency}&apikey=${ALPHA_VANTAGE_API_KEY}`;
     
-    // Fetch MACD
-    const macdUrl = `https://www.alphavantage.co/query?function=MACD&symbol=${symbol}&interval=daily&series_type=close&apikey=${ALPHA_VANTAGE_API_KEY}`;
-    const macdResp = await fetch(macdUrl);
-    const macdData = await macdResp.json();
-
-    // Fetch SMA
-    const smaUrl = `https://www.alphavantage.co/query?function=SMA&symbol=${symbol}&interval=daily&time_period=50&series_type=close&apikey=${ALPHA_VANTAGE_API_KEY}`;
-    const smaResp = await fetch(smaUrl);
-    const smaData = await smaResp.json();
-
-    // Extract latest values
-    const rsiValues = rsiData['Technical Analysis: RSI'];
-    const macdValues = macdData['Technical Analysis: MACD'];
-    const smaValues = smaData['Technical Analysis: SMA'];
-
-    if (!rsiValues && !macdValues && !smaValues) {
+    console.log(`Fetching forex data for ${ticker} (${fromCurrency} to ${toCurrency})...`);
+    console.log(`URL: ${fxUrl.replace(ALPHA_VANTAGE_API_KEY, 'API_KEY')}`);
+    
+    const fxResp = await fetch(fxUrl);
+    const fxData = await fxResp.json();
+    
+    console.log(`Response for ${ticker}:`, JSON.stringify(fxData).substring(0, 500));
+    
+    // Check for rate limit or error
+    if (fxData['Note']) {
+      console.error(`⚠️ Rate limit hit for ${ticker}: ${fxData['Note']}`);
+      return null;
+    }
+    
+    if (fxData['Error Message']) {
+      console.error(`❌ API Error for ${ticker}: ${fxData['Error Message']}`);
+      return null;
+    }
+    
+    const timeSeriesData = fxData['Time Series FX (Daily)'];
+    
+    if (!timeSeriesData) {
+      console.error(`❌ No time series data for ${ticker}. Keys in response:`, Object.keys(fxData));
       return null;
     }
 
-    const latestRsiKey = rsiValues ? Object.keys(rsiValues)[0] : null;
-    const latestMacdKey = macdValues ? Object.keys(macdValues)[0] : null;
-    const latestSmaKey = smaValues ? Object.keys(smaValues)[0] : null;
+    // Get latest date's data
+    const dates = Object.keys(timeSeriesData).sort().reverse();
+    const latestDate = dates[0];
+    const latestData = timeSeriesData[latestDate];
+    
+    console.log(`✅ Got ${dates.length} days of data for ${ticker}, latest: ${latestDate}`);
+    
+    const closePrices = dates.slice(0, 200).map(date => parseFloat(timeSeriesData[date]['4. close']));
+    
+    // Calculate simple technical indicators from price data
+    const rsi14 = calculateRSI(closePrices, 14);
+    const sma50 = calculateSMA(closePrices, 50);
+    const sma200 = calculateSMA(closePrices, 200);
 
     return {
-      rsi_14: latestRsiKey ? parseFloat(rsiValues[latestRsiKey]['RSI']) : undefined,
-      macd_line: latestMacdKey ? parseFloat(macdValues[latestMacdKey]['MACD']) : undefined,
-      macd_signal: latestMacdKey ? parseFloat(macdValues[latestMacdKey]['MACD_Signal']) : undefined,
-      macd_histogram: latestMacdKey ? parseFloat(macdValues[latestMacdKey]['MACD_Hist']) : undefined,
-      sma_50: latestSmaKey ? parseFloat(smaValues[latestSmaKey]['SMA']) : undefined,
+      close_price: parseFloat(latestData['4. close']),
+      rsi_14: rsi14,
+      sma_50: sma50,
+      sma_200: sma200,
     };
   } catch (error) {
-    console.error('Error fetching technical indicators:', error);
+    console.error(`💥 Error fetching technical indicators for ${ticker}:`, error);
     return null;
   }
+}
+
+// Helper function to calculate RSI
+function calculateRSI(prices: number[], period: number): number | undefined {
+  if (prices.length < period + 1) return undefined;
+  
+  let gains = 0;
+  let losses = 0;
+  
+  for (let i = 1; i <= period; i++) {
+    const change = prices[i - 1] - prices[i];
+    if (change > 0) gains += change;
+    else losses += Math.abs(change);
+  }
+  
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  
+  if (avgLoss === 0) return 100;
+  
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+// Helper function to calculate SMA
+function calculateSMA(prices: number[], period: number): number | undefined {
+  if (prices.length < period) return undefined;
+  const sum = prices.slice(0, period).reduce((a, b) => a + b, 0);
+  return sum / period;
 }

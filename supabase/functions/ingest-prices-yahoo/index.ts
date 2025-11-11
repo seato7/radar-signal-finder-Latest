@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       try {
         const symbol = asset.ticker;
         const period = '1d'; // daily
-        const range = '30d'; // last 30 days
+        const range = '1y'; // last 1 year for 250+ trading days
         
         // Yahoo Finance API (free, no key required)
         // Yahoo Finance API v8 - includes OHLCV data
