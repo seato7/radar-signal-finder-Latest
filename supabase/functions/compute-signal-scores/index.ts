@@ -48,7 +48,7 @@ serve(async (req) => {
     // Fetch all signals without composite_score
     const { data: signals, error: signalsError } = await supabase
       .from('signals')
-      .select('id, signal_type, magnitude, direction, asset_id, observed_at, raw')
+      .select('id, signal_type, magnitude, direction, asset_id, observed_at, raw, source_used')
       .is('composite_score', null)
       .order('observed_at', { ascending: false })
       .limit(1000);
@@ -94,11 +94,65 @@ serve(async (req) => {
 
     if (updateError) throw updateError;
 
+    // PHASE 4: Check for signal distribution skew after scoring
+    const { data: skewCheck, error: skewError } = await supabase
+      .rpc('check_signal_distribution_skew');
+
+    let skewAlert = null;
+    if (!skewError && skewCheck && skewCheck.length > 0) {
+      const skew = skewCheck[0];
+      if (skew.is_skewed) {
+        console.warn(skew.message);
+        skewAlert = skew;
+
+        // PHASE 4: Trigger alert for excessive skew
+        const slackWebhook = Deno.env.get('SLACK_WEBHOOK_URL');
+        if (slackWebhook) {
+          try {
+            await fetch(slackWebhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: skew.message,
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `*Signal Distribution Alert*\n\n${skew.message}\n\n• Buy signals: ${skew.buy_count} (${skew.buy_percentage}%)\n• Sell signals: ${skew.sell_count} (${skew.sell_percentage}%)\n• Neutral signals: ${skew.neutral_count} (${skew.neutral_percentage}%)`
+                    }
+                  }
+                ]
+              })
+            });
+          } catch (err) {
+            console.error('Failed to send Slack alert for signal skew:', err);
+          }
+        }
+
+        // Also insert to alerts table
+        await supabase.from('system_alerts').insert({
+          alert_type: 'signal_skew',
+          severity: 'high',
+          message: skew.message,
+          metadata: {
+            buy_count: skew.buy_count,
+            sell_count: skew.sell_count,
+            neutral_count: skew.neutral_count,
+            buy_percentage: skew.buy_percentage,
+            sell_percentage: skew.sell_percentage,
+          }
+        });
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         message: 'Signal scores computed successfully',
         processed: updates.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        skew_detected: skewAlert ? true : false,
+        skew_alert: skewAlert,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

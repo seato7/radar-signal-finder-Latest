@@ -10,8 +10,9 @@ export async function fetchWithAIFallback(options: {
   promptTemplate: string;
   perplexityApiKey?: string;
   lovableApiKey?: string;
+  maxRetries?: number;
 }): Promise<any> {
-  const { ticker, dataType, primaryFetch, promptTemplate, perplexityApiKey, lovableApiKey } = options;
+  const { ticker, dataType, primaryFetch, promptTemplate, perplexityApiKey, lovableApiKey, maxRetries = 3 } = options;
 
   try {
     // Try primary source first
@@ -57,7 +58,9 @@ export async function fetchWithAIFallback(options: {
   return { success: false, data: null, source: 'none' };
 }
 
-async function fetchFromPerplexity(ticker: string, promptTemplate: string, apiKey: string): Promise<any> {
+async function fetchFromPerplexity(ticker: string, promptTemplate: string, apiKey: string, retryCount = 0, maxRetries = 3): Promise<any> {
+  console.log(`Attempting Perplexity for ${ticker} (attempt ${retryCount + 1}/${maxRetries})`);
+  
   const response = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
     headers: {
@@ -65,7 +68,7 @@ async function fetchFromPerplexity(ticker: string, promptTemplate: string, apiKe
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'llama-3.1-sonar-small-128k-online',
+      model: 'sonar',
       messages: [{
         role: 'user',
         content: promptTemplate.replace('{{ticker}}', ticker)
@@ -75,8 +78,21 @@ async function fetchFromPerplexity(ticker: string, promptTemplate: string, apiKe
     }),
   });
 
+  // PHASE 5: Handle rate limits with exponential backoff retry
+  if (response.status === 429) {
+    if (retryCount < maxRetries) {
+      const backoffMs = 1000 * Math.pow(2, retryCount);
+      console.log(`⚠️ Perplexity rate limit for ${ticker}, retrying in ${backoffMs}ms`);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+      return fetchFromPerplexity(ticker, promptTemplate, apiKey, retryCount + 1, maxRetries);
+    } else {
+      throw new Error(`Perplexity rate limit exceeded after ${maxRetries} retries`);
+    }
+  }
+
   if (!response.ok) {
-    throw new Error(`Perplexity API error: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Perplexity API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
