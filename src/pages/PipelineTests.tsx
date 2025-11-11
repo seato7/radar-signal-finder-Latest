@@ -143,7 +143,7 @@ export default function PipelineTests() {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Total:</span>
-                      <span className="font-medium">{suite.total_tests}</span>
+                      <span className="font-medium">{suite.total}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-green-600">Passed:</span>
@@ -161,7 +161,7 @@ export default function PipelineTests() {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Pass Rate:</span>
                         <span className="font-bold text-primary">
-                          {((suite.passed / suite.total_tests) * 100).toFixed(1)}%
+                          {((suite.passed / suite.total) * 100).toFixed(1)}%
                         </span>
                       </div>
                     </div>

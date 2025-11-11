@@ -2106,10 +2106,10 @@ export type Database = {
       view_test_suite_summary: {
         Row: {
           failed: number | null
-          last_run_at: string | null
+          last_run: string | null
           passed: number | null
           test_suite: string | null
-          total_tests: number | null
+          total: number | null
           warnings: number | null
         }
         Relationships: []
