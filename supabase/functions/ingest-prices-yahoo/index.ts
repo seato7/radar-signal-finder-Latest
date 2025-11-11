@@ -53,22 +53,100 @@ Deno.serve(async (req) => {
         // Yahoo Finance API v8 - includes OHLCV data
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${period}&range=${range}`;
         
-        const response = await fetch(yahooUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        let data = null;
+        let fetchError = null;
+
+        // Try Yahoo Finance first
+        try {
+          const response = await fetch(yahooUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+          
+          if (response.ok) {
+            data = await response.json();
+          } else {
+            fetchError = `Yahoo Finance returned ${response.status}`;
           }
-        });
-        
-        if (!response.ok) {
-          console.log(`Yahoo Finance returned ${response.status} for ${symbol}`);
-          skipped++;
-          continue;
+        } catch (err) {
+          fetchError = `Yahoo Finance request failed: ${err}`;
         }
         
-        const data = await response.json();
-        
+        // If Yahoo failed, try AI fallback
         if (!data?.chart?.result?.[0]) {
-          console.log(`No data for ${symbol}`);
+          console.log(`${fetchError || 'No data from Yahoo'} for ${symbol}, trying AI fallback...`);
+          
+          const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+          const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+          
+          if (perplexityApiKey || lovableApiKey) {
+            const aiKey = perplexityApiKey || lovableApiKey;
+            const aiUrl = perplexityApiKey 
+              ? 'https://api.perplexity.ai/chat/completions'
+              : 'https://ai.gateway.lovable.dev/v1/chat/completions';
+            const aiModel = perplexityApiKey 
+              ? 'llama-3.1-sonar-small-128k-online'
+              : 'google/gemini-2.5-flash';
+            
+            try {
+              const aiResponse = await fetch(aiUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${aiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: aiModel,
+                  messages: [{
+                    role: 'user',
+                    content: `Get the current price for ${symbol}. Return ONLY: price: [number]`
+                  }],
+                  temperature: 0.2,
+                  max_tokens: 100,
+                }),
+              });
+
+              if (aiResponse.ok) {
+                const aiData = await aiResponse.json();
+                const content = aiData.choices?.[0]?.message?.content || '';
+                const price = parseFloat(content.match(/price:\s*([\d.]+)/)?.[1] || '0');
+                
+                if (price > 0) {
+                  console.log(`✅ Got price ${price} from AI for ${symbol}`);
+                  const today = new Date().toISOString().split('T')[0];
+                  const checksum = await crypto.subtle.digest(
+                    'SHA-256',
+                    new TextEncoder().encode(`${symbol}|${today}|${price}`)
+                  ).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''));
+                  
+                  await fetch(`${supabaseUrl}/rest/v1/prices`, {
+                    method: 'POST',
+                    headers: {
+                      'apikey': supabaseKey,
+                      'Authorization': `Bearer ${supabaseKey}`,
+                      'Content-Type': 'application/json',
+                      'Prefer': 'resolution=ignore-duplicates'
+                    },
+                    body: JSON.stringify({
+                      ticker: symbol,
+                      asset_id: asset.id,
+                      date: today,
+                      close: price,
+                      checksum,
+                    })
+                  });
+                  
+                  inserted++;
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                  continue;
+                }
+              }
+            } catch (aiErr) {
+              console.error(`AI fallback failed for ${symbol}:`, aiErr);
+            }
+          }
+          
           skipped++;
           continue;
         }

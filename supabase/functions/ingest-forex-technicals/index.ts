@@ -156,60 +156,132 @@ serve(async (req) => {
 });
 
 async function fetchTechnicalIndicators(fromCurrency: string, toCurrency: string, ticker: string): Promise<TechnicalIndicators | null> {
-  try {
-    // For forex pairs, use FX_DAILY to get price data first
+  const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+
+  // Try Alpha Vantage first
+  const primaryFetch = async () => {
     const fxUrl = `https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=${fromCurrency}&to_symbol=${toCurrency}&apikey=${ALPHA_VANTAGE_API_KEY}`;
     
-    console.log(`Fetching forex data for ${ticker} (${fromCurrency} to ${toCurrency})...`);
-    console.log(`URL: ${fxUrl.replace(ALPHA_VANTAGE_API_KEY, 'API_KEY')}`);
-    
+    console.log(`Fetching forex data for ${ticker}...`);
     const fxResp = await fetch(fxUrl);
     const fxData = await fxResp.json();
     
-    console.log(`Response for ${ticker}:`, JSON.stringify(fxData).substring(0, 500));
-    
-    // Check for rate limit or error
-    if (fxData['Note']) {
-      console.error(`⚠️ Rate limit hit for ${ticker}: ${fxData['Note']}`);
-      return null;
-    }
-    
-    if (fxData['Error Message']) {
-      console.error(`❌ API Error for ${ticker}: ${fxData['Error Message']}`);
-      return null;
+    if (fxData['Note'] || fxData['Error Message']) {
+      throw new Error('Alpha Vantage API limit or error');
     }
     
     const timeSeriesData = fxData['Time Series FX (Daily)'];
-    
-    if (!timeSeriesData) {
-      console.error(`❌ No time series data for ${ticker}. Keys in response:`, Object.keys(fxData));
-      return null;
-    }
+    if (!timeSeriesData) return null;
 
-    // Get latest date's data
     const dates = Object.keys(timeSeriesData).sort().reverse();
-    const latestDate = dates[0];
-    const latestData = timeSeriesData[latestDate];
-    
-    console.log(`✅ Got ${dates.length} days of data for ${ticker}, latest: ${latestDate}`);
-    
     const closePrices = dates.slice(0, 200).map(date => parseFloat(timeSeriesData[date]['4. close']));
     
-    // Calculate simple technical indicators from price data
-    const rsi14 = calculateRSI(closePrices, 14);
-    const sma50 = calculateSMA(closePrices, 50);
-    const sma200 = calculateSMA(closePrices, 200);
-
     return {
-      close_price: parseFloat(latestData['4. close']),
-      rsi_14: rsi14,
-      sma_50: sma50,
-      sma_200: sma200,
+      close_price: parseFloat(timeSeriesData[dates[0]]['4. close']),
+      rsi_14: calculateRSI(closePrices, 14),
+      sma_50: calculateSMA(closePrices, 50),
+      sma_200: calculateSMA(closePrices, 200),
     };
-  } catch (error) {
-    console.error(`💥 Error fetching technical indicators for ${ticker}:`, error);
-    return null;
+  };
+
+  // Fallback to AI if primary fails
+  if (perplexityApiKey || lovableApiKey) {
+    try {
+      const result = await primaryFetch();
+      if (result) return result;
+    } catch (error) {
+      console.error(`Alpha Vantage failed for ${ticker}, trying AI fallback...`);
+    }
+
+    // Try Perplexity
+    if (perplexityApiKey) {
+      try {
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${perplexityApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-sonar-small-128k-online',
+            messages: [{
+              role: 'user',
+              content: `Find latest forex technical indicators for ${ticker}. Return ONLY:
+close_price: [number]
+rsi_14: [number 0-100]
+sma_50: [number]
+sma_200: [number]`
+            }],
+            temperature: 0.2,
+            max_tokens: 300,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          
+          return {
+            close_price: parseFloat(content.match(/close_price:\s*([\d.]+)/)?.[1] || '0'),
+            rsi_14: parseFloat(content.match(/rsi_14:\s*([\d.]+)/)?.[1] || '0'),
+            sma_50: parseFloat(content.match(/sma_50:\s*([\d.]+)/)?.[1] || '0'),
+            sma_200: parseFloat(content.match(/sma_200:\s*([\d.]+)/)?.[1] || '0'),
+          };
+        }
+      } catch (e) {
+        console.error('Perplexity fallback failed:', e);
+      }
+    }
+
+    // Try Gemini
+    if (lovableApiKey) {
+      try {
+        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [{
+              role: 'user',
+              content: `Find latest forex technical indicators for ${ticker}. Return ONLY:
+close_price: [number]
+rsi_14: [number 0-100]
+sma_50: [number]
+sma_200: [number]`
+            }],
+            temperature: 0.2,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          
+          return {
+            close_price: parseFloat(content.match(/close_price:\s*([\d.]+)/)?.[1] || '0'),
+            rsi_14: parseFloat(content.match(/rsi_14:\s*([\d.]+)/)?.[1] || '0'),
+            sma_50: parseFloat(content.match(/sma_50:\s*([\d.]+)/)?.[1] || '0'),
+            sma_200: parseFloat(content.match(/sma_200:\s*([\d.]+)/)?.[1] || '0'),
+          };
+        }
+      } catch (e) {
+        console.error('Gemini fallback failed:', e);
+      }
+    }
+  } else {
+    // No fallback available, try primary only
+    try {
+      return await primaryFetch();
+    } catch (error) {
+      console.error(`Error fetching ${ticker}:`, error);
+    }
   }
+
+  return null;
 }
 
 // Helper function to calculate RSI
