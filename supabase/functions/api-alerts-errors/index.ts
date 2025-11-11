@@ -62,16 +62,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // PHASE 2 & 4: Check for excessive AI fallback usage (>80%)
-    const { data: fallbackAlerts, error: fallbackError } = await supabaseClient
+    // PHASE 2 & 4: Check for excessive AI fallback usage (>80% in 24h OR >2% in 10min)
+    const { data: fallbackAlerts24h, error: fallbackError24h } = await supabaseClient
       .rpc('check_ai_fallback_usage');
 
-    if (!fallbackError && fallbackAlerts) {
-      fallbackAlerts.forEach((alert: any) => {
+    if (!fallbackError24h && fallbackAlerts24h) {
+      fallbackAlerts24h.forEach((alert: any) => {
         if (alert.is_excessive) {
           alerts.push({
             severity: 'high',
-            type: 'ai_fallback_overuse',
+            type: 'ai_fallback_overuse_24h',
             etl_name: alert.etl_name,
             message: alert.message,
             fallback_percentage: alert.fallback_percentage,
@@ -80,6 +80,24 @@ Deno.serve(async (req) => {
             recommendation: `Primary data source for ${alert.etl_name} may be down or rate limited. Check API status and quotas.`
           });
         }
+      });
+    }
+
+    // NEW: Check for excessive fallback usage in last 10 minutes (>2% threshold)
+    const { data: fallbackAlerts10min, error: fallbackError10min } = await supabaseClient
+      .rpc('check_excessive_fallback_usage');
+
+    if (!fallbackError10min && fallbackAlerts10min) {
+      fallbackAlerts10min.forEach((alert: any) => {
+        alerts.push({
+          severity: 'critical',
+          type: 'ai_fallback_spike',
+          etl_name: alert.etl_name,
+          message: alert.message,
+          fallback_percentage: alert.fallback_percentage,
+          total_runs: alert.total_runs,
+          recommendation: `⚠️ IMMEDIATE ACTION REQUIRED: ${alert.etl_name} exceeding 2% AI fallback threshold. Primary source likely down.`
+        });
       });
     }
 
@@ -105,7 +123,31 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check diagnostics for stale critical tables
+    // NEW: Check for stale data (>5 seconds) via api-data-staleness
+    const stalenessUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/api-data-staleness`;
+    const stalenessResponse = await fetch(stalenessUrl, {
+      headers: {
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+      }
+    });
+
+    if (stalenessResponse.ok) {
+      const staleness = await stalenessResponse.json();
+      
+      if (staleness.sla_violations > 0) {
+        alerts.push({
+          severity: 'critical',
+          type: 'sla_violation',
+          message: `⚠️ SLA VIOLATION: ${staleness.sla_violations} tickers have data >5s old (max: ${staleness.max_staleness_seconds}s)`,
+          total_stale: staleness.total_stale_tickers,
+          max_staleness: staleness.max_staleness_seconds,
+          by_asset_class: staleness.by_asset_class,
+          recommendation: 'Data freshness SLA violated. Check Redis cache and primary API sources immediately.'
+        });
+      }
+    }
+
+    // Check diagnostics for stale critical tables (legacy 24h check)
     const diagUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/ingest-diagnostics`;
     const diagResponse = await fetch(diagUrl, {
       method: 'POST',
@@ -134,7 +176,7 @@ Deno.serve(async (req) => {
           else if (table.status === 'very_stale') {
             alerts.push({
               severity: 'high',
-              type: 'stale_data',
+              type: 'stale_data_24h',
               table: table.table,
               message: `${table.table} has no updates for ${table.hours_old?.toFixed(1)} hours`,
               last_updated: table.last_updated,

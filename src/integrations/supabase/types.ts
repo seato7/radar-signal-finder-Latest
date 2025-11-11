@@ -30,6 +30,7 @@ export type Database = {
           fib_618: number | null
           fib_786: number | null
           id: string
+          last_updated_at: string | null
           metadata: Json | null
           obv: number | null
           price_vs_vwap_pct: number | null
@@ -64,6 +65,7 @@ export type Database = {
           fib_618?: number | null
           fib_786?: number | null
           id?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           obv?: number | null
           price_vs_vwap_pct?: number | null
@@ -98,6 +100,7 @@ export type Database = {
           fib_618?: number | null
           fib_786?: number | null
           id?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           obv?: number | null
           price_vs_vwap_pct?: number | null
@@ -716,6 +719,7 @@ export type Database = {
           hodl_waves: Json | null
           id: string
           large_transaction_volume: number | null
+          last_updated_at: string | null
           long_term_holder_supply_pct: number | null
           metadata: Json | null
           mvrv_ratio: number | null
@@ -745,6 +749,7 @@ export type Database = {
           hodl_waves?: Json | null
           id?: string
           large_transaction_volume?: number | null
+          last_updated_at?: string | null
           long_term_holder_supply_pct?: number | null
           metadata?: Json | null
           mvrv_ratio?: number | null
@@ -774,6 +779,7 @@ export type Database = {
           hodl_waves?: Json | null
           id?: string
           large_transaction_volume?: number | null
+          last_updated_at?: string | null
           long_term_holder_supply_pct?: number | null
           metadata?: Json | null
           mvrv_ratio?: number | null
@@ -918,6 +924,7 @@ export type Database = {
           id: string
           impact: string | null
           indicator_type: string
+          last_updated_at: string | null
           metadata: Json | null
           previous_value: number | null
           release_date: string
@@ -931,6 +938,7 @@ export type Database = {
           id?: string
           impact?: string | null
           indicator_type: string
+          last_updated_at?: string | null
           metadata?: Json | null
           previous_value?: number | null
           release_date: string
@@ -944,6 +952,7 @@ export type Database = {
           id?: string
           impact?: string | null
           indicator_type?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           previous_value?: number | null
           release_date?: string
@@ -957,6 +966,7 @@ export type Database = {
           asset_id: string | null
           created_at: string | null
           id: string
+          last_updated_at: string | null
           metadata: Json | null
           news_count: number | null
           news_sentiment_score: number | null
@@ -973,6 +983,7 @@ export type Database = {
           asset_id?: string | null
           created_at?: string | null
           id?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           news_count?: number | null
           news_sentiment_score?: number | null
@@ -989,6 +1000,7 @@ export type Database = {
           asset_id?: string | null
           created_at?: string | null
           id?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           news_count?: number | null
           news_sentiment_score?: number | null
@@ -1110,6 +1122,7 @@ export type Database = {
       }
       ingest_logs: {
         Row: {
+          cache_hit: boolean | null
           completed_at: string | null
           created_at: string
           duration_seconds: number | null
@@ -1117,6 +1130,7 @@ export type Database = {
           etl_name: string
           fallback_count: number | null
           id: string
+          latency_ms: number | null
           metadata: Json | null
           rows_inserted: number | null
           rows_skipped: number | null
@@ -1124,8 +1138,10 @@ export type Database = {
           source_used: string | null
           started_at: string
           status: string
+          verified_source: string | null
         }
         Insert: {
+          cache_hit?: boolean | null
           completed_at?: string | null
           created_at?: string
           duration_seconds?: number | null
@@ -1133,6 +1149,7 @@ export type Database = {
           etl_name: string
           fallback_count?: number | null
           id?: string
+          latency_ms?: number | null
           metadata?: Json | null
           rows_inserted?: number | null
           rows_skipped?: number | null
@@ -1140,8 +1157,10 @@ export type Database = {
           source_used?: string | null
           started_at?: string
           status: string
+          verified_source?: string | null
         }
         Update: {
+          cache_hit?: boolean | null
           completed_at?: string | null
           created_at?: string
           duration_seconds?: number | null
@@ -1149,6 +1168,7 @@ export type Database = {
           etl_name?: string
           fallback_count?: number | null
           id?: string
+          latency_ms?: number | null
           metadata?: Json | null
           rows_inserted?: number | null
           rows_skipped?: number | null
@@ -1156,6 +1176,7 @@ export type Database = {
           source_used?: string | null
           started_at?: string
           status?: string
+          verified_source?: string | null
         }
         Relationships: []
       }
@@ -1215,6 +1236,7 @@ export type Database = {
           created_at: string | null
           date: string
           id: string
+          last_updated_at: string | null
           metadata: Json | null
           negative_articles: number | null
           neutral_articles: number | null
@@ -1233,6 +1255,7 @@ export type Database = {
           created_at?: string | null
           date: string
           id?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           negative_articles?: number | null
           neutral_articles?: number | null
@@ -1251,6 +1274,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           id?: string
+          last_updated_at?: string | null
           metadata?: Json | null
           negative_articles?: number | null
           neutral_articles?: number | null
@@ -1452,6 +1476,7 @@ export type Database = {
           created_at: string | null
           date: string
           id: string
+          last_updated_at: string | null
           ticker: string
         }
         Insert: {
@@ -1461,6 +1486,7 @@ export type Database = {
           created_at?: string | null
           date: string
           id?: string
+          last_updated_at?: string | null
           ticker: string
         }
         Update: {
@@ -1470,6 +1496,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           id?: string
+          last_updated_at?: string | null
           ticker?: string
         }
         Relationships: [
@@ -1598,6 +1625,7 @@ export type Database = {
           confidence_score: number | null
           created_at: string | null
           direction: Database["public"]["Enums"]["signal_direction"] | null
+          fallback_used: boolean | null
           id: string
           magnitude: number | null
           observed_at: string
@@ -1621,6 +1649,7 @@ export type Database = {
           confidence_score?: number | null
           created_at?: string | null
           direction?: Database["public"]["Enums"]["signal_direction"] | null
+          fallback_used?: boolean | null
           id?: string
           magnitude?: number | null
           observed_at: string
@@ -1644,6 +1673,7 @@ export type Database = {
           confidence_score?: number | null
           created_at?: string | null
           direction?: Database["public"]["Enums"]["signal_direction"] | null
+          fallback_used?: boolean | null
           id?: string
           magnitude?: number | null
           observed_at?: string
@@ -1981,6 +2011,38 @@ export type Database = {
         }
         Relationships: []
       }
+      view_api_errors: {
+        Row: {
+          error_count: number | null
+          error_messages: string | null
+          etl_name: string | null
+          last_error_at: string | null
+        }
+        Relationships: []
+      }
+      view_fallback_usage: {
+        Row: {
+          avg_latency_ms: number | null
+          cache_hit_percentage: number | null
+          cache_hits: number | null
+          etl_name: string | null
+          fallback_percentage: number | null
+          fallback_runs: number | null
+          max_latency_ms: number | null
+          total_runs: number | null
+        }
+        Relationships: []
+      }
+      view_stale_tickers: {
+        Row: {
+          asset_class: string | null
+          last_updated_at: string | null
+          seconds_stale: number | null
+          table_name: string | null
+          ticker: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       check_ai_fallback_usage: {
@@ -1990,6 +2052,15 @@ export type Database = {
           fallback_percentage: number
           fallback_runs: number
           is_excessive: boolean
+          message: string
+          total_runs: number
+        }[]
+      }
+      check_excessive_fallback_usage: {
+        Args: never
+        Returns: {
+          etl_name: string
+          fallback_percentage: number
           message: string
           total_runs: number
         }[]
@@ -2006,6 +2077,16 @@ export type Database = {
           neutral_percentage: number
           sell_count: number
           sell_percentage: number
+        }[]
+      }
+      get_stale_tickers: {
+        Args: { p_asset_class?: string }
+        Returns: {
+          asset_class: string
+          last_updated_at: string
+          seconds_stale: number
+          table_name: string
+          ticker: string
         }[]
       }
       get_user_role: {
