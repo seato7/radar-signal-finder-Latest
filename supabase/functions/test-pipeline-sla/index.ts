@@ -175,17 +175,20 @@ serve(async (req) => {
       );
 
       const stalenessData = await stalenessResponse.json();
-      const passed = stalenessResponse.ok && stalenessData.sla_violations !== undefined;
+      // 503 is valid when there are SLA violations (degraded state)
+      const isValidResponse = (stalenessResponse.status === 200 || stalenessResponse.status === 503) && 
+                             stalenessData.sla_violations !== undefined;
 
       testResults.push({
         test_suite: 'sla_monitoring',
         test_name: 'Data Staleness Endpoint',
-        status: passed ? 'PASS' : 'FAIL',
-        expected_result: 'HTTP 200 with valid response',
+        status: isValidResponse ? 'PASS' : 'FAIL',
+        expected_result: 'HTTP 200 or 503 with valid response',
         actual_result: `HTTP ${stalenessResponse.status}`,
         metadata: {
           sla_violations: stalenessData.sla_violations,
-          total_stale: stalenessData.total_stale_tickers
+          total_stale: stalenessData.total_stale_tickers,
+          sla_status: stalenessData.sla_status
         },
         execution_time_ms: Date.now() - stalenessStart
       });
@@ -214,17 +217,20 @@ serve(async (req) => {
       );
 
       const alertsData = await alertsResponse.json();
-      const passed = alertsResponse.ok && alertsData.summary !== undefined;
+      // 503 is valid when there are critical alerts (degraded state)
+      const isValidResponse = (alertsResponse.status === 200 || alertsResponse.status === 503) && 
+                             alertsData.summary !== undefined;
 
       testResults.push({
         test_suite: 'sla_monitoring',
         test_name: 'Alerts & Errors Endpoint',
-        status: passed ? 'PASS' : 'FAIL',
-        expected_result: 'HTTP 200 with valid response',
+        status: isValidResponse ? 'PASS' : 'FAIL',
+        expected_result: 'HTTP 200 or 503 with valid response',
         actual_result: `HTTP ${alertsResponse.status}`,
         metadata: {
           critical_alerts: alertsData.summary?.critical || 0,
-          high_alerts: alertsData.summary?.high || 0
+          high_alerts: alertsData.summary?.high || 0,
+          health_status: alertsData.health_status
         },
         execution_time_ms: Date.now() - alertsStart
       });
