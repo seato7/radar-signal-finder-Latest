@@ -48,10 +48,15 @@ serve(async (req) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'llama-3.1-sonar-small-128k-online',
-            messages: [{
-              role: 'user',
-              content: `Find the latest on-chain metrics for ${asset.ticker}. Return ONLY in this format:
+            model: 'sonar',
+            messages: [
+              {
+                role: 'system',
+                content: 'Be precise and concise.'
+              },
+              {
+                role: 'user',
+                content: `Find the latest on-chain metrics for ${asset.ticker}. Return ONLY in this format:
 active_addresses: [number]
 transaction_count: [number]
 whale_transactions: [number]
@@ -61,14 +66,22 @@ exchange_outflow: [number in coins]
 exchange_signal: [bullish_outflow/bearish_inflow/neutral]
 fear_greed_index: [0-100]
 hash_rate: [number if applicable]`
-            }],
+              }
+            ],
             temperature: 0.2,
+            top_p: 0.9,
             max_tokens: 400,
+            return_images: false,
+            return_related_questions: false,
+            search_recency_filter: 'day',
+            frequency_penalty: 1,
+            presence_penalty: 0
           }),
         });
 
         if (!response.ok) {
-          console.error(`Perplexity API error for ${asset.ticker}:`, response.status);
+          const errorText = await response.text();
+          console.error(`Perplexity API error for ${asset.ticker}:`, response.status, errorText);
           await new Promise(resolve => setTimeout(resolve, 1500));
           continue;
         }

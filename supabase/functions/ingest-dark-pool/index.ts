@@ -47,24 +47,37 @@ serve(async (req) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'llama-3.1-sonar-small-128k-online',
-            messages: [{
-              role: 'user',
-              content: `Find the latest dark pool trading activity for ${stock.ticker}. Return ONLY in this format:
+            model: 'sonar',
+            messages: [
+              {
+                role: 'system',
+                content: 'Be precise and concise.'
+              },
+              {
+                role: 'user',
+                content: `Find the latest dark pool trading activity for ${stock.ticker}. Return ONLY in this format:
 dark_pool_volume: [number]
 total_volume: [number]
 dark_pool_percentage: [percentage]
 signal: [accumulation/distribution/neutral]
 strength: [strong/moderate/weak]
 price: [current price]`
-            }],
+              }
+            ],
             temperature: 0.2,
+            top_p: 0.9,
             max_tokens: 300,
+            return_images: false,
+            return_related_questions: false,
+            search_recency_filter: 'day',
+            frequency_penalty: 1,
+            presence_penalty: 0
           }),
         });
 
         if (!response.ok) {
-          console.error(`Perplexity API error for ${stock.ticker}:`, response.status);
+          const errorText = await response.text();
+          console.error(`Perplexity API error for ${stock.ticker}:`, response.status, errorText);
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
         }

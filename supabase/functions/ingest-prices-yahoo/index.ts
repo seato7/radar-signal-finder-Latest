@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
               ? 'https://api.perplexity.ai/chat/completions'
               : 'https://ai.gateway.lovable.dev/v1/chat/completions';
             const aiModel = perplexityApiKey 
-              ? 'llama-3.1-sonar-small-128k-online'
+              ? 'sonar'
               : 'google/gemini-2.5-flash';
             
             try {
