@@ -14,15 +14,21 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY') ?? '';
+    
+    if (!perplexityApiKey) {
+      throw new Error('PERPLEXITY_API_KEY not configured');
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Dark pool activity ingestion started...');
+    console.log('Dark pool activity ingestion started with Perplexity AI...');
 
     const { data: stocks } = await supabase
       .from('assets')
       .select('*')
       .eq('asset_class', 'stock')
-      .limit(50);
+      .limit(10);
 
     if (!stocks) throw new Error('No stocks found');
 
@@ -31,34 +37,56 @@ serve(async (req) => {
 
     for (const stock of stocks) {
       try {
-        const totalVolume = Math.floor(Math.random() * 50000000) + 5000000;
-        const darkPoolVolume = Math.floor(totalVolume * (0.25 + Math.random() * 0.25));
-        const darkPoolPercentage = (darkPoolVolume / totalVolume) * 100;
-        const dpToLitRatio = darkPoolVolume / (totalVolume - darkPoolVolume);
+        console.log(`Fetching dark pool data for ${stock.ticker}...`);
 
-        const { data: latestPrice } = await supabase
-          .from('prices')
-          .select('close')
-          .eq('ticker', stock.ticker)
-          .order('date', { ascending: false })
-          .limit(1)
-          .single();
+        // Query Perplexity for real-time dark pool data
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${perplexityApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-sonar-small-128k-online',
+            messages: [{
+              role: 'user',
+              content: `Find the latest dark pool trading activity for ${stock.ticker}. Return ONLY in this format:
+dark_pool_volume: [number]
+total_volume: [number]
+dark_pool_percentage: [percentage]
+signal: [accumulation/distribution/neutral]
+strength: [strong/moderate/weak]
+price: [current price]`
+            }],
+            temperature: 0.2,
+            max_tokens: 300,
+          }),
+        });
 
-        const priceAtTrade = latestPrice?.close || 100;
-
-        let signalType = 'neutral';
-        let signalStrength = 'weak';
-        
-        if (darkPoolPercentage > 45) {
-          signalType = 'accumulation';
-          signalStrength = 'strong';
-        } else if (darkPoolPercentage > 35) {
-          signalType = 'accumulation';
-          signalStrength = 'moderate';
-        } else if (darkPoolPercentage < 20) {
-          signalType = 'distribution';
-          signalStrength = 'moderate';
+        if (!response.ok) {
+          console.error(`Perplexity API error for ${stock.ticker}:`, response.status);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
         }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+
+        // Parse the response
+        const darkPoolVolume = parseInt(content.match(/dark_pool_volume:\s*(\d+)/)?.[1] || '0');
+        const totalVolume = parseInt(content.match(/total_volume:\s*(\d+)/)?.[1] || '0');
+        const darkPoolPercentage = parseFloat(content.match(/dark_pool_percentage:\s*([\d.]+)/)?.[1] || '0');
+        const signalType = content.match(/signal:\s*(\w+)/)?.[1] || 'neutral';
+        const signalStrength = content.match(/strength:\s*(\w+)/)?.[1] || 'weak';
+        const priceAtTrade = parseFloat(content.match(/price:\s*([\d.]+)/)?.[1] || '0');
+
+        if (!darkPoolVolume || !totalVolume) {
+          console.log(`⚠️ No valid data for ${stock.ticker}, skipping`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        const dpToLitRatio = darkPoolVolume / (totalVolume - darkPoolVolume);
 
         const { error } = await supabase
           .from('dark_pool_activity')
@@ -74,7 +102,7 @@ serve(async (req) => {
             price_impact_estimate: (Math.random() - 0.5) * 0.02,
             signal_type: signalType,
             signal_strength: signalStrength,
-            source: 'FINRA ATS',
+            source: 'Perplexity AI / FINRA',
           }, {
             onConflict: 'ticker,trade_date',
           });
@@ -87,13 +115,13 @@ serve(async (req) => {
             signal_category: 'institutional',
             asset_id: stock.id,
             direction: 'up',
-            magnitude: (darkPoolPercentage - 35) / 65,
+            magnitude: Math.min((darkPoolPercentage - 35) / 65, 1.0),
             confidence_score: 68,
             time_horizon: 'short',
             value_text: `High dark pool activity: ${darkPoolPercentage.toFixed(1)}% of volume`,
             observed_at: new Date().toISOString(),
             citation: {
-              source: 'FINRA Dark Pool Data',
+              source: 'Dark Pool Analysis via Perplexity AI',
               url: 'https://www.finra.org/finra-data',
               timestamp: new Date().toISOString()
             },
@@ -103,6 +131,9 @@ serve(async (req) => {
 
         successCount++;
         console.log(`✅ Processed ${stock.ticker}: ${darkPoolPercentage.toFixed(1)}% dark pool`);
+
+        // Rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
       } catch (error) {
         console.error(`❌ Error processing ${stock.ticker}:`, error);
