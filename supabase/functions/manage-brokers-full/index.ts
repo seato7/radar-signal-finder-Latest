@@ -6,6 +6,72 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Secure encryption utilities using Web Crypto API
+async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits", "deriveKey"]
+  );
+  
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt as BufferSource,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptData(plaintext: string, masterKey: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(masterKey, salt);
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoder.encode(plaintext)
+  );
+  
+  // Combine salt + iv + encrypted data
+  const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(encrypted), salt.length + iv.length);
+  
+  // Return as base64 for database storage
+  return btoa(String.fromCharCode(...combined));
+}
+
+async function decryptData(encryptedData: string, masterKey: string): Promise<string> {
+  const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+  
+  const salt = combined.slice(0, 16);
+  const iv = combined.slice(16, 28);
+  const encrypted = combined.slice(28);
+  
+  const key = await deriveKey(masterKey, salt);
+  
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encrypted
+  );
+  
+  const decoder = new TextDecoder();
+  return decoder.decode(decrypted);
+}
+
 // Alpaca Broker Adapter
 class AlpacaBroker {
   constructor(private apiKey: string, private secretKey: string, private paperMode: boolean) {}
@@ -285,7 +351,17 @@ serve(async (req) => {
         });
       }
       
-      // Store encrypted credentials (simplified - should use proper encryption)
+      // Get encryption key from environment
+      const encryptionKey = Deno.env.get('BROKER_ENCRYPTION_KEY');
+      if (!encryptionKey) {
+        throw new Error('Server configuration error: encryption key not set');
+      }
+
+      // Encrypt credentials using AES-GCM
+      const encryptedApiKey = await encryptData(api_key, encryptionKey);
+      const encryptedSecret = await encryptData(secret_key, encryptionKey);
+
+      // Store encrypted credentials
       const { data: existing } = await supabaseClient
         .from('broker_keys')
         .select('*')
@@ -297,8 +373,8 @@ serve(async (req) => {
         await supabaseClient
           .from('broker_keys')
           .update({
-            api_key_encrypted: btoa(api_key),
-            secret_key_encrypted: btoa(secret_key),
+            api_key_encrypted: encryptedApiKey,
+            secret_key_encrypted: encryptedSecret,
             paper_mode,
             updated_at: new Date().toISOString()
           })
@@ -309,8 +385,8 @@ serve(async (req) => {
           .insert({
             user_id: user.id,
             exchange,
-            api_key_encrypted: btoa(api_key),
-            secret_key_encrypted: btoa(secret_key),
+            api_key_encrypted: encryptedApiKey,
+            secret_key_encrypted: encryptedSecret,
             paper_mode
           });
       }
