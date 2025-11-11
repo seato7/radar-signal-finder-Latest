@@ -3,6 +3,18 @@ project_id = "detxhoqiarohjevedmxh"
 [functions.discover-themes]
 verify_jwt = false
 
+[functions.ingest-pattern-recognition]
+verify_jwt = false
+
+[functions.ingest-news-sentiment]
+verify_jwt = false
+
+[functions.ingest-dark-pool]
+verify_jwt = false
+
+[functions.ingest-smart-money]
+verify_jwt = false
+
 [functions.mine-and-discover-themes]
 verify_jwt = false
 

@@ -12,169 +12,103 @@ serve(async (req) => {
   }
 
   try {
-    // Require authentication
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user authentication
-    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
-    
-    const { data: { user }, error: authError } = await authClient.auth.getUser();
-    if (authError || !user) {
+    console.log('News sentiment aggregation started...');
+
+    const { data: news } = await supabase
+      .from('breaking_news')
+      .select('*')
+      .gte('published_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order('published_at', { ascending: false });
+
+    if (!news || news.length === 0) {
+      console.log('No recent news found');
       return new Response(
-        JSON.stringify({ error: 'Invalid authentication' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: true, aggregated: 0, note: 'No recent news' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    const aggregates: { [key: string]: any } = {};
 
-    console.log(`News sentiment aggregation for user ${user.id}...`);
+    for (const item of news) {
+      const dateKey = new Date(item.published_at).toISOString().split('T')[0];
+      const key = `${item.ticker}-${dateKey}`;
 
-    // Get top assets by signal activity
-    const { data: topAssets } = await supabaseClient
-      .from('assets')
-      .select('*, signals(count)')
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (!topAssets) throw new Error('No assets found');
-
-    let successCount = 0;
-
-    for (const asset of topAssets) {
-      try {
-        // Aggregate news from breaking_news table
-        const { data: news } = await supabaseClient
-          .from('breaking_news')
-          .select('*')
-          .eq('ticker', asset.ticker)
-          .gte('published_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-        if (!news || news.length === 0) {
-          continue;
-        }
-
-        // Calculate aggregate sentiment
-        const totalArticles = news.length;
-        let positiveCount = 0;
-        let negativeCount = 0;
-        let neutralCount = 0;
-        let sentimentSum = 0;
-
-        const sentimentBySource: { [key: string]: number } = {};
-
-        for (const article of news) {
-          const sentiment = article.sentiment_score || 0;
-          sentimentSum += sentiment;
-
-          if (sentiment > 0.3) positiveCount++;
-          else if (sentiment < -0.3) negativeCount++;
-          else neutralCount++;
-
-          // Aggregate by source
-          const source = article.source || 'Unknown';
-          if (!sentimentBySource[source]) {
-            sentimentBySource[source] = 0;
-          }
-          sentimentBySource[source] += sentiment;
-        }
-
-        const avgSentiment = sentimentSum / totalArticles;
-
-        let sentimentLabel = 'neutral';
-        if (avgSentiment > 0.5) sentimentLabel = 'very_positive';
-        else if (avgSentiment > 0.2) sentimentLabel = 'positive';
-        else if (avgSentiment < -0.5) sentimentLabel = 'very_negative';
-        else if (avgSentiment < -0.2) sentimentLabel = 'negative';
-
-        // Extract trending keywords (simplified)
-        const keywords = news
-          .flatMap(n => (n.headline || '').toLowerCase().split(' '))
-          .filter(w => w.length > 5)
-          .reduce((acc: { [key: string]: number }, word) => {
-            acc[word] = (acc[word] || 0) + 1;
-            return acc;
-          }, {});
-
-        const trendingKeywords = Object.entries(keywords)
-          .sort(([, a], [, b]) => (b as number) - (a as number))
-          .slice(0, 5)
-          .map(([word]) => word);
-
-        // Calculate buzz score (normalized)
-        const buzzScore = Math.min((totalArticles / 10) * 100, 100);
-
-        // Insert aggregated sentiment
-        const { error } = await supabaseClient
-          .from('news_sentiment_aggregate')
-          .upsert({
-            ticker: asset.ticker,
-            asset_id: asset.id,
-            date: new Date().toISOString().split('T')[0],
-            total_articles: totalArticles,
-            positive_articles: positiveCount,
-            negative_articles: negativeCount,
-            neutral_articles: neutralCount,
-            sentiment_score: avgSentiment,
-            sentiment_label: sentimentLabel,
-            sentiment_by_source: sentimentBySource,
-            trending_keywords: trendingKeywords,
-            buzz_score: buzzScore,
-            buzz_change_pct: Math.random() * 50 - 25, // Simplified
-          }, {
-            onConflict: 'ticker,date',
-          });
-
-        if (error) {
-          console.error(`Error inserting sentiment for ${asset.ticker}:`, error);
-        } else {
-          // Create signal for extreme sentiment
-          if (Math.abs(avgSentiment) > 0.5) {
-            await supabaseClient.from('signals').insert({
-              signal_type: 'news_sentiment_extreme',
-              signal_category: 'sentiment',
-              asset_id: asset.id,
-              direction: avgSentiment > 0 ? 'up' : 'down',
-              magnitude: Math.abs(avgSentiment),
-              confidence_score: 70,
-              time_horizon: 'short',
-              value_text: `${sentimentLabel.replace('_', ' ').toUpperCase()} news sentiment (${totalArticles} articles, ${Math.round(avgSentiment * 100)}% score)`,
-              observed_at: new Date().toISOString(),
-              citation: {
-                source: 'News Sentiment Analysis',
-                url: 'https://opportunityradar.app',
-                timestamp: new Date().toISOString()
-              },
-              checksum: `${asset.ticker}-news-sentiment-${Date.now()}`,
-            });
-          }
-
-          successCount++;
-          console.log(`✅ Aggregated sentiment for ${asset.ticker}: ${sentimentLabel} (${totalArticles} articles)`);
-        }
-
-      } catch (error) {
-        console.error(`❌ Error processing ${asset.ticker}:`, error);
+      if (!aggregates[key]) {
+        aggregates[key] = {
+          ticker: item.ticker,
+          date: dateKey,
+          total_articles: 0,
+          positive_articles: 0,
+          negative_articles: 0,
+          neutral_articles: 0,
+          sentiment_scores: [],
+          sources: new Set(),
+          keywords: new Set(),
+        };
       }
+
+      aggregates[key].total_articles++;
+      aggregates[key].sentiment_scores.push(item.sentiment_score);
+      
+      if (item.sentiment_score > 0.3) aggregates[key].positive_articles++;
+      else if (item.sentiment_score < -0.3) aggregates[key].negative_articles++;
+      else aggregates[key].neutral_articles++;
+
+      if (item.source) aggregates[key].sources.add(item.source);
+      
+      const words = item.headline.toLowerCase().split(' ');
+      words.forEach((w: string) => {
+        if (w.length > 5) aggregates[key].keywords.add(w);
+      });
     }
+
+    const insertData = Object.values(aggregates).map(agg => {
+      const avgSentiment = agg.sentiment_scores.reduce((a: number, b: number) => a + b, 0) / agg.sentiment_scores.length;
+      
+      let sentimentLabel = 'neutral';
+      if (avgSentiment > 0.6) sentimentLabel = 'very_positive';
+      else if (avgSentiment > 0.2) sentimentLabel = 'positive';
+      else if (avgSentiment < -0.6) sentimentLabel = 'very_negative';
+      else if (avgSentiment < -0.2) sentimentLabel = 'negative';
+
+      return {
+        ticker: agg.ticker,
+        date: agg.date,
+        total_articles: agg.total_articles,
+        positive_articles: agg.positive_articles,
+        negative_articles: agg.negative_articles,
+        neutral_articles: agg.neutral_articles,
+        sentiment_score: avgSentiment,
+        sentiment_label: sentimentLabel,
+        trending_keywords: Array.from(agg.keywords).slice(0, 10),
+        buzz_score: Math.min(agg.total_articles / 5, 1.0),
+        buzz_change_pct: 0,
+        metadata: {
+          sources: Array.from(agg.sources),
+        },
+      };
+    });
+
+    const { error } = await supabase
+      .from('news_sentiment_aggregate')
+      .upsert(insertData, {
+        onConflict: 'ticker,date',
+      });
+
+    if (error) throw error;
+
+    console.log(`✅ Aggregated ${insertData.length} sentiment records`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        assets_processed: topAssets.length,
-        successful: successCount,
+        aggregated: insertData.length,
+        news_items_processed: news.length,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
