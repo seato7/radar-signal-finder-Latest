@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { redisCache } from "../_shared/redis-cache.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -83,6 +84,9 @@ serve(async (req) => {
     status: 'running',
     started_at: new Date().toISOString(),
     source_used: 'unknown',
+    cache_hit: false,
+    fallback_used: false,
+    latency_ms: 0,
   });
 
   try {
@@ -91,6 +95,9 @@ serve(async (req) => {
     const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
     const newsItems = [];
     let sourceUsed = 'Simulated';
+    let cacheHit = false;
+    let fallbackUsed = false;
+    const fetchStartTime = Date.now();
 
     // No API key - use sample data
     if (!perplexityKey) {
@@ -146,14 +153,36 @@ serve(async (req) => {
       console.log(`Processing batch: ${batch.join(', ')}`);
       
       try {
+        // Check Redis cache first for each ticker in batch
+        const cachePromises = batch.map(ticker => redisCache.get(`news:${ticker}`));
+        const cacheResults = await Promise.all(cachePromises);
+        
+        const tickersToFetch: string[] = [];
+        for (let j = 0; j < batch.length; j++) {
+          const cacheResult = cacheResults[j];
+          if (cacheResult.hit && cacheResult.data) {
+            console.log(`✅ Cache HIT for news:${batch[j]} (${cacheResult.age_seconds?.toFixed(1)}s old)`);
+            cacheHit = true;
+            newsItems.push(...cacheResult.data);
+          } else {
+            console.log(`❌ Cache MISS for news:${batch[j]}`);
+            tickersToFetch.push(batch[j]);
+          }
+        }
+
+        if (tickersToFetch.length === 0) {
+          continue; // All cached, skip to next batch
+        }
+
         const results = await Promise.allSettled(
-          batch.map(ticker => fetchNewsForTicker(ticker, perplexityKey))
+          tickersToFetch.map(ticker => fetchNewsForTicker(ticker, perplexityKey))
         );
 
         for (const result of results) {
           if (result.status === 'fulfilled' && result.value) {
             const { ticker, content } = result.value;
             const newsBlocks = content.split('---').filter((block: string) => block.trim()).slice(0, 10);
+            const tickerNews = [];
             
             for (const block of newsBlocks) {
               const headlineMatch = block.match(/HEADLINE:\s*(.+?)(?=SUMMARY:|$)/s);
@@ -162,7 +191,7 @@ serve(async (req) => {
               const sentimentMatch = block.match(/SENTIMENT:\s*(-?\d+\.?\d*)/);
               
               if (headlineMatch) {
-                newsItems.push({
+                const newsItem = {
                   ticker: sanitizeTicker(ticker),
                   headline: headlineMatch[1].trim().substring(0, 500),
                   summary: summaryMatch ? summaryMatch[1].trim().substring(0, 1000) : 'No summary available',
@@ -173,8 +202,16 @@ serve(async (req) => {
                   relevance_score: 0.8,
                   metadata: { raw_content: block.substring(0, 2000), source_used: sourceUsed },
                   created_at: new Date().toISOString(),
-                });
+                  last_updated_at: new Date().toISOString(),
+                };
+                tickerNews.push(newsItem);
+                newsItems.push(newsItem);
               }
+            }
+
+            // Cache the fetched news for this ticker with 5s TTL
+            if (tickerNews.length > 0) {
+              await redisCache.set(`news:${ticker}`, tickerNews, 'Perplexity API');
             }
           } else if (result.status === 'rejected' && result.reason?.message === 'RATE_LIMIT') {
             // PHASE 5: Retry on rate limit with exponential backoff
@@ -202,6 +239,7 @@ serve(async (req) => {
     if (newsItems.length === 0) {
       console.log('No news fetched from API, generating sample data');
       sourceUsed = 'Simulated';
+      fallbackUsed = true;
       const headlines = [
         'Company announces record quarterly earnings',
         'New product launch exceeds expectations',
@@ -235,6 +273,7 @@ serve(async (req) => {
     }
 
     // PHASE 2: Update ingest log with source tracking
+    const latency = Date.now() - fetchStartTime;
     await supabase.from('ingest_logs').update({
       status: 'success',
       completed_at: new Date().toISOString(),
@@ -242,6 +281,10 @@ serve(async (req) => {
       rows_inserted: newsItems.length,
       source_used: sourceUsed,
       fallback_count: sourceUsed === 'Simulated' ? 1 : 0,
+      cache_hit: cacheHit,
+      fallback_used: fallbackUsed,
+      latency_ms: latency,
+      last_updated_at: new Date().toISOString(),
     }).eq('id', logId);
 
     return new Response(

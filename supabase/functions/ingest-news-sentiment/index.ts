@@ -11,11 +11,22 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const startTime = Date.now();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  // Log to ingest_logs
+  const logId = crypto.randomUUID();
+  await supabase.from('ingest_logs').insert({
+    id: logId,
+    etl_name: 'ingest-news-sentiment',
+    status: 'running',
+    started_at: new Date().toISOString(),
+    source_used: 'Aggregation',
+  });
+
+  try {
     console.log('News sentiment aggregation started...');
 
     const { data: news } = await supabase
@@ -26,6 +37,13 @@ serve(async (req) => {
 
     if (!news || news.length === 0) {
       console.log('No recent news found');
+      await supabase.from('ingest_logs').update({
+        status: 'success',
+        completed_at: new Date().toISOString(),
+        duration_seconds: Math.round((Date.now() - startTime) / 1000),
+        rows_inserted: 0,
+        source_used: 'Aggregation',
+      }).eq('id', logId);
       return new Response(
         JSON.stringify({ success: true, aggregated: 0, note: 'No recent news' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -104,6 +122,14 @@ serve(async (req) => {
 
     console.log(`✅ Aggregated ${insertData.length} sentiment records`);
 
+    await supabase.from('ingest_logs').update({
+      status: 'success',
+      completed_at: new Date().toISOString(),
+      duration_seconds: Math.round((Date.now() - startTime) / 1000),
+      rows_inserted: insertData.length,
+      source_used: 'Aggregation',
+    }).eq('id', logId);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -115,6 +141,12 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Fatal error:', error);
+    await supabase.from('ingest_logs').update({
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      duration_seconds: Math.round((Date.now() - startTime) / 1000),
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    }).eq('id', logId);
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
