@@ -11,6 +11,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let logger: any;
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -21,6 +23,10 @@ serve(async (req) => {
     }
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    
+    const { IngestLogger } = await import('../_shared/log-ingest.ts');
+    logger = new IngestLogger(supabaseClient, 'ingest-crypto-onchain');
+    await logger.start();
 
     console.log('Crypto on-chain metrics ingestion started with Perplexity AI...');
 
@@ -191,6 +197,14 @@ hash_rate: [number if applicable]`
       }
     }
 
+    await logger.success({
+      source_used: 'Perplexity AI',
+      cache_hit: false,
+      fallback_count: 0,
+      rows_inserted: successCount,
+      rows_skipped: cryptoAssets.length - successCount,
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -202,6 +216,9 @@ hash_rate: [number if applicable]`
 
   } catch (error) {
     console.error('Fatal error:', error);
+    if (logger) {
+      await logger.failure(error as Error);
+    }
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

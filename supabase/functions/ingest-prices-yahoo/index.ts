@@ -16,16 +16,11 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   );
 
-  const startTime = Date.now();
-  const logId = crypto.randomUUID();
+  const { IngestLogger } = await import('../_shared/log-ingest.ts');
+  const logger = new IngestLogger(supabaseClient, 'ingest-prices-yahoo');
+  await logger.start();
 
   try {
-    await supabaseClient.from('ingest_logs').insert({
-      id: logId,
-      etl_name: 'ingest-prices-yahoo',
-      status: 'running',
-      started_at: new Date().toISOString(),
-    });
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -204,14 +199,13 @@ Deno.serve(async (req) => {
       }
     }
     
-    const duration = Math.floor((Date.now() - startTime) / 1000);
-    await supabaseClient.from('ingest_logs').update({
-      status: 'success',
-      completed_at: new Date().toISOString(),
-      duration_seconds: duration,
+    await logger.success({
+      source_used: 'Yahoo Finance',
+      cache_hit: false,
+      fallback_count: 0,
       rows_inserted: inserted,
       rows_skipped: skipped,
-    }).eq('id', logId);
+    });
 
     return new Response(JSON.stringify({
       success: true,
@@ -225,14 +219,7 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Fatal error:', error);
-    
-    const duration = Math.floor((Date.now() - startTime) / 1000);
-    await supabaseClient.from('ingest_logs').update({
-      status: 'failure',
-      completed_at: new Date().toISOString(),
-      duration_seconds: duration,
-      error_message: error instanceof Error ? error.message : String(error),
-    }).eq('id', logId);
+    await logger.failure(error as Error);
 
     return new Response(JSON.stringify({ 
       success: false, 

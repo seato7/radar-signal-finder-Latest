@@ -2058,22 +2058,37 @@ export type Database = {
       }
       view_api_errors: {
         Row: {
-          error_count: number | null
-          error_messages: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          error_time: string | null
           etl_name: string | null
-          last_error_at: string | null
+          metadata: Json | null
+          status: string | null
+        }
+        Insert: {
+          duration_seconds?: number | null
+          error_message?: string | null
+          error_time?: string | null
+          etl_name?: string | null
+          metadata?: Json | null
+          status?: string | null
+        }
+        Update: {
+          duration_seconds?: number | null
+          error_message?: string | null
+          error_time?: string | null
+          etl_name?: string | null
+          metadata?: Json | null
+          status?: string | null
         }
         Relationships: []
       }
       view_fallback_usage: {
         Row: {
-          avg_latency_ms: number | null
-          cache_hit_percentage: number | null
-          cache_hits: number | null
           etl_name: string | null
+          fallback_count: number | null
           fallback_percentage: number | null
-          fallback_runs: number | null
-          max_latency_ms: number | null
+          last_run_at: string | null
           total_runs: number | null
         }
         Relationships: []
@@ -2090,7 +2105,6 @@ export type Database = {
       }
       view_test_suite_summary: {
         Row: {
-          avg_execution_time_ms: number | null
           failed: number | null
           last_run_at: string | null
           passed: number | null
