@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { IngestLogger } from "../_shared/log-ingest.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +24,10 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
+
+  const logger = new IngestLogger(supabaseClient, 'ingest-etf-flows');
+  await logger.start();
+  const startTime = Date.now();
 
   try {
     const { csv_urls } = await req.json();
@@ -133,6 +138,16 @@ serve(async (req) => {
       }
     }
 
+    await logger.success({
+      source_used: 'ETF Flows CSV',
+      cache_hit: false,
+      fallback_count: 0,
+      latency_ms: Date.now() - startTime,
+      rows_inserted: signalsCreated,
+      rows_skipped: signalsSkipped,
+      metadata: { csv_count: csv_urls.length }
+    });
+
     return new Response(JSON.stringify({
       signals_created: signalsCreated,
       signals_skipped: signalsSkipped
@@ -140,6 +155,13 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    await logger.failure(error as Error, {
+      source_used: 'ETF Flows CSV',
+      cache_hit: false,
+      fallback_count: 0,
+      latency_ms: Date.now() - startTime,
+    });
+
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
