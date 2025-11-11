@@ -27,6 +27,7 @@ import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import Assistant from "./pages/Assistant";
 import DataIngestion from "./pages/DataIngestion";
+import PipelineTests from "./pages/PipelineTests";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -79,6 +80,7 @@ const App = () => (
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/assistant" element={<Assistant />} />
                             <Route path="/data-ingestion" element={<DataIngestion />} />
+                            <Route path="/pipeline-tests" element={<PipelineTests />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>

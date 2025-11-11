@@ -1180,6 +1180,51 @@ export type Database = {
         }
         Relationships: []
       }
+      ingest_logs_test_audit: {
+        Row: {
+          actual_result: string | null
+          created_at: string | null
+          error_message: string | null
+          execution_time_ms: number | null
+          expected_result: string | null
+          id: string
+          metadata: Json | null
+          status: string
+          test_name: string
+          test_suite: string
+          tested_at: string | null
+          ticker: string | null
+        }
+        Insert: {
+          actual_result?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          execution_time_ms?: number | null
+          expected_result?: string | null
+          id?: string
+          metadata?: Json | null
+          status: string
+          test_name: string
+          test_suite: string
+          tested_at?: string | null
+          ticker?: string | null
+        }
+        Update: {
+          actual_result?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          execution_time_ms?: number | null
+          expected_result?: string | null
+          id?: string
+          metadata?: Json | null
+          status?: string
+          test_name?: string
+          test_suite?: string
+          tested_at?: string | null
+          ticker?: string | null
+        }
+        Relationships: []
+      }
       job_postings: {
         Row: {
           company: string
@@ -2040,6 +2085,18 @@ export type Database = {
           seconds_stale: number | null
           table_name: string | null
           ticker: string | null
+        }
+        Relationships: []
+      }
+      view_test_suite_summary: {
+        Row: {
+          avg_execution_time_ms: number | null
+          failed: number | null
+          last_run_at: string | null
+          passed: number | null
+          test_suite: string | null
+          total_tests: number | null
+          warnings: number | null
         }
         Relationships: []
       }
