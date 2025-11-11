@@ -1115,11 +1115,13 @@ export type Database = {
           duration_seconds: number | null
           error_message: string | null
           etl_name: string
+          fallback_count: number | null
           id: string
           metadata: Json | null
           rows_inserted: number | null
           rows_skipped: number | null
           rows_updated: number | null
+          source_used: string | null
           started_at: string
           status: string
         }
@@ -1129,11 +1131,13 @@ export type Database = {
           duration_seconds?: number | null
           error_message?: string | null
           etl_name: string
+          fallback_count?: number | null
           id?: string
           metadata?: Json | null
           rows_inserted?: number | null
           rows_skipped?: number | null
           rows_updated?: number | null
+          source_used?: string | null
           started_at?: string
           status: string
         }
@@ -1143,11 +1147,13 @@ export type Database = {
           duration_seconds?: number | null
           error_message?: string | null
           etl_name?: string
+          fallback_count?: number | null
           id?: string
           metadata?: Json | null
           rows_inserted?: number | null
           rows_skipped?: number | null
           rows_updated?: number | null
+          source_used?: string | null
           started_at?: string
           status?: string
         }
@@ -1601,6 +1607,7 @@ export type Database = {
           signal_classification: string | null
           signal_type: string
           source_id: string | null
+          source_used: string | null
           theme_id: string | null
           time_horizon: string | null
           value_text: string | null
@@ -1623,6 +1630,7 @@ export type Database = {
           signal_classification?: string | null
           signal_type: string
           source_id?: string | null
+          source_used?: string | null
           theme_id?: string | null
           time_horizon?: string | null
           value_text?: string | null
@@ -1645,6 +1653,7 @@ export type Database = {
           signal_classification?: string | null
           signal_type?: string
           source_id?: string | null
+          source_used?: string | null
           theme_id?: string | null
           time_horizon?: string | null
           value_text?: string | null
@@ -1962,8 +1971,43 @@ export type Database = {
         }
         Relationships: []
       }
+      source_usage_stats: {
+        Row: {
+          first_seen: string | null
+          last_seen: string | null
+          percentage: number | null
+          source_used: string | null
+          total_signals: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      check_ai_fallback_usage: {
+        Args: never
+        Returns: {
+          etl_name: string
+          fallback_percentage: number
+          fallback_runs: number
+          is_excessive: boolean
+          message: string
+          total_runs: number
+        }[]
+      }
+      check_signal_distribution_skew: {
+        Args: never
+        Returns: {
+          alert_type: string
+          buy_count: number
+          buy_percentage: number
+          is_skewed: boolean
+          message: string
+          neutral_count: number
+          neutral_percentage: number
+          sell_count: number
+          sell_percentage: number
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
