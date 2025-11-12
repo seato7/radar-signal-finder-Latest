@@ -20,6 +20,7 @@ import Themes from "./pages/Themes";
 import ThemeDiscovery from "./pages/ThemeDiscovery";
 import DataSources from "./pages/DataSources";
 import Bots from "./pages/Bots";
+import APIUsage from "./pages/APIUsage";
 import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
@@ -83,6 +84,7 @@ const App = () => (
                             <Route path="/assistant" element={<Assistant />} />
                             <Route path="/data-ingestion" element={<DataIngestion />} />
                             <Route path="/pipeline-tests" element={<PipelineTests />} />
+                            <Route path="/api-usage" element={<APIUsage />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>

@@ -17,7 +17,7 @@ interface SlackAlert {
 }
 
 interface CriticalAlert {
-  type: 'fallback_exceeded' | 'auth_error' | 'orphaned_logs' | 'duplicate_keys' | 'sla_breach' | 'halted' | 'missing_source' | 'empty_table';
+  type: 'fallback_exceeded' | 'auth_error' | 'orphaned_logs' | 'duplicate_keys' | 'sla_breach' | 'halted' | 'missing_source' | 'empty_table' | 'api_reliability';
   etlName?: string;
   message: string;
   details?: Record<string, any>;

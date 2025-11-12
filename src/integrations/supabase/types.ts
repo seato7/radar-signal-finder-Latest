@@ -274,6 +274,66 @@ export type Database = {
           },
         ]
       }
+      api_costs: {
+        Row: {
+          api_name: string
+          cost_per_call: number | null
+          daily_limit: number | null
+          is_paid: boolean | null
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          api_name: string
+          cost_per_call?: number | null
+          daily_limit?: number | null
+          is_paid?: boolean | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          api_name?: string
+          cost_per_call?: number | null
+          daily_limit?: number | null
+          is_paid?: boolean | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      api_usage_logs: {
+        Row: {
+          api_name: string
+          created_at: string
+          endpoint: string | null
+          error_message: string | null
+          function_name: string
+          id: string
+          response_time_ms: number | null
+          status: string
+        }
+        Insert: {
+          api_name: string
+          created_at?: string
+          endpoint?: string | null
+          error_message?: string | null
+          function_name: string
+          id?: string
+          response_time_ms?: number | null
+          status: string
+        }
+        Update: {
+          api_name?: string
+          created_at?: string
+          endpoint?: string | null
+          error_message?: string | null
+          function_name?: string
+          id?: string
+          response_time_ms?: number | null
+          status?: string
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           asset_class: string | null
@@ -2094,6 +2154,39 @@ export type Database = {
         }
         Relationships: []
       }
+      yahoo_finance_health: {
+        Row: {
+          created_at: string
+          failed_calls: number
+          id: string
+          reliability_pct: number
+          successful_calls: number
+          total_calls: number
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          created_at?: string
+          failed_calls?: number
+          id?: string
+          reliability_pct?: number
+          successful_calls?: number
+          total_calls?: number
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          created_at?: string
+          failed_calls?: number
+          id?: string
+          reliability_pct?: number
+          successful_calls?: number
+          total_calls?: number
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       asset_signal_summary: {
@@ -2240,6 +2333,29 @@ export type Database = {
           neutral_percentage: number
           sell_count: number
           sell_percentage: number
+        }[]
+      }
+      check_yahoo_reliability: {
+        Args: never
+        Returns: {
+          failed_calls: number
+          reliability_pct: number
+          should_enable_fallback: boolean
+          successful_calls: number
+          total_calls: number
+        }[]
+      }
+      get_api_usage_summary: {
+        Args: { hours_back?: number }
+        Returns: {
+          api_name: string
+          avg_response_time_ms: number
+          cached_calls: number
+          estimated_cost: number
+          failed_calls: number
+          success_rate: number
+          successful_calls: number
+          total_calls: number
         }[]
       }
       get_stale_tickers: {

@@ -9,6 +9,7 @@ import {
   logAuthFailure 
 } from "../_shared/auth-validator.ts";
 import { withRetry } from "../_shared/retry-wrapper.ts";
+import { logAPIUsage, checkYahooReliability } from "../_shared/api-logger.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,11 +91,31 @@ Deno.serve(async (req) => {
     
     console.log('Starting Yahoo Finance price ingestion...');
     
+    // Check Yahoo Finance reliability and determine if fallback should be enabled
+    const yahooHealth = await checkYahooReliability(supabaseClient);
+    console.log(`📊 Yahoo Finance Health: ${yahooHealth.reliability_pct}% reliability (${yahooHealth.successful_calls}/${yahooHealth.total_calls} calls in 24h)`);
+    
+    if (yahooHealth.should_enable_fallback) {
+      console.warn(`⚠️ Yahoo Finance reliability at ${yahooHealth.reliability_pct}% (below 95% threshold)`);
+      await slackAlerter.sendCriticalAlert({
+        type: 'api_reliability',
+        etlName: 'ingest-prices-yahoo',
+        message: `Yahoo Finance reliability dropped to ${yahooHealth.reliability_pct}% - Consider re-enabling Perplexity fallback`,
+        details: {
+          reliability_pct: yahooHealth.reliability_pct,
+          total_calls: yahooHealth.total_calls,
+          successful_calls: yahooHealth.successful_calls,
+          failed_calls: yahooHealth.failed_calls,
+          recommendation: 'Re-enable Perplexity fallback in ingest-prices-yahoo/index.ts'
+        }
+      });
+    }
+    
     // Send start alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-prices-yahoo',
       status: 'started',
-      metadata: { trigger: 'manual' }
+      metadata: { trigger: 'manual', yahoo_health: yahooHealth }
     });
     
     // Check last 3 runs for consecutive fallback-only pattern
@@ -197,9 +218,11 @@ Deno.serve(async (req) => {
         let fetchError = null;
         let sourceUsed = 'Yahoo Finance';
         let statusCode: number | null = null;
+        let yahooStartTime = Date.now();
 
-        // Try Yahoo Finance with retry logic
+        // Try Yahoo Finance with retry logic and API logging
         try {
+          yahooStartTime = Date.now(); // Reset start time
           const result = await withRetry(
             async () => {
               const response = await fetch(yahooUrl, {
@@ -267,10 +290,30 @@ Deno.serve(async (req) => {
           const validation = safeValidate(YahooResponseSchema, rawData, 'Yahoo Finance');
           if (validation.success) {
             data = validation.data;
+            
+            // Log successful Yahoo Finance call
+            const yahooResponseTime = Date.now() - yahooStartTime;
+            await logAPIUsage(supabaseClient, {
+              api_name: 'Yahoo Finance',
+              endpoint: yahooUrl,
+              function_name: 'ingest-prices-yahoo',
+              status: 'success',
+              response_time_ms: yahooResponseTime
+            });
           } else {
             fetchError = `Invalid Yahoo response: ${validation.error}`;
             console.error(fetchError);
             await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'validation', fetchError, statusCode, 3);
+            
+            // Log failed validation
+            await logAPIUsage(supabaseClient, {
+              api_name: 'Yahoo Finance',
+              endpoint: yahooUrl,
+              function_name: 'ingest-prices-yahoo',
+              status: 'failure',
+              response_time_ms: Date.now() - yahooStartTime,
+              error_message: fetchError
+            });
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -284,6 +327,16 @@ Deno.serve(async (req) => {
           
           console.error(`Yahoo Finance error for ${symbol}:`, errorMsg);
           await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, errorType, errorMsg, statusCode, 3);
+          
+          // Log failed API call
+          await logAPIUsage(supabaseClient, {
+            api_name: 'Yahoo Finance',
+            endpoint: yahooUrl,
+            function_name: 'ingest-prices-yahoo',
+            status: 'failure',
+            response_time_ms: Date.now() - yahooStartTime,
+            error_message: errorMsg
+          });
         }
         
         // If Yahoo failed, skip (no fallback for cost optimization)
