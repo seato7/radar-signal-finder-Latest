@@ -541,12 +541,57 @@ export type Database = {
         }
         Relationships: []
       }
+      broker_key_rotation_logs: {
+        Row: {
+          broker_key_id: string
+          id: string
+          ip_address: string | null
+          metadata: Json | null
+          new_encryption_version: string
+          old_encryption_version: string
+          rotated_at: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          broker_key_id: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          new_encryption_version: string
+          old_encryption_version: string
+          rotated_at?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          broker_key_id?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json | null
+          new_encryption_version?: string
+          old_encryption_version?: string
+          rotated_at?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broker_key_rotation_logs_broker_key_id_fkey"
+            columns: ["broker_key_id"]
+            isOneToOne: false
+            referencedRelation: "broker_keys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       broker_keys: {
         Row: {
           account_type: string | null
           api_key_encrypted: string
           broker_name: string | null
           created_at: string
+          encryption_version: string | null
           exchange: string
           id: string
           paper_mode: boolean
@@ -560,6 +605,7 @@ export type Database = {
           api_key_encrypted: string
           broker_name?: string | null
           created_at?: string
+          encryption_version?: string | null
           exchange: string
           id?: string
           paper_mode?: boolean
@@ -573,6 +619,7 @@ export type Database = {
           api_key_encrypted?: string
           broker_name?: string | null
           created_at?: string
+          encryption_version?: string | null
           exchange?: string
           id?: string
           paper_mode?: boolean

@@ -30,25 +30,47 @@ All production-hardening tasks have been successfully completed. The Opportunity
 - ✅ Added dedicated `BROKER_ENCRYPTION_KEY` secret (separate from JWT secret)
 - ✅ Updated all broker adapters to use the new encryption standard
 - ✅ Backend encryption utility (`backend/utils/encryption.py`) now uses Fernet with derived keys
+- ✅ **NEW: Automated broker key rotation workflow** with user-facing modal
+- ✅ **NEW: Audit logging table** for tracking all key rotations
+- ✅ **NEW: Edge function** `rotate-broker-key` for secure re-encryption
 
 #### Security Impact:
 - **Before:** Broker keys stored as reversible base64 (trivial to decode)
 - **After:** Broker keys encrypted with AES-GCM-256, requiring high-entropy key derivation
+- **Rotation:** Automated UI prompts users to upgrade legacy keys to v2 encryption
+
+#### Files Created:
+- `supabase/functions/rotate-broker-key/index.ts` - Edge function for key rotation
+- `src/components/BrokerKeyRotationModal.tsx` - Auto-detecting modal component
+- `BROKER_KEY_ROTATION_GUIDE.md` - Complete rotation documentation
+- Migration: `broker_key_rotation_logs` table + `encryption_version` column
 
 #### Files Modified:
 - `backend/utils/encryption.py` - New AES-GCM encryption functions
 - `backend/routers/broker.py` - Uses `encrypt_secret()` and `decrypt_secret()`
 - `backend/config.py` - Added `BROKER_ENCRYPTION_KEY` setting
 - `supabase/functions/manage-broker-keys/index.ts` - Edge function encryption updated
+- `src/App.tsx` - Integrated `BrokerKeyRotationModal` component
 
 #### Action Required:
-⚠️ **Users must rotate all existing broker API keys** due to the previous base64 storage. Old keys were potentially exposed in logs or backups.
+✅ **AUTOMATED** - Users will be prompted automatically upon login if they have legacy keys (encryption_version = 'v1'). The modal guides them through secure re-submission with:
+- Progressive disclosure (one broker at a time)
+- Clear security messaging
+- AES-GCM-256 + PBKDF2 encryption on submit
+- Audit logging with IP address and user agent
+- Toast notifications on success
 
-**How to Rotate:**
-1. Go to Settings → Brokers
-2. Delete existing broker connections
-3. Re-add brokers with fresh API keys from exchanges
-4. Test connections to verify new encryption
+**For Admins:**
+Monitor rotation completion:
+```sql
+-- Check legacy key count
+SELECT COUNT(*) FROM broker_keys WHERE encryption_version = 'v1';
+
+-- View recent rotations
+SELECT * FROM broker_key_rotation_logs 
+WHERE rotated_at > NOW() - INTERVAL '24 hours'
+ORDER BY rotated_at DESC;
+```
 
 ---
 
@@ -324,15 +346,19 @@ curl https://detxhoqiarohjevedmxh.supabase.co/functions/v1/api-alerts-errors
 ## 🚀 Next Steps (Post-Hardening)
 
 ### Immediate Actions:
-1. **Rotate Broker API Keys** (users must do this manually)
+1. **Monitor Broker Key Rotation** - Check completion rate daily:
+   ```sql
+   SELECT COUNT(*) FROM broker_keys WHERE encryption_version = 'v1';
+   ```
 2. **Test Cron Jobs** - Verify `ingest-orchestrator` and `test-pipeline-sla` still work
 3. **Monitor Fallback Usage** - Watch for >2% spikes in 10min windows
 
 ### Ongoing Maintenance:
-1. **Add Zod Validation** to remaining 25+ ingestion functions (lower priority)
-2. **Implement HttpOnly Cookies** for JWT tokens (security improvement)
-3. **Review RLS Policies** on sensitive tables (user data, payments)
-4. **Enable 2FA** for admin accounts (if handling real money)
+1. **Email Reminders** - Notify users with legacy keys after 7 days
+2. **Add Zod Validation** to remaining 25+ ingestion functions (lower priority)
+3. **Implement HttpOnly Cookies** for JWT tokens (security improvement)
+4. **Review RLS Policies** on sensitive tables (user data, payments)
+5. **Enable 2FA** for admin accounts (if handling real money)
 
 ### Future Enhancements:
 1. **Rate Limiting** on user-facing endpoints (prevent abuse)

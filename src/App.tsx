@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { BrokerKeyRotationModal } from "@/components/BrokerKeyRotationModal";
 import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
 import Radar from "./pages/Radar";
@@ -40,7 +41,8 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
-          <Routes>
+            <BrokerKeyRotationModal />
+            <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route
               path="/*"
