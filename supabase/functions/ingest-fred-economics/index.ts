@@ -16,8 +16,10 @@ Deno.serve(async (req) => {
     
     console.log('Starting FRED economic indicators ingestion...');
     
-    // FRED API key (free from https://fred.stlouisfed.org/docs/api/api_key.html)
-    // For now, using public endpoints that don't require auth
+    const fredApiKey = Deno.env.get('FRED_API_KEY');
+    if (!fredApiKey) {
+      throw new Error('FRED_API_KEY not configured');
+    }
     
     const indicators = [
       { series: 'GDP', name: 'US GDP', country: 'US', type: 'gdp', impact: 'high' },
@@ -37,8 +39,8 @@ Deno.serve(async (req) => {
     
     for (const indicator of indicators) {
       try {
-        // FRED JSON endpoint (no API key needed for recent observations)
-        const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${indicator.series}&file_type=json&limit=12&sort_order=desc`;
+        // FRED JSON endpoint with API key
+        const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${indicator.series}&api_key=${fredApiKey}&file_type=json&limit=12&sort_order=desc`;
         
         const response = await fetch(fredUrl);
         
