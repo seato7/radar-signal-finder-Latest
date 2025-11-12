@@ -52,10 +52,10 @@ Deno.serve(async (req) => {
       
       return {
         id: log.id,
-        status: 'failed',
+        status: 'failure',  // Valid status per check constraint
         completed_at: new Date().toISOString(),
         duration_seconds: durationSeconds,
-        error_message: `Process orphaned after 2+ hours - marked as failed by cleanup job`,
+        error_message: `Process orphaned after 2+ hours - marked as failure by cleanup job`,
         metadata: {
           cleanup_timestamp: new Date().toISOString(),
           original_started_at: log.started_at,
@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: `🧹 *Log Cleanup Alert*\n\nCleaned up ${orphanedLogs.length} orphaned ingest logs (stuck >2h):\n\n${summaryText}\n\n*Recommendation:* Review functions for missing completion handlers.`
+            text: `🧹 *Log Cleanup Alert*\n\nCleaned up ${orphanedLogs.length} orphaned ingest logs (stuck >2h):\n\n${summaryText}\n\n*Status:* Marked as 'failure' (requires manual review)\n*Recommendation:* Review functions for missing completion handlers.`
           })
         });
       }
@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
       success: true, 
       cleaned: orphanedLogs.length,
       affected_functions: [...new Set(orphanedLogs.map(l => l.etl_name))],
-      message: `Marked ${orphanedLogs.length} orphaned logs as failed`
+      message: `Marked ${orphanedLogs.length} orphaned logs as failure`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
