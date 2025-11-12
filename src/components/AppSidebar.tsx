@@ -40,7 +40,7 @@ const navigationItems = [
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const { user, logout, userPlan, userRole } = useAuth();
+  const { user, logout, userPlan, isAdmin } = useAuth();
   const isCollapsed = state === "collapsed";
 
   const getPlanBadgeVariant = (plan: string) => {
@@ -94,7 +94,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         
-        {userRole === 'admin' && (
+        {isAdmin() && (
           <SidebarGroup>
             <SidebarGroupLabel>Admin</SidebarGroupLabel>
             <SidebarGroupContent>
