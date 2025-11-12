@@ -2,6 +2,13 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { YahooResponseSchema, PerplexityResponseSchema, safeValidate } from "../_shared/zod-schemas.ts";
 import { redisCache } from "../_shared/redis-cache.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { 
+  validateAuthHeaders, 
+  validateAuthResponse,
+  logAuthFailure 
+} from "../_shared/auth-validator.ts";
+import { withRetry } from "../_shared/retry-wrapper.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,12 +73,22 @@ Deno.serve(async (req) => {
   const { IngestLogger } = await import('../_shared/log-ingest.ts');
   const logger = new IngestLogger(supabaseClient, 'ingest-prices-yahoo');
   await logger.start();
-
+  
+  // Initialize Slack alerter
+  const slackAlerter = new SlackAlerter();
+  
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
     console.log('Starting Yahoo Finance price ingestion...');
+    
+    // Send start alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-prices-yahoo',
+      status: 'started',
+      metadata: { trigger: 'manual' }
+    });
     
     // Check last 3 runs for consecutive fallback-only pattern
     const { data: recentLogs } = await supabaseClient
@@ -92,17 +109,13 @@ Deno.serve(async (req) => {
         console.error(errorMsg);
         await logger.failure(new Error(errorMsg));
         
-        // Send Slack alert
-        const slackWebhook = Deno.env.get('SLACK_WEBHOOK_URL');
-        if (slackWebhook) {
-          await fetch(slackWebhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: `🚨 *CRITICAL: ingest-prices-yahoo HALTED*\n${errorMsg}\n\n*Action Required:* Check Yahoo Finance API status and authentication.`
-            })
-          });
-        }
+        // Send critical Slack alert
+        await slackAlerter.sendCriticalAlert({
+          type: 'halted',
+          etlName: 'ingest-prices-yahoo',
+          message: '3 consecutive runs used 100% AI fallback',
+          details: { recommendation: 'Check Yahoo Finance API status and authentication' }
+        });
         
         return new Response(JSON.stringify({ 
           success: false, 
@@ -157,33 +170,68 @@ Deno.serve(async (req) => {
 
         // Try Yahoo Finance with retry logic
         try {
-          const yahooFetch = async () => {
-            const response = await fetch(yahooUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          const result = await withRetry(
+            async () => {
+              const response = await fetch(yahooUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+              });
+              
+              statusCode = response.status;
+              
+              // Handle authentication errors
+              if (response.status === 401 || response.status === 403) {
+                console.error(`❌ AUTH ERROR for ${symbol}: Yahoo Finance returned ${response.status}`);
+                await logAuthFailure(supabaseClient, 'ingest-prices-yahoo', 'Yahoo Finance',
+                  { isValid: false, errors: [`Yahoo Finance returned ${response.status}`], warnings: [], statusCode: response.status },
+                  { ticker: symbol }
+                );
+                throw new Error(`AUTH_ERROR:${response.status}`);
               }
-            });
-            
-            statusCode = response.status;
-            
-            // Handle authentication errors
-            if (response.status === 401 || response.status === 403) {
-              throw new Error(`AUTH_ERROR:${response.status}`);
+              
+              // Handle rate limits
+              if (response.status === 429) {
+                console.log(`⚠️ Rate limit hit for ${symbol}, will retry with backoff`);
+                throw new Error(`RATE_LIMIT:429`);
+              }
+              
+              if (!response.ok) {
+                throw new Error(`Yahoo Finance returned ${response.status}`);
+              }
+              
+              const rawData = await response.json();
+              
+              // Validate response isn't HTML masquerading as JSON
+              const contentType = response.headers.get('content-type');
+              if (contentType && contentType.includes('text/html')) {
+                const errorMsg = `Yahoo Finance returned HTML instead of JSON for ${symbol}`;
+                console.error(`❌ ${errorMsg}`);
+                await logAuthFailure(supabaseClient, 'ingest-prices-yahoo', 'Yahoo Finance',
+                  { isValid: false, errors: ['HTML response instead of JSON'], warnings: [], statusCode: response.status },
+                  { ticker: symbol, content_type: contentType }
+                );
+                await slackAlerter.sendCriticalAlert({
+                  type: 'auth_error',
+                  etlName: 'ingest-prices-yahoo',
+                  message: `Yahoo Finance returning HTML instead of JSON for ${symbol}`,
+                  details: { ticker: symbol, content_type: contentType, issue: 'html_masquerade' }
+                });
+                throw new Error('HTML_MASQUERADE');
+              }
+              
+              return rawData;
+            },
+            {
+              maxRetries: 3,
+              initialDelayMs: 1000,
+              onRetry: (attempt, error) => {
+                console.log(`⏳ Retry ${attempt}/3 for ${symbol}: ${error.message}`);
+              }
             }
-            
-            // Handle rate limits
-            if (response.status === 429) {
-              throw new Error(`RATE_LIMIT:429`);
-            }
-            
-            if (!response.ok) {
-              throw new Error(`Yahoo Finance returned ${response.status}`);
-            }
-            
-            return await response.json();
-          };
+          );
           
-          const rawData = await retryWithBackoff(yahooFetch, 3, 1000);
+          const rawData = result;
           
           // CRITICAL: Validate Yahoo Finance response
           const validation = safeValidate(YahooResponseSchema, rawData, 'Yahoo Finance');
@@ -228,21 +276,38 @@ Deno.serve(async (req) => {
               : 'google/gemini-2.5-flash';
             
             try {
+              const payload: any = {
+                model: aiModel,
+                messages: [{
+                  role: 'user',
+                  content: `Get the current price for ${symbol}. Return ONLY: price: [number]`
+                }],
+                max_tokens: 100,
+              };
+              
+              // Only add temperature for Perplexity
+              if (perplexityApiKey) {
+                payload.temperature = 0.2;
+              }
+              
+              const headers = {
+                'Authorization': `Bearer ${aiKey}`,
+                'Content-Type': 'application/json',
+              };
+              
+              // Validate auth headers before making request
+              const headerValidation = validateAuthHeaders(headers, 'bearer');
+              if (!headerValidation.isValid) {
+                const errorMsg = `Invalid AI auth headers for ${symbol}: ${headerValidation.errors.join(', ')}`;
+                console.error(`❌ ${errorMsg}`);
+                await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'api_auth', errorMsg, null, 0);
+                throw new Error('HEADER_VALIDATION_ERROR');
+              }
+              
               const aiResponse = await fetch(aiUrl, {
                 method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${aiKey}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  model: aiModel,
-                  messages: [{
-                    role: 'user',
-                    content: `Get the current price for ${symbol}. Return ONLY: price: [number]`
-                  }],
-                  temperature: 0.2,
-                  max_tokens: 100,
-                }),
+                headers,
+                body: JSON.stringify(payload),
               });
 
               if (aiResponse.ok) {
@@ -413,14 +478,33 @@ Deno.serve(async (req) => {
     }
     
     const finalSourceUsed = fallbackUsed > 0 ? 'Yahoo Finance + AI Fallback' : 'Yahoo Finance';
+    const latency = Date.now() - startTime;
+    const fallbackRatio = assets.length > 0 ? fallbackUsed / assets.length : 0;
     
     await logger.success({
       source_used: finalSourceUsed,
       cache_hit: cacheHits > 0,
       fallback_count: fallbackUsed,
-      latency_ms: Date.now() - startTime,
+      latency_ms: latency,
       rows_inserted: inserted,
       rows_skipped: skipped,
+    });
+    
+    // Send success/partial alert to Slack
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-prices-yahoo',
+      status: fallbackUsed > 0 ? 'partial' : 'success',
+      duration: Math.round(latency / 1000),
+      latencyMs: latency,
+      sourceUsed: finalSourceUsed,
+      fallbackRatio,
+      rowsInserted: inserted,
+      metadata: { 
+        cache_hits: cacheHits, 
+        skipped, 
+        errors_count: errors.length,
+        total_assets: assets.length
+      }
     });
 
     return new Response(JSON.stringify({
@@ -438,11 +522,20 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Fatal error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     await logger.failure(error as Error);
+    
+    // Send failure alert to Slack
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-prices-yahoo',
+      status: 'failed',
+      duration: Math.round((Date.now() - Date.now()) / 1000),
+      errorMessage
+    });
 
     return new Response(JSON.stringify({ 
       success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+      error: errorMessage
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
