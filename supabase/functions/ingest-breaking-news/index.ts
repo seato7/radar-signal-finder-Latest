@@ -2,19 +2,20 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { redisCache } from "../_shared/redis-cache.ts";
+import { withRetry } from "../_shared/retry-wrapper.ts";
+import { 
+  validateAuthHeaders, 
+  validateAuthResponse, 
+  validatePerplexityRequest,
+  logAuthFailure,
+  PerplexityAuthResponseSchema 
+} from "../_shared/auth-validator.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-const PerplexityResponseSchema = z.object({
-  choices: z.array(z.object({
-    message: z.object({
-      content: z.string().max(10000),
-    }),
-  })).min(1),
-});
 
 const validateSentiment = (score: number): number => {
   if (isNaN(score) || !isFinite(score)) return 0;
@@ -25,13 +26,14 @@ const sanitizeTicker = (ticker: string): string => {
   return ticker.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 10);
 };
 
-// Helper: Log to ingest_failures table
+// Helper: Log to ingest_failures table with enhanced metadata
 async function logFailure(
   supabase: any,
   ticker: string | null,
   errorType: string,
   errorMessage: string,
-  statusCode: number | null
+  statusCode: number | null,
+  metadata?: Record<string, any>
 ) {
   await supabase.from('ingest_failures').insert({
     etl_name: 'ingest-breaking-news',
@@ -40,45 +42,95 @@ async function logFailure(
     error_message: errorMessage,
     status_code: statusCode,
     retry_count: 0,
-    failed_at: new Date().toISOString()
+    failed_at: new Date().toISOString(),
+    metadata: metadata || {}
   });
 }
 
-async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabase: any) {
+async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabase: any, slackAlerter: SlackAlerter) {
   try {
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${perplexityKey}`,
-        'Content-Type': 'application/json',
+    const headers = {
+      'Authorization': `Bearer ${perplexityKey}`,
+      'Content-Type': 'application/json',
+    };
+    
+    const payload = {
+      model: 'sonar',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a financial data provider. Return only the requested data without explanations.'
+        },
+        {
+          role: 'user',
+          content: `List 3 recent news headlines for ${ticker} stock from the last 24 hours. For each, provide: HEADLINE: [headline text], SUMMARY: [one sentence], SOURCE: [source name], SENTIMENT: [number from -1 to 1]. Separate each news item with "---".`
+        }
+      ],
+      temperature: 0.2,
+      max_tokens: 1000,
+    };
+    
+    // Validate auth headers before making request
+    const headerValidation = validateAuthHeaders(headers, 'bearer');
+    if (!headerValidation.isValid) {
+      const errorMsg = `Invalid auth headers: ${headerValidation.errors.join(', ')}`;
+      console.error(`❌ ${errorMsg}`);
+      await logFailure(supabase, ticker, 'api_auth', errorMsg, null, { validation: headerValidation });
+      throw new Error('HEADER_VALIDATION_ERROR');
+    }
+    
+    // Validate request payload structure
+    const payloadValidation = validatePerplexityRequest(payload);
+    if (!payloadValidation.isValid) {
+      const errorMsg = `Invalid request payload: ${payloadValidation.errors.join(', ')}`;
+      console.error(`❌ ${errorMsg}`);
+      await logFailure(supabase, ticker, 'validation', errorMsg, null, { validation: payloadValidation });
+      throw new Error('PAYLOAD_VALIDATION_ERROR');
+    }
+    
+    // Make request with retry logic
+    const result = await withRetry(
+      async () => {
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        return { response, data: await response.json() };
       },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a financial data provider. Return only the requested data without explanations.'
-          },
-          {
-            role: 'user',
-            content: `List 3 recent news headlines for ${ticker} stock from the last 24 hours. For each, provide: HEADLINE: [headline text], SUMMARY: [one sentence], SOURCE: [source name], SENTIMENT: [number from -1 to 1]. Separate each news item with "---".`
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 1000,
-      }),
-    });
+      {
+        maxRetries: 3,
+        initialDelayMs: 1000,
+        onRetry: (attempt, error) => {
+          console.log(`⏳ Retry ${attempt}/3 for ${ticker}: ${error.message}`);
+        }
+      }
+    );
+    
+    const { response, data: rawData } = result;
 
     // Handle authentication errors explicitly
     if (response.status === 401) {
-      const errorMsg = 'Perplexity API authentication failed - invalid or expired API key';
+      const errorMsg = 'Perplexity API authentication failed - check API key format and validity';
       console.error(`❌ AUTH ERROR for ${ticker}: ${errorMsg}`);
-      await logFailure(supabase, ticker, 'api_auth', errorMsg, 401);
+      await logAuthFailure(supabase, 'ingest-breaking-news', 'Perplexity', 
+        { isValid: false, errors: [errorMsg], warnings: [], statusCode: 401 },
+        { ticker, headers_validated: true, payload_validated: true }
+      );
+      
+      // Send critical Slack alert for auth errors
+      await slackAlerter.sendCriticalAlert({
+        type: 'auth_error',
+        etlName: 'ingest-breaking-news',
+        message: `Perplexity API returning 401 for ${ticker}. Headers and payload validated successfully - likely API key issue.`,
+        details: { ticker, status_code: 401 }
+      });
+      
       throw new Error('AUTH_ERROR');
     }
 
     if (response.status === 429) {
-      console.log(`⚠️ Rate limit hit for ${ticker}, will retry`);
+      console.log(`⚠️ Rate limit hit for ${ticker}, will retry with backoff`);
       await logFailure(supabase, ticker, 'rate_limit', 'Perplexity rate limit exceeded', 429);
       throw new Error('RATE_LIMIT');
     }
@@ -89,9 +141,30 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
       await logFailure(supabase, ticker, 'network', errorMsg, response.status);
       return null;
     }
-
-    const rawData = await response.json();
-    const validatedData = PerplexityResponseSchema.parse(rawData);
+    
+    // Validate response structure
+    const authValidation = validateAuthResponse(response, rawData);
+    if (!authValidation.isValid) {
+      const errorMsg = `Perplexity API validation failed: ${authValidation.errors.join(', ')}`;
+      console.error(`❌ ${errorMsg}`);
+      await logAuthFailure(supabase, 'ingest-breaking-news', 'Perplexity', authValidation, { ticker });
+      return null;
+    }
+    
+    const validatedData = PerplexityAuthResponseSchema.parse(rawData);
+    
+    // Check for API errors in response
+    if (validatedData.error) {
+      const errorMsg = `Perplexity API error: ${validatedData.error.message}`;
+      await logFailure(supabase, ticker, 'api_error', errorMsg, response.status);
+      return null;
+    }
+    
+    if (!validatedData.choices || validatedData.choices.length === 0) {
+      await logFailure(supabase, ticker, 'validation', 'No choices in Perplexity response', null);
+      return null;
+    }
+    
     return { ticker, content: validatedData.choices[0].message.content };
   } catch (err) {
     if (err instanceof Error && !err.message.includes('AUTH_ERROR') && !err.message.includes('RATE_LIMIT')) {
@@ -125,6 +198,17 @@ serve(async (req) => {
 
   try {
     console.log('Starting breaking news ingestion...');
+    
+    // Initialize Slack alerter
+    const slackAlerter = new SlackAlerter();
+    
+    // Send start alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-breaking-news',
+      status: 'started',
+      metadata: { tickers_count: 9 }
+    });
+    
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
     const newsItems = [];
@@ -261,7 +345,7 @@ serve(async (req) => {
         }
 
         const results = await Promise.allSettled(
-          tickersToFetch.map(ticker => fetchNewsForTicker(ticker, perplexityKey, supabase))
+          tickersToFetch.map(ticker => fetchNewsForTicker(ticker, perplexityKey, supabase, slackAlerter))
         );
 
         for (const result of results) {
@@ -365,10 +449,12 @@ serve(async (req) => {
     }
 
     const latency = Date.now() - fetchStartTime;
+    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+    
     await supabase.from('ingest_logs').update({
       status: 'success',
       completed_at: new Date().toISOString(),
-      duration_seconds: Math.round((Date.now() - startTime) / 1000),
+      duration_seconds: durationSeconds,
       rows_inserted: newsItems.length,
       source_used: sourceUsed,
       fallback_count: fallbackUsed ? 1 : 0,
@@ -376,6 +462,18 @@ serve(async (req) => {
       latency_ms: latency,
       metadata: { auth_failures: authFailures },
     }).eq('id', logId);
+    
+    // Send success alert to Slack
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-breaking-news',
+      status: fallbackUsed ? 'partial' : 'success',
+      duration: durationSeconds,
+      latencyMs: latency,
+      sourceUsed,
+      fallbackRatio: fallbackUsed ? 1 : 0,
+      rowsInserted: newsItems.length,
+      metadata: { auth_failures: authFailures, cache_hit: cacheHit }
+    });
 
     return new Response(
       JSON.stringify({ 
@@ -390,12 +488,24 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in ingest-breaking-news:', error);
     
+    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
     await supabase.from('ingest_logs').update({
       status: 'failed',
       completed_at: new Date().toISOString(),
-      duration_seconds: Math.round((Date.now() - startTime) / 1000),
-      error_message: error instanceof Error ? error.message : 'Unknown error',
+      duration_seconds: durationSeconds,
+      error_message: errorMessage,
     }).eq('id', logId);
+    
+    // Send failure alert to Slack
+    const slackAlerter = new SlackAlerter();
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-breaking-news',
+      status: 'failed',
+      duration: durationSeconds,
+      errorMessage
+    });
 
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),

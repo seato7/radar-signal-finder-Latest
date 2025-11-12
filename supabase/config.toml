@@ -9,3 +9,6 @@ verify_jwt = false
 [functions.cleanup-orphaned-logs]
 verify_jwt = false
 
+[functions.daily-ingestion-digest]
+verify_jwt = false
+

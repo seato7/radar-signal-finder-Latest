@@ -1,6 +1,6 @@
 /**
- * Exponential backoff retry wrapper for ingestion functions
- * Automatically logs to ingest_logs on final failure
+ * Enhanced exponential backoff retry wrapper with jitter
+ * Automatically logs failures and supports auth error detection
  */
 
 interface RetryOptions {
@@ -8,6 +8,15 @@ interface RetryOptions {
   initialDelayMs?: number;
   maxDelayMs?: number;
   backoffMultiplier?: number;
+  onRetry?: (attempt: number, error: Error) => void;
+}
+
+interface RetryResult<T> {
+  success: boolean;
+  data?: T;
+  error?: Error;
+  retryCount: number;
+  statusCode?: number;
 }
 
 export async function withRetry<T>(
@@ -19,6 +28,7 @@ export async function withRetry<T>(
     initialDelayMs = 1000,
     maxDelayMs = 30000,
     backoffMultiplier = 2,
+    onRetry,
   } = options;
 
   let lastError: Error | null = null;
@@ -31,24 +41,72 @@ export async function withRetry<T>(
       lastError = error instanceof Error ? error : new Error(String(error));
       
       if (attempt === maxRetries) {
-        // Final retry failed, throw error
-        console.error(`Final retry attempt ${attempt + 1} failed:`, lastError);
+        console.error(`❌ Final retry attempt ${attempt + 1} failed:`, lastError.message);
         throw lastError;
       }
 
-      // Log retry attempt
-      console.warn(`Retry attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
-      console.log(`Waiting ${delay}ms before retry...`);
+      // Call retry callback if provided
+      if (onRetry) {
+        onRetry(attempt + 1, lastError);
+      }
 
-      // Wait before next retry
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // Add jitter (0-20% random variation)
+      const exponentialDelay = delay * Math.pow(backoffMultiplier, attempt);
+      const jitter = exponentialDelay * 0.2 * Math.random();
+      const totalDelay = Math.min(exponentialDelay + jitter, maxDelayMs);
 
-      // Exponential backoff with max delay cap
-      delay = Math.min(delay * backoffMultiplier, maxDelayMs);
+      console.warn(`⏳ Retry ${attempt + 1}/${maxRetries} after ${totalDelay.toFixed(0)}ms: ${lastError.message}`);
+      await new Promise(resolve => setTimeout(resolve, totalDelay));
+
+      delay = exponentialDelay;
     }
   }
 
   throw lastError;
+}
+
+/**
+ * Enhanced retry with status code tracking for API calls
+ */
+export async function withRetryAndStatus<T>(
+  fn: () => Promise<{ data: T; statusCode?: number }>,
+  options: RetryOptions = {}
+): Promise<RetryResult<T>> {
+  let retryCount = 0;
+  let lastStatusCode: number | undefined;
+
+  try {
+    const result = await withRetry(
+      async () => {
+        const response = await fn();
+        lastStatusCode = response.statusCode;
+        return response.data;
+      },
+      {
+        ...options,
+        onRetry: (attempt, error) => {
+          retryCount = attempt;
+          if (options.onRetry) {
+            options.onRetry(attempt, error);
+          }
+        }
+      }
+    );
+
+    return {
+      success: true,
+      data: result,
+      retryCount,
+      statusCode: lastStatusCode
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error : new Error(String(error)),
+      retryCount,
+      statusCode: lastStatusCode
+    };
+  }
 }
 
 /**
