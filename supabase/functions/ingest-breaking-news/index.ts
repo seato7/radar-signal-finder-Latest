@@ -423,7 +423,6 @@ serve(async (req) => {
                   relevance_score: 0.8,
                   metadata: { raw_content: block.substring(0, 2000), source_used: sourceUsed },
                   created_at: new Date().toISOString(),
-                  last_updated_at: new Date().toISOString(),
                 };
                 tickerNews.push(newsItem);
                 newsItems.push(newsItem);
