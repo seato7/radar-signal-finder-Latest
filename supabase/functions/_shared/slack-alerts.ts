@@ -17,7 +17,7 @@ interface SlackAlert {
 }
 
 interface CriticalAlert {
-  type: 'fallback_exceeded' | 'auth_error' | 'orphaned_logs' | 'duplicate_keys' | 'sla_breach' | 'halted';
+  type: 'fallback_exceeded' | 'auth_error' | 'orphaned_logs' | 'duplicate_keys' | 'sla_breach' | 'halted' | 'missing_source' | 'empty_table';
   etlName?: string;
   message: string;
   details?: Record<string, any>;
@@ -253,6 +253,8 @@ export class SlackAlerter {
       case 'duplicate_keys': return '🔑';
       case 'sla_breach': return '⏰';
       case 'halted': return '🛑';
+      case 'missing_source': return '❓';
+      case 'empty_table': return '📭';
       default: return '🚨';
     }
   }

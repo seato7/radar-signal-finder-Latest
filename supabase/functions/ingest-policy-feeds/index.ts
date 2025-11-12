@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { withRetry } from "../_shared/retry-wrapper.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,10 +13,32 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
+
+  const logId = crypto.randomUUID();
+  const slackAlerter = new SlackAlerter();
+
+  // Start logging
+  await supabaseClient.from('ingest_logs').insert({
+    id: logId,
+    etl_name: 'ingest-policy-feeds',
+    status: 'running',
+    started_at: new Date().toISOString(),
+    source_used: 'RSS Feeds',
+    cache_hit: false,
+    fallback_count: 0,
+    latency_ms: 0,
+  });
+
+  await slackAlerter.sendLiveAlert({
+    etlName: 'ingest-policy-feeds',
+    status: 'started',
+    metadata: { source: 'RSS Feeds' }
+  });
 
   try {
     const { feed_urls, keywords } = await req.json();
@@ -25,9 +49,20 @@ serve(async (req) => {
     
     let inserted = 0;
     let skipped = 0;
+    let sourceUsed = 'RSS Feeds';
     
     for (const feedUrl of feed_urls) {
-      const response = await fetch(feedUrl);
+      const response = await withRetry(
+        async () => await fetch(feedUrl),
+        {
+          maxRetries: 3,
+          initialDelayMs: 1000,
+          onRetry: (attempt, error) => {
+            console.log(`⏳ Retry ${attempt}/3 for ${feedUrl}: ${error.message}`);
+          }
+        }
+      );
+      
       const feedText = await response.text();
       
       // Parse RSS/Atom feed using regex
@@ -69,20 +104,8 @@ serve(async (req) => {
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         
-        // Check exists
-        const { data: existing } = await supabaseClient
-          .from('signals')
-          .select('id')
-          .eq('checksum', checksum)
-          .single();
-        
-        if (existing) {
-          skipped++;
-          continue;
-        }
-        
-        // Insert signal
-        await supabaseClient
+        // Insert signal with ON CONFLICT to handle duplicates
+        const { error: insertError } = await supabaseClient
           .from('signals')
           .insert({
             signal_type: 'policy_approval',
@@ -100,15 +123,81 @@ serve(async (req) => {
             checksum
           });
         
-        inserted++;
+        if (insertError) {
+          if (insertError.code === '23505') { // Duplicate key
+            skipped++;
+          } else {
+            console.error('Insert error:', insertError);
+            throw insertError;
+          }
+        } else {
+          inserted++;
+        }
       }
     }
+
+    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+    const latency = Date.now() - startTime;
+
+    // Update log
+    await supabaseClient.from('ingest_logs').update({
+      status: 'success',
+      completed_at: new Date().toISOString(),
+      duration_seconds: durationSeconds,
+      rows_inserted: inserted,
+      source_used: sourceUsed,
+      fallback_count: 0,
+      latency_ms: latency,
+    }).eq('id', logId);
+
+    // Send success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-policy-feeds',
+      status: 'success',
+      duration: durationSeconds,
+      latencyMs: latency,
+      sourceUsed,
+      fallbackRatio: 0,
+      rowsInserted: inserted,
+      rowsSkipped: skipped
+    });
 
     return new Response(JSON.stringify({ inserted, skipped }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    const errorMessage = (error as Error).message;
+    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+
+    // Update log with failure
+    await supabaseClient.from('ingest_logs').update({
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      duration_seconds: durationSeconds,
+      error_message: errorMessage,
+    }).eq('id', logId);
+
+    // Log to ingest_failures
+    await supabaseClient.from('ingest_failures').insert({
+      etl_name: 'ingest-policy-feeds',
+      ticker: null,
+      error_type: 'unknown',
+      error_message: errorMessage,
+      status_code: null,
+      retry_count: 0,
+      failed_at: new Date().toISOString(),
+      metadata: {}
+    });
+
+    // Send failure alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-policy-feeds',
+      status: 'failed',
+      duration: durationSeconds,
+      errorMessage,
+    });
+
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
