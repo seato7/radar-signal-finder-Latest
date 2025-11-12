@@ -84,7 +84,14 @@ const App = () => (
                             <Route path="/assistant" element={<Assistant />} />
                             <Route path="/data-ingestion" element={<DataIngestion />} />
                             <Route path="/pipeline-tests" element={<PipelineTests />} />
-                            <Route path="/api-usage" element={<APIUsage />} />
+                            <Route 
+                              path="/api-usage" 
+                              element={
+                                <ProtectedRoute requireAdmin>
+                                  <APIUsage />
+                                </ProtectedRoute>
+                              } 
+                            />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
