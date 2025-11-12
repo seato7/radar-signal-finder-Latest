@@ -12,3 +12,15 @@ verify_jwt = false
 [functions.daily-ingestion-digest]
 verify_jwt = false
 
+[functions.ingest-prices-yahoo]
+verify_jwt = false
+
+[functions.ingest-breaking-news]
+verify_jwt = false
+
+[functions.ingest-policy-feeds]
+verify_jwt = false
+
+[functions.ingest-form4]
+verify_jwt = false
+
