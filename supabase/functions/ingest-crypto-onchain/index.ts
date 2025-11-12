@@ -20,7 +20,26 @@ serve(async (req) => {
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY') ?? '';
     
     if (!perplexityApiKey) {
-      throw new Error('PERPLEXITY_API_KEY not configured');
+      console.error('❌ PERPLEXITY_API_KEY not configured - skipping crypto on-chain ingestion');
+      
+      if (logger) {
+        await logger.failure(new Error('PERPLEXITY_API_KEY not configured'), {
+          source_used: 'Perplexity AI',
+          cache_hit: false,
+          fallback_count: 0,
+          rows_inserted: 0,
+          rows_skipped: 0,
+        });
+      }
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'PERPLEXITY_API_KEY not configured',
+          skipped: true 
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
@@ -37,13 +56,34 @@ serve(async (req) => {
       .eq('asset_class', 'crypto')
       .limit(6);
 
-    if (!cryptoAssets) {
-      throw new Error('No crypto assets found');
+    if (!cryptoAssets || cryptoAssets.length === 0) {
+      console.log('No crypto assets found - completing successfully');
+      await logger.success({
+        source_used: 'Perplexity AI',
+        cache_hit: false,
+        fallback_count: 0,
+        rows_inserted: 0,
+        rows_skipped: 0,
+      });
+      
+      return new Response(
+        JSON.stringify({ success: true, processed: 0, successful: 0 }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     let successCount = 0;
+    
+    // Add 8-minute timeout guard
+    const TIMEOUT_MS = 480000; // 8 minutes
+    const timeoutAt = Date.now() + TIMEOUT_MS;
 
     for (const asset of cryptoAssets) {
+      // Check timeout guard
+      if (Date.now() >= timeoutAt) {
+        console.error(`⏱️ TIMEOUT: Exceeded ${TIMEOUT_MS / 1000}s runtime, aborting`);
+        break;
+      }
       try {
         console.log(`Fetching on-chain data for ${asset.ticker}...`);
 

@@ -41,17 +41,51 @@ serve(async (req) => {
   });
 
   try {
-    const { feed_urls, keywords } = await req.json();
+    // Parse request body with defaults
+    let feed_urls: string[] = [];
+    let keywords: string[] = [];
     
-    if (!feed_urls || !keywords || feed_urls.length === 0 || keywords.length === 0) {
-      throw new Error('feed_urls and keywords required');
+    try {
+      const body = await req.json();
+      feed_urls = body.feed_urls || [];
+      keywords = body.keywords || [];
+    } catch {
+      // Body is empty or invalid - use defaults
     }
+    
+    // Default feed URLs and keywords if not provided
+    if (feed_urls.length === 0) {
+      feed_urls = [
+        'https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bagencies%5D%5B%5D=energy-department',
+        'https://www.ferc.gov/rss/news.xml'
+      ];
+    }
+    
+    if (keywords.length === 0) {
+      keywords = [
+        'transmission', 'grid', 'power', 'electricity', 'transformer',
+        'hvdc', 'renewable', 'solar', 'wind', 'battery', 'storage',
+        'interconnection', 'substation', 'utility', 'infrastructure'
+      ];
+    }
+    
+    console.log(`Processing ${feed_urls.length} feeds with ${keywords.length} keywords`);
     
     let inserted = 0;
     let skipped = 0;
     let sourceUsed = 'RSS Feeds';
     
+    // Add 8-minute timeout guard
+    const TIMEOUT_MS = 480000; // 8 minutes
+    const timeoutAt = Date.now() + TIMEOUT_MS;
+    
     for (const feedUrl of feed_urls) {
+      // Check timeout guard
+      if (Date.now() >= timeoutAt) {
+        console.error(`⏱️ TIMEOUT: Exceeded ${TIMEOUT_MS / 1000}s runtime, aborting`);
+        break;
+      }
+      
       const response = await withRetry(
         async () => await fetch(feedUrl),
         {

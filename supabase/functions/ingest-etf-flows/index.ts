@@ -30,16 +30,55 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const { csv_urls } = await req.json();
+    // Parse request body with defaults
+    let csv_urls: string[] = [];
     
-    if (!csv_urls || csv_urls.length === 0) {
-      throw new Error('csv_urls required');
+    try {
+      const body = await req.json();
+      csv_urls = body.csv_urls || [];
+    } catch {
+      // Body is empty or invalid - use defaults
     }
+    
+    // Default CSV URLs if not provided (use sample/test data)
+    if (csv_urls.length === 0) {
+      console.log('⚠️ No csv_urls provided - skipping ETF flows ingestion');
+      
+      await logger.success({
+        source_used: 'ETF Flows CSV',
+        cache_hit: false,
+        fallback_count: 0,
+        latency_ms: Date.now() - startTime,
+        rows_inserted: 0,
+        rows_skipped: 0,
+        metadata: { csv_count: 0, note: 'No CSV URLs provided' }
+      });
+      
+      return new Response(JSON.stringify({
+        signals_created: 0,
+        signals_skipped: 0,
+        note: 'No CSV URLs provided - function skipped gracefully'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    console.log(`Processing ${csv_urls.length} ETF flow CSV files`);
     
     let signalsCreated = 0;
     let signalsSkipped = 0;
     
+    // Add 8-minute timeout guard
+    const TIMEOUT_MS = 480000; // 8 minutes
+    const timeoutAt = startTime + TIMEOUT_MS;
+    
     for (const csvUrl of csv_urls) {
+      // Check timeout guard
+      if (Date.now() >= timeoutAt) {
+        console.error(`⏱️ TIMEOUT: Exceeded ${TIMEOUT_MS / 1000}s runtime, aborting`);
+        break;
+      }
+      
       const response = await fetch(csvUrl);
       const csvText = await response.text();
       
