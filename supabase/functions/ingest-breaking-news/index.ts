@@ -402,6 +402,13 @@ serve(async (req) => {
             }
           } else if (result.status === 'fulfilled' && result.value) {
             const { ticker, content } = result.value;
+            
+            // Defensive guard: ensure content exists and is non-empty
+            if (!content || typeof content !== 'string' || content.trim().length === 0) {
+              console.error(`⚠️ Empty or invalid content for ${ticker}, skipping`);
+              continue;
+            }
+            
             const newsBlocks = content.split('---').filter((block: string) => block.trim()).slice(0, 10);
             const tickerNews = [];
             
@@ -481,7 +488,18 @@ serve(async (req) => {
 
     if (newsItems.length > 0) {
       const { error } = await supabase.from('breaking_news').insert(newsItems);
-      if (error) throw error;
+      if (error) {
+        // Enhanced error logging with full error details
+        console.error('❌ Supabase insert error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          itemsCount: newsItems.length,
+          sample: newsItems[0]
+        });
+        throw new Error(`Database insert failed: ${error.message || error.code} - ${error.details || 'No details'}`);
+      }
       console.log(`Inserted ${newsItems.length} breaking news items from ${sourceUsed}`);
     }
 
@@ -523,10 +541,18 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in ingest-breaking-news:', error);
+    console.error('❌ FATAL ERROR in ingest-breaking-news:', {
+      error: error,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      type: typeof error,
+      errorObject: JSON.stringify(error, null, 2)
+    });
     
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : 
+                        (error && typeof error === 'object' && 'message' in error ? String(error.message) : 
+                        JSON.stringify(error));
     
     await supabase.from('ingest_logs').update({
       status: 'failed',
@@ -545,7 +571,11 @@ serve(async (req) => {
     });
 
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ 
+        error: errorMessage,
+        errorType: typeof error,
+        details: error && typeof error === 'object' ? error : undefined
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
