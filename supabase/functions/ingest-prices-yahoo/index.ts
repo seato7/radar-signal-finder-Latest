@@ -8,6 +8,51 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper: Exponential backoff with jitter
+async function retryWithBackoff(
+  fn: () => Promise<any>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 1000
+): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      
+      // Exponential backoff with jitter (0-20% random variation)
+      const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
+      const jitter = exponentialDelay * 0.2 * Math.random();
+      const totalDelay = exponentialDelay + jitter;
+      
+      console.log(`⏳ Retry ${attempt + 1}/${maxRetries} after ${totalDelay.toFixed(0)}ms`);
+      await new Promise(resolve => setTimeout(resolve, totalDelay));
+    }
+  }
+}
+
+// Helper: Log to ingest_failures table
+async function logFailure(
+  supabase: any,
+  etlName: string,
+  ticker: string | null,
+  errorType: string,
+  errorMessage: string,
+  statusCode: number | null,
+  retryCount: number
+) {
+  await supabase.from('ingest_failures').insert({
+    etl_name: etlName,
+    ticker,
+    error_type: errorType,
+    error_message: errorMessage,
+    status_code: statusCode,
+    retry_count: retryCount,
+    failed_at: new Date().toISOString(),
+    metadata: { timestamp: new Date().toISOString() }
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -27,6 +72,48 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
     console.log('Starting Yahoo Finance price ingestion...');
+    
+    // Check last 3 runs for consecutive fallback-only pattern
+    const { data: recentLogs } = await supabaseClient
+      .from('ingest_logs')
+      .select('source_used, fallback_count')
+      .eq('etl_name', 'ingest-prices-yahoo')
+      .eq('status', 'success')
+      .order('started_at', { ascending: false })
+      .limit(3);
+    
+    if (recentLogs && recentLogs.length >= 3) {
+      const allFallbackOnly = recentLogs.every(log => 
+        log.source_used?.includes('AI Fallback') && log.fallback_count > 20
+      );
+      
+      if (allFallbackOnly) {
+        const errorMsg = '⚠️ Stopped: 3 consecutive runs used 100% AI fallback - primary Yahoo Finance API appears down';
+        console.error(errorMsg);
+        await logger.failure(new Error(errorMsg));
+        
+        // Send Slack alert
+        const slackWebhook = Deno.env.get('SLACK_WEBHOOK_URL');
+        if (slackWebhook) {
+          await fetch(slackWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: `🚨 *CRITICAL: ingest-prices-yahoo HALTED*\n${errorMsg}\n\n*Action Required:* Check Yahoo Finance API status and authentication.`
+            })
+          });
+        }
+        
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: errorMsg,
+          recommendation: 'Check Yahoo Finance API credentials and rate limits'
+        }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
     
     // Fetch all assets
     const assetsRes = await fetch(`${supabaseUrl}/rest/v1/assets?select=*`, {
@@ -66,31 +153,59 @@ Deno.serve(async (req) => {
         let data = null;
         let fetchError = null;
         let sourceUsed = 'Yahoo Finance';
+        let statusCode: number | null = null;
 
-        // Try Yahoo Finance first
+        // Try Yahoo Finance with retry logic
         try {
-          const response = await fetch(yahooUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-          });
-          
-          if (response.ok) {
-            const rawData = await response.json();
+          const yahooFetch = async () => {
+            const response = await fetch(yahooUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              }
+            });
             
-            // CRITICAL: Validate Yahoo Finance response
-            const validation = safeValidate(YahooResponseSchema, rawData, 'Yahoo Finance');
-            if (validation.success) {
-              data = validation.data;
-            } else {
-              fetchError = `Invalid Yahoo response: ${validation.error}`;
-              console.error(fetchError);
+            statusCode = response.status;
+            
+            // Handle authentication errors
+            if (response.status === 401 || response.status === 403) {
+              throw new Error(`AUTH_ERROR:${response.status}`);
             }
+            
+            // Handle rate limits
+            if (response.status === 429) {
+              throw new Error(`RATE_LIMIT:429`);
+            }
+            
+            if (!response.ok) {
+              throw new Error(`Yahoo Finance returned ${response.status}`);
+            }
+            
+            return await response.json();
+          };
+          
+          const rawData = await retryWithBackoff(yahooFetch, 3, 1000);
+          
+          // CRITICAL: Validate Yahoo Finance response
+          const validation = safeValidate(YahooResponseSchema, rawData, 'Yahoo Finance');
+          if (validation.success) {
+            data = validation.data;
           } else {
-            fetchError = `Yahoo Finance returned ${response.status}`;
+            fetchError = `Invalid Yahoo response: ${validation.error}`;
+            console.error(fetchError);
+            await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'validation', fetchError, statusCode, 3);
           }
         } catch (err) {
-          fetchError = `Yahoo Finance request failed: ${err}`;
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          fetchError = errorMsg;
+          
+          // Classify error type
+          let errorType = 'network';
+          if (errorMsg.includes('AUTH_ERROR')) errorType = 'api_auth';
+          else if (errorMsg.includes('RATE_LIMIT')) errorType = 'rate_limit';
+          else if (errorMsg.includes('Invalid')) errorType = 'validation';
+          
+          console.error(`Yahoo Finance error for ${symbol}:`, errorMsg);
+          await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, errorType, errorMsg, statusCode, 3);
         }
         
         // If Yahoo failed, try AI fallback
@@ -137,6 +252,7 @@ Deno.serve(async (req) => {
                 const aiValidation = safeValidate(PerplexityResponseSchema, rawAiData, 'AI Fallback');
                 if (!aiValidation.success) {
                   console.error(`Invalid AI response for ${symbol}: ${aiValidation.error}`);
+                  await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'validation', aiValidation.error, null, 0);
                   skipped++;
                   continue;
                 }
@@ -161,7 +277,7 @@ Deno.serve(async (req) => {
                     last_updated_at: new Date().toISOString(),
                   }];
                   
-                  await fetch(`${supabaseUrl}/rest/v1/prices`, {
+                  const insertRes = await fetch(`${supabaseUrl}/rest/v1/prices`, {
                     method: 'POST',
                     headers: {
                       'apikey': supabaseKey,
@@ -172,16 +288,33 @@ Deno.serve(async (req) => {
                     body: JSON.stringify(priceData[0])
                   });
                   
-                  // Cache the fallback result
-                  await redisCache.set(cacheKey, priceData, sourceUsed);
+                  if (insertRes.ok) {
+                    // Cache the fallback result
+                    await redisCache.set(cacheKey, priceData, sourceUsed);
+                    inserted++;
+                  } else {
+                    skipped++;
+                  }
                   
-                  inserted++;
                   await new Promise(resolve => setTimeout(resolve, 1500));
                   continue;
                 }
+              } else {
+                const aiError = `AI fallback failed: ${aiResponse.status}`;
+                console.error(aiError);
+                await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'api_auth', aiError, aiResponse.status, 0);
               }
             } catch (aiErr) {
               console.error(`AI fallback failed for ${symbol}:`, aiErr);
+              await logFailure(
+                supabaseClient, 
+                'ingest-prices-yahoo', 
+                symbol, 
+                'unknown', 
+                aiErr instanceof Error ? aiErr.message : String(aiErr),
+                null,
+                0
+              );
             }
           }
           
@@ -218,25 +351,45 @@ Deno.serve(async (req) => {
           });
         }
         
-        // Batch insert for performance
+        // Batch insert with ON CONFLICT handling
         if (priceDataBatch.length > 0) {
-          const upsertRes = await fetch(`${supabaseUrl}/rest/v1/prices`, {
-            method: 'POST',
-            headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'resolution=ignore-duplicates'
-            },
-            body: JSON.stringify(priceDataBatch)
-          });
-          
-          if (upsertRes.ok) {
-            inserted += priceDataBatch.length;
+          try {
+            const upsertRes = await fetch(`${supabaseUrl}/rest/v1/prices`, {
+              method: 'POST',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=ignore-duplicates'
+              },
+              body: JSON.stringify(priceDataBatch)
+            });
             
-            // Cache the Yahoo Finance result
-            await redisCache.set(cacheKey, priceDataBatch, sourceUsed);
-          } else {
+            if (upsertRes.ok) {
+              inserted += priceDataBatch.length;
+              
+              // Cache the Yahoo Finance result
+              await redisCache.set(cacheKey, priceDataBatch, sourceUsed);
+            } else {
+              const errorText = await upsertRes.text();
+              // Check for duplicate key errors
+              if (errorText.includes('duplicate key')) {
+                console.warn(`Duplicate key for ${symbol}, using ON CONFLICT`);
+                await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'duplicate_key', errorText, upsertRes.status, 0);
+              }
+              skipped += priceDataBatch.length;
+            }
+          } catch (insertErr) {
+            console.error(`Insert error for ${symbol}:`, insertErr);
+            await logFailure(
+              supabaseClient,
+              'ingest-prices-yahoo',
+              symbol,
+              'unknown',
+              insertErr instanceof Error ? insertErr.message : String(insertErr),
+              null,
+              0
+            );
             skipped += priceDataBatch.length;
           }
         }
@@ -247,11 +400,22 @@ Deno.serve(async (req) => {
       } catch (err) {
         console.error(`Error processing ${asset.ticker}:`, err);
         errors.push(`${asset.ticker}: ${err instanceof Error ? err.message : String(err)}`);
+        await logFailure(
+          supabaseClient,
+          'ingest-prices-yahoo',
+          asset.ticker,
+          'unknown',
+          err instanceof Error ? err.message : String(err),
+          null,
+          0
+        );
       }
     }
     
+    const finalSourceUsed = fallbackUsed > 0 ? 'Yahoo Finance + AI Fallback' : 'Yahoo Finance';
+    
     await logger.success({
-      source_used: fallbackUsed > 0 ? 'Yahoo Finance + AI Fallback' : 'Yahoo Finance',
+      source_used: finalSourceUsed,
       cache_hit: cacheHits > 0,
       fallback_count: fallbackUsed,
       latency_ms: Date.now() - startTime,
@@ -264,7 +428,10 @@ Deno.serve(async (req) => {
       processed: assets.length,
       inserted,
       skipped,
-      note: 'Real data from Yahoo Finance'
+      fallbacks: fallbackUsed,
+      errors: errors.length,
+      source: finalSourceUsed,
+      note: fallbackUsed > 0 ? 'Partial AI fallback used' : 'Real data from Yahoo Finance'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

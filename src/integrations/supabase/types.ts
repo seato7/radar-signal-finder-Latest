@@ -1167,6 +1167,42 @@ export type Database = {
           },
         ]
       }
+      ingest_failures: {
+        Row: {
+          error_message: string
+          error_type: string
+          etl_name: string
+          failed_at: string | null
+          id: string
+          metadata: Json | null
+          retry_count: number | null
+          status_code: number | null
+          ticker: string | null
+        }
+        Insert: {
+          error_message: string
+          error_type: string
+          etl_name: string
+          failed_at?: string | null
+          id?: string
+          metadata?: Json | null
+          retry_count?: number | null
+          status_code?: number | null
+          ticker?: string | null
+        }
+        Update: {
+          error_message?: string
+          error_type?: string
+          etl_name?: string
+          failed_at?: string | null
+          id?: string
+          metadata?: Json | null
+          retry_count?: number | null
+          status_code?: number | null
+          ticker?: string | null
+        }
+        Relationships: []
+      }
       ingest_logs: {
         Row: {
           cache_hit: boolean | null
@@ -2127,6 +2163,15 @@ export type Database = {
           etl_name?: string | null
           metadata?: Json | null
           status?: string | null
+        }
+        Relationships: []
+      }
+      view_duplicate_key_errors: {
+        Row: {
+          error_count: number | null
+          error_hour: string | null
+          etl_name: string | null
+          last_occurrence: string | null
         }
         Relationships: []
       }

@@ -123,28 +123,51 @@ Deno.serve(async (req) => {
       });
     }
 
-    // NEW: Check for stale data (>5 seconds) via api-data-staleness
-    const stalenessUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/api-data-staleness`;
-    const stalenessResponse = await fetch(stalenessUrl, {
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
-      }
-    });
-
-    if (stalenessResponse.ok) {
-      const staleness = await stalenessResponse.json();
+    // Check for stale data (>10 seconds) - Enhanced SLA monitoring
+    const { data: staleTickers } = await supabaseClient
+      .rpc('get_stale_tickers');
+    
+    if (staleTickers && staleTickers.length > 0) {
+      const criticallyStale = staleTickers.filter((t: any) => t.seconds_stale > 10);
       
-      if (staleness.sla_violations > 0) {
+      if (criticallyStale.length > 0) {
+        const maxStaleness = Math.max(...criticallyStale.map((t: any) => t.seconds_stale));
+        const byAssetClass = criticallyStale.reduce((acc: any, t: any) => {
+          if (!acc[t.asset_class]) acc[t.asset_class] = [];
+          acc[t.asset_class].push(t.ticker);
+          return acc;
+        }, {});
+        
         alerts.push({
           severity: 'critical',
-          type: 'sla_violation',
-          message: `⚠️ SLA VIOLATION: ${staleness.sla_violations} tickers have data >5s old (max: ${staleness.max_staleness_seconds}s)`,
-          total_stale: staleness.total_stale_tickers,
-          max_staleness: staleness.max_staleness_seconds,
-          by_asset_class: staleness.by_asset_class,
-          recommendation: 'Data freshness SLA violated. Check Redis cache and primary API sources immediately.'
+          type: 'sla_breach',
+          message: `🚨 SLA BREACH: ${criticallyStale.length} tickers have data >10s old (max: ${maxStaleness.toFixed(1)}s)`,
+          total_stale: criticallyStale.length,
+          max_staleness: maxStaleness,
+          by_asset_class: byAssetClass,
+          affected_tickers: criticallyStale.slice(0, 10).map((t: any) => `${t.ticker} (${t.seconds_stale.toFixed(0)}s)`),
+          recommendation: 'IMMEDIATE: Data freshness SLA violated. Check Redis cache and primary API sources.'
         });
       }
+    }
+
+    // NEW: Check for duplicate key errors (>5 per hour threshold)
+    const { data: duplicateErrors } = await supabaseClient
+      .from('view_duplicate_key_errors')
+      .select('*');
+    
+    if (duplicateErrors && duplicateErrors.length > 0) {
+      duplicateErrors.forEach((dupError: any) => {
+        alerts.push({
+          severity: 'high',
+          type: 'duplicate_key_errors',
+          etl_name: dupError.etl_name,
+          message: `⚠️ DUPLICATE KEY: ${dupError.etl_name} had ${dupError.error_count} duplicate key errors in hour ${new Date(dupError.error_hour).toLocaleString()}`,
+          error_count: dupError.error_count,
+          last_occurrence: dupError.last_occurrence,
+          recommendation: `Review ${dupError.etl_name} checksum generation and add ON CONFLICT handling`
+        });
+      });
     }
 
     // Check diagnostics for stale critical tables (legacy 24h check)

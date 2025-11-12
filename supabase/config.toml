@@ -5,3 +5,7 @@ verify_jwt = false
 
 [functions.test-pipeline-sla]
 verify_jwt = false
+
+[functions.cleanup-orphaned-logs]
+verify_jwt = false
+
