@@ -53,7 +53,10 @@ export class RedisCache {
       });
 
       if (!response.ok) {
-        console.error(`Redis GET error: ${response.status}`);
+        // Don't log errors for every cache miss - this is expected behavior
+        if (response.status !== 404) {
+          console.warn(`⚠️ Redis unavailable (${response.status}), continuing without cache`);
+        }
         return { hit: false, data: null };
       }
 
@@ -81,7 +84,8 @@ export class RedisCache {
       };
 
     } catch (error) {
-      console.error('Redis GET error:', error);
+      // Gracefully handle Redis errors - don't crash ingestion
+      console.warn('⚠️ Redis error (degraded mode):', error instanceof Error ? error.message : String(error));
       return { hit: false, data: null };
     }
   }
