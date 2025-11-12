@@ -108,4 +108,6 @@ verify_jwt = false
 [functions.test-redis-connection]
 verify_jwt = false
 
+[functions.ingestion-health]
+verify_jwt = false
 

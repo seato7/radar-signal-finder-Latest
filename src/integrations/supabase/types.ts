@@ -690,6 +690,45 @@ export type Database = {
         }
         Relationships: []
       }
+      circuit_breaker_status: {
+        Row: {
+          consecutive_failures: number
+          consecutive_slow_calls: number
+          created_at: string
+          function_name: string
+          is_open: boolean
+          last_failure_at: string | null
+          last_success_at: string | null
+          opened_at: string | null
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          consecutive_failures?: number
+          consecutive_slow_calls?: number
+          created_at?: string
+          function_name: string
+          is_open?: boolean
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          opened_at?: string | null
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          consecutive_failures?: number
+          consecutive_slow_calls?: number
+          created_at?: string
+          function_name?: string
+          is_open?: boolean
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          opened_at?: string | null
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       congressional_trades: {
         Row: {
           amount_max: number | null

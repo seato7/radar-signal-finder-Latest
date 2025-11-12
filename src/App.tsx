@@ -21,6 +21,7 @@ import ThemeDiscovery from "./pages/ThemeDiscovery";
 import DataSources from "./pages/DataSources";
 import Bots from "./pages/Bots";
 import APIUsage from "./pages/APIUsage";
+import IngestionHealth from "./pages/IngestionHealth";
 import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
@@ -89,6 +90,14 @@ const App = () => (
                               element={
                                 <ProtectedRoute requireAdmin>
                                   <APIUsage />
+                                </ProtectedRoute>
+                              } 
+                            />
+                            <Route 
+                              path="/ingestion-health" 
+                              element={
+                                <ProtectedRoute requireAdmin>
+                                  <IngestionHealth />
                                 </ProtectedRoute>
                               } 
                             />

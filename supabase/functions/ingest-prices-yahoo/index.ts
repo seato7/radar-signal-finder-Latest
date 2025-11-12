@@ -10,6 +10,8 @@ import {
 } from "../_shared/auth-validator.ts";
 import { withRetry } from "../_shared/retry-wrapper.ts";
 import { logAPIUsage, checkYahooReliability } from "../_shared/api-logger.ts";
+import { CircuitBreaker } from "../_shared/circuit-breaker.ts";
+import { callPerplexity } from "../_shared/perplexity-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,8 +77,33 @@ Deno.serve(async (req) => {
   const logger = new IngestLogger(supabaseClient, 'ingest-prices-yahoo');
   await logger.start();
   
-  // Initialize Slack alerter
+  // Initialize Slack alerter and circuit breaker
   const slackAlerter = new SlackAlerter();
+  const circuitBreaker = new CircuitBreaker(supabaseClient);
+  
+  // Check if circuit breaker is open
+  const isCircuitOpen = await circuitBreaker.isOpen('ingest-prices-yahoo');
+  if (isCircuitOpen) {
+    const status = await circuitBreaker.getStatus('ingest-prices-yahoo');
+    const errorMsg = `⚠️ Circuit breaker OPEN: ${status?.reason || 'Too many failures'}`;
+    console.error(errorMsg);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-prices-yahoo',
+      message: 'Circuit breaker is OPEN - function disabled due to repeated failures',
+      details: { reason: status?.reason, opened_at: status?.opened_at }
+    });
+    
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: errorMsg,
+      circuit_open: true
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
   
   // Declare variables outside try-catch for error handler access
   const runId = crypto.randomUUID();
@@ -95,18 +122,29 @@ Deno.serve(async (req) => {
     const yahooHealth = await checkYahooReliability(supabaseClient);
     console.log(`📊 Yahoo Finance Health: ${yahooHealth.reliability_pct}% reliability (${yahooHealth.successful_calls}/${yahooHealth.total_calls} calls in 24h)`);
     
+    // Enable Perplexity fallback if Yahoo reliability is below 95%
+    const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
+    const enableFallback = yahooHealth.should_enable_fallback && perplexityApiKey;
+    
     if (yahooHealth.should_enable_fallback) {
       console.warn(`⚠️ Yahoo Finance reliability at ${yahooHealth.reliability_pct}% (below 95% threshold)`);
+      
+      if (enableFallback) {
+        console.log('✅ Perplexity fallback ENABLED due to low Yahoo reliability');
+      } else {
+        console.warn('⚠️ Perplexity fallback disabled (no PERPLEXITY_API_KEY)');
+      }
+      
       await slackAlerter.sendCriticalAlert({
         type: 'api_reliability',
         etlName: 'ingest-prices-yahoo',
-        message: `Yahoo Finance reliability dropped to ${yahooHealth.reliability_pct}% - Consider re-enabling Perplexity fallback`,
+        message: `Yahoo Finance reliability at ${yahooHealth.reliability_pct}% ${enableFallback ? '- Perplexity fallback ENABLED' : '- Fallback unavailable'}`,
         details: {
           reliability_pct: yahooHealth.reliability_pct,
           total_calls: yahooHealth.total_calls,
           successful_calls: yahooHealth.successful_calls,
           failed_calls: yahooHealth.failed_calls,
-          recommendation: 'Re-enable Perplexity fallback in ingest-prices-yahoo/index.ts'
+          fallback_enabled: enableFallback
         }
       });
     }
@@ -339,9 +377,85 @@ Deno.serve(async (req) => {
           });
         }
         
-        // If Yahoo failed, skip (no fallback for cost optimization)
+        // If Yahoo failed, try Perplexity fallback if enabled
         if (!data?.chart?.result?.[0]) {
-          console.log(`❌ No data from Yahoo for ${symbol}, skipping (fallback disabled)`);
+          if (enableFallback) {
+            console.log(`🔄 Yahoo failed for ${symbol}, trying Perplexity fallback...`);
+            
+            try {
+              const fallbackStartTime = Date.now();
+              const prompt = `Get the most recent closing price for ${symbol} in JSON format: {"close": price_value, "date": "YYYY-MM-DD"}. Return only valid JSON.`;
+              
+              const aiResponse = await callPerplexity(
+                [{ role: 'user', content: prompt }],
+                {
+                  apiKey: perplexityApiKey!,
+                  model: 'sonar',
+                  temperature: 0.2,
+                  maxTokens: 200
+                }
+              );
+              
+              // Parse AI response
+              const jsonMatch = aiResponse.match(/\{[^}]+\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                if (parsed.close && parsed.date) {
+                  console.log(`✅ Perplexity fallback successful for ${symbol}: $${parsed.close}`);
+                  
+                  // Log fallback API call
+                  await logAPIUsage(supabaseClient, {
+                    api_name: 'Perplexity',
+                    function_name: 'ingest-prices-yahoo',
+                    status: 'success',
+                    response_time_ms: Date.now() - fallbackStartTime
+                  });
+                  
+                  // Insert single price point from fallback
+                  const fallbackPrice = {
+                    ticker: symbol,
+                    asset_id: asset.id,
+                    date: parsed.date,
+                    close: parsed.close,
+                    checksum: await crypto.subtle.digest(
+                      'SHA-256',
+                      new TextEncoder().encode(`${symbol}|${parsed.date}|${parsed.close}`)
+                    ).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')),
+                    last_updated_at: new Date().toISOString(),
+                  };
+                  
+                  await fetch(`${supabaseUrl}/rest/v1/prices`, {
+                    method: 'POST',
+                    headers: {
+                      'apikey': supabaseKey,
+                      'Authorization': `Bearer ${supabaseKey}`,
+                      'Content-Type': 'application/json',
+                      'Prefer': 'resolution=ignore-duplicates'
+                    },
+                    body: JSON.stringify([fallbackPrice])
+                  });
+                  
+                  fallbackUsed++;
+                  inserted++;
+                  sourceUsed = 'Perplexity (Fallback)';
+                  
+                  // Cache fallback result
+                  await redisCache.set(`prices:${symbol}`, [fallbackPrice], sourceUsed);
+                  continue;
+                }
+              }
+            } catch (fallbackErr) {
+              console.error(`❌ Perplexity fallback failed for ${symbol}:`, fallbackErr);
+              await logAPIUsage(supabaseClient, {
+                api_name: 'Perplexity',
+                function_name: 'ingest-prices-yahoo',
+                status: 'failure',
+                error_message: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+              });
+            }
+          }
+          
+          console.log(`❌ No data from Yahoo for ${symbol}, skipping ${enableFallback ? '(fallback also failed)' : '(fallback disabled)'}`);
           skipped++;
           continue;
         }
@@ -464,6 +578,9 @@ Deno.serve(async (req) => {
       rows_skipped: skipped,
     });
     
+    // Record success in circuit breaker
+    await circuitBreaker.recordSuccess('ingest-prices-yahoo', latency);
+    
     // Send comprehensive success/partial alert to Slack
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-prices-yahoo',
@@ -506,6 +623,9 @@ Deno.serve(async (req) => {
     console.error('Fatal error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
+    
+    // Record failure in circuit breaker
+    await circuitBreaker.recordFailure('ingest-prices-yahoo', errorMessage);
     
     // Log failure with full context
     await logger.failure(error as Error);
