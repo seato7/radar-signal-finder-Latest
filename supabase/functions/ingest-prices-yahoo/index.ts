@@ -132,7 +132,14 @@ Deno.serve(async (req) => {
     const assetsRes = await fetch(`${supabaseUrl}/rest/v1/assets?select=*`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
-    const assets = await assetsRes.json();
+    const allAssets = await assetsRes.json();
+    
+    // CRITICAL: Cap batch size to prevent timeouts
+    const MAX_TICKERS = 1000;
+    const TIMEOUT_MS = 300000; // 5 minutes max runtime
+    const assets = allAssets.slice(0, MAX_TICKERS);
+    
+    console.log(`📊 Processing ${assets.length} of ${allAssets.length} total assets (max ${MAX_TICKERS})`);
     
     let inserted = 0;
     let skipped = 0;
@@ -140,9 +147,28 @@ Deno.serve(async (req) => {
     let cacheHits = 0;
     const errors: string[] = [];
     const startTime = Date.now();
+    const timeoutAt = startTime + TIMEOUT_MS;
     
-    // Process each asset
+    // Process each asset with timeout guard
     for (const asset of assets) {
+      // CRITICAL: Check timeout guard
+      if (Date.now() >= timeoutAt) {
+        const timeoutMsg = `⏱️ TIMEOUT: Exceeded ${TIMEOUT_MS / 1000}s runtime, aborting ingestion`;
+        console.error(timeoutMsg);
+        
+        await slackAlerter.sendCriticalAlert({
+          type: 'sla_breach',
+          etlName: 'ingest-prices-yahoo',
+          message: timeoutMsg,
+          details: { 
+            processed: inserted + skipped,
+            total: assets.length,
+            runtime_seconds: Math.round((Date.now() - startTime) / 1000)
+          }
+        });
+        
+        throw new Error('INGESTION_TIMEOUT');
+      }
       try {
         const symbol = asset.ticker;
         

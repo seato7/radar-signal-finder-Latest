@@ -72,15 +72,55 @@ export function validateAuthHeaders(
 }
 
 /**
- * Validate API response for auth-related errors
+ * Detect HTML masquerading as JSON (common 401/403 pattern)
  */
-export function validateAuthResponse(
+export function isHtmlResponse(contentType: string | null, body: string): boolean {
+  // Check Content-Type header
+  if (contentType && contentType.toLowerCase().includes('text/html')) {
+    return true;
+  }
+  
+  // Check if body starts with HTML tags
+  const htmlPatterns = ['<!DOCTYPE', '<html', '<HTML', '<!doctype'];
+  const trimmedBody = body.trim();
+  return htmlPatterns.some(pattern => trimmedBody.startsWith(pattern));
+}
+
+/**
+ * Validate API response for auth-related errors, including HTML masquerade detection
+ */
+export async function validateAuthResponse(
   response: Response,
   responseBody?: any
-): AuthValidationResult {
+): Promise<AuthValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
   const statusCode = response.status;
+  
+  // CRITICAL: Detect HTML masquerading as JSON
+  const contentType = response.headers.get('content-type');
+  let bodyText: string | null = null;
+  
+  try {
+    // Clone response to read body without consuming it
+    const clonedResponse = response.clone();
+    bodyText = await clonedResponse.text();
+    
+    if (isHtmlResponse(contentType, bodyText)) {
+      errors.push('🚨 HTML MASQUERADE: API returned HTML login/error page instead of JSON');
+      errors.push(`Content-Type: ${contentType || 'none'}`);
+      errors.push(`Body preview: ${bodyText.substring(0, 200)}...`);
+      
+      return {
+        isValid: false,
+        errors,
+        warnings,
+        statusCode: 401 // Treat as auth error
+      };
+    }
+  } catch (e) {
+    warnings.push('Could not inspect response body for HTML');
+  }
 
   if (statusCode === 401) {
     errors.push('Authentication failed (401 Unauthorized)');

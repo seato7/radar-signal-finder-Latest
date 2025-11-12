@@ -26,21 +26,62 @@ interface CriticalAlert {
 export class SlackAlerter {
   private webhookUrl: string | undefined;
   private enabled: boolean;
+  private redisCache: any;
+  private runId: string;
 
   constructor() {
     this.webhookUrl = Deno.env.get('SLACK_WEBHOOK_URL');
     this.enabled = !!this.webhookUrl;
+    this.runId = crypto.randomUUID();
+    
+    // Dynamically import Redis cache for deduplication
+    import('../_shared/redis-cache.ts').then(module => {
+      this.redisCache = module.redisCache;
+    }).catch(() => {
+      console.log('⚠️ Redis cache not available for alert deduplication');
+    });
     
     if (!this.enabled) {
       console.log('⚠️ SLACK_WEBHOOK_URL not configured - alerts disabled');
+    }
+  }
+  
+  /**
+   * Check if this alert was recently sent (within 60s) to prevent duplicates
+   */
+  private async isDuplicateAlert(alertKey: string): Promise<boolean> {
+    if (!this.redisCache) return false;
+    
+    try {
+      const cacheKey = `slack_alert:${alertKey}`;
+      const cached = await this.redisCache.get(cacheKey);
+      
+      if (cached.hit) {
+        console.log(`🔕 Duplicate alert suppressed: ${alertKey}`);
+        return true;
+      }
+      
+      // Mark this alert as sent for 60 seconds
+      await this.redisCache.set(cacheKey, { sent_at: new Date().toISOString(), run_id: this.runId }, 'alert_dedup');
+      return false;
+    } catch (e) {
+      console.error('Alert dedup check failed:', e);
+      return false;
     }
   }
 
   /**
    * Send live ingestion status update
    */
-  async sendLiveAlert(alert: SlackAlert): Promise<void> {
+  async sendLiveAlert(alert: SlackAlert, options?: { suppressDuplicates?: boolean }): Promise<void> {
     if (!this.enabled) return;
+    
+    // Check for duplicate alerts
+    const alertKey = `${alert.etlName}:${alert.status}:${Date.now()}`;
+    if (options?.suppressDuplicates !== false) {
+      const isDupe = await this.isDuplicateAlert(alertKey);
+      if (isDupe) return;
+    }
 
     const emoji = this.getStatusEmoji(alert.status);
     const color = this.getStatusColor(alert.status);
@@ -114,7 +155,7 @@ export class SlackAlerter {
       attachments: [{
         color,
         fields,
-        footer: 'Ingestion Pipeline Monitor',
+        footer: `Run ID: ${this.runId} | Ingestion Pipeline Monitor`,
         ts: Math.floor(Date.now() / 1000)
       }]
     });
@@ -123,8 +164,15 @@ export class SlackAlerter {
   /**
    * Send critical alert (100% fallback, auth errors, etc.)
    */
-  async sendCriticalAlert(alert: CriticalAlert): Promise<void> {
+  async sendCriticalAlert(alert: CriticalAlert, options?: { suppressDuplicates?: boolean }): Promise<void> {
     if (!this.enabled) return;
+    
+    // Check for duplicate critical alerts
+    const alertKey = `critical:${alert.etlName}:${alert.type}`;
+    if (options?.suppressDuplicates !== false) {
+      const isDupe = await this.isDuplicateAlert(alertKey);
+      if (isDupe) return;
+    }
 
     const emoji = this.getCriticalEmoji(alert.type);
     let text = `${emoji} *CRITICAL ALERT: ${alert.type.toUpperCase().replace(/_/g, ' ')}*`;
@@ -152,7 +200,7 @@ export class SlackAlerter {
       attachments: [{
         color: '#ff0000',
         fields,
-        footer: 'Ingestion Pipeline Monitor - CRITICAL',
+        footer: `Run ID: ${this.runId} | CRITICAL`,
         ts: Math.floor(Date.now() / 1000)
       }]
     });

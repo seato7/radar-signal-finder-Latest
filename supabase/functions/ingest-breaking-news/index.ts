@@ -52,6 +52,8 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
     const headers = {
       'Authorization': `Bearer ${perplexityKey}`,
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'InsiderPulseBot/1.0'
     };
     
     const payload = {
@@ -96,7 +98,43 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
           headers,
           body: JSON.stringify(payload),
         });
-        return { response, data: await response.json() };
+        
+        // CRITICAL: Check for HTML masquerade BEFORE parsing JSON
+        const contentType = response.headers.get('content-type');
+        const responseText = await response.text();
+        
+        if (contentType?.includes('text/html') || responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+          console.error(`❌ HTML MASQUERADE for ${ticker}: Perplexity returned HTML instead of JSON`);
+          await logFailure(supabase, ticker, 'html_masquerade', 
+            `Perplexity returned HTML (login/rate-limit page) instead of JSON. Content-Type: ${contentType}`,
+            response.status,
+            { content_preview: responseText.substring(0, 200) }
+          );
+          
+          await slackAlerter.sendCriticalAlert({
+            type: 'auth_error',
+            etlName: 'ingest-breaking-news',
+            message: `Perplexity API returning HTML instead of JSON for ${ticker}`,
+            details: { 
+              ticker, 
+              content_type: contentType,
+              issue: 'html_masquerade',
+              likely_cause: 'Incorrect endpoint, missing Accept header, or bot detection'
+            }
+          });
+          
+          throw new Error('HTML_MASQUERADE');
+        }
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          throw new Error(`Failed to parse JSON response: ${errMsg}`);
+        }
+        
+        return { response, data };
       },
       {
         maxRetries: 3,
@@ -143,7 +181,7 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
     }
     
     // Validate response structure
-    const authValidation = validateAuthResponse(response, rawData);
+    const authValidation = await validateAuthResponse(response, rawData);
     if (!authValidation.isValid) {
       const errorMsg = `Perplexity API validation failed: ${authValidation.errors.join(', ')}`;
       console.error(`❌ ${errorMsg}`);
