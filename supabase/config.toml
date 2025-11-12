@@ -30,6 +30,82 @@ verify_jwt = false
 [functions.ingest-fred-economics]
 verify_jwt = false
 
+[functions.ingest-crypto-onchain]
+verify_jwt = false
+
+[functions.ingest-etf-flows]
+verify_jwt = false
+
+[functions.ingest-13f-holdings]
+verify_jwt = false
+
+[functions.ingest-earnings]
+verify_jwt = false
+
+[functions.ingest-google-trends]
+verify_jwt = false
+
+[functions.ingest-options-flow]
+verify_jwt = false
+
+[functions.ingest-patents]
+verify_jwt = false
+
+[functions.ingest-congressional-trades]
+verify_jwt = false
+
+[functions.ingest-dark-pool]
+verify_jwt = false
+
+[functions.ingest-finra-darkpool]
+verify_jwt = false
+
+[functions.ingest-job-postings]
+verify_jwt = false
+
+[functions.ingest-news-sentiment]
+verify_jwt = false
+
+[functions.ingest-reddit-sentiment]
+verify_jwt = false
+
+[functions.ingest-search-trends]
+verify_jwt = false
+
+[functions.ingest-short-interest]
+verify_jwt = false
+
+[functions.ingest-smart-money]
+verify_jwt = false
+
+[functions.ingest-stocktwits]
+verify_jwt = false
+
+[functions.ingest-supply-chain]
+verify_jwt = false
+
+[functions.ingest-cot-reports]
+verify_jwt = false
+
+[functions.ingest-cot-cftc]
+verify_jwt = false
+
+[functions.ingest-advanced-technicals]
+verify_jwt = false
+
+[functions.ingest-pattern-recognition]
+verify_jwt = false
+
+[functions.ingest-forex-technicals]
+verify_jwt = false
+
+[functions.ingest-ai-research]
+verify_jwt = false
+
+[functions.ingest-forex-sentiment]
+verify_jwt = false
+
 [functions.test-redis-connection]
 verify_jwt = false
+
 
