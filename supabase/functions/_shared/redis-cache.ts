@@ -104,12 +104,11 @@ export class RedisCache {
         verified_source
       };
 
-      // Use SETEX for atomic set + TTL
+      // Use SETEX for atomic set + TTL - value must be JSON string
       const response = await fetch(`${this.baseUrl}/setex/${key}/${this.ttl}`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${this.token}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${this.token}`
         },
         body: JSON.stringify(entry)
       });

@@ -30,3 +30,6 @@ verify_jwt = false
 [functions.ingest-fred-economics]
 verify_jwt = false
 
+[functions.test-redis-connection]
+verify_jwt = false
+
