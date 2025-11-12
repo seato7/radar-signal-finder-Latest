@@ -77,6 +77,13 @@ Deno.serve(async (req) => {
   // Initialize Slack alerter
   const slackAlerter = new SlackAlerter();
   
+  // Declare variables outside try-catch for error handler access
+  const runId = crypto.randomUUID();
+  const startTime = Date.now();
+  let inserted = 0;
+  let skipped = 0;
+  let fallbackUsed = 0;
+  
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -141,12 +148,9 @@ Deno.serve(async (req) => {
     
     console.log(`📊 Processing ${assets.length} of ${allAssets.length} total assets (max ${MAX_TICKERS})`);
     
-    let inserted = 0;
-    let skipped = 0;
-    let fallbackUsed = 0;
     let cacheHits = 0;
     const errors: string[] = [];
-    const startTime = Date.now();
+    const duplicateKeyErrors: { ticker: string; count: number }[] = [];
     const timeoutAt = startTime + TIMEOUT_MS;
     
     // Process each asset with timeout guard
@@ -463,9 +467,15 @@ Deno.serve(async (req) => {
               await redisCache.set(cacheKey, priceDataBatch, sourceUsed);
             } else {
               const errorText = await upsertRes.text();
-              // Check for duplicate key errors
+              // Track duplicate key errors
               if (errorText.includes('duplicate key')) {
                 console.warn(`Duplicate key for ${symbol}, using ON CONFLICT`);
+                const existing = duplicateKeyErrors.find(e => e.ticker === symbol);
+                if (existing) {
+                  existing.count++;
+                } else {
+                  duplicateKeyErrors.push({ ticker: symbol, count: 1 });
+                }
                 await logFailure(supabaseClient, 'ingest-prices-yahoo', symbol, 'duplicate_key', errorText, upsertRes.status, 0);
               }
               skipped += priceDataBatch.length;
@@ -505,7 +515,16 @@ Deno.serve(async (req) => {
     
     const finalSourceUsed = fallbackUsed > 0 ? 'Yahoo Finance + AI Fallback' : 'Yahoo Finance';
     const latency = Date.now() - startTime;
-    const fallbackRatio = assets.length > 0 ? fallbackUsed / assets.length : 0;
+    const fallbackRatio = assets.length > 0 ? (fallbackUsed / assets.length) * 100 : 0;
+    
+    // Report top duplicate key offenders
+    if (duplicateKeyErrors.length > 0) {
+      const topOffenders = duplicateKeyErrors
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5)
+        .map(e => `${e.ticker}(${e.count})`);
+      console.log(`🔑 Top duplicate key offenders: ${topOffenders.join(', ')}`);
+    }
     
     await logger.success({
       source_used: finalSourceUsed,
@@ -516,20 +535,28 @@ Deno.serve(async (req) => {
       rows_skipped: skipped,
     });
     
-    // Send success/partial alert to Slack
+    // Send comprehensive success/partial alert to Slack
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-prices-yahoo',
       status: fallbackUsed > 0 ? 'partial' : 'success',
       duration: Math.round(latency / 1000),
       latencyMs: latency,
       sourceUsed: finalSourceUsed,
-      fallbackRatio,
+      fallbackRatio: fallbackRatio / 100, // Convert back to decimal for Slack
       rowsInserted: inserted,
+      rowsSkipped: skipped,
       metadata: { 
-        cache_hits: cacheHits, 
-        skipped, 
+        run_id: runId,
+        fallback_percentage: fallbackRatio.toFixed(1) + '%',
+        cache_hits: cacheHits,
         errors_count: errors.length,
-        total_assets: assets.length
+        total_assets: assets.length,
+        duplicate_key_errors: duplicateKeyErrors.length,
+        top_duplicate_offenders: duplicateKeyErrors
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5)
+          .map(e => `${e.ticker}(${e.count})`)
+          .join(', ') || 'none'
       }
     });
 
@@ -549,19 +576,35 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Fatal error:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const duration = Date.now() - startTime;
+    
+    // Log failure with full context
     await logger.failure(error as Error);
     
-    // Send failure alert to Slack
+    // Send comprehensive failure alert to Slack
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-prices-yahoo',
       status: 'failed',
-      duration: Math.round((Date.now() - Date.now()) / 1000),
-      errorMessage
+      duration: Math.round(duration / 1000),
+      latencyMs: duration,
+      errorMessage,
+      metadata: {
+        run_id: runId,
+        rows_inserted: inserted,
+        rows_skipped: skipped,
+        fallback_used: fallbackUsed,
+        is_timeout: errorMessage.includes('TIMEOUT')
+      }
     });
 
     return new Response(JSON.stringify({ 
       success: false, 
-      error: errorMessage
+      error: errorMessage,
+      partial_results: {
+        inserted,
+        skipped,
+        duration_ms: duration
+      }
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

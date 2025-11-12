@@ -1,6 +1,6 @@
 # 🏥 System Health Check Report
-**Generated:** November 12, 2025, 03:43 UTC  
-**Status:** ✅ **FULLY OPERATIONAL** - All critical systems healthy
+**Generated:** November 12, 2025, 03:53 UTC  
+**Status:** 🟡 **PARTIAL** - Core stable, optimizations needed
 
 ---
 
@@ -10,14 +10,14 @@
 |-----------|--------|-------|
 | 🔐 Broker Key Security | ✅ **PASS** | No legacy keys detected |
 | 🔄 Perplexity Integration | ✅ **OPERATIONAL** | API working, HTML detection active |
-| 📰 Breaking News Ingestion | ✅ **STABLE** | 100% success rate, 0% fallback |
-| 💰 Price Ingestion | 🟡 **DEGRADED** | Yahoo Finance issues, AI compensating |
-| ⚡ Redis Caching | 🟡 **PARTIAL** | Cache logic works, 400 errors present |
-| 📊 Data Freshness | ✅ **GOOD** | Active ingestion, fresh data |
-| 🔔 Slack Alerting | ✅ **OPERATIONAL** | Deduplication working perfectly |
-| 🔒 JWT Authentication | ✅ **PASS** | Correctly configured |
+| 📰 Breaking News Ingestion | ✅ **STABLE** | Enhanced monitoring deployed |
+| 💰 Price Ingestion | 🟡 **SLOW** | Enhanced but 12+ min runtime, 9 stuck logs |
+| ⚡ Redis Caching | ❌ **400 ERRORS** | Upstash credentials need validation |
+| 📊 Economic Indicators | ❌ **EMPTY** | FRED API key required (400 errors) |
+| 🔔 Slack Alerting | ✅ **ENHANCED** | Run ID, fallback %, duration tracking |
+| 🔒 Cleanup Cron | ✅ **WORKING** | Hourly orphaned log cleanup confirmed |
 
-**Overall Grade:** ✅ **A- (92/100)** - Production ready, minor optimizations needed
+**Overall Grade:** 🟡 **B- (78/100)** - Functional but needs optimization
 
 ---
 

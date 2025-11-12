@@ -27,3 +27,6 @@ verify_jwt = false
 [functions.ingest-form4]
 verify_jwt = false
 
+[functions.ingest-fred-economics]
+verify_jwt = false
+
