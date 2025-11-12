@@ -61,42 +61,26 @@ export async function fetchWithAIFallback(options: {
 async function fetchFromPerplexity(ticker: string, promptTemplate: string, apiKey: string, retryCount = 0, maxRetries = 3): Promise<any> {
   console.log(`Attempting Perplexity for ${ticker} (attempt ${retryCount + 1}/${maxRetries})`);
   
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'sonar',
-      messages: [{
-        role: 'user',
-        content: promptTemplate.replace('{{ticker}}', ticker)
-      }],
-      temperature: 0.2,
-      max_tokens: 500,
-    }),
-  });
-
-  // PHASE 5: Handle rate limits with exponential backoff retry
-  if (response.status === 429) {
-    if (retryCount < maxRetries) {
-      const backoffMs = 1000 * Math.pow(2, retryCount);
-      console.log(`⚠️ Perplexity rate limit for ${ticker}, retrying in ${backoffMs}ms`);
-      await new Promise(resolve => setTimeout(resolve, backoffMs));
-      return fetchFromPerplexity(ticker, promptTemplate, apiKey, retryCount + 1, maxRetries);
-    } else {
-      throw new Error(`Perplexity rate limit exceeded after ${maxRetries} retries`);
-    }
+  // Use centralized Perplexity client with proper headers and HTML detection
+  const { callPerplexity } = await import('./perplexity-client.ts');
+  
+  try {
+    const content = await callPerplexity(
+      [{ role: 'user', content: promptTemplate.replace('{{ticker}}', ticker) }],
+      {
+        apiKey,
+        model: 'sonar',
+        temperature: 0.2,
+        maxTokens: 500,
+        maxRetries
+      }
+    );
+    
+    return content;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new Error(`Perplexity API error for ${ticker}: ${err.message}`);
   }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Perplexity API error: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || null;
 }
 
 async function fetchFromGemini(ticker: string, promptTemplate: string, apiKey: string): Promise<any> {

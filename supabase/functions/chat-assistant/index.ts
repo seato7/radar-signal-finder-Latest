@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Web search function using Perplexity
+// Web search function using Perplexity with proper client
 async function searchWeb(query: string): Promise<string> {
   const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY');
   if (!PERPLEXITY_API_KEY) {
@@ -16,33 +16,28 @@ async function searchWeb(query: string): Promise<string> {
 
   try {
     console.log('Performing web search for:', query);
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          {
-            role: 'user',
-            content: query
-          }
-        ]
-      }),
+    
+    // Use centralized Perplexity client with proper headers and HTML detection
+    const { queryPerplexity } = await import('../_shared/perplexity-client.ts');
+    
+    const result = await queryPerplexity(query, PERPLEXITY_API_KEY, {
+      model: 'sonar',
+      maxTokens: 1000
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Perplexity API error:', response.status, errorText);
-      return '[Web search temporarily unavailable]';
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '[No results found]';
+    
+    return result || '[No results found]';
   } catch (error) {
-    console.error('Web search error:', error);
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error('Web search error:', err.message);
+    
+    // Provide helpful error messages
+    if (err.message.includes('HTML_MASQUERADE')) {
+      return '[Web search temporarily unavailable - API configuration issue]';
+    }
+    if (err.message.includes('authentication failed')) {
+      return '[Web search unavailable - authentication error]';
+    }
+    
     return '[Web search error]';
   }
 }
