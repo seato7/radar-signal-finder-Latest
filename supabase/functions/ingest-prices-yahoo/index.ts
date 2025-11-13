@@ -104,27 +104,61 @@ async function fetchFromAlphaVantage(
   }
 }
 
-// Fetch from Yahoo Finance
+// Fetch from Yahoo Finance with retry logic and browser-like headers
 async function fetchFromYahoo(
-  ticker: string
+  ticker: string,
+  retryAttempt: number = 0
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
-  console.log(`[YAHOO] Starting fetch for ${ticker}`);
+  const MAX_RETRIES = 2;
+  const RETRY_DELAYS = [300, 600]; // ms: exponential backoff
+  
+  console.log(`[YAHOO] Starting fetch for ${ticker} (attempt ${retryAttempt + 1}/${MAX_RETRIES + 1})`);
   
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1mo`;
     
-    const response = await fetchWithTimeout(url, 30000, { 'User-Agent': 'Mozilla/5.0' }); // 30 second timeout
+    // Browser-like headers to bypass anti-bot mechanisms
+    const browserHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Referer': 'https://finance.yahoo.com',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1'
+    };
+    
+    const response = await fetchWithTimeout(url, 6000, browserHeaders); // 6 second timeout per request
     console.log(`[YAHOO] ${ticker} - Response status: ${response.status}`);
     
     if (!response.ok) {
-      return { success: false, error: `HTTP ${response.status}` };
+      const errorText = await response.text();
+      console.log(`[YAHOO] ${ticker} - HTTP ${response.status} error body: ${errorText.substring(0, 200)}`);
+      
+      // Retry on rate limit or server errors
+      if ((response.status === 429 || response.status >= 500) && retryAttempt < MAX_RETRIES) {
+        const delay = RETRY_DELAYS[retryAttempt];
+        console.log(`[YAHOO] ${ticker} - Retrying after ${delay}ms delay...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchFromYahoo(ticker, retryAttempt + 1);
+      }
+      
+      return { success: false, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
     }
     
-    const rawData = await response.json();
+    let rawData;
+    try {
+      rawData = await response.json();
+    } catch (jsonError) {
+      const textBody = await response.text();
+      console.log(`[YAHOO] ${ticker} - JSON parse error. Response body: ${textBody.substring(0, 500)}`);
+      return { success: false, error: `JSON parse error: ${textBody.substring(0, 100)}` };
+    }
+    
     const result = rawData?.chart?.result?.[0];
     
     if (!result?.timestamp || !result?.indicators?.quote?.[0]?.close) {
-      console.log(`[YAHOO] ${ticker} - Invalid response structure`);
+      console.log(`[YAHOO] ${ticker} - Invalid response structure:`, JSON.stringify(rawData).substring(0, 200));
       return { success: false, error: 'Invalid response structure' };
     }
     
@@ -153,7 +187,16 @@ async function fetchFromYahoo(
     return { success: true, data: prices };
   } catch (error) {
     const err = error as Error;
-    console.log(`[YAHOO] ❌ ${ticker} - Error: ${err.message}`);
+    console.log(`[YAHOO] ❌ ${ticker} - Error: ${err.message}, Stack: ${err.stack?.substring(0, 200)}`);
+    
+    // Retry on network errors
+    if (retryAttempt < MAX_RETRIES) {
+      const delay = RETRY_DELAYS[retryAttempt];
+      console.log(`[YAHOO] ${ticker} - Retrying after ${delay}ms delay due to error...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return fetchFromYahoo(ticker, retryAttempt + 1);
+    }
+    
     return { success: false, error: err.message };
   }
 }
@@ -170,6 +213,7 @@ Deno.serve(async (req) => {
   let skipped = 0;
   let alphaSuccessCount = 0;
   let yahooFallbackCount = 0;
+  let yahooFallbackFailedCount = 0;
   let failedCount = 0;
 
   try {
@@ -214,17 +258,34 @@ Deno.serve(async (req) => {
     
     console.log(`[DB] ✅ Fetched ${allAssets?.length || 0} assets`);
     
-    // CRITICAL: Batch size = 5 max
+    // CRITICAL: Batch size = 5 max per batch, with delays between tickers
     const MAX_TICKERS = 5;
-    const TIMEOUT_MS = 240000; // 4 minutes total
+    const TIMEOUT_MS = 60000; // 60 seconds total for 5 tickers
+    const DELAY_BETWEEN_TICKERS_MS = 400; // 400ms delay between each ticker
     const assets = (allAssets || []).slice(0, MAX_TICKERS);
     
     console.log(`📊 Processing ${assets.length} tickers (max ${MAX_TICKERS})`);
-    console.log(`⏱️  Timeout: ${TIMEOUT_MS}ms (${TIMEOUT_MS/60000} minutes)`);
+    console.log(`⏱️  Timeout: ${TIMEOUT_MS}ms (${TIMEOUT_MS/1000} seconds)`);
+    console.log(`⏱️  Delay between tickers: ${DELAY_BETWEEN_TICKERS_MS}ms`);
     
     const timeoutAt = startTime + TIMEOUT_MS;
     
-    for (const asset of assets) {
+    // Validate ticker list (filter out known invalid tickers)
+    const INVALID_TICKERS = new Set(['', 'N/A', 'INVALID', 'UNKNOWN']);
+    const validAssets = assets.filter(asset => {
+      const ticker = asset.ticker?.toUpperCase() || '';
+      if (!ticker || INVALID_TICKERS.has(ticker) || ticker.length > 10) {
+        console.log(`[SKIP] Invalid ticker: ${ticker}`);
+        skipped++;
+        return false;
+      }
+      return true;
+    });
+    
+    console.log(`✅ ${validAssets.length} valid tickers (${assets.length - validAssets.length} skipped as invalid)`);
+    
+    for (let i = 0; i < validAssets.length; i++) {
+      const asset = validAssets[i];
       // Check timeout
       const elapsed = Date.now() - startTime;
       if (Date.now() >= timeoutAt) {
@@ -246,21 +307,29 @@ Deno.serve(async (req) => {
         sourceUsed = 'Alpha Vantage';
         alphaSuccessCount++;
       } else {
-        console.log(`[FALLBACK] Alpha failed for ${ticker}, trying Yahoo...`);
+        console.log(`[FALLBACK] 🔄 Alpha failed for ${ticker} (${alphaResult.error}), falling back to Yahoo...`);
         
-        // Fallback to Yahoo
-        const yahooResult = await fetchFromYahoo(ticker);
+        // Fallback to Yahoo with retry logic
+        const yahooResult = await fetchFromYahoo(ticker, 0);
         
         if (yahooResult.success && yahooResult.data) {
           prices = yahooResult.data;
-          sourceUsed = 'Yahoo Finance';
+          sourceUsed = 'Yahoo Finance (Fallback)';
           yahooFallbackCount++;
+          console.log(`[FALLBACK] ✅ Yahoo fallback succeeded for ${ticker}`);
         } else {
-          console.log(`[FAIL] ❌ Both sources failed for ${ticker}`);
+          console.log(`[FAIL] ❌ Both sources failed for ${ticker}. Alpha: ${alphaResult.error}, Yahoo: ${yahooResult.error}`);
           failedCount++;
+          yahooFallbackFailedCount++;
           skipped++;
           continue;
         }
+      }
+      
+      // Add delay between tickers to avoid rate limiting
+      if (i < validAssets.length - 1) {
+        const delay = DELAY_BETWEEN_TICKERS_MS + Math.random() * 200; // 400-600ms random delay
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
       
       if (!prices || prices.length === 0) {
@@ -311,13 +380,18 @@ Deno.serve(async (req) => {
     }
     
     const duration = Date.now() - startTime;
-    const fallbackRate = assets.length > 0 
-      ? ((yahooFallbackCount / assets.length) * 100).toFixed(1)
+    const totalProcessed = alphaSuccessCount + yahooFallbackCount + failedCount;
+    const fallbackRate = totalProcessed > 0 
+      ? ((yahooFallbackCount / totalProcessed) * 100).toFixed(1)
+      : '0.0';
+    const yahooSuccessRate = yahooFallbackCount > 0
+      ? (((yahooFallbackCount / (yahooFallbackCount + yahooFallbackFailedCount)) * 100).toFixed(1))
       : '0.0';
     
     console.log(`\n✅ [COMPLETE] Duration: ${(duration / 1000).toFixed(1)}s`);
-    console.log(`📊 Stats: ${alphaSuccessCount} Alpha / ${yahooFallbackCount} Yahoo / ${failedCount} failed`);
-    console.log(`📈 Fallback rate: ${fallbackRate}%`);
+    console.log(`📊 Stats: ${alphaSuccessCount} Alpha / ${yahooFallbackCount} Yahoo Success / ${yahooFallbackFailedCount} Yahoo Failed / ${failedCount} Total Failed`);
+    console.log(`📈 Fallback rate: ${fallbackRate}% (${yahooFallbackCount}/${totalProcessed} used Yahoo)`);
+    console.log(`📈 Yahoo success rate: ${yahooSuccessRate}% (${yahooFallbackCount}/${yahooFallbackCount + yahooFallbackFailedCount})`);
     console.log(`💾 Inserted: ${inserted} rows, Skipped: ${skipped} rows`);
     
     // @guard: Log to function_status heartbeat table for monitoring
@@ -332,9 +406,12 @@ Deno.serve(async (req) => {
       source_used: alphaSuccessCount > yahooFallbackCount ? 'Alpha Vantage' : 'Yahoo Finance',
       metadata: {
         alpha_success: alphaSuccessCount,
-        yahoo_fallback: yahooFallbackCount,
+        yahoo_fallback_success: yahooFallbackCount,
+        yahoo_fallback_failed: yahooFallbackFailedCount,
+        yahoo_success_rate: yahooSuccessRate,
         failed: failedCount,
         fallback_rate: fallbackRate,
+        total_processed: totalProcessed
       }
     });
     
@@ -358,7 +435,9 @@ Deno.serve(async (req) => {
       inserted,
       skipped,
       alpha_success: alphaSuccessCount,
-      yahoo_fallback: yahooFallbackCount,
+      yahoo_fallback_success: yahooFallbackCount,
+      yahoo_fallback_failed: yahooFallbackFailedCount,
+      yahoo_success_rate: `${yahooSuccessRate}%`,
       failed: failedCount,
       fallback_rate: `${fallbackRate}%`,
       duration_ms: duration
