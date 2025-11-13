@@ -15,26 +15,6 @@ interface PriceData {
   last_updated_at: string;
 }
 
-// Simple retry with exponential backoff
-async function retry<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 2
-): Promise<T> {
-  let lastError: Error | null = null;
-  for (let i = 0; i <= maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error as Error;
-      if (i < maxRetries) {
-        const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-  throw lastError;
-}
-
 // Generate SHA256 checksum
 async function generateChecksum(data: string): Promise<string> {
   const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
@@ -43,15 +23,40 @@ async function generateChecksum(data: string): Promise<string> {
     .join('');
 }
 
-// Fetch from Alpha Vantage (Primary)
+// Fetch with timeout using AbortController
+async function fetchWithTimeout(url: string, timeoutMs: number, headers?: HeadersInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: headers || {}
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    const err = error as Error;
+    if (err.name === 'AbortError') {
+      throw new Error(`Fetch timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
+// Fetch from Alpha Vantage
 async function fetchFromAlphaVantage(
   ticker: string,
   apiKey: string
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
+  console.log(`[ALPHA] Starting fetch for ${ticker}`);
+  
   try {
     const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${ticker}&outputsize=compact&apikey=${apiKey}`;
     
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, 30000); // 30 second timeout
+    console.log(`[ALPHA] ${ticker} - Response status: ${response.status}`);
     
     if (!response.ok) {
       return { success: false, error: `HTTP ${response.status}` };
@@ -60,15 +65,18 @@ async function fetchFromAlphaVantage(
     const rawData = await response.json();
     
     if (rawData['Error Message']) {
+      console.log(`[ALPHA] ${ticker} - API Error: ${rawData['Error Message']}`);
       return { success: false, error: rawData['Error Message'] };
     }
     
     if (rawData['Note']) {
+      console.log(`[ALPHA] ${ticker} - Rate limit hit`);
       return { success: false, error: 'Rate limit exceeded' };
     }
     
     const timeSeries = rawData['Time Series (Daily)'];
     if (!timeSeries) {
+      console.log(`[ALPHA] ${ticker} - No time series data`);
       return { success: false, error: 'No time series data' };
     }
     
@@ -87,22 +95,26 @@ async function fetchFromAlphaVantage(
       });
     }
     
+    console.log(`[ALPHA] ✅ ${ticker} - Success: ${prices.length} prices`);
     return { success: true, data: prices };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    const err = error as Error;
+    console.log(`[ALPHA] ❌ ${ticker} - Error: ${err.message}`);
+    return { success: false, error: err.message };
   }
 }
 
-// Fetch from Yahoo Finance (Fallback)
+// Fetch from Yahoo Finance
 async function fetchFromYahoo(
   ticker: string
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
+  console.log(`[YAHOO] Starting fetch for ${ticker}`);
+  
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1mo`;
     
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
+    const response = await fetchWithTimeout(url, 30000, { 'User-Agent': 'Mozilla/5.0' }); // 30 second timeout
+    console.log(`[YAHOO] ${ticker} - Response status: ${response.status}`);
     
     if (!response.ok) {
       return { success: false, error: `HTTP ${response.status}` };
@@ -112,6 +124,7 @@ async function fetchFromYahoo(
     const result = rawData?.chart?.result?.[0];
     
     if (!result?.timestamp || !result?.indicators?.quote?.[0]?.close) {
+      console.log(`[YAHOO] ${ticker} - Invalid response structure`);
       return { success: false, error: 'Invalid response structure' };
     }
     
@@ -136,9 +149,12 @@ async function fetchFromYahoo(
       });
     }
     
+    console.log(`[YAHOO] ✅ ${ticker} - Success: ${prices.length} prices`);
     return { success: true, data: prices };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    const err = error as Error;
+    console.log(`[YAHOO] ❌ ${ticker} - Error: ${err.message}`);
+    return { success: false, error: err.message };
   }
 }
 
@@ -148,6 +164,8 @@ Deno.serve(async (req) => {
   }
 
   const startTime = Date.now();
+  console.log(`🚀 [START] ${new Date().toISOString()}`);
+  
   let inserted = 0;
   let skipped = 0;
   let alphaSuccessCount = 0;
@@ -155,9 +173,17 @@ Deno.serve(async (req) => {
   let failedCount = 0;
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
+    
+    console.log(`[CONFIG] Supabase URL: ${supabaseUrl ? 'SET' : 'MISSING'}`);
+    console.log(`[CONFIG] Supabase Key: ${supabaseKey ? 'SET' : 'MISSING'}`);
+    console.log(`[CONFIG] Alpha Vantage Key: ${alphaVantageKey ? 'SET' : 'MISSING'}`);
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase configuration missing');
+    }
     
     if (!alphaVantageKey) {
       throw new Error('ALPHA_VANTAGE_API_KEY not configured');
@@ -165,67 +191,72 @@ Deno.serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseKey);
     
-    console.log('🚀 Start:', new Date().toISOString());
-    
     // Log start
+    console.log('[DB] Inserting start log...');
     await supabaseClient.from('ingest_logs').insert({
       etl_name: 'ingest-prices-yahoo',
       status: 'running',
       started_at: new Date().toISOString()
     });
+    console.log('[DB] Start log inserted');
     
     // Fetch assets
+    console.log('[DB] Fetching assets...');
     const { data: allAssets, error: assetsError } = await supabaseClient
       .from('assets')
       .select('*')
       .limit(1000);
     
-    if (assetsError) throw assetsError;
+    if (assetsError) {
+      console.log(`[DB] ❌ Assets error: ${assetsError.message}`);
+      throw assetsError;
+    }
     
-    // CRITICAL: Cap to 20 tickers to prevent timeouts
-    const MAX_TICKERS = 20;
-    const TIMEOUT_MS = 240000; // 4 minutes
+    console.log(`[DB] ✅ Fetched ${allAssets?.length || 0} assets`);
+    
+    // CRITICAL: Batch size = 5 max
+    const MAX_TICKERS = 5;
+    const TIMEOUT_MS = 240000; // 4 minutes total
     const assets = (allAssets || []).slice(0, MAX_TICKERS);
     
-    console.log(`📊 Processing ${assets.length} of ${allAssets?.length || 0} total assets`);
+    console.log(`📊 Processing ${assets.length} tickers (max ${MAX_TICKERS})`);
+    console.log(`⏱️  Timeout: ${TIMEOUT_MS}ms (${TIMEOUT_MS/60000} minutes)`);
     
     const timeoutAt = startTime + TIMEOUT_MS;
     
     for (const asset of assets) {
       // Check timeout
+      const elapsed = Date.now() - startTime;
       if (Date.now() >= timeoutAt) {
-        console.error('⏱️ TIMEOUT: Exceeded 4 minutes');
+        console.log(`⏱️  TIMEOUT: Exceeded ${TIMEOUT_MS}ms (elapsed: ${elapsed}ms)`);
         throw new Error('INGESTION_TIMEOUT');
       }
       
+      console.log(`\n--- Processing ${asset.ticker} (${elapsed}ms elapsed) ---`);
       const ticker = asset.ticker;
       
       // Try Alpha Vantage (Primary)
-      console.log(`📡 Fetching ${ticker} from Alpha Vantage (PRIMARY)`);
-      const alphaResult = await retry(() => fetchFromAlphaVantage(ticker, alphaVantageKey));
+      const alphaResult = await fetchFromAlphaVantage(ticker, alphaVantageKey);
       
       let prices: PriceData[] | null = null;
       let sourceUsed = '';
       
       if (alphaResult.success && alphaResult.data) {
-        console.log(`✅ Alpha Vantage SUCCESS for ${ticker} (${alphaResult.data.length} prices)`);
         prices = alphaResult.data;
         sourceUsed = 'Alpha Vantage';
         alphaSuccessCount++;
       } else {
-        console.warn(`⚠️ Alpha Vantage FAILED for ${ticker}: ${alphaResult.error}`);
+        console.log(`[FALLBACK] Alpha failed for ${ticker}, trying Yahoo...`);
         
         // Fallback to Yahoo
-        console.log(`📡 Fetching ${ticker} from Yahoo Finance (FALLBACK)`);
-        const yahooResult = await retry(() => fetchFromYahoo(ticker));
+        const yahooResult = await fetchFromYahoo(ticker);
         
         if (yahooResult.success && yahooResult.data) {
-          console.log(`✅ Yahoo Finance FALLBACK SUCCESS for ${ticker} (${yahooResult.data.length} prices)`);
           prices = yahooResult.data;
-          sourceUsed = 'Yahoo Finance (Fallback)';
+          sourceUsed = 'Yahoo Finance';
           yahooFallbackCount++;
         } else {
-          console.error(`❌ Both sources FAILED for ${ticker}`);
+          console.log(`[FAIL] ❌ Both sources failed for ${ticker}`);
           failedCount++;
           skipped++;
           continue;
@@ -233,6 +264,7 @@ Deno.serve(async (req) => {
       }
       
       if (!prices || prices.length === 0) {
+        console.log(`[SKIP] ${ticker} - No prices to insert`);
         skipped++;
         continue;
       }
@@ -241,16 +273,17 @@ Deno.serve(async (req) => {
       prices.forEach(p => p.asset_id = asset.id);
       
       // Insert into database
+      console.log(`[DB] Inserting ${prices.length} prices for ${ticker}...`);
       const { error: insertError } = await supabaseClient
         .from('prices')
         .upsert(prices, { onConflict: 'checksum', ignoreDuplicates: true });
       
       if (insertError) {
-        console.error(`❌ Failed to insert ${ticker}: ${insertError.message}`);
+        console.log(`[DB] ❌ Insert error for ${ticker}: ${insertError.message}`);
         skipped++;
       } else {
         inserted += prices.length;
-        console.log(`✅ Inserted ${prices.length} prices for ${ticker} from ${sourceUsed}`);
+        console.log(`[DB] ✅ Inserted ${prices.length} prices for ${ticker} from ${sourceUsed}`);
       }
     }
     
@@ -259,22 +292,25 @@ Deno.serve(async (req) => {
       ? ((yahooFallbackCount / assets.length) * 100).toFixed(1)
       : '0.0';
     
-    console.log(`✅ COMPLETED in ${(duration / 1000).toFixed(1)}s`);
+    console.log(`\n✅ [COMPLETE] Duration: ${(duration / 1000).toFixed(1)}s`);
     console.log(`📊 Stats: ${alphaSuccessCount} Alpha / ${yahooFallbackCount} Yahoo / ${failedCount} failed`);
     console.log(`📈 Fallback rate: ${fallbackRate}%`);
+    console.log(`💾 Inserted: ${inserted} rows, Skipped: ${skipped} rows`);
     
     // Log success
+    console.log('[DB] Inserting success log...');
     await supabaseClient.from('ingest_logs').insert({
       etl_name: 'ingest-prices-yahoo',
       status: 'success',
       started_at: new Date(startTime).toISOString(),
-      finished_at: new Date().toISOString(),
+      duration_seconds: Math.round(duration / 1000),
       rows_inserted: inserted,
       rows_updated: 0,
       rows_skipped: skipped,
       source_used: `Alpha: ${alphaSuccessCount}, Yahoo: ${yahooFallbackCount}`,
       fallback_count: yahooFallbackCount
     });
+    console.log('[DB] Success log inserted');
     
     return new Response(JSON.stringify({ 
       success: true,
@@ -293,7 +329,8 @@ Deno.serve(async (req) => {
     const errorMsg = error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
     
-    console.error('❌ FATAL ERROR:', errorMsg);
+    console.log(`\n❌ [FATAL ERROR] ${errorMsg}`);
+    console.log(`⏱️  Failed after ${(duration / 1000).toFixed(1)}s`);
     
     // Log failure
     try {
@@ -302,15 +339,17 @@ Deno.serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       );
       
+      console.log('[DB] Inserting failure log...');
       await supabaseClient.from('ingest_logs').insert({
         etl_name: 'ingest-prices-yahoo',
-        status: 'failed',
+        status: 'failure',
         started_at: new Date(startTime).toISOString(),
-        finished_at: new Date().toISOString(),
+        duration_seconds: Math.round(duration / 1000),
         error_message: errorMsg
       });
+      console.log('[DB] Failure log inserted');
     } catch (logError) {
-      console.error('Failed to log error:', logError);
+      console.log(`[DB] ❌ Failed to log error: ${logError}`);
     }
     
     return new Response(JSON.stringify({ 
