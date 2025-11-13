@@ -518,6 +518,20 @@ serve(async (req) => {
       metadata: { auth_failures: authFailures },
     }).eq('id', logId);
     
+    // @guard: Heartbeat log to function_status
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-breaking-news',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: newsItems.length,
+      rows_skipped: 0,
+      fallback_used: fallbackUsed ? sourceUsed : null,
+      duration_ms: Date.now() - startTime,
+      source_used: sourceUsed,
+      error_message: null,
+      metadata: { tickers: tickers.length, cache_hit: cacheHit, auth_failures: authFailures }
+    });
+    
     // Send success alert to Slack
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-breaking-news',
@@ -560,6 +574,20 @@ serve(async (req) => {
       duration_seconds: durationSeconds,
       error_message: errorMessage,
     }).eq('id', logId);
+    
+    // @guard: Heartbeat log failure
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-breaking-news',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Perplexity API',
+      error_message: errorMessage,
+      metadata: {}
+    });
     
     // Send failure alert to Slack
     const slackAlerter = new SlackAlerter();

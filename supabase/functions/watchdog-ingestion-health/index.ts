@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,6 +52,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
+    const slackAlerter = new SlackAlerter();
     console.log('[WATCHDOG] 🐕 Starting health check...')
 
     const alerts: Array<{
@@ -185,10 +187,40 @@ Deno.serve(async (req) => {
     console.log(`[WATCHDOG] ✅ Health check complete: ${healthSummary.overall_health}`)
     console.log(`[WATCHDOG] 📊 Alerts: ${healthSummary.alerts_critical} critical, ${healthSummary.alerts_warning} warnings`)
 
-    // If there are critical alerts, we could send Slack/email notifications here
+    // If there are critical alerts, send Slack notifications
     if (healthSummary.alerts_critical > 0) {
-      console.log('[WATCHDOG] 🚨 CRITICAL ALERTS DETECTED - NOTIFY OPS TEAM')
-      // TODO: Send Slack webhook or email
+      console.log('[WATCHDOG] 🚨 CRITICAL ALERTS DETECTED - SENDING SLACK NOTIFICATIONS')
+      
+      // Send alert for each critical issue
+      const criticalAlerts = alerts.filter(a => a.severity === 'CRITICAL');
+      for (const alert of criticalAlerts) {
+        if (alert.issue.includes('failures in last 6 hours')) {
+          await slackAlerter.sendCriticalAlert({
+            type: 'sla_breach',
+            etlName: alert.function_name,
+            message: alert.issue,
+            details: { last_run: alert.last_run }
+          }, { suppressDuplicates: true });
+        } else if (alert.minutes_stale && alert.minutes_stale > (FUNCTION_INTERVALS[alert.function_name] || 360) * 3) {
+          await slackAlerter.sendCriticalAlert({
+            type: 'halted',
+            etlName: alert.function_name,
+            message: `Function stale for ${alert.minutes_stale} minutes`,
+            details: { last_run: alert.last_run, expected_interval: FUNCTION_INTERVALS[alert.function_name] }
+          }, { suppressDuplicates: true });
+        }
+      }
+    }
+    
+    // Send alert for high fallback usage
+    const fallbackWarnings = alerts.filter(a => a.severity === 'WARNING' && a.issue.includes('fallback'));
+    for (const alert of fallbackWarnings) {
+      await slackAlerter.sendCriticalAlert({
+        type: 'fallback_exceeded',
+        etlName: alert.function_name,
+        message: alert.issue,
+        details: {}
+      }, { suppressDuplicates: true });
     }
 
     return new Response(

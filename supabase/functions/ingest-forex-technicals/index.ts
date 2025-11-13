@@ -27,6 +27,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -135,6 +136,20 @@ serve(async (req) => {
       }
     }
 
+    // @guard: Heartbeat log to function_status
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-forex-technicals',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: successCount,
+      rows_skipped: errorCount,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Alpha Vantage',
+      error_message: null,
+      metadata: { pairs_processed: forexPairs.length }
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -148,6 +163,21 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    // @guard: Heartbeat log failure
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-forex-technicals',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Alpha Vantage',
+      error_message: (error as Error).message,
+      metadata: {}
+    });
+    
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -184,6 +184,20 @@ serve(async (req) => {
       latency_ms: latency,
     }).eq('id', logId);
 
+    // @guard: Heartbeat log to function_status
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-policy-feeds',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      fallback_used: null,
+      duration_ms: latency,
+      source_used: sourceUsed,
+      error_message: null,
+      metadata: { feeds_processed: feed_urls.length }
+    });
+
     // Send success alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-policy-feeds',
@@ -210,6 +224,20 @@ serve(async (req) => {
       duration_seconds: durationSeconds,
       error_message: errorMessage,
     }).eq('id', logId);
+
+    // @guard: Heartbeat log failure
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-policy-feeds',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'RSS Feeds',
+      error_message: errorMessage,
+      metadata: {}
+    });
 
     // Log to ingest_failures
     await supabaseClient.from('ingest_failures').insert({

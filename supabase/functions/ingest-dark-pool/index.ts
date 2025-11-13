@@ -11,16 +11,17 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY') ?? '';
     
     if (!perplexityApiKey) {
       throw new Error('PERPLEXITY_API_KEY not configured');
     }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Dark pool activity ingestion started with Perplexity AI...');
 
@@ -153,6 +154,20 @@ price: [current price]`
       }
     }
 
+    // @guard: Heartbeat log to function_status
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-dark-pool',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: successCount,
+      rows_skipped: stocks.length - successCount,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Perplexity AI',
+      error_message: null,
+      metadata: { stocks_processed: stocks.length }
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -164,6 +179,21 @@ price: [current price]`
 
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    // @guard: Heartbeat log failure
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-dark-pool',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Perplexity AI',
+      error_message: (error as Error).message,
+      metadata: {}
+    });
+    
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

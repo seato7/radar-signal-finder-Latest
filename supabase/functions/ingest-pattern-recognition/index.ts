@@ -11,11 +11,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const startTime = Date.now();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  try {
     console.log('Pattern recognition ingestion started...');
 
     const { data: assets } = await supabase
@@ -85,6 +86,20 @@ serve(async (req) => {
       }
     }
 
+    // @guard: Heartbeat log to function_status
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-pattern-recognition',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: successCount,
+      rows_skipped: assets.length - successCount,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Pattern Recognition Engine',
+      error_message: null,
+      metadata: { assets_processed: assets.length }
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -96,6 +111,21 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    // @guard: Heartbeat log failure
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-pattern-recognition',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      fallback_used: null,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Pattern Recognition Engine',
+      error_message: (error as Error).message,
+      metadata: {}
+    });
+    
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
