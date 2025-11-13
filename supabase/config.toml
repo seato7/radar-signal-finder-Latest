@@ -111,3 +111,9 @@ verify_jwt = false
 [functions.ingestion-health]
 verify_jwt = false
 
+[functions.ingestion-health-enhanced]
+verify_jwt = false
+
+[functions.kill-stuck-jobs]
+verify_jwt = false
+

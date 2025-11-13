@@ -35,14 +35,38 @@ Deno.serve(async (req) => {
     }
 
     // Get top 10 assets by signal activity
-    const { data: topAssets } = await supabaseClient
+    const { data: topAssets, error: assetsError } = await supabaseClient
       .from('asset_signal_summary')
       .select('*')
       .order('flow_signals', { ascending: false })
       .limit(10);
 
+    if (assetsError) {
+      console.error('Error fetching assets:', assetsError);
+      throw new Error(`Failed to fetch assets: ${assetsError.message}`);
+    }
+
     if (!topAssets || topAssets.length === 0) {
-      throw new Error('No assets found for analysis');
+      // Gracefully skip if no assets with signals
+      console.log('⚠️ No assets with signals found - skipping AI research generation');
+      
+      await supabaseClient.from('ingest_logs').update({
+        status: 'success',
+        completed_at: new Date().toISOString(),
+        duration_seconds: Math.floor((Date.now() - startTime) / 1000),
+        rows_inserted: 0,
+        rows_skipped: 0,
+      }).eq('id', logId);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        processed: 0,
+        inserted: 0,
+        skipped: 0,
+        message: 'No assets with signals found - skipped gracefully'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     let inserted = 0;

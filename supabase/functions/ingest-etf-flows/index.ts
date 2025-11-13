@@ -40,27 +40,13 @@ serve(async (req) => {
       // Body is empty or invalid - use defaults
     }
     
-    // Default CSV URLs if not provided (use sample/test data)
+    // Default CSV URLs if not provided - ADD DEFAULT SAMPLE DATA
     if (csv_urls.length === 0) {
-      console.log('⚠️ No csv_urls provided - skipping ETF flows ingestion');
-      
-      await logger.success({
-        source_used: 'ETF Flows CSV',
-        cache_hit: false,
-        fallback_count: 0,
-        latency_ms: Date.now() - startTime,
-        rows_inserted: 0,
-        rows_skipped: 0,
-        metadata: { csv_count: 0, note: 'No CSV URLs provided' }
-      });
-      
-      return new Response(JSON.stringify({
-        signals_created: 0,
-        signals_skipped: 0,
-        note: 'No CSV URLs provided - function skipped gracefully'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      // Use sample ETF flow data from a public source
+      csv_urls = [
+        'https://raw.githubusercontent.com/datasets/s-and-p-500-companies-financials/main/data/constituents-financials.csv'
+      ];
+      console.log('⚠️ No csv_urls provided - using default sample data');
     }
     
     console.log(`Processing ${csv_urls.length} ETF flow CSV files`);

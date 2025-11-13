@@ -200,9 +200,9 @@ Deno.serve(async (req) => {
     });
     const allAssets = await assetsRes.json();
     
-    // CRITICAL: Cap batch size to prevent timeouts
-    const MAX_TICKERS = 1000;
-    const TIMEOUT_MS = 300000; // 5 minutes max runtime
+    // CRITICAL: Cap batch size to prevent timeouts - REDUCED FROM 1000 TO 100
+    const MAX_TICKERS = 100;
+    const TIMEOUT_MS = 240000; // 4 minutes max runtime (down from 5)
     const assets = allAssets.slice(0, MAX_TICKERS);
     
     console.log(`📊 Processing ${assets.length} of ${allAssets.length} total assets (max ${MAX_TICKERS})`);
