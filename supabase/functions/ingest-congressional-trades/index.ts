@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
   try {
     // Require authentication
     const authHeader = req.headers.get('Authorization');
@@ -151,12 +153,31 @@ serve(async (req) => {
       console.log(`Inserted ${records.length} congressional trade records`);
     }
 
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-congressional-trades',
+      status: 'success',
+      rows_inserted: records.length,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Perplexity AI',
+    });
+
     return new Response(
       JSON.stringify({ success: true, count: records.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in ingest-congressional-trades:', error);
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-congressional-trades',
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Perplexity AI',
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

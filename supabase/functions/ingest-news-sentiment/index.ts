@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,16 +17,6 @@ serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  // Log to ingest_logs
-  const logId = crypto.randomUUID();
-  await supabase.from('ingest_logs').insert({
-    id: logId,
-    etl_name: 'ingest-news-sentiment',
-    status: 'running',
-    started_at: new Date().toISOString(),
-    source_used: 'Aggregation',
-  });
-
   try {
     console.log('News sentiment aggregation started...');
 
@@ -37,13 +28,14 @@ serve(async (req) => {
 
     if (!news || news.length === 0) {
       console.log('No recent news found');
-      await supabase.from('ingest_logs').update({
+      await logHeartbeat(supabase, {
+        function_name: 'ingest-news-sentiment',
         status: 'success',
-        completed_at: new Date().toISOString(),
-        duration_seconds: Math.round((Date.now() - startTime) / 1000),
         rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
         source_used: 'Aggregation',
-      }).eq('id', logId);
+      });
       return new Response(
         JSON.stringify({ success: true, aggregated: 0, note: 'No recent news' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -122,13 +114,14 @@ serve(async (req) => {
 
     console.log(`✅ Aggregated ${insertData.length} sentiment records`);
 
-    await supabase.from('ingest_logs').update({
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-news-sentiment',
       status: 'success',
-      completed_at: new Date().toISOString(),
-      duration_seconds: Math.round((Date.now() - startTime) / 1000),
       rows_inserted: insertData.length,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
       source_used: 'Aggregation',
-    }).eq('id', logId);
+    });
 
     return new Response(
       JSON.stringify({
@@ -141,12 +134,15 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Fatal error:', error);
-    await supabase.from('ingest_logs').update({
-      status: 'failed',
-      completed_at: new Date().toISOString(),
-      duration_seconds: Math.round((Date.now() - startTime) / 1000),
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-news-sentiment',
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'Aggregation',
       error_message: error instanceof Error ? error.message : 'Unknown error',
-    }).eq('id', logId);
+    });
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
