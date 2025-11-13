@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -96,10 +98,28 @@ serve(async (req) => {
       }
     }
 
+    await logHeartbeat(supabaseClient, {
+      function_name: 'ingest-prices-csv',
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      duration_ms: Date.now() - startTime,
+      source_used: 'CSV Upload',
+    });
+
     return new Response(JSON.stringify({ inserted, skipped }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    await logHeartbeat(supabaseClient, {
+      function_name: 'ingest-prices-csv',
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'CSV Upload',
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

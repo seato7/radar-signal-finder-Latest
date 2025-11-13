@@ -1,4 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,10 +12,12 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
     console.log('Starting FRED economic indicators ingestion...');
     
     const fredApiKey = Deno.env.get('FRED_API_KEY');
@@ -101,6 +105,15 @@ Deno.serve(async (req) => {
       }
     }
     
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-fred-economics',
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      duration_ms: Date.now() - startTime,
+      source_used: 'FRED',
+    });
+
     return new Response(JSON.stringify({
       success: true,
       source: 'FRED (St. Louis Fed)',
@@ -114,6 +127,15 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Fatal error:', error);
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-fred-economics',
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'FRED',
+      error_message: error instanceof Error ? error.message : String(error),
+    });
     return new Response(JSON.stringify({ 
       success: false, 
       error: error instanceof Error ? error.message : String(error) 

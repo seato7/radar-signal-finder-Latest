@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +37,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  let supabase: any;
+
   try {
     // Require authentication
     const authHeader = req.headers.get('Authorization');
@@ -49,7 +53,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey);
 
     // Verify user is authenticated
     const authClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -150,12 +154,32 @@ serve(async (req) => {
       console.log(`Inserted ${signals.length} StockTwits records`);
     }
 
+    await logHeartbeat(supabase, {
+      function_name: 'ingest-stocktwits',
+      status: 'success',
+      rows_inserted: signals.length,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'StockTwits API',
+    });
+
     return new Response(
       JSON.stringify({ success: true, count: signals.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in ingest-stocktwits:', error);
+    if (supabase) {
+      await logHeartbeat(supabase, {
+        function_name: 'ingest-stocktwits',
+        status: 'failure',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'StockTwits API',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
