@@ -7,8 +7,11 @@ const corsHeaders = {
 };
 
 /**
- * Kill Stuck Jobs Edge Function
+ * Kill Stuck Jobs Edge Function with Auto-Recovery
  * Automatically terminates ingestion jobs stuck for >8 minutes
+ * and attempts to retry them up to 3 times before escalating
+ * 
+ * @guard: Production failsafe - kills stuck jobs, tracks failures, auto-retries
  */
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -44,6 +47,7 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: true,
           killed: 0,
+          retried: 0,
           message: 'No stuck jobs found',
         }),
         {
@@ -54,8 +58,29 @@ Deno.serve(async (req) => {
 
     console.log(`⚠️ Found ${stuckJobs.length} stuck jobs`);
 
-    // Kill each stuck job
+    // Check failure history for auto-recovery
+    const functionFailureCounts = new Map<string, number>();
+    
+    // Query failures in last 6 hours
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    const { data: recentFailures } = await supabaseClient
+      .from('ingest_logs')
+      .select('etl_name')
+      .eq('status', 'failure')
+      .gte('started_at', sixHoursAgo);
+
+    if (recentFailures) {
+      for (const failure of recentFailures) {
+        const count = functionFailureCounts.get(failure.etl_name) || 0;
+        functionFailureCounts.set(failure.etl_name, count + 1);
+      }
+    }
+
+    // Kill each stuck job and determine retry strategy
     let killed = 0;
+    let retried = 0;
+    const retriedJobs = [];
+    
     for (const job of stuckJobs) {
       const duration = Math.floor(
         (Date.now() - new Date(job.started_at).getTime()) / 1000
@@ -65,6 +90,7 @@ Deno.serve(async (req) => {
         `🔪 Killing stuck job: ${job.etl_name} (running for ${Math.floor(duration / 60)} minutes)`
       );
 
+      // Mark as failed
       const { error: updateError } = await supabaseClient
         .from('ingest_logs')
         .update({
@@ -82,25 +108,75 @@ Deno.serve(async (req) => {
 
       killed++;
 
-      // Send Slack alert
+      // @guard: Auto-recovery logic - retry if <3 failures in 6h
+      const failureCount = functionFailureCounts.get(job.etl_name) || 0;
+      const shouldRetry = failureCount < 3;
+
+      if (shouldRetry) {
+        console.log(`🔄 Auto-recovery: Retrying ${job.etl_name} (${failureCount}/3 failures)`);
+        
+        // Attempt to invoke the function again
+        try {
+          const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${job.etl_name}`;
+          const response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({}),
+          });
+
+          if (response.ok) {
+            console.log(`✅ Successfully retried ${job.etl_name}`);
+            retried++;
+            retriedJobs.push(job.etl_name);
+          } else {
+            console.error(`❌ Retry failed for ${job.etl_name}: ${response.status}`);
+          }
+        } catch (retryError) {
+          console.error(`❌ Retry error for ${job.etl_name}:`, retryError);
+        }
+      } else {
+        // Escalate - too many failures
+        console.log(`🚨 ESCALATION: ${job.etl_name} has ${failureCount} failures in 6h - not retrying`);
+        
+        await slackAlerter.sendCriticalAlert({
+          type: 'sla_breach',
+          etlName: job.etl_name,
+          message: `Function failing repeatedly: ${failureCount} failures in 6h. Manual intervention required.`,
+          details: {
+            job_id: job.id,
+            started_at: job.started_at,
+            duration_minutes: Math.floor(duration / 60),
+            recent_failures: failureCount,
+          },
+        });
+      }
+
+      // Send Slack alert for stuck job
       await slackAlerter.sendCriticalAlert({
         type: 'halted',
         etlName: job.etl_name,
-        message: `Stuck job killed after ${Math.floor(duration / 60)} minutes`,
+        message: `Stuck job killed after ${Math.floor(duration / 60)} minutes${shouldRetry ? ' - auto-retry attempted' : ' - escalated'}`,
         details: {
           job_id: job.id,
           started_at: job.started_at,
           duration_minutes: Math.floor(duration / 60),
+          auto_retry: shouldRetry,
+          failure_count_6h: failureCount,
         },
       });
     }
 
-    console.log(`✅ Killed ${killed} stuck jobs`);
+    console.log(`✅ Killed ${killed} stuck jobs, retried ${retried}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         killed,
+        retried,
+        retried_jobs: retriedJobs,
         jobs: stuckJobs.map((j) => ({
           etl_name: j.etl_name,
           started_at: j.started_at,

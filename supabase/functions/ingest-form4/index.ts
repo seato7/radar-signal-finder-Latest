@@ -173,6 +173,20 @@ serve(async (req) => {
       latency_ms: latency,
     }).eq('id', logId);
 
+    // @guard: Heartbeat log to function_status for monitoring
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-form4',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: signalsCreated,
+      rows_skipped: signalsSkipped,
+      fallback_used: null,
+      duration_ms: latency,
+      source_used: sourceUsed,
+      error_message: null,
+      metadata: { filings_processed: Math.min(limit, entries.length) }
+    });
+
     // Send success alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-form4',
@@ -195,6 +209,7 @@ serve(async (req) => {
   } catch (error) {
     const errorMessage = (error as Error).message;
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+    const latency = Date.now() - startTime;
 
     // Update log with failure
     await supabaseClient.from('ingest_logs').update({
@@ -203,6 +218,20 @@ serve(async (req) => {
       duration_seconds: durationSeconds,
       error_message: errorMessage,
     }).eq('id', logId);
+
+    // @guard: Heartbeat log to function_status for monitoring
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-form4',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      fallback_used: null,
+      duration_ms: latency,
+      source_used: 'SEC EDGAR',
+      error_message: errorMessage,
+      metadata: {}
+    });
 
     // Log to ingest_failures
     await supabaseClient.from('ingest_failures').insert({

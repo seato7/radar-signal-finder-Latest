@@ -6,6 +6,41 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// @guard: Expected function intervals for freshness monitoring
+const FUNCTION_INTERVALS: Record<string, number> = {
+  'ingest-prices-yahoo': 15,
+  'ingest-breaking-news': 180,
+  'ingest-news-sentiment': 180,
+  'ingest-smart-money': 360,
+  'ingest-pattern-recognition': 360,
+  'ingest-advanced-technicals': 360,
+  'ingest-ai-research': 360,
+  'ingest-etf-flows': 360,
+  'ingest-form4': 360,
+  'ingest-policy-feeds': 360,
+  'ingest-forex-sentiment': 360,
+  'ingest-forex-technicals': 360,
+  'ingest-crypto-onchain': 360,
+  'ingest-dark-pool': 360,
+  'ingest-13f-holdings': 360,
+  'ingest-google-trends': 360,
+  'ingest-short-interest': 360,
+  'ingest-earnings': 360,
+  'ingest-stocktwits': 360,
+  'ingest-supply-chain': 360,
+  'ingest-job-postings': 360,
+  'ingest-congressional-trades': 360,
+  'ingest-options-flow': 360,
+  'ingest-reddit-sentiment': 360,
+  'ingest-cot-reports': 360,
+  'ingest-cot-cftc': 360,
+  'ingest-finra-darkpool': 360,
+  'ingest-patents': 360,
+  'ingest-search-trends': 360,
+  'ingest-economic-calendar': 360,
+  'ingest-fred-economics': 360,
+};
+
 interface IngestionHealthStatus {
   function_name: string;
   last_run_at?: string;
@@ -17,6 +52,11 @@ interface IngestionHealthStatus {
   circuit_reason?: string;
   primary_api?: string;
   status: 'healthy' | 'degraded' | 'failing' | 'disabled' | 'unknown';
+  freshness_minutes?: number;
+  expected_interval_minutes: number;
+  total_runs_24h: number;
+  rows_inserted_24h: number;
+  fallback_usage_24h: number;
 }
 
 Deno.serve(async (req) => {
@@ -37,6 +77,17 @@ Deno.serve(async (req) => {
     // Initialize circuit breaker
     const circuitBreaker = new CircuitBreaker(supabaseClient);
 
+    // @guard: Query function_status for enhanced monitoring
+    const { data: functionStats, error: statsError } = await supabaseClient
+      .from('function_status')
+      .select('*')
+      .gte('executed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .order('executed_at', { ascending: false });
+
+    if (statsError) {
+      console.warn('[INGESTION-HEALTH] ⚠️ Error querying function_status:', statsError);
+    }
+
     // Get all ingestion functions from ingest_logs
     const { data: recentLogs, error: logsError } = await supabaseClient
       .from('ingest_logs')
@@ -50,62 +101,100 @@ Deno.serve(async (req) => {
     const circuitStatuses = await circuitBreaker.getAllStatus();
     const circuitMap = new Map(circuitStatuses.map(s => [s.function_name, s]));
 
-    // Get unique function names
-    const functionNames = [...new Set(recentLogs?.map(log => log.etl_name) || [])];
+    // Group function_status by function name
+    const statsByFunction = new Map<string, typeof functionStats>();
+    for (const stat of (functionStats || [])) {
+      if (!statsByFunction.has(stat.function_name)) {
+        statsByFunction.set(stat.function_name, []);
+      }
+      statsByFunction.get(stat.function_name)!.push(stat);
+    }
 
+    // Get all tracked function names
+    const allFunctionNames = Object.keys(FUNCTION_INTERVALS);
+    
     // Build health status for each function
     const healthStatuses: IngestionHealthStatus[] = [];
+    const now = new Date();
 
-    for (const fname of functionNames) {
+    for (const fname of allFunctionNames) {
       // Filter by specific function if requested
       if (functionName && fname !== functionName) continue;
 
       const functionLogs = recentLogs?.filter(log => log.etl_name === fname) || [];
-      const successLogs = functionLogs.filter(log => log.status === 'success');
-      const failedLogs = functionLogs.filter(log => log.status === 'failed');
+      const functionStatsData = statsByFunction.get(fname) || [];
       
-      const mostRecent = functionLogs[0];
-      const lastSuccess = successLogs[0];
-      const lastFailure = failedLogs[0];
+      // Use function_status for metrics if available, fallback to ingest_logs
+      const dataSource = functionStatsData.length > 0 ? functionStatsData : functionLogs;
+      
+      const successData = dataSource.filter((d: any) => d.status === 'success');
+      const failedData = dataSource.filter((d: any) => d.status === 'failed' || d.status === 'failure');
+      
+      const mostRecent = dataSource[0];
+      const lastSuccess = successData[0];
+      const lastFailure = failedData[0];
 
-      // Calculate avg duration
-      const completedLogs = functionLogs.filter(log => log.completed_at && log.started_at);
-      const durations = completedLogs.map(log => 
-        new Date(log.completed_at!).getTime() - new Date(log.started_at).getTime()
-      );
+      // Calculate freshness
+      const lastRunTime = mostRecent ? new Date((mostRecent as any).executed_at || (mostRecent as any).started_at) : null;
+      const freshness_minutes = lastRunTime 
+        ? Math.round((now.getTime() - lastRunTime.getTime()) / 60000)
+        : null;
+
+      // Calculate avg duration from function_status (more accurate)
+      const durations = functionStatsData
+        .filter((s: any) => s.duration_ms)
+        .map((s: any) => s.duration_ms);
       const avgDuration = durations.length > 0 
         ? durations.reduce((a, b) => a + b, 0) / durations.length 
         : undefined;
 
       // Calculate success rate
-      const successRate = functionLogs.length > 0
-        ? (successLogs.length / functionLogs.length) * 100
+      const successRate = dataSource.length > 0
+        ? (successData.length / dataSource.length) * 100
         : undefined;
+
+      // Calculate additional metrics from function_status
+      const rows_inserted_24h = functionStatsData.reduce((sum: number, s: any) => sum + (s.rows_inserted || 0), 0);
+      const fallback_usage_24h = functionStatsData.filter((s: any) => s.fallback_used).length;
 
       // Get circuit breaker status
       const circuit = circuitMap.get(fname);
+      const expectedInterval = FUNCTION_INTERVALS[fname];
 
-      // Determine overall status
+      // @guard: Enhanced status determination with freshness checks
       let status: IngestionHealthStatus['status'] = 'unknown';
       if (circuit?.is_open) {
         status = 'disabled';
-      } else if (successRate !== undefined) {
-        if (successRate >= 95) status = 'healthy';
-        else if (successRate >= 70) status = 'degraded';
-        else status = 'failing';
+      } else if (!lastRunTime) {
+        status = 'disabled';
+      } else if (freshness_minutes && freshness_minutes > expectedInterval * 3) {
+        status = 'failing'; // Stale (>3x expected)
+      } else if (successRate !== undefined && successRate < 50) {
+        status = 'failing'; // Low success rate
+      } else if (freshness_minutes && freshness_minutes > expectedInterval * 2) {
+        status = 'degraded'; // Somewhat stale (>2x expected)
+      } else if (successRate !== undefined && successRate < 90) {
+        status = 'degraded'; // Moderate success rate
+      } else if (successRate !== undefined && successRate >= 90) {
+        status = 'healthy';
       }
 
       const healthStatus: IngestionHealthStatus = {
         function_name: fname,
-        last_run_at: mostRecent?.started_at,
-        last_success_at: lastSuccess?.started_at,
-        last_error: lastFailure?.error_message,
+        last_run_at: mostRecent ? ((mostRecent as any).executed_at || (mostRecent as any).started_at) : undefined,
+        last_success_at: lastSuccess ? ((lastSuccess as any).executed_at || (lastSuccess as any).started_at) : undefined,
+        last_error: lastFailure ? ((lastFailure as any).error_message) : undefined,
         avg_duration_24h: avgDuration ? Math.round(avgDuration) : undefined,
         success_rate_24h: successRate ? Math.round(successRate * 10) / 10 : undefined,
         is_circuit_open: circuit?.is_open || false,
         circuit_reason: circuit?.reason || undefined,
-        primary_api: mostRecent?.source_used,
-        status
+        primary_api: (mostRecent as any)?.source_used,
+        status,
+        freshness_minutes: freshness_minutes ?? undefined,
+        expected_interval_minutes: expectedInterval,
+        total_runs_24h: dataSource.length,
+        rows_inserted_24h,
+        fallback_usage_24h,
       };
 
       // Filter by failed only if requested

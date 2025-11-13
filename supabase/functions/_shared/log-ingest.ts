@@ -52,7 +52,9 @@ export class IngestLogger {
    */
   async success(data: Omit<IngestLogData, 'etl_name' | 'status'> = {}) {
     const duration = Math.floor((Date.now() - this.startTime) / 1000);
+    const durationMs = Date.now() - this.startTime;
     
+    // @guard: Update ingest_logs
     await this.supabaseClient.from('ingest_logs').update({
       status: 'success',
       completed_at: new Date().toISOString(),
@@ -67,6 +69,20 @@ export class IngestLogger {
       rows_skipped: data.rows_skipped || 0,
       metadata: data.metadata || null,
     }).eq('id', this.logId);
+    
+    // @guard: Heartbeat log to function_status for monitoring
+    await this.supabaseClient.from('function_status').insert({
+      function_name: this.etlName,
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: data.rows_inserted || 0,
+      rows_skipped: data.rows_skipped || 0,
+      fallback_used: data.fallback_count && data.fallback_count > 0 ? data.source_used : null,
+      duration_ms: durationMs,
+      source_used: data.source_used || 'unknown',
+      error_message: null,
+      metadata: data.metadata || {}
+    });
   }
 
   /**
@@ -74,8 +90,10 @@ export class IngestLogger {
    */
   async failure(error: Error | string, data: Omit<IngestLogData, 'etl_name' | 'status' | 'error_message'> = {}) {
     const duration = Math.floor((Date.now() - this.startTime) / 1000);
+    const durationMs = Date.now() - this.startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
     
+    // @guard: Update ingest_logs
     await this.supabaseClient.from('ingest_logs').update({
       status: 'failure',
       completed_at: new Date().toISOString(),
@@ -91,6 +109,20 @@ export class IngestLogger {
       rows_skipped: data.rows_skipped || 0,
       metadata: data.metadata || null,
     }).eq('id', this.logId);
+    
+    // @guard: Heartbeat log to function_status for monitoring
+    await this.supabaseClient.from('function_status').insert({
+      function_name: this.etlName,
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: data.rows_inserted || 0,
+      rows_skipped: data.rows_skipped || 0,
+      fallback_used: data.fallback_count && data.fallback_count > 0 ? data.source_used : null,
+      duration_ms: durationMs,
+      source_used: data.source_used || 'unknown',
+      error_message: errorMessage,
+      metadata: data.metadata || {}
+    });
   }
 
   /**
