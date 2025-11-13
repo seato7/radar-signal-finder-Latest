@@ -320,6 +320,24 @@ Deno.serve(async (req) => {
     console.log(`📈 Fallback rate: ${fallbackRate}%`);
     console.log(`💾 Inserted: ${inserted} rows, Skipped: ${skipped} rows`);
     
+    // @guard: Log to function_status heartbeat table for monitoring
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-prices-yahoo',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      fallback_used: yahooFallbackCount > 0 ? 'Yahoo Finance' : null,
+      duration_ms: duration,
+      source_used: alphaSuccessCount > yahooFallbackCount ? 'Alpha Vantage' : 'Yahoo Finance',
+      metadata: {
+        alpha_success: alphaSuccessCount,
+        yahoo_fallback: yahooFallbackCount,
+        failed: failedCount,
+        fallback_rate: fallbackRate,
+      }
+    });
+    
     // Log success
     console.log('[DB] Inserting success log...');
     await supabaseClient.from('ingest_logs').insert({

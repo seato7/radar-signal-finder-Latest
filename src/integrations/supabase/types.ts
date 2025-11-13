@@ -1266,6 +1266,51 @@ export type Database = {
           },
         ]
       }
+      function_status: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          executed_at: string
+          fallback_used: string | null
+          function_name: string
+          id: string
+          metadata: Json | null
+          rows_inserted: number | null
+          rows_skipped: number | null
+          source_used: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          executed_at?: string
+          fallback_used?: string | null
+          function_name: string
+          id?: string
+          metadata?: Json | null
+          rows_inserted?: number | null
+          rows_skipped?: number | null
+          source_used?: string | null
+          status: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          executed_at?: string
+          fallback_used?: string | null
+          function_name?: string
+          id?: string
+          metadata?: Json | null
+          rows_inserted?: number | null
+          rows_skipped?: number | null
+          source_used?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       ingest_failures: {
         Row: {
           error_message: string
@@ -2311,6 +2356,21 @@ export type Database = {
         }
         Relationships: []
       }
+      view_function_freshness: {
+        Row: {
+          failure_count: number | null
+          fallback_used_count: number | null
+          function_name: string | null
+          last_run: string | null
+          seconds_since_last_run: number | null
+          skipped_count: number | null
+          success_count: number | null
+          success_rate_pct: number | null
+          total_rows_inserted: number | null
+          total_rows_skipped: number | null
+        }
+        Relationships: []
+      }
       view_stale_tickers: {
         Row: {
           asset_class: string | null
@@ -2354,6 +2414,10 @@ export type Database = {
           total_runs: number
         }[]
       }
+      check_function_staleness: {
+        Args: { p_function_name: string; p_max_age_minutes: number }
+        Returns: boolean
+      }
       check_signal_distribution_skew: {
         Args: never
         Returns: {
@@ -2389,6 +2453,16 @@ export type Database = {
           success_rate: number
           successful_calls: number
           total_calls: number
+        }[]
+      }
+      get_stale_functions: {
+        Args: never
+        Returns: {
+          alert_severity: string
+          expected_interval_minutes: number
+          function_name: string
+          last_run: string
+          minutes_stale: number
         }[]
       }
       get_stale_tickers: {

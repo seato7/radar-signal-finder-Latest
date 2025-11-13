@@ -1,0 +1,218 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Expected function intervals in minutes
+const FUNCTION_INTERVALS: Record<string, number> = {
+  'ingest-prices-yahoo': 15,
+  'ingest-breaking-news': 180,
+  'ingest-news-sentiment': 180,
+  'ingest-smart-money': 360,
+  'ingest-pattern-recognition': 360,
+  'ingest-advanced-technicals': 360,
+  'ingest-ai-research': 360,
+  'ingest-etf-flows': 360,
+  'ingest-form4': 360,
+  'ingest-policy-feeds': 360,
+  'ingest-forex-sentiment': 360,
+  'ingest-forex-technicals': 360,
+  'ingest-crypto-onchain': 360,
+  'ingest-dark-pool': 360,
+  'ingest-13f-holdings': 360,
+  'ingest-google-trends': 360,
+  'ingest-short-interest': 360,
+  'ingest-earnings': 360,
+  'ingest-stocktwits': 360,
+  'ingest-supply-chain': 360,
+  'ingest-job-postings': 360,
+  'ingest-congressional-trades': 360,
+  'ingest-options-flow': 360,
+  'ingest-reddit-sentiment': 360,
+  'ingest-cot-reports': 360,
+  'ingest-cot-cftc': 360,
+  'ingest-finra-darkpool': 360,
+  'ingest-patents': 360,
+  'ingest-search-trends': 360,
+  'ingest-economic-calendar': 360,
+  'ingest-fred-economics': 360,
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders })
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    )
+
+    console.log('[WATCHDOG] 🐕 Starting health check...')
+
+    const alerts: Array<{
+      severity: string
+      function_name: string
+      issue: string
+      last_run: string | null
+      minutes_stale: number | null
+    }> = []
+
+    // Check for stale functions
+    const { data: stalenessData, error: stalenessError } = await supabaseClient
+      .rpc('get_stale_functions')
+
+    if (stalenessError) {
+      console.error('[WATCHDOG] ❌ Error checking staleness:', stalenessError)
+    } else if (stalenessData && stalenessData.length > 0) {
+      for (const stale of stalenessData) {
+        alerts.push({
+          severity: stale.alert_severity,
+          function_name: stale.function_name,
+          issue: `Function is stale (${stale.minutes_stale} min since last run, expected every ${stale.expected_interval_minutes} min)`,
+          last_run: stale.last_run,
+          minutes_stale: stale.minutes_stale,
+        })
+        console.log(`[WATCHDOG] ⚠️ ${stale.alert_severity}: ${stale.function_name} is stale (${stale.minutes_stale} min)`)
+      }
+    }
+
+    // Check for repeated failures (3+ failures in last 6 hours)
+    const { data: failureData, error: failureError } = await supabaseClient
+      .from('function_status')
+      .select('function_name, status, executed_at, error_message')
+      .eq('status', 'failure')
+      .gte('executed_at', new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString())
+      .order('executed_at', { ascending: false })
+
+    if (failureError) {
+      console.error('[WATCHDOG] ❌ Error checking failures:', failureError)
+    } else if (failureData) {
+      const failureCounts: Record<string, number> = {}
+      for (const failure of failureData) {
+        failureCounts[failure.function_name] = (failureCounts[failure.function_name] || 0) + 1
+      }
+
+      for (const [funcName, count] of Object.entries(failureCounts)) {
+        if (count >= 3) {
+          alerts.push({
+            severity: 'CRITICAL',
+            function_name: funcName,
+            issue: `${count} failures in last 6 hours`,
+            last_run: null,
+            minutes_stale: null,
+          })
+          console.log(`[WATCHDOG] 🚨 CRITICAL: ${funcName} has ${count} failures in 6h`)
+        }
+      }
+    }
+
+    // Check for fallback overuse (>80% fallback usage)
+    const { data: fallbackData, error: fallbackError } = await supabaseClient
+      .from('function_status')
+      .select('function_name, fallback_used')
+      .not('fallback_used', 'is', null)
+      .gte('executed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+
+    if (fallbackError) {
+      console.error('[WATCHDOG] ❌ Error checking fallback usage:', fallbackError)
+    } else if (fallbackData) {
+      const fallbackCounts: Record<string, { fallback: number; total: number }> = {}
+      
+      for (const record of fallbackData) {
+        if (!fallbackCounts[record.function_name]) {
+          fallbackCounts[record.function_name] = { fallback: 0, total: 0 }
+        }
+        fallbackCounts[record.function_name].fallback++
+        fallbackCounts[record.function_name].total++
+      }
+
+      for (const [funcName, counts] of Object.entries(fallbackCounts)) {
+        const fallbackPct = (counts.fallback / counts.total) * 100
+        if (fallbackPct > 80) {
+          alerts.push({
+            severity: 'WARNING',
+            function_name: funcName,
+            issue: `High fallback usage: ${fallbackPct.toFixed(1)}% (${counts.fallback}/${counts.total} runs)`,
+            last_run: null,
+            minutes_stale: null,
+          })
+          console.log(`[WATCHDOG] ⚠️ WARNING: ${funcName} using fallback ${fallbackPct.toFixed(1)}%`)
+        }
+      }
+    }
+
+    // Check for silent failures (0 inserts + 0 skips + no error)
+    const { data: silentData, error: silentError } = await supabaseClient
+      .from('function_status')
+      .select('function_name, executed_at, rows_inserted, rows_skipped, error_message')
+      .eq('status', 'success')
+      .eq('rows_inserted', 0)
+      .eq('rows_skipped', 0)
+      .gte('executed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+
+    if (silentError) {
+      console.error('[WATCHDOG] ❌ Error checking silent failures:', silentError)
+    } else if (silentData && silentData.length > 0) {
+      for (const silent of silentData) {
+        alerts.push({
+          severity: 'WARNING',
+          function_name: silent.function_name,
+          issue: `Silent success: 0 inserts, 0 skips (possible no-op)`,
+          last_run: silent.executed_at,
+          minutes_stale: null,
+        })
+        console.log(`[WATCHDOG] ⚠️ WARNING: ${silent.function_name} succeeded with 0 inserts/skips`)
+      }
+    }
+
+    // Get overall health stats
+    const { data: healthData } = await supabaseClient
+      .from('view_function_freshness')
+      .select('*')
+
+    const healthSummary = {
+      total_functions_monitored: healthData?.length || 0,
+      alerts_critical: alerts.filter(a => a.severity === 'CRITICAL').length,
+      alerts_warning: alerts.filter(a => a.severity === 'WARNING').length,
+      alerts_ok: alerts.filter(a => a.severity === 'OK').length,
+      overall_health: alerts.filter(a => a.severity === 'CRITICAL').length === 0 ? 'HEALTHY' : 'DEGRADED',
+    }
+
+    console.log(`[WATCHDOG] ✅ Health check complete: ${healthSummary.overall_health}`)
+    console.log(`[WATCHDOG] 📊 Alerts: ${healthSummary.alerts_critical} critical, ${healthSummary.alerts_warning} warnings`)
+
+    // If there are critical alerts, we could send Slack/email notifications here
+    if (healthSummary.alerts_critical > 0) {
+      console.log('[WATCHDOG] 🚨 CRITICAL ALERTS DETECTED - NOTIFY OPS TEAM')
+      // TODO: Send Slack webhook or email
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        health: healthSummary,
+        alerts,
+        function_stats: healthData,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  } catch (error) {
+    console.error('[WATCHDOG] 💥 Fatal error:', error)
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+})

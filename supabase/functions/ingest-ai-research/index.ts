@@ -237,6 +237,20 @@ Be factual, cite data points, and assign a confidence score (0-100).`
     }
 
     const duration = Math.floor((Date.now() - startTime) / 1000);
+    // @guard: Log to function_status heartbeat table for monitoring
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-ai-research',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      duration_ms: duration * 1000,
+      source_used: 'gemini-2.5-flash',
+      metadata: {
+        assets_processed: topAssets.length,
+      }
+    });
+    
     await supabaseClient.from('ingest_logs').update({
       status: 'success',
       completed_at: new Date().toISOString(),
