@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -80,6 +83,18 @@ serve(async (req) => {
 
     console.log(`[POPULATE-ASSETS] Complete. Inserted: ${inserted}, Skipped: ${skipped}`);
 
+    const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'populate-assets',
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      duration_ms: duration,
+      source_used: 'manual_list',
+      metadata: { total_assets: popularAssets.length }
+    });
+
     return new Response(JSON.stringify({
       success: true,
       message: `Asset population complete`,
@@ -92,6 +107,23 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[POPULATE-ASSETS] Error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'populate-assets',
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : String(error),
+      source_used: 'error'
+    });
+    
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

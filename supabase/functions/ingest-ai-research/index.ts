@@ -34,12 +34,12 @@ Deno.serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Get top 10 assets by signal activity
+    // Get top 5 assets by signal activity (reduced from 10 to prevent timeout)
     const { data: topAssets, error: assetsError } = await supabaseClient
       .from('asset_signal_summary')
       .select('*')
       .order('flow_signals', { ascending: false })
-      .limit(10);
+      .limit(5);
 
     if (assetsError) {
       console.error('Error fetching assets:', assetsError);
@@ -227,8 +227,8 @@ Be factual, cite data points, and assign a confidence score (0-100).`
           console.log(`✅ Generated report for ${asset.ticker}`);
         }
 
-        // Rate limiting
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Rate limiting - reduced to 500ms to speed up processing
+        await new Promise(resolve => setTimeout(resolve, 500));
 
       } catch (err) {
         console.error(`Error processing ${asset.ticker}:`, err);

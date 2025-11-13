@@ -49,7 +49,11 @@ serve(async (req) => {
     let successCount = 0;
     let errorCount = 0;
 
-    for (const pair of forexPairs) {
+    // Process limited number of pairs to prevent timeout
+    const pairsToProcess = forexPairs.slice(0, 5);
+    console.log(`Processing ${pairsToProcess.length} pairs to prevent timeout`);
+
+    for (const pair of pairsToProcess) {
       try {
         // Alpha Vantage uses format: from_currency=EUR&to_currency=USD
         const [fromCurrency, toCurrency] = pair.ticker.split('/');

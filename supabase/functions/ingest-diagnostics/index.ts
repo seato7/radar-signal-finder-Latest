@@ -1,4 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,9 +12,17 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  
   try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    let totalRowsCount = 0;
     
     const tables = [
       'prices',
@@ -84,6 +94,8 @@ Deno.serve(async (req) => {
           status
         });
         
+        totalRowsCount += totalRows;
+        
       } catch (err) {
         diagnostics.push({
           table,
@@ -92,6 +104,18 @@ Deno.serve(async (req) => {
         });
       }
     }
+    
+    const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'ingest-diagnostics',
+      status: 'success',
+      rows_inserted: totalRowsCount,
+      rows_skipped: 0,
+      duration_ms: duration,
+      source_used: 'database_scan',
+      metadata: { tables_scanned: diagnostics.length }
+    });
     
     return new Response(JSON.stringify({
       success: true,
@@ -111,6 +135,23 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'ingest-diagnostics',
+      status: 'failure',
+      rows_inserted: 0,
+      rows_skipped: 0,
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : String(error),
+      source_used: 'error'
+    });
+    
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
