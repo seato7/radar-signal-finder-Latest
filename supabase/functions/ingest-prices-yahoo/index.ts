@@ -272,18 +272,41 @@ Deno.serve(async (req) => {
       // Set asset_id
       prices.forEach(p => p.asset_id = asset.id);
       
-      // Insert into database
-      console.log(`[DB] Inserting ${prices.length} prices for ${ticker}...`);
+      // Filter out dates that already exist to avoid duplicates
+      console.log(`[DB] Checking existing dates for ${ticker}...`);
+      const dates = prices.map(p => p.date);
+      const { data: existing } = await supabaseClient
+        .from('prices')
+        .select('date')
+        .eq('ticker', ticker)
+        .in('date', dates);
+      
+      const existingDates = new Set(existing?.map(e => e.date) || []);
+      const newPrices = prices.filter(p => !existingDates.has(p.date));
+      const skippedPrices = prices.length - newPrices.length;
+      
+      if (newPrices.length === 0) {
+        console.log(`[DB] ⏭️ ${ticker} - All ${prices.length} dates already exist, skipping`);
+        skipped += prices.length;
+        continue;
+      }
+      
+      // Insert new prices using upsert with ON CONFLICT DO UPDATE
+      console.log(`[DB] Inserting ${newPrices.length} new prices for ${ticker} (${skippedPrices} already exist)...`);
       const { error: insertError } = await supabaseClient
         .from('prices')
-        .upsert(prices, { onConflict: 'checksum', ignoreDuplicates: true });
+        .upsert(newPrices, { 
+          onConflict: 'ticker,date',
+          ignoreDuplicates: false // Update existing rows
+        });
       
       if (insertError) {
         console.log(`[DB] ❌ Insert error for ${ticker}: ${insertError.message}`);
-        skipped++;
+        skipped += newPrices.length;
       } else {
-        inserted += prices.length;
-        console.log(`[DB] ✅ Inserted ${prices.length} prices for ${ticker} from ${sourceUsed}`);
+        inserted += newPrices.length;
+        skipped += skippedPrices;
+        console.log(`[DB] ✅ ${ticker}: Inserted ${newPrices.length} new, Skipped ${skippedPrices} existing (Source: ${sourceUsed})`);
       }
     }
     

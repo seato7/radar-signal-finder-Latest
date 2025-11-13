@@ -47,8 +47,8 @@ Deno.serve(async (req) => {
     }
 
     if (!topAssets || topAssets.length === 0) {
-      // Gracefully skip if no assets with signals
-      console.log('⚠️ No assets with signals found - skipping AI research generation');
+      // ✅ GRACEFUL EXIT: No assets with signals - this is not an error
+      console.log('⚠️ No assets with signals found - skipping AI research generation (EXPECTED BEHAVIOR)');
       
       await supabaseClient.from('ingest_logs').update({
         status: 'success',
@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
         duration_seconds: Math.floor((Date.now() - startTime) / 1000),
         rows_inserted: 0,
         rows_skipped: 0,
+        source_used: 'skipped - no assets',
       }).eq('id', logId);
       
       return new Response(JSON.stringify({
@@ -63,11 +64,13 @@ Deno.serve(async (req) => {
         processed: 0,
         inserted: 0,
         skipped: 0,
-        message: 'No assets with signals found - skipped gracefully'
+        message: '✅ No assets with signals found - skipped gracefully (not an error)'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    console.log(`📊 Processing ${topAssets.length} assets with signals...`);
 
     let inserted = 0;
     let skipped = 0;
@@ -159,7 +162,9 @@ Be factual, cite data points, and assign a confidence score (0-100).`
         });
 
         if (!aiResponse.ok) {
-          console.error(`AI API error for ${asset.ticker}: ${aiResponse.status}`);
+          const errorText = await aiResponse.text();
+          console.error(`❌ AI API error for ${asset.ticker}: ${aiResponse.status} - ${errorText}`);
+          // ✅ GRACEFUL SKIP: AI API failures don't fail the entire job
           skipped++;
           continue;
         }
@@ -238,14 +243,17 @@ Be factual, cite data points, and assign a confidence score (0-100).`
       duration_seconds: duration,
       rows_inserted: inserted,
       rows_skipped: skipped,
+      source_used: 'gemini-2.5-flash',
     }).eq('id', logId);
+
+    console.log(`✅ [COMPLETE] Generated ${inserted} reports, skipped ${skipped} (${duration}s)`);
 
     return new Response(JSON.stringify({
       success: true,
       processed: topAssets.length,
       inserted,
       skipped,
-      message: `Generated ${inserted} AI research reports`
+      message: `✅ Generated ${inserted} AI research reports, skipped ${skipped}`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
