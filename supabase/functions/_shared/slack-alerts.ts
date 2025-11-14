@@ -28,11 +28,28 @@ export class SlackAlerter {
   private enabled: boolean;
   private redisCache: any;
   private runId: string;
+  private supabaseClient: any;
+  private supabaseClientPromise: Promise<any>;
 
   constructor() {
     this.webhookUrl = Deno.env.get('SLACK_WEBHOOK_URL');
     this.enabled = !!this.webhookUrl;
     this.runId = crypto.randomUUID();
+    
+    // Initialize Supabase client for alert_history logging (async)
+    this.supabaseClientPromise = (async () => {
+      try {
+        const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+        this.supabaseClient = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+        return this.supabaseClient;
+      } catch (e) {
+        console.error('⚠️ Failed to initialize Supabase client for alert logging:', e);
+        return null;
+      }
+    })();
     
     // Dynamically import Redis cache for deduplication
     import('../_shared/redis-cache.ts').then(module => {
@@ -43,6 +60,57 @@ export class SlackAlerter {
     
     if (!this.enabled) {
       console.log('⚠️ SLACK_WEBHOOK_URL not configured - alerts disabled');
+    }
+  }
+  
+  /**
+   * Log alert to persistent alert_history table with 10-minute deduplication
+   */
+  private async logToDatabase(
+    alertType: string,
+    functionName: string,
+    severity: 'critical' | 'warning' | 'info',
+    message: string,
+    metadata?: Record<string, any>
+  ): Promise<void> {
+    // Wait for Supabase client to be ready
+    const client = await this.supabaseClientPromise;
+    if (!client) return;
+    
+    try {
+      // Check if same alert exists in last 10 minutes
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: recentAlert } = await client
+        .from('alert_history')
+        .select('id')
+        .eq('alert_type', alertType)
+        .eq('function_name', functionName)
+        .gte('created_at', tenMinutesAgo)
+        .maybeSingle();
+      
+      if (recentAlert) {
+        console.log(`🔕 Database alert deduplication: ${alertType} for ${functionName} (found within 10min)`);
+        return;
+      }
+      
+      // Insert new alert
+      const { error } = await client
+        .from('alert_history')
+        .insert({
+          alert_type: alertType,
+          function_name: functionName,
+          severity,
+          message,
+          metadata: metadata || {},
+        });
+      
+      if (error) {
+        console.error('❌ Failed to log alert to database:', error);
+      } else {
+        console.log(`💾 Alert logged to database: ${alertType} for ${functionName}`);
+      }
+    } catch (e) {
+      console.error('❌ Alert database logging failed:', e);
     }
   }
   
@@ -74,6 +142,17 @@ export class SlackAlerter {
    * Send live ingestion status update
    */
   async sendLiveAlert(alert: SlackAlert, options?: { suppressDuplicates?: boolean }): Promise<void> {
+    // Log to database first
+    const severity = alert.status === 'failed' || alert.status === 'halted' ? 'critical' : 
+                     alert.status === 'partial' ? 'warning' : 'info';
+    await this.logToDatabase(
+      `live_${alert.status}`,
+      alert.etlName,
+      severity,
+      `Live alert: ${alert.etlName} ${alert.status}`,
+      alert.metadata
+    );
+    
     if (!this.enabled) return;
     
     // Check for duplicate alerts
