@@ -117,3 +117,6 @@ verify_jwt = false
 [functions.kill-stuck-jobs]
 verify_jwt = false
 
+[functions.watchdog-ingestion-health]
+verify_jwt = false
+
