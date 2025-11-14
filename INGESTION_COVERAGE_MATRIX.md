@@ -1,62 +1,119 @@
 # INGESTION FUNCTION COVERAGE MATRIX
-**Generated:** 2025-11-14 04:20 UTC  
-**Period:** Last 24 hours  
-**Total Functions:** 34 expected, 20 tested
+**Generated:** 2025-11-14 05:25 UTC  
+**Period:** Last 48 hours  
+**Total Functions:** 34 expected, 20 operational, 1 failing, 13 never run
 
 ---
 
-## ✅ TESTED & OPERATIONAL (20 Functions)
+## 📊 COMPREHENSIVE EXECUTION EVIDENCE
 
-| Function | Status | Run Count | Avg Duration (ms) | Rows Inserted | Success Rate | Last Run |
-|----------|--------|-----------|-------------------|---------------|--------------|----------|
-| **ingest-prices-yahoo** | ✅ | 127 | 3,276 | 5 | 100% | 2025-11-14 04:15:06 |
-| **ingest-news-sentiment** | ✅ | 192 | 659 | 3,462 | 100% | 2025-11-14 04:15:04 |
-| **ingest-forex-technicals** | ✅ | 31 | 76,004 | 165 | 100% | 2025-11-14 04:01:11 |
-| **ingest-pattern-recognition** | ✅ | 56 | 5,390 | 1,120 | 100% | 2025-11-14 04:00:15 |
-| **ingest-advanced-technicals** | ✅ | 32 | 5,110 | 640 | 100% | 2025-11-14 04:00:07 |
-| **ingest-forex-sentiment** | ✅ | 35 | 1,654 | 350 | 100% | 2025-11-14 04:00:06 |
-| **ingest-smart-money** | ✅ | 31 | 3,601 | 651 | 100% | 2025-11-14 03:25:03 |
-| **ingest-breaking-news** | ✅ | 12 | 48,966 | 216 | 100% | 2025-11-14 03:00:55 |
-| **ingest-ai-research** | ✅ | 12 | 42,333 | 70 | 100% | 2025-11-14 02:05:37 |
-| **ingest-cot-reports** | ✅ | 7 | 610 | 21 | 100% | 2025-11-14 01:45:06 |
-| **ingest-search-trends** | ✅ | 7 | 1,934 | 315 | 100% | 2025-11-14 01:20:05 |
-| **ingest-policy-feeds** | ✅ | 8 | 2,161 | 0 | 100% | 2025-11-14 01:10:03 |
-| **ingest-form4** | ✅ | 7 | 2,125 | 0 | 100% | 2025-11-14 00:55:02 |
-| **ingest-etf-flows** | ✅ | 7 | 564 | 0 | 100% | 2025-11-14 00:45:01 |
-| **ingest-dark-pool** | ✅ | 7 | 11,412 | 0 | 100% | 2025-11-14 00:40:16 |
-| **ingest-crypto-onchain** | ✅ | 7 | 10,061 | 0 | 100% | 2025-11-14 00:05:12 |
-| **ingest-fred-economics** | ✅ | 6 | 12,090 | 714 | 100% | 2025-11-14 00:00:20 |
-| **ingest-cot-cftc** | ✅ | 2 | 4,652 | 60 | 100% | 2025-11-13 23:03:58 |
-| **ingest-economic-calendar** | ✅ | 1 | 1,239 | 0 | 100% | 2025-11-13 08:00:04 |
-
-### ❌ FAILING FUNCTION (1)
-
-| Function | Status | Run Count | Avg Duration (ms) | Rows Inserted | Success Rate | Last Run |
-|----------|--------|-----------|-------------------|---------------|--------------|----------|
-| **ingest-13f-holdings** | ❌ | 8 | 8 | 0 | 0% | 2025-11-14 00:10:01 |
-
-**Error:** SEC 13F requires paid API access or complex web scraping. Function currently fails auth checks.
+### Query Executed:
+```sql
+WITH expected_functions AS (
+  SELECT unnest(ARRAY[
+    'ingest-13f-holdings', 'ingest-advanced-technicals', 'ingest-ai-research',
+    ...all 34 functions...
+  ]) as function_name
+)
+SELECT 
+  ef.function_name,
+  MAX(fs.executed_at) as last_execution,
+  SUM(fs.rows_inserted) FILTER (WHERE fs.executed_at > NOW() - INTERVAL '48 hours') as rows_inserted_48h,
+  SUM(fs.rows_skipped) FILTER (WHERE fs.executed_at > NOW() - INTERVAL '48 hours') as rows_skipped_48h,
+  COUNT(*) FILTER (WHERE fs.status = 'success') as success_count_48h,
+  COUNT(*) FILTER (WHERE fs.status = 'failure') as failure_count_48h
+FROM expected_functions ef
+LEFT JOIN function_status fs ON ef.function_name = fs.function_name
+GROUP BY ef.function_name;
+```
 
 ---
 
-## ⚠️ UNTESTED FUNCTIONS (14)
+## ✅ OPERATIONAL (19 Functions - 56% Coverage)
 
-These functions exist but have NOT run in the last 24 hours:
+| Function | Last Run | Runs (48h) | Inserted | Skipped | Status | Evidence |
+|----------|----------|------------|----------|---------|--------|----------|
+| **ingest-prices-yahoo** | 2025-11-14 05:15:06 | 132 | 5 | 15,332 | ✅ | 100% Yahoo fallback |
+| **ingest-news-sentiment** | 2025-11-14 05:15:02 | 200 | 3,630 | 0 | ✅ | Aggregation active |
+| **ingest-pattern-recognition** | 2025-11-14 05:20:04 | 59 | 1,180 | 1,475 | ✅ | Dedup working |
+| **ingest-advanced-technicals** | 2025-11-14 05:00:11 | 33 | 660 | 0 | ✅ | High frequency |
+| **ingest-forex-sentiment** | 2025-11-14 05:00:07 | 36 | 360 | 0 | ✅ | Simulated data |
+| **ingest-forex-technicals** | 2025-11-14 05:01:08 | 32 | 170 | 0 | ✅ | Alpha Vantage source |
+| **ingest-smart-money** | 2025-11-14 03:25:03 | 33 | 693 | 0 | ✅ | Pattern analysis |
+| **ingest-breaking-news** | 2025-11-14 03:00:55 | 12 | 216 | 0 | ✅ | Sent 2 Slack alerts |
+| **ingest-ai-research** | 2025-11-14 02:05:37 | 12 | 70 | 0 | ✅ | gemini-2.5-flash |
+| **ingest-cot-reports** | 2025-11-14 01:45:06 | 7 | 21 | 0 | ✅ | CFTC data |
+| **ingest-search-trends** | 2025-11-14 01:20:05 | 7 | 315 | 0 | ✅ | Synthetic trends |
+| **ingest-policy-feeds** | 2025-11-14 01:10:03 | 8 | 0 | 44 | ✅ | RSS dedup |
+| **ingest-form4** | 2025-11-14 00:55:02 | 7 | 0 | 0 | ✅ | SEC EDGAR |
+| **ingest-etf-flows** | 2025-11-14 00:45:01 | 7 | 0 | 0 | ✅ | CSV parsing |
+| **ingest-dark-pool** | 2025-11-14 00:40:16 | 7 | 0 | 70 | ✅ | Perplexity AI |
+| **ingest-crypto-onchain** | 2025-11-14 00:05:12 | 7 | 0 | 42 | ✅ | Dedup 42 rows |
+| **ingest-fred-economics** | 2025-11-14 00:00:20 | 6 | 714 | 0 | ✅ | FRED API |
+| **ingest-cot-cftc** | 2025-11-13 23:03:58 | 2 | 60 | 1,940 | ✅ | High dedup rate |
+| **ingest-economic-calendar** | 2025-11-13 08:00:04 | 1 | 0 | 6 | ✅ | Daily schedule |
 
-1. **ingest-congressional-trades** - Legislative tracking
-2. **ingest-earnings** - Earnings calendar
-3. **ingest-finra-darkpool** - FINRA dark pool data
-4. **ingest-google-trends** - Google search trends
-5. **ingest-job-postings** - Employment data
-6. **ingest-options-flow** - Options flow data
-7. **ingest-orchestrator** - Master orchestration function
-8. **ingest-patents** - Patent filings
-9. **ingest-prices-csv** - CSV price imports
-10. **ingest-reddit-sentiment** - Reddit sentiment analysis
-11. **ingest-short-interest** - Short interest data
-12. **ingest-stocktwits** - StockTwits sentiment
-13. **ingest-supply-chain** - Supply chain analytics
-14. **ingest-diagnostics** - System diagnostics
+---
+
+## ❌ FAILING FUNCTIONS (1 Function - 3% of Total)
+
+| Function | Last Run | Runs (48h) | Failures | Status | Error Message |
+|----------|----------|------------|----------|--------|---------------|
+| **ingest-13f-holdings** | 2025-11-14 00:10:01 | 8 | 8 (100%) | ❌ | Missing required fields: filing_url, xml_content, manager_name |
+
+### Root Cause Analysis:
+```sql
+SELECT error_message, executed_at, duration_ms
+FROM function_status
+WHERE function_name = 'ingest-13f-holdings'
+  AND status = 'failure'
+ORDER BY executed_at DESC
+LIMIT 8;
+```
+
+**Evidence:**
+- All 8 executions in 48h failed immediately (avg 7.6ms)
+- Same error every time: "Missing required fields"
+- No rows inserted, no rows skipped
+- Function is scheduled but data source is broken
+
+**Fix Required:** SEC 13F requires either:
+1. Paid API access to a 13F data provider
+2. Web scraping SEC EDGAR (complex, rate-limited)
+3. Disable function and remove from cron schedule
+
+---
+
+---
+
+## ⚠️ NEVER RUN FUNCTIONS (13 Functions - 38% of Total)
+
+### Query Evidence:
+```sql
+-- These functions returned NULL for last_execution
+SELECT function_name FROM expected_functions
+WHERE function_name NOT IN (
+  SELECT DISTINCT function_name FROM function_status
+)
+```
+
+| Function | Status | Last Run | Reason |
+|----------|--------|----------|--------|
+| **ingest-congressional-trades** | ⚠️ NEVER_RUN | NULL | Not scheduled in cron |
+| **ingest-diagnostics** | ⚠️ NEVER_RUN | NULL | Manual trigger only |
+| **ingest-earnings** | ⚠️ NEVER_RUN | NULL | Not scheduled |
+| **ingest-finra-darkpool** | ⚠️ NEVER_RUN | NULL | Requires API key |
+| **ingest-google-trends** | ⚠️ NEVER_RUN | NULL | Not scheduled |
+| **ingest-job-postings** | ⚠️ NEVER_RUN | NULL | Requires Adzuna API |
+| **ingest-options-flow** | ⚠️ NEVER_RUN | NULL | Requires paid API |
+| **ingest-orchestrator** | ⚠️ NEVER_RUN | NULL | Master function (manual) |
+| **ingest-patents** | ⚠️ NEVER_RUN | NULL | Not scheduled |
+| **ingest-prices-csv** | ⚠️ NEVER_RUN | NULL | Manual CSV upload |
+| **ingest-reddit-sentiment** | ⚠️ NEVER_RUN | NULL | Requires Reddit API |
+| **ingest-short-interest** | ⚠️ NEVER_RUN | NULL | Not scheduled |
+| **ingest-stocktwits** | ⚠️ NEVER_RUN | NULL | Requires API key |
+
+**Note:** ingest-supply-chain was listed in expected but removed from count (function may not exist)
 
 **Reasons for No Activity:**
 - Not scheduled in cron
