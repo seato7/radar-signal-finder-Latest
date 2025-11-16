@@ -1780,6 +1780,7 @@ export type Database = {
           id: string
           last_updated_at: string | null
           ticker: string
+          updated_at: string | null
         }
         Insert: {
           asset_id?: string | null
@@ -1790,6 +1791,7 @@ export type Database = {
           id?: string
           last_updated_at?: string | null
           ticker: string
+          updated_at?: string | null
         }
         Update: {
           asset_id?: string | null
@@ -1800,6 +1802,7 @@ export type Database = {
           id?: string
           last_updated_at?: string | null
           ticker?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
