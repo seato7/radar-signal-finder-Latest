@@ -19,6 +19,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const startTime = Date.now();
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -170,6 +171,20 @@ Deno.serve(async (req) => {
     }
 
     console.log(`✅ Killed ${killed} stuck jobs, retried ${retried}`);
+
+    const duration = Date.now() - startTime;
+
+    // Log to function_status for monitoring
+    await supabaseClient.from('function_status').insert({
+      function_name: 'kill-stuck-jobs',
+      status: 'success',
+      executed_at: new Date().toISOString(),
+      duration_ms: duration,
+      metadata: {
+        killed_count: killed,
+        retried_count: retried
+      }
+    });
 
     return new Response(
       JSON.stringify({

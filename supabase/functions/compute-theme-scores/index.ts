@@ -96,6 +96,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+
   try {
     const url = new URL(req.url);
     const days = parseInt(url.searchParams.get('days') || '30');
@@ -103,8 +105,10 @@ serve(async (req) => {
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
+
+    console.log('[THEME-SCORING] Starting theme score computation...');
 
     const since = new Date();
     since.setDate(since.getDate() - days);
@@ -131,6 +135,25 @@ serve(async (req) => {
 
       const { score, components, positives } = computeThemeScore(signals || []);
 
+      // Update theme with new score
+      const { error: updateError } = await supabaseClient
+        .from('themes')
+        .update({ 
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...theme.metadata,
+            last_score: Math.round(score * 100) / 100,
+            last_scored_at: new Date().toISOString()
+          }
+        })
+        .eq('id', themeId);
+
+      if (updateError) {
+        console.error('[THEME-SCORING] ❌ Failed to update theme:', updateError);
+      }
+
+      console.log(`[THEME-SCORING] ✅ Computed score for ${theme.name}: ${score.toFixed(2)}`);
+
       return new Response(
         JSON.stringify({
           id: theme.id,
@@ -155,6 +178,8 @@ serve(async (req) => {
       if (themesError) throw themesError;
 
       const results = [];
+      let updatedCount = 0;
+
       for (const theme of themes || []) {
         const { data: signals } = await supabaseClient
           .from('signals')
@@ -163,6 +188,23 @@ serve(async (req) => {
           .gte('observed_at', since.toISOString());
 
         const { score, components } = computeThemeScore(signals || []);
+
+        // Update theme with new score
+        const { error: updateError } = await supabaseClient
+          .from('themes')
+          .update({ 
+            updated_at: new Date().toISOString(),
+            metadata: {
+              ...theme.metadata,
+              last_score: Math.round(score * 100) / 100,
+              last_scored_at: new Date().toISOString()
+            }
+          })
+          .eq('id', theme.id);
+
+        if (!updateError) {
+          updatedCount++;
+        }
 
         results.push({
           id: theme.id,
@@ -179,13 +221,48 @@ serve(async (req) => {
       // Sort by score descending
       results.sort((a, b) => b.score - a.score);
 
+      const duration = Date.now() - startTime;
+
+      // Log to function_status for monitoring
+      await supabaseClient.from('function_status').insert({
+        function_name: 'compute-theme-scores',
+        status: 'success',
+        executed_at: new Date().toISOString(),
+        duration_ms: duration,
+        rows_inserted: updatedCount,
+        rows_skipped: (themes?.length || 0) - updatedCount,
+        metadata: {
+          themes_processed: themes?.length || 0,
+          themes_updated: updatedCount
+        }
+      });
+
+      console.log(`[THEME-SCORING] ✅ Computed scores for ${themes?.length || 0} themes (${updatedCount} updated) in ${duration}ms`);
+
       return new Response(
         JSON.stringify(results),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
   } catch (error) {
-    console.error('Error in compute-theme-scores:', error);
+    console.error('[THEME-SCORING] ❌ Error:', error);
+    
+    const duration = Date.now() - startTime;
+
+    // Log failure to function_status
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    await supabaseClient.from('function_status').insert({
+      function_name: 'compute-theme-scores',
+      status: 'failure',
+      executed_at: new Date().toISOString(),
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error'
+    });
+
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

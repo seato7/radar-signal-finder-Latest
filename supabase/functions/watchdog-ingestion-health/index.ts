@@ -55,6 +55,8 @@ Deno.serve(async (req) => {
     const slackAlerter = new SlackAlerter();
     console.log('[WATCHDOG] 🐕 Starting health check...')
 
+    const startTime = Date.now();
+
     const alerts: Array<{
       severity: string
       function_name: string
@@ -222,6 +224,22 @@ Deno.serve(async (req) => {
         details: {}
       }, { suppressDuplicates: true });
     }
+
+    const duration = Date.now() - startTime;
+
+    // Log to function_status for monitoring
+    await supabaseClient.from('function_status').insert({
+      function_name: 'watchdog-ingestion-health',
+      status: 'success',
+      executed_at: new Date().toISOString(),
+      duration_ms: duration,
+      metadata: {
+        alerts_count: alerts.length,
+        critical_alerts: alerts.filter(a => a.severity === 'CRITICAL').length,
+        warning_alerts: alerts.filter(a => a.severity === 'WARNING').length,
+        health_summary: healthSummary
+      }
+    });
 
     return new Response(
       JSON.stringify({
