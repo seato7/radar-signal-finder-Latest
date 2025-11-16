@@ -16,6 +16,19 @@ interface PriceData {
   updated_at: string;
 }
 
+// === PRODUCTION HARDENING: User-Agent Rotation ===
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+];
+
+function getRandomUserAgent(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 // Generate SHA256 checksum
 async function generateChecksum(data: string): Promise<string> {
   const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
@@ -24,40 +37,55 @@ async function generateChecksum(data: string): Promise<string> {
     .join('');
 }
 
-// Fetch with timeout using AbortController
-async function fetchWithTimeout(url: string, timeoutMs: number, headers?: HeadersInit): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+// === PRODUCTION HARDENING: Enhanced Fetch with Retry Logic ===
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries: number = 3
+): Promise<Response> {
+  let lastError: Error | null = null;
   
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: headers || {}
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    const err = error as Error;
-    if (err.name === 'AbortError') {
-      throw new Error(`Fetch timeout after ${timeoutMs}ms`);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      lastError = error as Error;
+      const isLastAttempt = attempt === maxRetries - 1;
+      
+      if (!isLastAttempt) {
+        // Exponential backoff: 500ms, 1s, 2s
+        const backoffMs = 500 * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
     }
-    throw error;
   }
+  
+  throw lastError || new Error('Fetch failed after retries');
 }
 
-// Fetch from Alpha Vantage
+// === Fetch from Alpha Vantage with Enhanced Error Handling ===
 async function fetchFromAlphaVantage(
   ticker: string,
   apiKey: string
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
-  console.log(`[ALPHA] Starting fetch for ${ticker}`);
-  
   try {
     const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${ticker}&outputsize=compact&apikey=${apiKey}`;
     
-    const response = await fetchWithTimeout(url, 30000); // 30 second timeout
-    console.log(`[ALPHA] ${ticker} - Response status: ${response.status}`);
+    const response = await fetchWithRetry(url, {
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept': 'application/json'
+      }
+    });
     
     if (!response.ok) {
       return { success: false, error: `HTTP ${response.status}` };
@@ -65,19 +93,21 @@ async function fetchFromAlphaVantage(
     
     const rawData = await response.json();
     
+    // Handle API-specific errors
     if (rawData['Error Message']) {
-      console.log(`[ALPHA] ${ticker} - API Error: ${rawData['Error Message']}`);
       return { success: false, error: rawData['Error Message'] };
     }
     
     if (rawData['Note']) {
-      console.log(`[ALPHA] ${ticker} - Rate limit hit`);
       return { success: false, error: 'Rate limit exceeded' };
+    }
+    
+    if (rawData['Information']) {
+      return { success: false, error: 'API limit reached' };
     }
     
     const timeSeries = rawData['Time Series (Daily)'];
     if (!timeSeries) {
-      console.log(`[ALPHA] ${ticker} - No time series data`);
       return { success: false, error: 'No time series data' };
     }
     
@@ -97,70 +127,40 @@ async function fetchFromAlphaVantage(
       });
     }
     
-    console.log(`[ALPHA] ✅ ${ticker} - Success: ${prices.length} prices`);
     return { success: true, data: prices };
   } catch (error) {
-    const err = error as Error;
-    console.log(`[ALPHA] ❌ ${ticker} - Error: ${err.message}`);
-    return { success: false, error: err.message };
+    return { success: false, error: (error as Error).message };
   }
 }
 
-// Fetch from Yahoo Finance with retry logic and browser-like headers
+// === Fetch from Yahoo Finance with Enhanced Retry and Rate Limiting ===
 async function fetchFromYahoo(
-  ticker: string,
-  retryAttempt: number = 0
+  ticker: string
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
-  const MAX_RETRIES = 2;
-  const RETRY_DELAYS = [300, 600]; // ms: exponential backoff
-  
-  console.log(`[YAHOO] Starting fetch for ${ticker} (attempt ${retryAttempt + 1}/${MAX_RETRIES + 1})`);
-  
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1mo`;
+    // Yahoo Finance API v8 - more stable endpoint
+    const period1 = Math.floor(Date.now() / 1000) - (365 * 24 * 60 * 60); // 1 year ago
+    const period2 = Math.floor(Date.now() / 1000);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d`;
     
-    // Browser-like headers to bypass anti-bot mechanisms
-    const browserHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Referer': 'https://finance.yahoo.com',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1'
-    };
-    
-    const response = await fetchWithTimeout(url, 6000, browserHeaders); // 6 second timeout per request
-    console.log(`[YAHOO] ${ticker} - Response status: ${response.status}`);
+    const response = await fetchWithRetry(url, {
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://finance.yahoo.com',
+        'Origin': 'https://finance.yahoo.com'
+      }
+    }, 5); // Yahoo gets 5 retries (more reliable)
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log(`[YAHOO] ${ticker} - HTTP ${response.status} error body: ${errorText.substring(0, 200)}`);
-      
-      // Retry on rate limit or server errors
-      if ((response.status === 429 || response.status >= 500) && retryAttempt < MAX_RETRIES) {
-        const delay = RETRY_DELAYS[retryAttempt];
-        console.log(`[YAHOO] ${ticker} - Retrying after ${delay}ms delay...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return fetchFromYahoo(ticker, retryAttempt + 1);
-      }
-      
-      return { success: false, error: `HTTP ${response.status}: ${errorText.substring(0, 100)}` };
+      return { success: false, error: `HTTP ${response.status}` };
     }
     
-    let rawData;
-    try {
-      rawData = await response.json();
-    } catch (jsonError) {
-      const textBody = await response.text();
-      console.log(`[YAHOO] ${ticker} - JSON parse error. Response body: ${textBody.substring(0, 500)}`);
-      return { success: false, error: `JSON parse error: ${textBody.substring(0, 100)}` };
-    }
-    
+    const rawData = await response.json();
     const result = rawData?.chart?.result?.[0];
     
     if (!result?.timestamp || !result?.indicators?.quote?.[0]?.close) {
-      console.log(`[YAHOO] ${ticker} - Invalid response structure:`, JSON.stringify(rawData).substring(0, 200));
       return { success: false, error: 'Invalid response structure' };
     }
     
@@ -186,21 +186,9 @@ async function fetchFromYahoo(
       });
     }
     
-    console.log(`[YAHOO] ✅ ${ticker} - Success: ${prices.length} prices`);
     return { success: true, data: prices };
   } catch (error) {
-    const err = error as Error;
-    console.log(`[YAHOO] ❌ ${ticker} - Error: ${err.message}, Stack: ${err.stack?.substring(0, 200)}`);
-    
-    // Retry on network errors
-    if (retryAttempt < MAX_RETRIES) {
-      const delay = RETRY_DELAYS[retryAttempt];
-      console.log(`[YAHOO] ${ticker} - Retrying after ${delay}ms delay due to error...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return fetchFromYahoo(ticker, retryAttempt + 1);
-    }
-    
-    return { success: false, error: err.message };
+    return { success: false, error: (error as Error).message };
   }
 }
 
@@ -210,23 +198,21 @@ Deno.serve(async (req) => {
   }
 
   const startTime = Date.now();
-  console.log(`🚀 [START] ${new Date().toISOString()}`);
+  const executionId = crypto.randomUUID();
+  console.log(`🚀 [${executionId}] START @ ${new Date().toISOString()}`);
   
   let inserted = 0;
   let skipped = 0;
   let alphaSuccessCount = 0;
   let yahooFallbackCount = 0;
-  let yahooFallbackFailedCount = 0;
   let failedCount = 0;
+  let tickersProcessed = 0;
+  let errorDetails: string[] = [];
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
-    
-    console.log(`[CONFIG] Supabase URL: ${supabaseUrl ? 'SET' : 'MISSING'}`);
-    console.log(`[CONFIG] Supabase Key: ${supabaseKey ? 'SET' : 'MISSING'}`);
-    console.log(`[CONFIG] Alpha Vantage Key: ${alphaVantageKey ? 'SET' : 'MISSING'}`);
     
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Supabase configuration missing');
@@ -238,68 +224,54 @@ Deno.serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseKey);
     
-    // Log start
-    console.log('[DB] Inserting start log...');
+    // === PRODUCTION HARDENING: Log start to ingest_logs ===
     await supabaseClient.from('ingest_logs').insert({
       etl_name: 'ingest-prices-yahoo',
       status: 'running',
-      started_at: new Date().toISOString()
+      started_at: new Date().toISOString(),
+      metadata: { execution_id: executionId }
     });
-    console.log('[DB] Start log inserted');
     
-    // Fetch assets
-    console.log('[DB] Fetching assets...');
+    // === Fetch assets with defensive limits ===
     const { data: allAssets, error: assetsError } = await supabaseClient
       .from('assets')
       .select('*')
       .limit(1000);
     
     if (assetsError) {
-      console.log(`[DB] ❌ Assets error: ${assetsError.message}`);
-      throw assetsError;
+      throw new Error(`Assets fetch failed: ${assetsError.message}`);
     }
     
-    console.log(`[DB] ✅ Fetched ${allAssets?.length || 0} assets`);
+    // === PRODUCTION HARDENING: Granular batching (15 tickers per run) ===
+    const BATCH_SIZE = 15;
+    const TICKER_DELAY_MS = 350; // 350ms base delay
+    const MAX_EXECUTION_TIME_MS = 50000; // 50 second hard limit
     
-    // CRITICAL: Batch size = 5 max per batch, with delays between tickers
-    const MAX_TICKERS = 5;
-    const TIMEOUT_MS = 60000; // 60 seconds total for 5 tickers
-    const DELAY_BETWEEN_TICKERS_MS = 400; // 400ms delay between each ticker
-    const assets = (allAssets || []).slice(0, MAX_TICKERS);
+    const assets = (allAssets || []).slice(0, BATCH_SIZE);
+    console.log(`📊 Processing ${assets.length} tickers (batch size: ${BATCH_SIZE})`);
     
-    console.log(`📊 Processing ${assets.length} tickers (max ${MAX_TICKERS})`);
-    console.log(`⏱️  Timeout: ${TIMEOUT_MS}ms (${TIMEOUT_MS/1000} seconds)`);
-    console.log(`⏱️  Delay between tickers: ${DELAY_BETWEEN_TICKERS_MS}ms`);
+    const executionDeadline = startTime + MAX_EXECUTION_TIME_MS;
     
-    const timeoutAt = startTime + TIMEOUT_MS;
-    
-    // Validate ticker list (filter out known invalid tickers)
-    const INVALID_TICKERS = new Set(['', 'N/A', 'INVALID', 'UNKNOWN']);
-    const validAssets = assets.filter(asset => {
-      const ticker = asset.ticker?.toUpperCase() || '';
-      if (!ticker || INVALID_TICKERS.has(ticker) || ticker.length > 10) {
-        console.log(`[SKIP] Invalid ticker: ${ticker}`);
-        skipped++;
-        return false;
-      }
-      return true;
-    });
-    
-    console.log(`✅ ${validAssets.length} valid tickers (${assets.length - validAssets.length} skipped as invalid)`);
-    
-    for (let i = 0; i < validAssets.length; i++) {
-      const asset = validAssets[i];
-      // Check timeout
-      const elapsed = Date.now() - startTime;
-      if (Date.now() >= timeoutAt) {
-        console.log(`⏱️  TIMEOUT: Exceeded ${TIMEOUT_MS}ms (elapsed: ${elapsed}ms)`);
-        throw new Error('INGESTION_TIMEOUT');
+    for (let i = 0; i < assets.length; i++) {
+      // === PRODUCTION HARDENING: Hard timeout check ===
+      if (Date.now() >= executionDeadline) {
+        console.log(`⏱️ DEADLINE REACHED: Stopping after ${tickersProcessed} tickers`);
+        errorDetails.push(`Stopped early: deadline reached after ${tickersProcessed} tickers`);
+        break;
       }
       
-      console.log(`\n--- Processing ${asset.ticker} (${elapsed}ms elapsed) ---`);
+      const asset = assets[i];
       const ticker = asset.ticker;
       
-      // Try Alpha Vantage (Primary)
+      if (!ticker || ticker.length > 10) {
+        skipped++;
+        continue;
+      }
+      
+      console.log(`\n[${i+1}/${assets.length}] ${ticker}`);
+      tickersProcessed++;
+      
+      // === Try Alpha Vantage first ===
       const alphaResult = await fetchFromAlphaVantage(ticker, alphaVantageKey);
       
       let prices: PriceData[] | null = null;
@@ -309,34 +281,31 @@ Deno.serve(async (req) => {
         prices = alphaResult.data;
         sourceUsed = 'Alpha Vantage';
         alphaSuccessCount++;
+        console.log(`✅ ${ticker} - Alpha Vantage: ${prices.length} prices`);
       } else {
-        console.log(`[FALLBACK] 🔄 Alpha failed for ${ticker} (${alphaResult.error}), falling back to Yahoo...`);
+        // === Fallback to Yahoo ===
+        console.log(`⚠️ ${ticker} - Alpha failed (${alphaResult.error}), trying Yahoo...`);
         
-        // Fallback to Yahoo with retry logic
-        const yahooResult = await fetchFromYahoo(ticker, 0);
+        const yahooResult = await fetchFromYahoo(ticker);
         
         if (yahooResult.success && yahooResult.data) {
           prices = yahooResult.data;
-          sourceUsed = 'Yahoo Finance (Fallback)';
+          sourceUsed = 'Yahoo Finance';
           yahooFallbackCount++;
-          console.log(`[FALLBACK] ✅ Yahoo fallback succeeded for ${ticker}`);
+          console.log(`✅ ${ticker} - Yahoo Fallback: ${prices.length} prices`);
         } else {
-          console.log(`[FAIL] ❌ Both sources failed for ${ticker}. Alpha: ${alphaResult.error}, Yahoo: ${yahooResult.error}`);
+          console.log(`❌ ${ticker} - Both sources failed. Alpha: ${alphaResult.error}, Yahoo: ${yahooResult.error}`);
           failedCount++;
-          yahooFallbackFailedCount++;
+          errorDetails.push(`${ticker}: ${alphaResult.error} | ${yahooResult.error}`);
           skipped++;
+          
+          // === PRODUCTION HARDENING: Rate limit pause on failures ===
+          await new Promise(resolve => setTimeout(resolve, 500));
           continue;
         }
       }
       
-      // Add delay between tickers to avoid rate limiting
-      if (i < validAssets.length - 1) {
-        const delay = DELAY_BETWEEN_TICKERS_MS + Math.random() * 200; // 400-600ms random delay
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-      
       if (!prices || prices.length === 0) {
-        console.log(`[SKIP] ${ticker} - No prices to insert`);
         skipped++;
         continue;
       }
@@ -344,8 +313,7 @@ Deno.serve(async (req) => {
       // Set asset_id
       prices.forEach(p => p.asset_id = asset.id);
       
-      // Filter out dates that already exist to avoid duplicates
-      console.log(`[DB] Checking existing dates for ${ticker}...`);
+      // === Check for existing data ===
       const dates = prices.map(p => p.date);
       const { data: existing } = await supabaseClient
         .from('prices')
@@ -358,27 +326,33 @@ Deno.serve(async (req) => {
       const skippedPrices = prices.length - newPrices.length;
       
       if (newPrices.length === 0) {
-        console.log(`[DB] ⏭️ ${ticker} - All ${prices.length} dates already exist, skipping`);
+        console.log(`⏭️ ${ticker} - All ${prices.length} dates exist (skipping)`);
         skipped += prices.length;
-        continue;
+      } else {
+        // === Insert new data ===
+        const { error: insertError } = await supabaseClient
+          .from('prices')
+          .upsert(newPrices, { 
+            onConflict: 'ticker,date',
+            ignoreDuplicates: false
+          });
+        
+        if (insertError) {
+          console.log(`❌ ${ticker} - Insert error: ${insertError.message}`);
+          errorDetails.push(`${ticker}: insert failed - ${insertError.message}`);
+          skipped += newPrices.length;
+        } else {
+          inserted += newPrices.length;
+          skipped += skippedPrices;
+          console.log(`✅ ${ticker} - Inserted ${newPrices.length}, Skipped ${skippedPrices} (${sourceUsed})`);
+        }
       }
       
-      // Insert new prices using upsert with ON CONFLICT DO UPDATE
-      console.log(`[DB] Inserting ${newPrices.length} new prices for ${ticker} (${skippedPrices} already exist)...`);
-      const { error: insertError } = await supabaseClient
-        .from('prices')
-        .upsert(newPrices, { 
-          onConflict: 'ticker,date',
-          ignoreDuplicates: false // Update existing rows
-        });
-      
-      if (insertError) {
-        console.log(`[DB] ❌ Insert error for ${ticker}: ${insertError.message}`);
-        skipped += newPrices.length;
-      } else {
-        inserted += newPrices.length;
-        skipped += skippedPrices;
-        console.log(`[DB] ✅ ${ticker}: Inserted ${newPrices.length} new, Skipped ${skippedPrices} existing (Source: ${sourceUsed})`);
+      // === PRODUCTION HARDENING: Adaptive delay between tickers ===
+      if (i < assets.length - 1) {
+        const jitter = Math.random() * 150; // 0-150ms random jitter
+        const delay = TICKER_DELAY_MS + jitter;
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     
@@ -387,103 +361,127 @@ Deno.serve(async (req) => {
     const fallbackRate = totalProcessed > 0 
       ? ((yahooFallbackCount / totalProcessed) * 100).toFixed(1)
       : '0.0';
-    const yahooSuccessRate = yahooFallbackCount > 0
-      ? (((yahooFallbackCount / (yahooFallbackCount + yahooFallbackFailedCount)) * 100).toFixed(1))
-      : '0.0';
     
-    console.log(`\n✅ [COMPLETE] Duration: ${(duration / 1000).toFixed(1)}s`);
-    console.log(`📊 Stats: ${alphaSuccessCount} Alpha / ${yahooFallbackCount} Yahoo Success / ${yahooFallbackFailedCount} Yahoo Failed / ${failedCount} Total Failed`);
-    console.log(`📈 Fallback rate: ${fallbackRate}% (${yahooFallbackCount}/${totalProcessed} used Yahoo)`);
-    console.log(`📈 Yahoo success rate: ${yahooSuccessRate}% (${yahooFallbackCount}/${yahooFallbackCount + yahooFallbackFailedCount})`);
-    console.log(`💾 Inserted: ${inserted} rows, Skipped: ${skipped} rows`);
-    
-    // @guard: Log to function_status heartbeat table for monitoring
+    // === PRODUCTION HARDENING: Comprehensive logging to function_status ===
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-prices-yahoo',
+      status: failedCount === totalProcessed ? 'failure' : 'success',
       executed_at: new Date().toISOString(),
-      status: 'success',
+      duration_ms: duration,
       rows_inserted: inserted,
       rows_skipped: skipped,
+      source_used: `Alpha: ${alphaSuccessCount}, Yahoo: ${yahooFallbackCount}`,
       fallback_used: yahooFallbackCount > 0 ? 'Yahoo Finance' : null,
-      duration_ms: duration,
-      source_used: alphaSuccessCount > yahooFallbackCount ? 'Alpha Vantage' : 'Yahoo Finance',
+      error_message: errorDetails.length > 0 ? errorDetails.slice(0, 3).join('; ') : null,
       metadata: {
+        execution_id: executionId,
+        tickers_processed: tickersProcessed,
         alpha_success: alphaSuccessCount,
-        yahoo_fallback_success: yahooFallbackCount,
-        yahoo_fallback_failed: yahooFallbackFailedCount,
-        yahoo_success_rate: yahooSuccessRate,
+        yahoo_fallback: yahooFallbackCount,
         failed: failedCount,
-        fallback_rate: fallbackRate,
-        total_processed: totalProcessed
+        fallback_rate: parseFloat(fallbackRate),
+        batch_size: BATCH_SIZE,
+        avg_time_per_ticker: totalProcessed > 0 ? (duration / totalProcessed).toFixed(0) : 0
       }
     });
     
-    // Log success
-    console.log('[DB] Inserting success log...');
-    await supabaseClient.from('ingest_logs').insert({
-      etl_name: 'ingest-prices-yahoo',
-      status: 'success',
-      started_at: new Date(startTime).toISOString(),
-      duration_seconds: Math.round(duration / 1000),
-      rows_inserted: inserted,
-      rows_updated: 0,
-      rows_skipped: skipped,
-      source_used: `Alpha: ${alphaSuccessCount}, Yahoo: ${yahooFallbackCount}`,
-      fallback_count: yahooFallbackCount
-    });
-    console.log('[DB] Success log inserted');
+    // === Update ingest_logs with completion ===
+    await supabaseClient
+      .from('ingest_logs')
+      .update({
+        status: 'success',
+        completed_at: new Date().toISOString(),
+        duration_seconds: Math.round(duration / 1000),
+        rows_inserted: inserted,
+        rows_skipped: skipped,
+        source_used: `Alpha: ${alphaSuccessCount}, Yahoo: ${yahooFallbackCount}`,
+        fallback_count: yahooFallbackCount,
+        metadata: { execution_id: executionId }
+      })
+      .eq('etl_name', 'ingest-prices-yahoo')
+      .eq('status', 'running')
+      .order('started_at', { ascending: false })
+      .limit(1);
     
-    return new Response(JSON.stringify({ 
-      success: true,
-      inserted,
-      skipped,
-      alpha_success: alphaSuccessCount,
-      yahoo_fallback_success: yahooFallbackCount,
-      yahoo_fallback_failed: yahooFallbackFailedCount,
-      yahoo_success_rate: `${yahooSuccessRate}%`,
-      failed: failedCount,
-      fallback_rate: `${fallbackRate}%`,
-      duration_ms: duration
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    console.log(`\n✅ [${executionId}] COMPLETE`);
+    console.log(`   Duration: ${duration}ms`);
+    console.log(`   Tickers: ${tickersProcessed}`);
+    console.log(`   Alpha: ${alphaSuccessCount}, Yahoo: ${yahooFallbackCount}, Failed: ${failedCount}`);
+    console.log(`   Inserted: ${inserted}, Skipped: ${skipped}`);
+    console.log(`   Fallback Rate: ${fallbackRate}%`);
+    
+    return new Response(
+      JSON.stringify({
+        success: true,
+        execution_id: executionId,
+        duration_ms: duration,
+        tickers_processed: tickersProcessed,
+        inserted,
+        skipped,
+        alpha_success: alphaSuccessCount,
+        yahoo_fallback: yahooFallbackCount,
+        failed: failedCount,
+        fallback_rate: parseFloat(fallbackRate)
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
     
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
+    const err = error as Error;
     
-    console.log(`\n❌ [FATAL ERROR] ${errorMsg}`);
-    console.log(`⏱️  Failed after ${(duration / 1000).toFixed(1)}s`);
+    console.error(`❌ [${executionId}] FATAL ERROR: ${err.message}`);
     
-    // Log failure
+    // === PRODUCTION HARDENING: Log failures to function_status ===
     try {
-      const supabaseClient = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       
-      console.log('[DB] Inserting failure log...');
-      await supabaseClient.from('ingest_logs').insert({
-        etl_name: 'ingest-prices-yahoo',
-        status: 'failure',
-        started_at: new Date(startTime).toISOString(),
-        duration_seconds: Math.round(duration / 1000),
-        error_message: errorMsg
-      });
-      console.log('[DB] Failure log inserted');
+      if (supabaseUrl && supabaseKey) {
+        const supabaseClient = createClient(supabaseUrl, supabaseKey);
+        
+        await supabaseClient.from('function_status').insert({
+          function_name: 'ingest-prices-yahoo',
+          status: 'failure',
+          executed_at: new Date().toISOString(),
+          duration_ms: duration,
+          error_message: err.message,
+          metadata: {
+            execution_id: executionId,
+            tickers_processed: tickersProcessed,
+            stack_trace: err.stack?.substring(0, 500)
+          }
+        });
+        
+        await supabaseClient
+          .from('ingest_logs')
+          .update({
+            status: 'failure',
+            completed_at: new Date().toISOString(),
+            duration_seconds: Math.round(duration / 1000),
+            error_message: err.message
+          })
+          .eq('etl_name', 'ingest-prices-yahoo')
+          .eq('status', 'running')
+          .order('started_at', { ascending: false })
+          .limit(1);
+      }
     } catch (logError) {
-      console.log(`[DB] ❌ Failed to log error: ${logError}`);
+      console.error('Failed to log error:', logError);
     }
     
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: errorMsg,
-      inserted,
-      skipped,
-      duration_ms: duration
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        execution_id: executionId,
+        error: err.message,
+        duration_ms: duration,
+        tickers_processed: tickersProcessed
+      }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    );
   }
 });
