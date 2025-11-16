@@ -230,6 +230,36 @@ export type Database = {
           },
         ]
       }
+      alert_history: {
+        Row: {
+          alert_type: string
+          created_at: string | null
+          function_name: string
+          id: string
+          message: string
+          metadata: Json | null
+          severity: string
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string | null
+          function_name: string
+          id?: string
+          message: string
+          metadata?: Json | null
+          severity: string
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string | null
+          function_name?: string
+          id?: string
+          message?: string
+          metadata?: Json | null
+          severity?: string
+        }
+        Relationships: []
+      }
       alerts: {
         Row: {
           created_at: string | null
