@@ -120,3 +120,6 @@ verify_jwt = false
 [functions.watchdog-ingestion-health]
 verify_jwt = false
 
+[functions.compute-theme-scores]
+verify_jwt = false
+
