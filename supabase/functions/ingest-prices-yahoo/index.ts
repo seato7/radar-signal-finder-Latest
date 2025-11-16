@@ -13,6 +13,7 @@ interface PriceData {
   close: number;
   checksum: string;
   last_updated_at: string;
+  updated_at: string;
 }
 
 // Generate SHA256 checksum
@@ -91,7 +92,8 @@ async function fetchFromAlphaVantage(
         date,
         close,
         checksum,
-        last_updated_at: new Date().toISOString()
+        last_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
     }
     
@@ -179,7 +181,8 @@ async function fetchFromYahoo(
         date,
         close,
         checksum,
-        last_updated_at: new Date().toISOString()
+        last_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
     }
     
