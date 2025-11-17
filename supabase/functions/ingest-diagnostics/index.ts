@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,7 @@ Deno.serve(async (req) => {
   }
 
   const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
   
   try {
     const supabaseClient = createClient(
@@ -117,6 +119,17 @@ Deno.serve(async (req) => {
       metadata: { tables_scanned: diagnostics.length }
     });
     
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-diagnostics',
+      status: 'success',
+      duration,
+      rowsInserted: totalRowsCount,
+      rowsSkipped: 0,
+      sourceUsed: 'database_scan',
+      metadata: { tables_scanned: diagnostics.length },
+    });
+
     return new Response(JSON.stringify({
       success: true,
       timestamp: new Date().toISOString(),
@@ -148,11 +161,21 @@ Deno.serve(async (req) => {
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: duration,
-      error_message: error instanceof Error ? error.message : String(error),
-      source_used: 'error'
+      source_used: 'database_scan',
+      error_message: error instanceof Error ? error.message : 'Unknown error',
     });
     
-    return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }), {
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-diagnostics',
+      message: `Diagnostics failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    });
+
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { CryptoOnChainMetricsSchema, PerplexityResponseSchema, safeValidate } from "../_shared/zod-schemas.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,7 @@ serve(async (req) => {
   }
 
   let logger: any;
+  const slackAlerter = new SlackAlerter();
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
@@ -253,6 +255,16 @@ hash_rate: [number if applicable]`
       fallback_count: 0,
       rows_inserted: successCount,
       rows_skipped: cryptoAssets.length - successCount,
+    });
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-crypto-onchain',
+      status: 'success',
+      duration: Date.now() - Date.parse(await logger.getStartTime()),
+      rowsInserted: successCount,
+      rowsSkipped: cryptoAssets.length - successCount,
+      sourceUsed: 'Perplexity AI',
     });
 
     return new Response(

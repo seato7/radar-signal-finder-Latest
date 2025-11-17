@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +19,7 @@ Deno.serve(async (req) => {
 
   const startTime = Date.now();
   const logId = crypto.randomUUID();
+  const slackAlerter = new SlackAlerter();
   
   try {
     await supabaseClient.from('ingest_logs').insert({
@@ -254,36 +256,48 @@ Be factual, cite data points, and assign a confidence score (0-100).`
     await supabaseClient.from('ingest_logs').update({
       status: 'success',
       completed_at: new Date().toISOString(),
-      duration_seconds: duration,
+      duration_seconds: Math.floor((Date.now() - startTime) / 1000),
       rows_inserted: inserted,
       rows_skipped: skipped,
-      source_used: 'gemini-2.5-flash',
+      source_used: 'Lovable AI + Multi-source',
     }).eq('id', logId);
-
-    console.log(`✅ [COMPLETE] Generated ${inserted} reports, skipped ${skipped} (${duration}s)`);
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-ai-research',
+      status: 'success',
+      duration: Date.now() - startTime,
+      rowsInserted: inserted,
+      rowsSkipped: skipped,
+      sourceUsed: 'Lovable AI + Multi-source',
+    });
 
     return new Response(JSON.stringify({
       success: true,
       processed: topAssets.length,
       inserted,
       skipped,
-      message: `✅ Generated ${inserted} AI research reports, skipped ${skipped}`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
     console.error('Fatal error:', error);
-    
-    const duration = Math.floor((Date.now() - startTime) / 1000);
     await supabaseClient.from('ingest_logs').update({
       status: 'failure',
       completed_at: new Date().toISOString(),
-      duration_seconds: duration,
-      error_message: error instanceof Error ? error.message : String(error),
+      duration_seconds: Math.floor((Date.now() - startTime) / 1000),
+      error_message: (error as Error).message || String(error),
     }).eq('id', logId);
 
-    return new Response(JSON.stringify({ 
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-ai-research',
+      message: `AI Research failed: ${(error as Error).message}`
+    });
+
+    return new Response(JSON.stringify({
       success: false,
       error: error instanceof Error ? error.message : String(error) 
     }), {

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,6 +18,7 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   );
+  const slackAlerter = new SlackAlerter();
 
   try {
     console.log('📊 Starting COT reports ingestion from CFTC...');
@@ -147,6 +149,14 @@ serve(async (req) => {
       source_used: 'CFTC',
       error_message: error instanceof Error ? error.message : 'Unknown error',
     });
+
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-cot-reports',
+      message: `COT Reports failed: ${(error as Error).message}`
+    });
+
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
