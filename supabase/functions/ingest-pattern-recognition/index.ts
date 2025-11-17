@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +16,7 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const slackAlerter = new SlackAlerter();
 
   try {
     console.log('Pattern recognition ingestion started...');
@@ -100,6 +102,18 @@ serve(async (req) => {
       metadata: { assets_processed: assets.length }
     });
 
+    console.log(`✅ Pattern recognition complete: ${successCount} patterns detected`);
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-pattern-recognition',
+      status: 'success',
+      duration: Date.now() - startTime,
+      rowsInserted: successCount,
+      rowsSkipped: assets.length - successCount,
+      metadata: { assets_processed: assets.length }
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -124,6 +138,13 @@ serve(async (req) => {
       source_used: 'Pattern Recognition Engine',
       error_message: (error as Error).message,
       metadata: {}
+    });
+    
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-pattern-recognition',
+      message: `Pattern recognition failed: ${(error as Error).message}`
     });
     
     return new Response(

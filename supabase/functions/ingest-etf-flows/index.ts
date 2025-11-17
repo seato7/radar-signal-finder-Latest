@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { IngestLogger } from "../_shared/log-ingest.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,6 +27,7 @@ serve(async (req) => {
   );
 
   const logger = new IngestLogger(supabaseClient, 'ingest-etf-flows');
+  const slackAlerter = new SlackAlerter();
   await logger.start();
   const startTime = Date.now();
 
@@ -173,6 +175,19 @@ serve(async (req) => {
       metadata: { csv_count: csv_urls.length }
     });
 
+    console.log(`✅ ETF flows complete: ${signalsCreated} signals created`);
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-etf-flows',
+      status: 'success',
+      duration: Date.now() - startTime,
+      rowsInserted: signalsCreated,
+      rowsSkipped: signalsSkipped,
+      sourceUsed: 'ETF Flows CSV',
+      metadata: { csv_count: csv_urls.length }
+    });
+
     return new Response(JSON.stringify({
       signals_created: signalsCreated,
       signals_skipped: signalsSkipped
@@ -185,6 +200,13 @@ serve(async (req) => {
       cache_hit: false,
       fallback_count: 0,
       latency_ms: Date.now() - startTime,
+    });
+
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-etf-flows',
+      message: `ETF flows ingestion failed: ${(error as Error).message}`
     });
 
     return new Response(JSON.stringify({ error: (error as Error).message }), {
