@@ -138,10 +138,13 @@ async function fetchFromYahoo(
   ticker: string
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
   try {
+    // Yahoo Finance uses hyphens, not dots (BRK.B → BRK-B)
+    const yahooTicker = ticker.replace(/\./g, '-');
+    
     // Yahoo Finance API v8 - more stable endpoint
     const period1 = Math.floor(Date.now() / 1000) - (365 * 24 * 60 * 60); // 1 year ago
     const period2 = Math.floor(Date.now() / 1000);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?period1=${period1}&period2=${period2}&interval=1d`;
     
     const response = await fetchWithRetry(url, {
       headers: {
