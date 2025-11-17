@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +19,7 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+  const slackAlerter = new SlackAlerter();
 
   try {
     console.log('Advanced technicals ingestion started...');
@@ -95,6 +97,19 @@ serve(async (req) => {
       metadata: { assets_processed: assets.length }
     });
 
+    console.log(`✅ Advanced technicals complete: ${successCount} indicators calculated`);
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-advanced-technicals',
+      status: 'success',
+      duration: Date.now() - startTime,
+      rowsInserted: successCount,
+      rowsSkipped: errorCount,
+      sourceUsed: 'Advanced Technical Analysis',
+      metadata: { assets_processed: assets.length, errors: errorCount }
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -120,6 +135,13 @@ serve(async (req) => {
       source_used: 'Advanced Technical Analysis',
       error_message: (error as Error).message,
       metadata: {}
+    });
+    
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-advanced-technicals',
+      message: `Advanced technicals failed: ${(error as Error).message}`
     });
     
     return new Response(
