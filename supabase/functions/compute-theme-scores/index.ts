@@ -11,6 +11,13 @@ interface Signal {
   signal_type: string;
   observed_at: string;
   magnitude: number;
+  ticker: string;
+}
+
+interface Theme {
+  id: string;
+  name: string;
+  keywords: string[];
 }
 
 // Component weights from backend/scoring.py
@@ -118,6 +125,24 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
   return { score, components, positives };
 }
 
+// Calculate relevance between signal and theme based on keyword matching
+function calculateRelevance(signal: Signal, theme: Theme): number {
+  const signalText = `${signal.ticker} ${signal.signal_type}`.toLowerCase();
+  let matchCount = 0;
+  
+  for (const keyword of theme.keywords) {
+    if (signalText.includes(keyword.toLowerCase())) {
+      matchCount++;
+    }
+  }
+  
+  const relevance = theme.keywords.length > 0 
+    ? matchCount / theme.keywords.length 
+    : 0;
+  
+  return Math.min(relevance, 1.0);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -150,15 +175,18 @@ serve(async (req) => {
 
       if (themeError) throw themeError;
 
-      // Get signals for this theme
-      const { data: signals, error: signalsError } = await supabaseClient
-        .from('signals')
-        .select('id, signal_type, observed_at, magnitude')
-        .eq('theme_id', themeId)
-        .gte('observed_at', since.toISOString())
-        .order('observed_at', { ascending: false });
+      // Get signals via signal_theme_map
+      const { data: mappings, error: mappingsError } = await supabaseClient
+        .from('signal_theme_map')
+        .select(`
+          signal_id,
+          signals(id, signal_type, observed_at, magnitude, ticker)
+        `)
+        .eq('theme_id', themeId);
 
-      if (signalsError) throw signalsError;
+      if (mappingsError) throw mappingsError;
+      
+      const signals: Signal[] = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
 
       console.log(`[THEME-SCORING] Theme: ${theme.name}, Signals found: ${signals?.length || 0}`);
       if (signals && signals.length > 0) {
@@ -212,26 +240,64 @@ serve(async (req) => {
 
       if (themesError) throw themesError;
 
+      // Get all recent signals
+      const { data: allSignals, error: signalsError } = await supabaseClient
+        .from('signals')
+        .select('id, signal_type, observed_at, magnitude, ticker')
+        .gte('observed_at', since.toISOString());
+
+      if (signalsError) throw signalsError;
+
+      console.log(`[THEME-SCORING] Found ${themes?.length || 0} themes, ${allSignals?.length || 0} signals`);
+
       const results = [];
       let updatedCount = 0;
+      let mappingsCreated = 0;
 
       for (const theme of themes || []) {
-        const { data: signals } = await supabaseClient
-          .from('signals')
-          .select('id, signal_type, observed_at, magnitude')
-          .eq('theme_id', theme.id)
-          .gte('observed_at', since.toISOString());
+        // Map signals to this theme based on keyword relevance
+        const relevantSignals: Array<{signal: Signal, relevance: number}> = [];
+        
+        for (const signal of allSignals || []) {
+          const relevance = calculateRelevance(signal, theme);
+          if (relevance > 0.1) {
+            relevantSignals.push({ signal, relevance });
+          }
+        }
 
-        const { score, components } = computeThemeScore(signals || []);
+        if (relevantSignals.length === 0) continue;
 
-        // Update theme with new score
+        // Insert signal-theme mappings
+        const mappings = relevantSignals.map(({signal, relevance}) => ({
+          signal_id: signal.id,
+          theme_id: theme.id,
+          relevance_score: relevance
+        }));
+
+        const { error: mappingError } = await supabaseClient
+          .from('signal_theme_map')
+          .upsert(mappings, { 
+            onConflict: 'signal_id,theme_id',
+            ignoreDuplicates: false 
+          });
+
+        if (!mappingError) {
+          mappingsCreated += mappings.length;
+        }
+
+        const signals = relevantSignals.map(rs => rs.signal);
+        const { score, components } = computeThemeScore(signals);
+
+        // Update theme with new alpha score
         const { error: updateError } = await supabaseClient
           .from('themes')
           .update({ 
+            alpha: score,
+            contributors: components,
             updated_at: new Date().toISOString(),
             metadata: {
               ...theme.metadata,
-              last_score: Math.round(score * 100) / 100,
+              signal_count: signals.length,
               last_scored_at: new Date().toISOString()
             }
           })
@@ -245,6 +311,7 @@ serve(async (req) => {
           id: theme.id,
           name: theme.name,
           score: Math.round(score * 100) / 100,
+          signal_count: signals.length,
           components: Object.fromEntries(
             Object.entries(components).map(([k, v]) => [k, Math.round(v * 100) / 100])
           ),
@@ -264,15 +331,17 @@ serve(async (req) => {
         status: 'success',
         executed_at: new Date().toISOString(),
         duration_ms: duration,
-        rows_inserted: updatedCount,
+        rows_inserted: updatedCount + mappingsCreated,
         rows_skipped: (themes?.length || 0) - updatedCount,
         metadata: {
           themes_processed: themes?.length || 0,
-          themes_updated: updatedCount
+          themes_updated: updatedCount,
+          mappings_created: mappingsCreated,
+          signals_processed: allSignals?.length || 0
         }
       });
 
-      console.log(`[THEME-SCORING] ✅ Computed scores for ${themes?.length || 0} themes (${updatedCount} updated) in ${duration}ms`);
+      console.log(`[THEME-SCORING] ✅ Computed scores for ${themes?.length || 0} themes (${updatedCount} updated, ${mappingsCreated} mappings) in ${duration}ms`);
 
       return new Response(
         JSON.stringify(results),
