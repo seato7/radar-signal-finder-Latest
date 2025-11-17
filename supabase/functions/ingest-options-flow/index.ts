@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
+const slackAlerter = new SlackAlerter();
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -14,6 +16,8 @@ serve(async (req) => {
   }
 
   try {
+    const startTime = Date.now();
+    
     // Require authentication
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
