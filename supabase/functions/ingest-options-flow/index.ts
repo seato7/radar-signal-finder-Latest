@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -165,12 +167,28 @@ Example: TYPE:call|STRIKE:195|EXPIRY:2025-10-31|PREMIUM:448000|VOLUME:21124|SENT
       console.log(`Inserted ${optionsFlow.length} real options flow records`);
     }
 
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-options-flow',
+      status: 'success',
+      rowsInserted: optionsFlow.length,
+      rowsSkipped: 0,
+      sourceUsed: 'Perplexity',
+      duration: Date.now() - startTime,
+    });
+
     return new Response(
       JSON.stringify({ success: true, count: optionsFlow.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in ingest-options-flow:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-options-flow',
+      message: `Options flow ingestion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

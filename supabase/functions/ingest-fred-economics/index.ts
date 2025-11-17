@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +17,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseKey);
+  const slackAlerter = new SlackAlerter();
 
   try {
     console.log('Starting FRED economic indicators ingestion...');
@@ -114,6 +116,15 @@ Deno.serve(async (req) => {
       source_used: 'FRED',
     });
 
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-fred-economics',
+      status: 'success',
+      rowsInserted: inserted,
+      rowsSkipped: skipped,
+      sourceUsed: 'FRED',
+      duration: Date.now() - startTime,
+    });
+
     return new Response(JSON.stringify({
       success: true,
       source: 'FRED (St. Louis Fed)',
@@ -136,6 +147,13 @@ Deno.serve(async (req) => {
       source_used: 'FRED',
       error_message: error instanceof Error ? error.message : String(error),
     });
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-fred-economics',
+      message: `FRED economics ingestion failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    
     return new Response(JSON.stringify({ 
       success: false, 
       error: error instanceof Error ? error.message : String(error) 

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   try {
     // Require authentication
@@ -71,6 +75,15 @@ serve(async (req) => {
         .insert(signals);
 
       if (error) throw error;
+
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-reddit-sentiment',
+        status: 'success',
+        rowsInserted: signals.length,
+        rowsSkipped: 0,
+        sourceUsed: 'Sample Data',
+        duration: Date.now() - startTime,
+      });
 
       return new Response(
         JSON.stringify({ success: true, count: signals.length, note: 'Sample data used' }),
@@ -211,12 +224,28 @@ serve(async (req) => {
       console.log(`Inserted ${records.length} Reddit sentiment records`);
     }
 
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-reddit-sentiment',
+      status: 'success',
+      rowsInserted: records.length,
+      rowsSkipped: 0,
+      sourceUsed: 'Reddit API',
+      duration: Date.now() - startTime,
+    });
+
     return new Response(
       JSON.stringify({ success: true, count: records.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in ingest-reddit-sentiment:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-reddit-sentiment',
+      message: `Reddit sentiment ingestion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

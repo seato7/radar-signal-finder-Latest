@@ -1,4 +1,5 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +10,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -160,6 +164,13 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-finra-darkpool',
+      message: `FINRA dark pool ingestion failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    
     return new Response(JSON.stringify({ 
       success: false, 
       error: error instanceof Error ? error.message : String(error) 

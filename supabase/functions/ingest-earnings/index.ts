@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,8 @@ serve(async (req) => {
   }
 
   const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+  
   try {
     // Require authentication
     const authHeader = req.headers.get('Authorization');
@@ -76,6 +79,15 @@ serve(async (req) => {
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'Mock Data',
+      });
+
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-earnings',
+        status: 'success',
+        rowsInserted: mockData.length,
+        rowsSkipped: 0,
+        sourceUsed: 'Mock Data',
+        duration: Date.now() - startTime,
       });
 
       return new Response(
@@ -161,7 +173,16 @@ serve(async (req) => {
       rows_inserted: earnings.length,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity AI',
+      source_used: 'Perplexity',
+    });
+
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-earnings',
+      status: 'success',
+      rowsInserted: earnings.length,
+      rowsSkipped: 0,
+      sourceUsed: 'Perplexity',
+      duration: Date.now() - startTime,
     });
 
     return new Response(
@@ -177,9 +198,16 @@ serve(async (req) => {
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity AI',
+      source_used: 'Perplexity',
       error_message: error instanceof Error ? error.message : 'Unknown error',
     });
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-earnings',
+      message: `Earnings ingestion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
