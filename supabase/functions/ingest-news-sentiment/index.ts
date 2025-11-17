@@ -1,6 +1,9 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
+
+const slackAlerter = new SlackAlerter();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,6 +126,15 @@ serve(async (req) => {
       source_used: 'Aggregation',
     });
 
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-news-sentiment',
+      status: 'success',
+      rowsInserted: insertData.length,
+      rowsSkipped: 0,
+      sourceUsed: 'Aggregation',
+      duration: Date.now() - startTime,
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -143,6 +155,13 @@ serve(async (req) => {
       source_used: 'Aggregation',
       error_message: error instanceof Error ? error.message : 'Unknown error',
     });
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-news-sentiment',
+      message: `News sentiment aggregation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -1,6 +1,9 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
+
+const slackAlerter = new SlackAlerter();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -84,6 +87,15 @@ Deno.serve(async (req) => {
       source_used: 'Synthetic',
     });
 
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-search-trends',
+      status: 'success',
+      rowsInserted: inserted,
+      rowsSkipped: skipped,
+      sourceUsed: 'Synthetic',
+      duration: Date.now() - startTime,
+    });
+
     return new Response(JSON.stringify({
       success: true,
       processed: assets.length,
@@ -105,6 +117,13 @@ Deno.serve(async (req) => {
       source_used: 'Synthetic',
       error_message: error instanceof Error ? error.message : String(error),
     });
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-search-trends',
+      message: `Search trends ingestion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
