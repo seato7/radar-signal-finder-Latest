@@ -314,39 +314,21 @@ Deno.serve(async (req) => {
       // Set asset_id
       prices.forEach(p => p.asset_id = asset.id);
       
-      // === Check for existing data ===
-      const dates = prices.map(p => p.date);
-      const { data: existing } = await supabaseClient
+      // === Upsert all data (let database handle duplicates) ===
+      const { error: insertError } = await supabaseClient
         .from('prices')
-        .select('date')
-        .eq('ticker', ticker)
-        .in('date', dates);
+        .upsert(prices, { 
+          onConflict: 'ticker,date',
+          ignoreDuplicates: false
+        });
       
-      const existingDates = new Set(existing?.map(e => e.date) || []);
-      const newPrices = prices.filter(p => !existingDates.has(p.date));
-      const skippedPrices = prices.length - newPrices.length;
-      
-      if (newPrices.length === 0) {
-        console.log(`⏭️ ${ticker} - All ${prices.length} dates exist (skipping)`);
+      if (insertError) {
+        console.log(`❌ ${ticker} - Upsert error: ${insertError.message}`);
+        errorDetails.push(`${ticker}: upsert failed - ${insertError.message}`);
         skipped += prices.length;
       } else {
-        // === Insert new data ===
-        const { error: insertError } = await supabaseClient
-          .from('prices')
-          .upsert(newPrices, { 
-            onConflict: 'ticker,date',
-            ignoreDuplicates: false
-          });
-        
-        if (insertError) {
-          console.log(`❌ ${ticker} - Insert error: ${insertError.message}`);
-          errorDetails.push(`${ticker}: insert failed - ${insertError.message}`);
-          skipped += newPrices.length;
-        } else {
-          inserted += newPrices.length;
-          skipped += skippedPrices;
-          console.log(`✅ ${ticker} - Inserted ${newPrices.length}, Skipped ${skippedPrices} (${sourceUsed})`);
-        }
+        inserted += prices.length;
+        console.log(`✅ ${ticker} - Upserted ${prices.length} prices (${sourceUsed})`);
       }
       
       // === PRODUCTION HARDENING: Adaptive delay between tickers ===
