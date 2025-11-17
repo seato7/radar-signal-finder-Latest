@@ -45,56 +45,52 @@ function computeTfidfSimilarity(text: string, keywords: string[]): number {
   return dotProduct / (Math.sqrt(textMagnitude) * Math.sqrt(keywordMagnitude));
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+async function mapSignalToTheme(
+  supabaseClient: any,
+  signalId: string,
+  ticker: string,
+  valueText: string,
+  themes: any[]
+): Promise<string | null> {
+  let bestThemeId: string | null = null;
+  let mapperRoute = 'none';
+  let mapperScore = 0.0;
+
+  // === STEP 1: Check ticker-based mapping (HIGHEST PRIORITY) ===
+  for (const theme of themes) {
+    const themeTickers = theme.metadata?.tickers || [];
+    if (themeTickers.includes(ticker)) {
+      bestThemeId = theme.id;
+      mapperRoute = 'ticker';
+      mapperScore = 1.0;
+      break; // First ticker match wins
+    }
   }
 
-  try {
-    const { signal_id, value_text } = await req.json();
-
-    if (!signal_id || !value_text) {
-      throw new Error('signal_id and value_text are required');
-    }
-
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
-
-    const valueLower = value_text.toLowerCase();
-
-    // Get all themes
-    const { data: themes, error: themesError } = await supabaseClient
-      .from('themes')
-      .select('*');
-
-    if (themesError) throw themesError;
-
-    // Find best matching theme by keyword count (strict)
-    let bestThemeId: string | null = null;
+  // === STEP 2: If no ticker match, try keyword matching ===
+  if (!bestThemeId && valueText) {
+    const valueLower = valueText.toLowerCase();
     let maxMatches = 0;
-    let mapperRoute = 'keyword';
-    let mapperScore = 0.0;
 
-    for (const theme of themes || []) {
+    for (const theme of themes) {
       const keywords = theme.keywords.map((kw: string) => kw.toLowerCase());
       const matches = keywords.filter((kw: string) => valueLower.includes(kw)).length;
 
       if (matches > maxMatches) {
         maxMatches = matches;
         bestThemeId = theme.id;
+        mapperRoute = 'keyword';
         mapperScore = matches;
       }
     }
 
-    // If no keyword match, try semantic fallback
+    // === STEP 3: If no keyword match, try semantic fallback ===
     if (!bestThemeId) {
       let bestSemanticScore = 0.0;
       let bestSemanticTheme: string | null = null;
 
-      for (const theme of themes || []) {
-        const score = computeTfidfSimilarity(value_text, theme.keywords);
+      for (const theme of themes) {
+        const score = computeTfidfSimilarity(valueText, theme.keywords);
 
         if (score > bestSemanticScore) {
           bestSemanticScore = score;
@@ -108,28 +104,149 @@ serve(async (req) => {
         mapperScore = bestSemanticScore;
       }
     }
+  }
 
-    // Update signal with theme_id if found
-    if (bestThemeId && (maxMatches > 0 || mapperRoute === 'semantic')) {
-      const { error: updateError } = await supabaseClient
+  // === Update signal with theme_id if found ===
+  if (bestThemeId) {
+    const { error: updateError } = await supabaseClient
+      .from('signals')
+      .update({
+        theme_id: bestThemeId,
+        raw: {
+          mapper: mapperRoute,
+          mapper_score: mapperScore,
+        },
+      })
+      .eq('id', signalId);
+
+    if (updateError) {
+      console.error(`Failed to update signal ${signalId}:`, updateError);
+      return null;
+    }
+  }
+
+  return bestThemeId;
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const { signal_id, value_text, batch_mode } = await req.json();
+
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    // === BATCH MODE: Map all unmapped signals ===
+    if (batch_mode) {
+      console.log('🔄 Running batch signal-to-theme mapping...');
+      
+      // Get all signals without theme_id
+      const { data: unmappedSignals, error: signalsError } = await supabaseClient
         .from('signals')
-        .update({
-          theme_id: bestThemeId,
-          raw: {
-            mapper: mapperRoute,
-            mapper_score: mapperScore,
-          },
-        })
-        .eq('id', signal_id);
+        .select('id, asset_id, value_text')
+        .is('theme_id', null)
+        .limit(1000);
 
-      if (updateError) throw updateError;
+      if (signalsError) throw signalsError;
+
+      // Get asset tickers
+      const assetIds = [...new Set(unmappedSignals?.map(s => s.asset_id) || [])];
+      const { data: assets, error: assetsError } = await supabaseClient
+        .from('assets')
+        .select('id, ticker')
+        .in('id', assetIds);
+
+      if (assetsError) throw assetsError;
+
+      const assetMap = new Map(assets?.map(a => [a.id, a.ticker]) || []);
+
+      // Get all themes
+      const { data: themes, error: themesError } = await supabaseClient
+        .from('themes')
+        .select('*');
+
+      if (themesError) throw themesError;
+
+      let mappedCount = 0;
+      let skippedCount = 0;
+
+      for (const signal of unmappedSignals || []) {
+        const ticker = assetMap.get(signal.asset_id);
+        const themeId = await mapSignalToTheme(
+          supabaseClient,
+          signal.id,
+          ticker || '',
+          signal.value_text || '',
+          themes || []
+        );
+
+        if (themeId) {
+          mappedCount++;
+        } else {
+          skippedCount++;
+        }
+      }
+
+      console.log(`✅ Batch mapping complete: ${mappedCount} mapped, ${skippedCount} skipped`);
 
       return new Response(
         JSON.stringify({
           success: true,
-          theme_id: bestThemeId,
-          mapper_route: mapperRoute,
-          mapper_score: mapperScore,
+          mapped: mappedCount,
+          skipped: skippedCount,
+          total: unmappedSignals?.length || 0,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // === SINGLE SIGNAL MODE ===
+    if (!signal_id || !value_text) {
+      throw new Error('signal_id and value_text are required');
+    }
+
+    // Get signal's ticker
+    const { data: signal, error: signalError } = await supabaseClient
+      .from('signals')
+      .select('asset_id')
+      .eq('id', signal_id)
+      .single();
+
+    if (signalError) throw signalError;
+
+    const { data: asset, error: assetError } = await supabaseClient
+      .from('assets')
+      .select('ticker')
+      .eq('id', signal.asset_id)
+      .single();
+
+    if (assetError) throw assetError;
+
+    // Get all themes
+    const { data: themes, error: themesError } = await supabaseClient
+      .from('themes')
+      .select('*');
+
+    if (themesError) throw themesError;
+
+    const themeId = await mapSignalToTheme(
+      supabaseClient,
+      signal_id,
+      asset.ticker,
+      value_text,
+      themes || []
+    );
+
+    if (themeId) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          theme_id: themeId,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
