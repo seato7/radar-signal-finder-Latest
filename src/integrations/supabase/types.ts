@@ -1920,6 +1920,45 @@ export type Database = {
         }
         Relationships: []
       }
+      signal_theme_map: {
+        Row: {
+          created_at: string | null
+          id: string
+          relevance_score: number | null
+          signal_id: string
+          theme_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          relevance_score?: number | null
+          signal_id: string
+          theme_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          relevance_score?: number | null
+          signal_id?: string
+          theme_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signal_theme_map_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "signals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signal_theme_map_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       signals: {
         Row: {
           asset_class: string | null

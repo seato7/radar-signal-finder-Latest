@@ -20,92 +20,125 @@ serve(async (req) => {
   try {
     console.log('[GENERATE-ALERTS] Starting alert generation');
     
+    // Get themes with score > 50 (high-performing themes)
+    const { data: highScoringThemes, error: themesError } = await supabaseClient
+      .from('themes')
+      .select('id, name, alpha, contributors, metadata')
+      .gt('alpha', 50)
+      .order('alpha', { ascending: false });
+    
+    if (themesError) throw themesError;
+    
+    if (!highScoringThemes || highScoringThemes.length === 0) {
+      console.log('[GENERATE-ALERTS] No high-scoring themes found');
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'No high-scoring themes to alert on',
+        alerts_created: 0
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`[GENERATE-ALERTS] Found ${highScoringThemes.length} high-scoring themes`);
+    
     // Get all users
     const { data: users } = await supabaseClient.auth.admin.listUsers();
     
+    let alertsCreated = 0;
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    
     for (const user of users.users) {
-      // Get user's watchlist themes
+      // Get user's watchlist
       const { data: watchlist } = await supabaseClient
         .from('watchlist')
         .select('tickers')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
       
-      if (!watchlist || !watchlist.tickers) continue;
-      
-      // Get recent signals for watchlist tickers
-      const oneDayAgo = new Date();
-      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-      
-      const { data: recentSignals } = await supabaseClient
-        .from('signals')
-        .select(`
-          *,
-          themes(id, name),
-          assets(ticker, name)
-        `)
-        .in('assets.ticker', watchlist.tickers)
-        .gte('observed_at', oneDayAgo.toISOString())
-        .order('observed_at', { ascending: false });
-      
-      if (!recentSignals || recentSignals.length === 0) continue;
-      
-      // Group signals by theme
-      const byTheme: Record<string, any[]> = {};
-      
-      for (const signal of recentSignals) {
-        const themeId = signal.theme_id;
-        if (!themeId) continue;
-        
-        if (!byTheme[themeId]) {
-          byTheme[themeId] = [];
-        }
-        byTheme[themeId].push(signal);
+      if (!watchlist || !watchlist.tickers || watchlist.tickers.length === 0) {
+        continue;
       }
       
-      // Create alerts for themes with multiple signals
-      for (const [themeId, signals] of Object.entries(byTheme)) {
-        if (signals.length < 2) continue;
+      // For each high-scoring theme, check if any watchlist tickers are involved
+      for (const theme of highScoringThemes) {
+        // Get signals mapped to this theme via signal_theme_map
+        const { data: themeMappings } = await supabaseClient
+          .from('signal_theme_map')
+          .select(`
+            signal_id,
+            relevance_score,
+            signals(
+              id,
+              ticker,
+              signal_type,
+              direction,
+              magnitude,
+              observed_at
+            )
+          `)
+          .eq('theme_id', theme.id)
+          .gte('signals.observed_at', oneDayAgo.toISOString());
         
-        const positiveSignals = signals.filter(s => s.direction === 'up');
-        const avgScore = signals.reduce((sum, s) => sum + (s.magnitude || 0), 0) / signals.length;
-        const score = avgScore * signals.length * 10; // Amplify by signal count
+        if (!themeMappings || themeMappings.length === 0) continue;
         
-        if (score < 50) continue; // Only high-scoring themes
+        // Filter for watchlist tickers
+        const relevantSignals = themeMappings
+          .filter((tm: any) => tm.signals && watchlist.tickers.includes(tm.signals.ticker))
+          .map((tm: any) => tm.signals);
+        
+        if (relevantSignals.length === 0) continue;
         
         // Check if alert already exists
         const { data: existingAlert } = await supabaseClient
           .from('alerts')
           .select('id')
           .eq('user_id', user.id)
-          .eq('theme_id', themeId)
+          .eq('theme_id', theme.id)
           .gte('created_at', oneDayAgo.toISOString())
-          .single();
+          .maybeSingle();
         
         if (existingAlert) continue;
         
+        // Calculate alert score based on theme score and signal count
+        const positiveSignals = relevantSignals.filter((s: any) => s.direction === 'up');
+        const score = theme.alpha * (1 + Math.log10(relevantSignals.length + 1) / 2);
+        
         // Create alert
-        await supabaseClient
+        const { error: alertError } = await supabaseClient
           .from('alerts')
           .insert({
             user_id: user.id,
-            theme_id: themeId,
-            theme_name: signals[0].themes?.name || 'Unknown Theme',
-            score,
+            theme_id: theme.id,
+            theme_name: theme.name,
+            score: Math.min(100, score),
             status: 'active',
-            positives: positiveSignals.map(s => s.signal_type),
+            positives: positiveSignals.map((s: any) => s.signal_type),
             dont_miss: {
-              tickers: signals.map(s => s.assets?.ticker).filter(Boolean),
-              signal_count: signals.length
+              tickers: relevantSignals.map((s: any) => s.ticker),
+              signal_count: relevantSignals.length,
+              theme_score: theme.alpha,
+              top_contributors: Object.entries(theme.contributors || {})
+                .sort((a: any, b: any) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([k]) => k)
             }
           });
         
-        console.log(`[GENERATE-ALERTS] Created alert for user ${user.id}, theme ${themeId}, score ${score}`);
+        if (alertError) {
+          console.error(`[GENERATE-ALERTS] Failed to create alert:`, alertError);
+        } else {
+          alertsCreated++;
+          console.log(`[GENERATE-ALERTS] Created alert for user ${user.id}, theme "${theme.name}", score ${score.toFixed(2)}`);
+        }
       }
     }
 
     return new Response(JSON.stringify({
       success: true,
+      alerts_created: alertsCreated,
+      high_scoring_themes: highScoringThemes.length,
       timestamp: new Date().toISOString()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
