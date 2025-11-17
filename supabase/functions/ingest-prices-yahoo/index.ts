@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { SlackAlerter } from '../_shared/slack-alerts.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -200,6 +201,7 @@ Deno.serve(async (req) => {
 
   const startTime = Date.now();
   const executionId = crypto.randomUUID();
+  const slackAlerter = new SlackAlerter();
   console.log(`🚀 [${executionId}] START @ ${new Date().toISOString()}`);
   
   let inserted = 0;
@@ -393,6 +395,32 @@ Deno.serve(async (req) => {
     console.log(`   Inserted: ${inserted}, Skipped: ${skipped}`);
     console.log(`   Fallback Rate: ${fallbackRate}%`);
     
+    // === SEND SLACK ALERT ===
+    console.log('📣 Attempting to send Slack alert...');
+    try {
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-prices-yahoo',
+        status: failedCount === totalProcessed ? 'failed' : 'success',
+        duration,
+        latencyMs: totalProcessed > 0 ? duration / totalProcessed : 0,
+        sourceUsed: yahooFallbackCount > 0 ? 'Yahoo Finance (Fallback)' : 'Alpha Vantage',
+        fallbackRatio: parseFloat(fallbackRate) / 100,
+        rowsInserted: inserted,
+        rowsSkipped: skipped,
+        metadata: {
+          execution_id: executionId,
+          tickers_processed: tickersProcessed,
+          alpha_success: alphaSuccessCount,
+          yahoo_fallback: yahooFallbackCount,
+          failed: failedCount,
+          avg_time_per_ticker: totalProcessed > 0 ? (duration / totalProcessed).toFixed(0) : 0
+        }
+      });
+      console.log('✅ Slack alert sent successfully');
+    } catch (slackError) {
+      console.error('❌ Failed to send Slack alert:', slackError);
+    }
+    
     return new Response(
       JSON.stringify({
         success: true,
@@ -414,6 +442,24 @@ Deno.serve(async (req) => {
     const err = error as Error;
     
     console.error(`❌ [${executionId}] FATAL ERROR: ${err.message}`);
+    
+    // === SEND SLACK CRITICAL ALERT ===
+    try {
+      const slackAlerter = new SlackAlerter();
+      await slackAlerter.sendCriticalAlert({
+        type: 'auth_error',
+        etlName: 'ingest-prices-yahoo',
+        message: `FATAL: ${err.message}`,
+        details: {
+          execution_id: executionId,
+          duration_ms: duration,
+          tickers_processed: tickersProcessed,
+          stack: err.stack?.substring(0, 500)
+        }
+      });
+    } catch (slackError) {
+      console.error('Failed to send Slack alert:', slackError);
+    }
     
     // === PRODUCTION HARDENING: Log failures to function_status ===
     try {
