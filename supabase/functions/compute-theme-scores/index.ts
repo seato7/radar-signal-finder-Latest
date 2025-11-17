@@ -46,18 +46,45 @@ function computeComponentScores(signals: Signal[], asOf: Date = new Date()): Rec
     const magnitude = signal.magnitude || 1.0;
     const contribution = magnitude * decay;
     
-    // Map signal types to components
-    if (['policy_keyword', 'policy_mention'].includes(signal.signal_type)) {
+    // === UPDATED SIGNAL TYPE MAPPINGS (matches actual DB signal types) ===
+    
+    // PolicyMomentum: policy-related signals
+    if (['policy_keyword', 'policy_mention', 'policy_approval'].includes(signal.signal_type)) {
       components.PolicyMomentum += contribution;
-    } else if (['flow_pressure', 'flow_pressure_etf'].includes(signal.signal_type)) {
+    } 
+    
+    // FlowPressure: capital flows and crypto movements
+    else if (['flow_pressure', 'flow_pressure_etf', 'crypto_whale_activity', 'crypto_exchange_outflow'].includes(signal.signal_type)) {
       components.FlowPressure += contribution;
-    } else if (['filing_13f_new', 'filing_13f_increase'].includes(signal.signal_type)) {
+    } 
+    
+    // BigMoneyConfirm: institutional money and dark pool
+    else if (['filing_13f_new', 'filing_13f_increase', 'smart_money_flow', 'dark_pool_activity'].includes(signal.signal_type)) {
       components.BigMoneyConfirm += contribution;
-    } else if (['insider_buy', 'politician_buy'].includes(signal.signal_type)) {
+    } 
+    
+    // InsiderPoliticianConfirm: insider trading
+    else if (['insider_buy', 'politician_buy', 'insider_sell', 'politician_sell'].includes(signal.signal_type)) {
       components.InsiderPoliticianConfirm += contribution;
-    } else if (['social_mention', 'news_mention'].includes(signal.signal_type)) {
+    } 
+    
+    // Attention: sentiment and social signals
+    else if (['social_mention', 'news_mention', 'sentiment_extreme'].includes(signal.signal_type)) {
       components.Attention += contribution;
-    } else if (signal.signal_type.startsWith('risk_')) {
+    } 
+    
+    // TechEdge: technical analysis signals (NEW - this was missing!)
+    else if (['technical_stochastic', 'technical_ma_crossover', 'technical_rsi', 'chart_pattern'].includes(signal.signal_type)) {
+      components.TechEdge += contribution;
+    } 
+    
+    // CapexMomentum: futures positioning
+    else if (['cot_positioning'].includes(signal.signal_type)) {
+      components.CapexMomentum += contribution;
+    }
+    
+    // RiskFlags: risk-related signals
+    else if (signal.signal_type.startsWith('risk_')) {
       components.RiskFlags += contribution;
     }
   }
@@ -133,7 +160,15 @@ serve(async (req) => {
 
       if (signalsError) throw signalsError;
 
+      console.log(`[THEME-SCORING] Theme: ${theme.name}, Signals found: ${signals?.length || 0}`);
+      if (signals && signals.length > 0) {
+        console.log(`[THEME-SCORING] Sample signal:`, signals[0]);
+        console.log(`[THEME-SCORING] Signal types:`, [...new Set(signals.map(s => s.signal_type))]);
+      }
+
       const { score, components, positives } = computeThemeScore(signals || []);
+
+      console.log(`[THEME-SCORING] Score: ${score}, Components:`, components);
 
       // Update theme with new score
       const { error: updateError } = await supabaseClient
