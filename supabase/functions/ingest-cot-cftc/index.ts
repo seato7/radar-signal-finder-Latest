@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { logHeartbeat } from '../_shared/heartbeat.ts';
+import { SlackAlerter } from '../_shared/slack-alerts.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,6 +91,7 @@ Deno.serve(async (req) => {
   let skipped = 0;
   let fallbackUsed = false;
   let errorMessage: string | null = null;
+  const slackAlerter = new SlackAlerter();
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -287,7 +289,14 @@ Deno.serve(async (req) => {
       console.error('Failed to log heartbeat:', logError);
     }
     
-    return new Response(JSON.stringify({ 
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-cot-cftc',
+      message: `COT CFTC failed: ${errorMessage}`
+    });
+
+    return new Response(JSON.stringify({
       success: false, 
       error: errorMessage,
       inserted,

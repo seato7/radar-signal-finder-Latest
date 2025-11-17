@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +16,7 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const slackAlerter = new SlackAlerter();
   
   try {
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY') ?? '';
@@ -180,20 +182,25 @@ price: [current price]`
   } catch (error) {
     console.error('Fatal error:', error);
     
-    // @guard: Heartbeat log failure
     await supabase.from('function_status').insert({
       function_name: 'ingest-dark-pool',
       executed_at: new Date().toISOString(),
       status: 'failure',
       rows_inserted: 0,
       rows_skipped: 0,
-      fallback_used: null,
       duration_ms: Date.now() - startTime,
       source_used: 'Perplexity AI',
       error_message: (error as Error).message,
       metadata: {}
     });
     
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'auth_error',
+      etlName: 'ingest-dark-pool',
+      message: `Dark Pool failed: ${(error as Error).message}`
+    });
+
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
