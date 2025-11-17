@@ -123,3 +123,6 @@ verify_jwt = false
 [functions.compute-theme-scores]
 verify_jwt = false
 
+[functions.map-signal-to-theme]
+verify_jwt = false
+
