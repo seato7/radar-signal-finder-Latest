@@ -1,4 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
+
+const slackAlerter = new SlackAlerter();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +13,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -105,6 +110,15 @@ Deno.serve(async (req) => {
       failed: results.filter(r => !r.success).length
     };
     
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-orchestrator',
+      status: 'success',
+      rowsInserted: summary.successful,
+      rowsSkipped: summary.failed,
+      sourceUsed: `${frequency} batch`,
+      duration: Date.now() - startTime,
+    });
+    
     return new Response(JSON.stringify({
       success: true,
       frequency,
@@ -116,6 +130,13 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-orchestrator',
+      message: `Orchestrator failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
