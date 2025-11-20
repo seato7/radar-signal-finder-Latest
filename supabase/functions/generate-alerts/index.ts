@@ -23,9 +23,9 @@ serve(async (req) => {
     // Get themes with score > 50 (high-performing themes)
     const { data: highScoringThemes, error: themesError } = await supabaseClient
       .from('themes')
-      .select('id, name, alpha, contributors, metadata')
-      .gt('alpha', 50)
-      .order('alpha', { ascending: false });
+      .select('id, name, score, keywords, metadata')
+      .gt('score', 50)
+      .order('score', { ascending: false });
     
     if (themesError) throw themesError;
     
@@ -63,30 +63,18 @@ serve(async (req) => {
       
       // For each high-scoring theme, check if any watchlist tickers are involved
       for (const theme of highScoringThemes) {
-        // Get signals mapped to this theme via signal_theme_map
-        const { data: themeMappings } = await supabaseClient
-          .from('signal_theme_map')
-          .select(`
-            signal_id,
-            relevance_score,
-            signals(
-              id,
-              ticker,
-              signal_type,
-              direction,
-              magnitude,
-              observed_at
-            )
-          `)
+        // Get signals mapped to this theme directly
+        const { data: signals } = await supabaseClient
+          .from('signals')
+          .select('id, asset_id, signal_type, direction, magnitude, observed_at, value_text, assets(ticker)')
           .eq('theme_id', theme.id)
-          .gte('signals.observed_at', oneDayAgo.toISOString());
+          .gte('observed_at', oneDayAgo.toISOString());
         
-        if (!themeMappings || themeMappings.length === 0) continue;
+        if (!signals || signals.length === 0) continue;
         
         // Filter for watchlist tickers
-        const relevantSignals = themeMappings
-          .filter((tm: any) => tm.signals && watchlist.tickers.includes(tm.signals.ticker))
-          .map((tm: any) => tm.signals);
+        const relevantSignals = signals
+          .filter((s: any) => s.assets && watchlist.tickers.includes(s.assets.ticker));
         
         if (relevantSignals.length === 0) continue;
         
@@ -103,7 +91,7 @@ serve(async (req) => {
         
         // Calculate alert score based on theme score and signal count
         const positiveSignals = relevantSignals.filter((s: any) => s.direction === 'up');
-        const score = theme.alpha * (1 + Math.log10(relevantSignals.length + 1) / 2);
+        const score = theme.score * (1 + Math.log10(relevantSignals.length + 1) / 2);
         
         // Create alert
         const { error: alertError } = await supabaseClient
@@ -116,13 +104,10 @@ serve(async (req) => {
             status: 'active',
             positives: positiveSignals.map((s: any) => s.signal_type),
             dont_miss: {
-              tickers: relevantSignals.map((s: any) => s.ticker),
+              tickers: relevantSignals.map((s: any) => s.assets?.ticker).filter(Boolean),
               signal_count: relevantSignals.length,
-              theme_score: theme.alpha,
-              top_contributors: Object.entries(theme.contributors || {})
-                .sort((a: any, b: any) => b[1] - a[1])
-                .slice(0, 3)
-                .map(([k]) => k)
+              theme_score: theme.score,
+              top_signals: relevantSignals.slice(0, 3).map((s: any) => s.signal_type)
             }
           });
         
