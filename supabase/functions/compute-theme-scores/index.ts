@@ -175,18 +175,34 @@ serve(async (req) => {
 
       if (themeError) throw themeError;
 
-      // Get signals via signal_theme_map
-      const { data: mappings, error: mappingsError } = await supabaseClient
+      // Get signals via signal_theme_map with asset ticker
+      const { data: mappings, error: mappingsError} = await supabaseClient
         .from('signal_theme_map')
         .select(`
           signal_id,
-          signals(id, signal_type, observed_at, magnitude, ticker)
+          signals(id, signal_type, observed_at, magnitude, asset_id)
         `)
         .eq('theme_id', themeId);
 
       if (mappingsError) throw mappingsError;
       
-      const signals: Signal[] = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
+      // Get asset tickers for mapped signals
+      const signalData = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
+      const assetIds = [...new Set(signalData.map(s => s.asset_id))];
+      
+      const { data: assets, error: assetsError } = await supabaseClient
+        .from('assets')
+        .select('id, ticker')
+        .in('id', assetIds);
+        
+      if (assetsError) throw assetsError;
+      
+      const assetMap = new Map(assets?.map(a => [a.id, a.ticker]) || []);
+      
+      const signals: Signal[] = signalData.map(s => ({
+        ...s,
+        ticker: assetMap.get(s.asset_id) || ''
+      }));
 
       console.log(`[THEME-SCORING] Theme: ${theme.name}, Signals found: ${signals?.length || 0}`);
       if (signals && signals.length > 0) {
@@ -240,13 +256,30 @@ serve(async (req) => {
 
       if (themesError) throw themesError;
 
-      // Get all recent signals
-      const { data: allSignals, error: signalsError } = await supabaseClient
+      // Get all recent signals with asset tickers
+      const { data: recentSignals, error: signalsError } = await supabaseClient
         .from('signals')
-        .select('id, signal_type, observed_at, magnitude, ticker')
+        .select('id, signal_type, observed_at, magnitude, asset_id')
         .gte('observed_at', since.toISOString());
 
       if (signalsError) throw signalsError;
+      
+      // Get asset tickers
+      const assetIds = [...new Set(recentSignals?.map(s => s.asset_id) || [])];
+      
+      const { data: assets, error: assetsError } = await supabaseClient
+        .from('assets')
+        .select('id, ticker')
+        .in('id', assetIds);
+        
+      if (assetsError) throw assetsError;
+      
+      const assetMap = new Map(assets?.map(a => [a.id, a.ticker]) || []);
+      
+      const allSignals: Signal[] = (recentSignals || []).map(s => ({
+        ...s,
+        ticker: assetMap.get(s.asset_id) || ''
+      }));
 
       console.log(`[THEME-SCORING] Found ${themes?.length || 0} themes, ${allSignals?.length || 0} signals`);
 
