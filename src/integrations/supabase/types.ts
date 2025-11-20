@@ -299,6 +299,13 @@ export type Database = {
             foreignKeyName: "alerts_theme_id_fkey"
             columns: ["theme_id"]
             isOneToOne: false
+            referencedRelation: "theme_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
             referencedRelation: "themes"
             referencedColumns: ["id"]
           },
@@ -1954,6 +1961,13 @@ export type Database = {
             foreignKeyName: "signal_theme_map_theme_id_fkey"
             columns: ["theme_id"]
             isOneToOne: false
+            referencedRelation: "theme_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signal_theme_map_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
             referencedRelation: "themes"
             referencedColumns: ["id"]
           },
@@ -2229,6 +2243,54 @@ export type Database = {
         }
         Relationships: []
       }
+      theme_scores: {
+        Row: {
+          component_scores: Json | null
+          computed_at: string
+          created_at: string | null
+          id: string
+          positive_components: string[] | null
+          score: number
+          signal_count: number | null
+          theme_id: string
+        }
+        Insert: {
+          component_scores?: Json | null
+          computed_at?: string
+          created_at?: string | null
+          id?: string
+          positive_components?: string[] | null
+          score?: number
+          signal_count?: number | null
+          theme_id: string
+        }
+        Update: {
+          component_scores?: Json | null
+          computed_at?: string
+          created_at?: string | null
+          id?: string
+          positive_components?: string[] | null
+          score?: number
+          signal_count?: number | null
+          theme_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "theme_scores_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "theme_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "theme_scores_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       themes: {
         Row: {
           alpha: number | null
@@ -2238,6 +2300,8 @@ export type Database = {
           keywords: string[]
           metadata: Json | null
           name: string
+          score: number | null
+          tickers: string[] | null
           updated_at: string | null
         }
         Insert: {
@@ -2248,6 +2312,8 @@ export type Database = {
           keywords?: string[]
           metadata?: Json | null
           name: string
+          score?: number | null
+          tickers?: string[] | null
           updated_at?: string | null
         }
         Update: {
@@ -2258,6 +2324,8 @@ export type Database = {
           keywords?: string[]
           metadata?: Json | null
           name?: string
+          score?: number | null
+          tickers?: string[] | null
           updated_at?: string | null
         }
         Relationships: []
@@ -2285,6 +2353,42 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_theme_subscriptions: {
+        Row: {
+          id: string
+          subscribed_at: string | null
+          theme_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          subscribed_at?: string | null
+          theme_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          subscribed_at?: string | null
+          theme_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_theme_subscriptions_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "theme_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_theme_subscriptions_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       watchlist: {
         Row: {
@@ -2379,6 +2483,23 @@ export type Database = {
           percentage: number | null
           source_used: string | null
           total_signals: number | null
+        }
+        Relationships: []
+      }
+      theme_overview: {
+        Row: {
+          cached_score: number | null
+          component_scores: Json | null
+          id: string | null
+          keywords: string[] | null
+          latest_score: number | null
+          name: string | null
+          positive_components: string[] | null
+          score_updated_at: string | null
+          signal_count: number | null
+          subscriber_count: number | null
+          tickers: string[] | null
+          total_mapped_signals: number | null
         }
         Relationships: []
       }
@@ -2527,6 +2648,16 @@ export type Database = {
           total_calls: number
         }[]
       }
+      get_latest_theme_score: {
+        Args: { p_theme_id: string }
+        Returns: {
+          component_scores: Json
+          computed_at: string
+          positive_components: string[]
+          score: number
+          signal_count: number
+        }[]
+      }
       get_stale_functions: {
         Args: never
         Returns: {
@@ -2556,6 +2687,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_subscribed_to_theme: {
+        Args: { p_theme_id: string; p_user_id: string }
         Returns: boolean
       }
     }

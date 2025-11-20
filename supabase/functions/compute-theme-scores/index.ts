@@ -12,6 +12,7 @@ interface Signal {
   observed_at: string;
   magnitude: number;
   ticker: string;
+  value_text?: string;
 }
 
 interface Theme {
@@ -127,18 +128,46 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
 
 // Calculate relevance between signal and theme based on keyword matching
 function calculateRelevance(signal: Signal, theme: Theme): number {
-  const signalText = `${signal.ticker} ${signal.signal_type}`.toLowerCase();
+  // Combine ticker, signal type, and value_text for matching
+  const signalText = `${signal.ticker} ${signal.signal_type} ${(signal as any).value_text || ''}`.toLowerCase();
+  
+  // Also check if ticker is a major tech stock for tech themes
+  const techTickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'ADBE', 'NFLX'];
+  const isTechStock = techTickers.includes(signal.ticker.toUpperCase());
+  
   let matchCount = 0;
+  let weightedScore = 0;
   
   for (const keyword of theme.keywords) {
-    if (signalText.includes(keyword.toLowerCase())) {
+    const lowerKeyword = keyword.toLowerCase();
+    
+    // Direct keyword match in signal text
+    if (signalText.includes(lowerKeyword)) {
       matchCount++;
+      weightedScore += 1.0;
+    }
+    
+    // Special case: tech-related themes get bonus for tech stocks
+    if (isTechStock && ['tech', 'technology', 'innovation', 'growth'].includes(lowerKeyword)) {
+      weightedScore += 0.5;
+    }
+    
+    // Signal type matching
+    if (signal.signal_type.includes('institutional') && ['institutional', 'smart money', 'buying'].includes(lowerKeyword)) {
+      weightedScore += 0.5;
+    }
+    
+    if (signal.signal_type.includes('technical') && ['technical', 'chart', 'pattern'].includes(lowerKeyword)) {
+      weightedScore += 0.3;
     }
   }
   
-  const relevance = theme.keywords.length > 0 
-    ? matchCount / theme.keywords.length 
-    : 0;
+  // Calculate relevance as percentage of keywords matched, with weighting
+  const keywordMatchRatio = theme.keywords.length > 0 ? matchCount / theme.keywords.length : 0;
+  const weightedRatio = theme.keywords.length > 0 ? weightedScore / theme.keywords.length : 0;
+  
+  // Use the higher of the two ratios
+  const relevance = Math.max(keywordMatchRatio, weightedRatio);
   
   return Math.min(relevance, 1.0);
 }
@@ -180,7 +209,7 @@ serve(async (req) => {
         .from('signal_theme_map')
         .select(`
           signal_id,
-          signals(id, signal_type, observed_at, magnitude, asset_id)
+          signals(id, signal_type, observed_at, magnitude, asset_id, value_text, direction)
         `)
         .eq('theme_id', themeId);
 
@@ -214,21 +243,22 @@ serve(async (req) => {
 
       console.log(`[THEME-SCORING] Score: ${score}, Components:`, components);
 
-      // Update theme with new score
-      const { error: updateError } = await supabaseClient
-        .from('themes')
-        .update({ 
-          updated_at: new Date().toISOString(),
-          metadata: {
-            ...theme.metadata,
-            last_score: Math.round(score * 100) / 100,
-            last_scored_at: new Date().toISOString()
-          }
-        })
-        .eq('id', themeId);
+      // Insert score into theme_scores table (trigger will update themes.score)
+      const { error: insertError } = await supabaseClient
+        .from('theme_scores')
+        .insert({
+          theme_id: themeId,
+          score: Math.round(score),
+          component_scores: components,
+          positive_components: positives,
+          signal_count: signals?.length || 0,
+          computed_at: new Date().toISOString()
+        });
 
-      if (updateError) {
-        console.error('[THEME-SCORING] ❌ Failed to update theme:', updateError);
+      if (insertError) {
+        console.error('[THEME-SCORING] ❌ Failed to insert theme score:', insertError);
+      } else {
+        console.log(`[THEME-SCORING] ✅ Inserted theme score: ${Math.round(score)}/100`);
       }
 
       console.log(`[THEME-SCORING] ✅ Computed score for ${theme.name}: ${score.toFixed(2)}`);
@@ -259,7 +289,7 @@ serve(async (req) => {
       // Get all recent signals with asset tickers
       const { data: recentSignals, error: signalsError } = await supabaseClient
         .from('signals')
-        .select('id, signal_type, observed_at, magnitude, asset_id')
+        .select('id, signal_type, observed_at, magnitude, asset_id, value_text, direction')
         .gte('observed_at', since.toISOString());
 
       if (signalsError) throw signalsError;
@@ -293,7 +323,8 @@ serve(async (req) => {
         
         for (const signal of allSignals || []) {
           const relevance = calculateRelevance(signal, theme);
-          if (relevance > 0.1) {
+          // Lower threshold from 0.1 to 0.05 to capture more relevant signals
+          if (relevance > 0.05) {
             relevantSignals.push({ signal, relevance });
           }
         }
@@ -319,25 +350,24 @@ serve(async (req) => {
         }
 
         const signals = relevantSignals.map(rs => rs.signal);
-        const { score, components } = computeThemeScore(signals);
+        const { score, components, positives } = computeThemeScore(signals);
 
-        // Update theme with new alpha score
-        const { error: updateError } = await supabaseClient
-          .from('themes')
-          .update({ 
-            alpha: score,
-            contributors: components,
-            updated_at: new Date().toISOString(),
-            metadata: {
-              ...theme.metadata,
-              signal_count: signals.length,
-              last_scored_at: new Date().toISOString()
-            }
-          })
-          .eq('id', theme.id);
+        // Insert score into theme_scores table (trigger will update themes.score)
+        const { error: insertError } = await supabaseClient
+          .from('theme_scores')
+          .insert({
+            theme_id: theme.id,
+            score: Math.round(score),
+            component_scores: components,
+            positive_components: positives,
+            signal_count: signals.length,
+            computed_at: new Date().toISOString()
+          });
 
-        if (!updateError) {
+        if (!insertError) {
           updatedCount++;
+        } else {
+          console.error(`[THEME-SCORING] ❌ Failed to insert score for ${theme.name}:`, insertError);
         }
 
         results.push({
