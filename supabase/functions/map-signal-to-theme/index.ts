@@ -147,12 +147,13 @@ serve(async (req) => {
     if (batch_mode) {
       console.log('🔄 Running batch signal-to-theme mapping...');
       
-      // Get all signals without theme_id
+      // Get all signals without theme_id (excluding those with null asset_id)
       const { data: unmappedSignals, error: signalsError } = await supabaseClient
         .from('signals')
         .select('id, asset_id, signal_type, value_text')
         .is('theme_id', null)
-        .limit(1000);
+        .not('asset_id', 'is', null)
+        .limit(2000); // Process 2000 at a time to avoid timeout
 
       if (signalsError) throw signalsError;
 
