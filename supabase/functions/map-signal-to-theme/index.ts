@@ -12,6 +12,23 @@ function computeTfidfSimilarity(text: string, keywords: string[]): number {
   if (!text || !keywords || keywords.length === 0) return 0.0;
   
   const textLower = text.toLowerCase();
+  
+  // Check for exact phrase matches first (highest score)
+  let phraseMatchScore = 0;
+  for (const keyword of keywords) {
+    const kwLower = keyword.toLowerCase();
+    if (textLower.includes(kwLower)) {
+      // Weight longer phrases more heavily
+      phraseMatchScore += kwLower.split(/\s+/).length * 2;
+    }
+  }
+  
+  // If we have strong phrase matches, return high score
+  if (phraseMatchScore > 5) {
+    return 0.9 + (phraseMatchScore * 0.01); // Cap at 1.0
+  }
+  
+  // Otherwise do token-based matching
   const textTokens = textLower.split(/\s+/);
   
   const textTf: Record<string, number> = {};
@@ -19,7 +36,12 @@ function computeTfidfSimilarity(text: string, keywords: string[]): number {
     textTf[token] = (textTf[token] || 0) + 1;
   }
   
-  const keywordTokens = keywords.map(kw => kw.toLowerCase());
+  // Tokenize keywords (split multi-word keywords)
+  const keywordTokens: string[] = [];
+  for (const kw of keywords) {
+    keywordTokens.push(...kw.toLowerCase().split(/\s+/));
+  }
+  
   const keywordTf: Record<string, number> = {};
   for (const token of keywordTokens) {
     keywordTf[token] = (keywordTf[token] || 0) + 1;
@@ -42,7 +64,10 @@ function computeTfidfSimilarity(text: string, keywords: string[]): number {
   
   if (textMagnitude === 0 || keywordMagnitude === 0) return 0.0;
   
-  return dotProduct / (Math.sqrt(textMagnitude) * Math.sqrt(keywordMagnitude));
+  const cosineSim = dotProduct / (Math.sqrt(textMagnitude) * Math.sqrt(keywordMagnitude));
+  
+  // Boost score if we have phrase matches
+  return Math.min(1.0, cosineSim + (phraseMatchScore * 0.05));
 }
 
 async function mapSignalToTheme(
@@ -70,13 +95,20 @@ async function mapSignalToTheme(
 
   // === STEP 2: Try keyword matching (includes signal_type + value_text) ===
   if (!bestThemeId) {
-    // Combine signal_type and value_text for matching
+    // Combine signal_type and value_text for matching (case-insensitive)
     const searchText = `${signalType} ${valueText || ''}`.toLowerCase();
     let maxMatches = 0;
 
     for (const theme of themes) {
       const keywords = theme.keywords.map((kw: string) => kw.toLowerCase());
-      const matches = keywords.filter((kw: string) => searchText.includes(kw)).length;
+      
+      // Count both exact keyword matches and partial phrase matches
+      let matches = 0;
+      for (const kw of keywords) {
+        if (searchText.includes(kw)) {
+          matches += kw.split(/\s+/).length; // Weight multi-word matches higher
+        }
+      }
 
       if (matches > maxMatches) {
         maxMatches = matches;
