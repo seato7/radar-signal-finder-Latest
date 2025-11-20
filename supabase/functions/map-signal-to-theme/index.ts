@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SEMANTIC_THRESHOLD = 0.35;
+const SEMANTIC_THRESHOLD = 0.01; // Very low threshold for maximum coverage
 
 function computeTfidfSimilarity(text: string, keywords: string[]): number {
   if (!text || !keywords || keywords.length === 0) return 0.0;
@@ -49,6 +49,7 @@ async function mapSignalToTheme(
   supabaseClient: any,
   signalId: string,
   ticker: string,
+  signalType: string,
   valueText: string,
   themes: any[]
 ): Promise<string | null> {
@@ -63,18 +64,19 @@ async function mapSignalToTheme(
       bestThemeId = theme.id;
       mapperRoute = 'ticker';
       mapperScore = 1.0;
-      break; // First ticker match wins
+      break;
     }
   }
 
-  // === STEP 2: If no ticker match, try keyword matching ===
-  if (!bestThemeId && valueText) {
-    const valueLower = valueText.toLowerCase();
+  // === STEP 2: Try keyword matching (includes signal_type + value_text) ===
+  if (!bestThemeId) {
+    // Combine signal_type and value_text for matching
+    const searchText = `${signalType} ${valueText || ''}`.toLowerCase();
     let maxMatches = 0;
 
     for (const theme of themes) {
       const keywords = theme.keywords.map((kw: string) => kw.toLowerCase());
-      const matches = keywords.filter((kw: string) => valueLower.includes(kw)).length;
+      const matches = keywords.filter((kw: string) => searchText.includes(kw)).length;
 
       if (matches > maxMatches) {
         maxMatches = matches;
@@ -85,12 +87,12 @@ async function mapSignalToTheme(
     }
 
     // === STEP 3: If no keyword match, try semantic fallback ===
-    if (!bestThemeId) {
+    if (!bestThemeId && searchText.trim()) {
       let bestSemanticScore = 0.0;
       let bestSemanticTheme: string | null = null;
 
       for (const theme of themes) {
-        const score = computeTfidfSimilarity(valueText, theme.keywords);
+        const score = computeTfidfSimilarity(searchText, theme.keywords);
 
         if (score > bestSemanticScore) {
           bestSemanticScore = score;
@@ -148,7 +150,7 @@ serve(async (req) => {
       // Get all signals without theme_id
       const { data: unmappedSignals, error: signalsError } = await supabaseClient
         .from('signals')
-        .select('id, asset_id, value_text')
+        .select('id, asset_id, signal_type, value_text')
         .is('theme_id', null)
         .limit(1000);
 
@@ -181,6 +183,7 @@ serve(async (req) => {
           supabaseClient,
           signal.id,
           ticker || '',
+          signal.signal_type || '',
           signal.value_text || '',
           themes || []
         );
@@ -210,10 +213,10 @@ serve(async (req) => {
       throw new Error('signal_id and value_text are required');
     }
 
-    // Get signal's ticker
+    // Get signal's ticker and signal_type
     const { data: signal, error: signalError } = await supabaseClient
       .from('signals')
-      .select('asset_id')
+      .select('asset_id, signal_type')
       .eq('id', signal_id)
       .single();
 
@@ -238,6 +241,7 @@ serve(async (req) => {
       supabaseClient,
       signal_id,
       asset.ticker,
+      signal.signal_type || '',
       value_text,
       themes || []
     );
