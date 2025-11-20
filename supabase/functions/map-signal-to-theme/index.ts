@@ -180,10 +180,17 @@ serve(async (req) => {
 
       for (const signal of unmappedSignals || []) {
         const ticker = assetMap.get(signal.asset_id);
+        
+        // Skip signals where we can't find the asset
+        if (!ticker) {
+          skippedCount++;
+          continue;
+        }
+        
         const themeId = await mapSignalToTheme(
           supabaseClient,
           signal.id,
-          ticker || '',
+          ticker,
           signal.signal_type || '',
           signal.value_text || '',
           themes || []
