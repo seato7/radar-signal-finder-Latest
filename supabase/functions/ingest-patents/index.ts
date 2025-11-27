@@ -85,11 +85,13 @@ serve(async (req) => {
       try {
         let response;
         let retries = 0;
-        const maxRetries = 5; // Increased retries
+        const maxRetries = 3;
+        let lastError: Error | null = null;
         
         // Retry logic with exponential backoff
         while (retries <= maxRetries) {
           try {
+            console.log(`🔄 Fetching patents for ${company.name}, attempt ${retries + 1}/${maxRetries + 1}`);
             response = await fetch('https://api.perplexity.ai/chat/completions', {
               method: 'POST',
               headers: {
@@ -110,28 +112,31 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
             
             // Check response status
             if (response.status === 429) {
+              const backoffMs = Math.min(3000 * Math.pow(2, retries), 60000);
+              console.log(`⚠️ Rate limited for ${company.name}, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
+              lastError = new Error(`Rate limited (429)`);
               retries++;
               if (retries <= maxRetries) {
-                const backoffMs = Math.min(2000 * Math.pow(2, retries), 30000);
-                console.log(`⚠️ Rate limited for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
                 continue;
               }
-              console.error(`❌ Rate limit exceeded for ${company.name} after ${maxRetries} retries`);
+              console.error(`❌ Rate limit exceeded for ${company.name} after ${maxRetries + 1} attempts`);
               errorCount++;
               break;
             }
             
             if (!response.ok) {
               const errorText = await response.text().catch(() => 'Unable to read error response');
-              console.error(`❌ Perplexity API error for ${company.name}: ${response.status} ${response.statusText} - ${errorText}`);
+              const backoffMs = Math.min(3000 * Math.pow(2, retries), 60000);
+              lastError = new Error(`API error ${response.status}: ${errorText}`);
+              console.error(`❌ Perplexity API error for ${company.name}: ${response.status} - ${errorText}`);
               retries++;
               if (retries <= maxRetries) {
-                const backoffMs = Math.min(2000 * Math.pow(2, retries), 30000);
-                console.log(`⚠️ API error for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+                console.log(`⚠️ Retrying ${company.name} in ${backoffMs}ms (${retries + 1}/${maxRetries + 1})`);
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
                 continue;
               }
+              console.error(`❌ Failed for ${company.name} after ${maxRetries + 1} attempts`);
               errorCount++;
               break;
             }
@@ -199,22 +204,30 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
             break; // Success, exit retry loop
             
           } catch (fetchError) {
+            const backoffMs = Math.min(3000 * Math.pow(2, retries), 60000);
+            lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+            console.error(`❌ Network error for ${company.name}:`, lastError.message);
             retries++;
             if (retries > maxRetries) {
-              console.error(`❌ Failed to fetch patents for ${company.name} after ${maxRetries} retries:`, fetchError instanceof Error ? fetchError.message : String(fetchError));
+              console.error(`❌ Failed to fetch patents for ${company.name} after ${maxRetries + 1} attempts:`, lastError.message);
               errorCount++;
               break;
             }
-            const backoffMs = Math.min(2000 * Math.pow(2, retries), 30000);
-            console.log(`⚠️ Network error for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms:`, fetchError instanceof Error ? fetchError.message : String(fetchError));
+            console.log(`⚠️ Network error, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
           }
         }
 
-        // Rate limit between companies (longer delay)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // If we exhausted retries and have an error, log it
+        if (retries > maxRetries && lastError) {
+          console.error(`❌ All retries exhausted for ${company.name}:`, lastError.message);
+        }
+
+        // Rate limit between companies
+        await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (err) {
-        console.error(`❌ Unexpected error processing ${company.name}:`, err instanceof Error ? err.message : String(err));
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error(`❌ Unexpected error processing ${company.name}:`, errorMsg);
         errorCount++;
       }
     }
@@ -260,7 +273,13 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in ingest-patents:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('❌ Fatal error in ingest-patents:', errorMsg);
+    if (errorStack) {
+      console.error('Stack trace:', errorStack);
+    }
+    
     if (supabase) {
       await logHeartbeat(supabase, {
         function_name: 'ingest-patents',
@@ -269,18 +288,18 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'Perplexity USPTO',
-        error_message: error instanceof Error ? error.message : 'Unknown error',
+        error_message: errorMsg,
       });
     }
     
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'ingest-patents',
-      message: `Patents ingestion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `Patents ingestion failed: ${errorMsg}`,
     });
     
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ error: errorMsg, stack: errorStack }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
