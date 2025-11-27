@@ -21,10 +21,18 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    const { csv_urls } = await req.json();
+    // This is a manual-only function, not for automated cron execution
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      throw new Error('This function requires POST body with csv_urls parameter. It is not designed for automated cron execution.');
+    }
+    
+    const { csv_urls } = body;
     
     if (!csv_urls || csv_urls.length === 0) {
-      throw new Error('csv_urls required');
+      throw new Error('csv_urls array is required in POST body');
     }
     
     let inserted = 0;
