@@ -25,7 +25,7 @@ export interface IngestLogData {
 export class IngestLogger {
   private supabaseClient: any;
   private logId: string;
-  private startTime: number;
+  public startTime: number; // Made public for external access
   private etlName: string;
 
   constructor(supabaseClient: any, etlName: string) {

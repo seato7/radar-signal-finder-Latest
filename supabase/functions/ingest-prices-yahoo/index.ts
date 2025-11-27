@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { SlackAlerter } from '../_shared/slack-alerts.ts';
+import { logAPIUsage } from '../_shared/api-logger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,8 +77,10 @@ async function fetchWithRetry(
 // === Fetch from Alpha Vantage with Enhanced Error Handling ===
 async function fetchFromAlphaVantage(
   ticker: string,
-  apiKey: string
+  apiKey: string,
+  supabaseClient: any
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
+  const apiStartTime = Date.now();
   try {
     const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${ticker}&outputsize=compact&apikey=${apiKey}`;
     
@@ -89,6 +92,14 @@ async function fetchFromAlphaVantage(
     });
     
     if (!response.ok) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Alpha Vantage',
+        endpoint: '/query',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: `HTTP ${response.status}`
+      });
       return { success: false, error: `HTTP ${response.status}` };
     }
     
@@ -96,19 +107,51 @@ async function fetchFromAlphaVantage(
     
     // Handle API-specific errors
     if (rawData['Error Message']) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Alpha Vantage',
+        endpoint: '/query',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: rawData['Error Message']
+      });
       return { success: false, error: rawData['Error Message'] };
     }
     
     if (rawData['Note']) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Alpha Vantage',
+        endpoint: '/query',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: 'Rate limit exceeded'
+      });
       return { success: false, error: 'Rate limit exceeded' };
     }
     
     if (rawData['Information']) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Alpha Vantage',
+        endpoint: '/query',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: 'API limit reached'
+      });
       return { success: false, error: 'API limit reached' };
     }
     
     const timeSeries = rawData['Time Series (Daily)'];
     if (!timeSeries) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Alpha Vantage',
+        endpoint: '/query',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: 'No time series data'
+      });
       return { success: false, error: 'No time series data' };
     }
     
@@ -128,16 +171,35 @@ async function fetchFromAlphaVantage(
       });
     }
     
+    // Log successful API call
+    await logAPIUsage(supabaseClient, {
+      api_name: 'Alpha Vantage',
+      endpoint: '/query',
+      function_name: 'ingest-prices-yahoo',
+      status: 'success',
+      response_time_ms: Date.now() - apiStartTime
+    });
+    
     return { success: true, data: prices };
   } catch (error) {
+    await logAPIUsage(supabaseClient, {
+      api_name: 'Alpha Vantage',
+      endpoint: '/query',
+      function_name: 'ingest-prices-yahoo',
+      status: 'failure',
+      response_time_ms: Date.now() - apiStartTime,
+      error_message: (error as Error).message
+    });
     return { success: false, error: (error as Error).message };
   }
 }
 
 // === Fetch from Yahoo Finance with Enhanced Retry and Rate Limiting ===
 async function fetchFromYahoo(
-  ticker: string
+  ticker: string,
+  supabaseClient: any
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
+  const apiStartTime = Date.now();
   try {
     // Yahoo Finance uses hyphens, not dots (BRK.B → BRK-B)
     const yahooTicker = ticker.replace(/\./g, '-');
@@ -156,6 +218,14 @@ async function fetchFromYahoo(
     }, 5); // Yahoo gets 5 retries (more reliable)
     
     if (!response.ok) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Yahoo Finance',
+        endpoint: '/v8/finance/chart',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: `HTTP ${response.status}`
+      });
       return { success: false, error: `HTTP ${response.status}` };
     }
     
@@ -163,6 +233,14 @@ async function fetchFromYahoo(
     const result = rawData?.chart?.result?.[0];
     
     if (!result?.timestamp || !result?.indicators?.quote?.[0]?.close) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Yahoo Finance',
+        endpoint: '/v8/finance/chart',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: 'Invalid response structure'
+      });
       return { success: false, error: 'Invalid response structure' };
     }
     
@@ -188,8 +266,25 @@ async function fetchFromYahoo(
       });
     }
     
+    // Log successful API call
+    await logAPIUsage(supabaseClient, {
+      api_name: 'Yahoo Finance',
+      endpoint: '/v8/finance/chart',
+      function_name: 'ingest-prices-yahoo',
+      status: 'success',
+      response_time_ms: Date.now() - apiStartTime
+    });
+    
     return { success: true, data: prices };
   } catch (error) {
+    await logAPIUsage(supabaseClient, {
+      api_name: 'Yahoo Finance',
+      endpoint: '/v8/finance/chart',
+      function_name: 'ingest-prices-yahoo',
+      status: 'failure',
+      response_time_ms: Date.now() - apiStartTime,
+      error_message: (error as Error).message
+    });
     return { success: false, error: (error as Error).message };
   }
 }
@@ -275,7 +370,7 @@ Deno.serve(async (req) => {
       tickersProcessed++;
       
       // === Try Alpha Vantage first ===
-      const alphaResult = await fetchFromAlphaVantage(ticker, alphaVantageKey);
+      const alphaResult = await fetchFromAlphaVantage(ticker, alphaVantageKey, supabaseClient);
       
       let prices: PriceData[] | null = null;
       let sourceUsed = '';
@@ -289,7 +384,7 @@ Deno.serve(async (req) => {
         // === Fallback to Yahoo ===
         console.log(`⚠️ ${ticker} - Alpha failed (${alphaResult.error}), trying Yahoo...`);
         
-        const yahooResult = await fetchFromYahoo(ticker);
+        const yahooResult = await fetchFromYahoo(ticker, supabaseClient);
         
         if (yahooResult.success && yahooResult.data) {
           prices = yahooResult.data;

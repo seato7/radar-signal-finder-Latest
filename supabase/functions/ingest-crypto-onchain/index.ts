@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { CryptoOnChainMetricsSchema, PerplexityResponseSchema, safeValidate } from "../_shared/zod-schemas.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { logAPIUsage } from "../_shared/api-logger.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,6 +91,7 @@ serve(async (req) => {
         console.log(`Fetching on-chain data for ${asset.ticker}...`);
 
         // Query Perplexity for real-time on-chain metrics
+        const apiStartTime = Date.now();
         const response = await fetch('https://api.perplexity.ai/chat/completions', {
           method: 'POST',
           headers: {
@@ -131,9 +133,29 @@ hash_rate: [number if applicable]`
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`Perplexity API error for ${asset.ticker}:`, response.status, errorText);
+          
+          // Log API failure
+          await logAPIUsage(supabaseClient, {
+            api_name: 'Perplexity AI',
+            endpoint: '/chat/completions',
+            function_name: 'ingest-crypto-onchain',
+            status: 'failure',
+            response_time_ms: Date.now() - apiStartTime,
+            error_message: `HTTP ${response.status}: ${errorText.substring(0, 200)}`
+          });
+          
           await new Promise(resolve => setTimeout(resolve, 1500));
           continue;
         }
+        
+        // Log API success
+        await logAPIUsage(supabaseClient, {
+          api_name: 'Perplexity AI',
+          endpoint: '/chat/completions',
+          function_name: 'ingest-crypto-onchain',
+          status: 'success',
+          response_time_ms: Date.now() - apiStartTime
+        });
 
         const rawData = await response.json();
         
@@ -257,11 +279,13 @@ hash_rate: [number if applicable]`
       rows_skipped: cryptoAssets.length - successCount,
     });
     
+    const duration = Date.now() - logger.startTime;
+    
     // Send Slack success alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-crypto-onchain',
       status: 'success',
-      duration: Date.now() - Date.parse(await logger.getStartTime()),
+      duration: duration,
       rowsInserted: successCount,
       rowsSkipped: cryptoAssets.length - successCount,
       sourceUsed: 'Perplexity AI',
