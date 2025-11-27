@@ -70,8 +70,16 @@ serve(async (req) => {
       
       console.log(`🔄 Processing entry ${signalsCreated + signalsSkipped + parseErrors + 1}/${entries.length}`);
       
-      const linkMatch = entryContent.match(/<link\s+href="(.*?)"/i);
-      if (!linkMatch) continue;
+      // Extract filing URL from Atom feed - try multiple formats
+      let linkMatch = entryContent.match(/<link[^>]*href=["']([^"']+)["'][^>]*>/i);
+      if (!linkMatch) {
+        linkMatch = entryContent.match(/<link>([^<]+)<\/link>/i);
+      }
+      if (!linkMatch) {
+        console.log(`⚠️ No link found in entry`);
+        parseErrors++;
+        continue;
+      }
       
       const filingUrl = linkMatch[1];
       
@@ -120,9 +128,9 @@ serve(async (req) => {
         
         const xmlText = await xmlResponse.text();
         
-        // Parse XML for key fields using regex (safer for edge functions)
-        const issuerNameMatch = xmlText.match(/<issuerName>(.*?)<\/issuerName>/i);
-        const issuerTickerMatch = xmlText.match(/<issuerTradingSymbol>(.*?)<\/issuerTradingSymbol>/i);
+        // Parse XML for key fields using regex (handles namespaces)
+        const issuerNameMatch = xmlText.match(/<[^:>]*:?issuerName[^>]*>(.*?)<\/[^:>]*:?issuerName>/i);
+        const issuerTickerMatch = xmlText.match(/<[^:>]*:?issuerTradingSymbol[^>]*>(.*?)<\/[^:>]*:?issuerTradingSymbol>/i);
         
         console.log(`🔍 Searching for ticker in XML (${xmlUrl.substring(0, 80)}...)`);
         console.log(`   Ticker match: ${issuerTickerMatch ? issuerTickerMatch[1] : 'NOT FOUND'}`);
@@ -138,8 +146,8 @@ serve(async (req) => {
         
         console.log(`✅ Found ticker: ${ticker}, issuer: ${issuerName}`);
         
-        // Parse transaction details
-        const transactionRegex = /<nonDerivativeTransaction>(.*?)<\/nonDerivativeTransaction>/gs;
+        // Parse transaction details (handles namespaces)
+        const transactionRegex = /<[^:>]*:?nonDerivativeTransaction[^>]*>(.*?)<\/[^:>]*:?nonDerivativeTransaction>/gs;
         const transactions = Array.from(xmlText.matchAll(transactionRegex));
         
         if (transactions.length === 0) {
@@ -149,9 +157,9 @@ serve(async (req) => {
         
         // Process first transaction (simplified - could process all)
         const txContent = transactions[0][1];
-        const txCodeMatch = txContent.match(/<transactionCode>(.*?)<\/transactionCode>/i);
-        const txSharesMatch = txContent.match(/<transactionShares>\s*<value>(.*?)<\/value>/i);
-        const txAcqDispMatch = txContent.match(/<transactionAcquiredDisposedCode>\s*<value>(.*?)<\/value>/i);
+        const txCodeMatch = txContent.match(/<[^:>]*:?transactionCode[^>]*>(.*?)<\/[^:>]*:?transactionCode>/i);
+        const txSharesMatch = txContent.match(/<[^:>]*:?transactionShares[^>]*>[\s\S]*?<[^:>]*:?value[^>]*>(.*?)<\/[^:>]*:?value>/i);
+        const txAcqDispMatch = txContent.match(/<[^:>]*:?transactionAcquiredDisposedCode[^>]*>[\s\S]*?<[^:>]*:?value[^>]*>(.*?)<\/[^:>]*:?value>/i);
         
         if (!txCodeMatch || !txAcqDispMatch) {
           console.log(`⚠️ Incomplete transaction data: ${xmlUrl}`);
