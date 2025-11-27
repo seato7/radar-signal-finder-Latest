@@ -290,9 +290,13 @@ serve(async (req) => {
       const { data: recentSignals, error: signalsError } = await supabaseClient
         .from('signals')
         .select('id, signal_type, observed_at, magnitude, asset_id, value_text, direction')
-        .gte('observed_at', since.toISOString());
+        .gte('observed_at', since.toISOString())
+        .limit(5000)
+        .order('observed_at', { ascending: false });
 
       if (signalsError) throw signalsError;
+      
+      console.log(`[THEME-SCORING] Retrieved ${recentSignals?.length || 0} signals from database (since ${since.toISOString()})`);
       
       // Get asset tickers
       const assetIds = [...new Set(recentSignals?.map(s => s.asset_id) || [])];
@@ -329,8 +333,23 @@ serve(async (req) => {
           }
         }
 
-        if (relevantSignals.length === 0) continue;
+        if (relevantSignals.length === 0) {
+          console.log(`[THEME-SCORING] Theme "${theme.name}": 0 relevant signals found`);
+          continue;
+        }
+        
+        console.log(`[THEME-SCORING] Theme "${theme.name}": ${relevantSignals.length} relevant signals (threshold: 0.05)`);
 
+        // Check which mappings already exist to avoid counting duplicates
+        const signalIds = relevantSignals.map(rs => rs.signal.id);
+        const { data: existingMappings } = await supabaseClient
+          .from('signal_theme_map')
+          .select('signal_id')
+          .eq('theme_id', theme.id)
+          .in('signal_id', signalIds);
+        
+        const existingSignalIds = new Set(existingMappings?.map(m => m.signal_id) || []);
+        
         // Insert signal-theme mappings
         const mappings = relevantSignals.map(({signal, relevance}) => ({
           signal_id: signal.id,
@@ -346,7 +365,12 @@ serve(async (req) => {
           });
 
         if (!mappingError) {
-          mappingsCreated += mappings.length;
+          // Only count NEW mappings, not updates
+          const newMappingsCount = mappings.filter(m => !existingSignalIds.has(m.signal_id)).length;
+          mappingsCreated += newMappingsCount;
+          console.log(`[THEME-SCORING] Theme "${theme.name}": Created ${newMappingsCount} new mappings, updated ${mappings.length - newMappingsCount} existing`);
+        } else {
+          console.error(`[THEME-SCORING] Theme "${theme.name}": Mapping error:`, mappingError);
         }
 
         const signals = relevantSignals.map(rs => rs.signal);
