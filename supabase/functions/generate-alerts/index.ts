@@ -12,6 +12,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -63,17 +64,26 @@ serve(async (req) => {
       
       // For each high-scoring theme, check if any watchlist tickers are involved
       for (const theme of highScoringThemes) {
-        // Get signals mapped to this theme directly
-        const { data: signals } = await supabaseClient
-          .from('signals')
-          .select('id, asset_id, signal_type, direction, magnitude, observed_at, value_text, assets(ticker)')
-          .eq('theme_id', theme.id)
-          .gte('observed_at', oneDayAgo.toISOString());
+        // Get signals mapped to this theme via signal_theme_map
+        const { data: mappings } = await supabaseClient
+          .from('signal_theme_map')
+          .select(`
+            signal_id,
+            signals!inner(id, asset_id, signal_type, direction, magnitude, observed_at, value_text, assets(ticker))
+          `)
+          .eq('theme_id', theme.id);
         
-        if (!signals || signals.length === 0) continue;
+        const signals = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
+        
+        // Filter for recent signals only
+        const recentSignals = signals.filter((s: any) => 
+          new Date(s.observed_at) >= oneDayAgo
+        );
+        
+        if (!recentSignals || recentSignals.length === 0) continue;
         
         // Filter for watchlist tickers
-        const relevantSignals = signals
+        const relevantSignals = recentSignals
           .filter((s: any) => s.assets && watchlist.tickers.includes(s.assets.ticker));
         
         if (relevantSignals.length === 0) continue;
@@ -120,6 +130,24 @@ serve(async (req) => {
       }
     }
 
+    const duration = Date.now() - startTime;
+    
+    // Log success to function_status
+    await supabaseClient.from('function_status').insert({
+      function_name: 'generate-alerts',
+      status: 'success',
+      executed_at: new Date().toISOString(),
+      duration_ms: duration,
+      rows_inserted: alertsCreated,
+      rows_skipped: 0,
+      metadata: {
+        high_scoring_themes: highScoringThemes.length,
+        users_processed: users.users.length
+      }
+    });
+
+    console.log(`[GENERATE-ALERTS] ✅ Created ${alertsCreated} alerts in ${duration}ms`);
+
     return new Response(JSON.stringify({
       success: true,
       alerts_created: alertsCreated,
@@ -130,6 +158,20 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('[GENERATE-ALERTS] Error:', error);
+    
+    const duration = Date.now() - startTime;
+    
+    // Log failure to function_status
+    await supabaseClient.from('function_status').insert({
+      function_name: 'generate-alerts',
+      status: 'failure',
+      executed_at: new Date().toISOString(),
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+      rows_inserted: 0,
+      rows_skipped: 0
+    });
+    
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

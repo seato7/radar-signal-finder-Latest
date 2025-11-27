@@ -22,18 +22,23 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY') ?? '';
     
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    
+    // Initialize logger BEFORE any early exits
+    const { IngestLogger } = await import('../_shared/log-ingest.ts');
+    logger = new IngestLogger(supabaseClient, 'ingest-crypto-onchain');
+    await logger.start();
+    
     if (!perplexityApiKey) {
       console.error('❌ PERPLEXITY_API_KEY not configured - skipping crypto on-chain ingestion');
       
-      if (logger) {
-        await logger.failure(new Error('PERPLEXITY_API_KEY not configured'), {
-          source_used: 'Perplexity AI',
-          cache_hit: false,
-          fallback_count: 0,
-          rows_inserted: 0,
-          rows_skipped: 0,
-        });
-      }
+      await logger.failure(new Error('PERPLEXITY_API_KEY not configured'), {
+        source_used: 'Perplexity AI',
+        cache_hit: false,
+        fallback_count: 0,
+        rows_inserted: 0,
+        rows_skipped: 0,
+      });
       
       return new Response(
         JSON.stringify({ 
@@ -44,12 +49,6 @@ serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
-    
-    const { IngestLogger } = await import('../_shared/log-ingest.ts');
-    logger = new IngestLogger(supabaseClient, 'ingest-crypto-onchain');
-    await logger.start();
 
     console.log('Crypto on-chain metrics ingestion started with Perplexity AI...');
 
