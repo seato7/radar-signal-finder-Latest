@@ -100,13 +100,26 @@ serve(async (req) => {
       }
     }
     
+    const duration = Date.now() - startTime;
+    
     await logger.success({
       source_used: 'Simulated',
       cache_hit: false,
       fallback_count: 0,
-      latency_ms: Date.now() - startTime,
+      latency_ms: duration,
       rows_inserted: successCount,
       rows_skipped: forexPairs.length - successCount,
+    });
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-forex-sentiment',
+      status: 'success',
+      duration,
+      rowsInserted: successCount,
+      rowsSkipped: forexPairs.length - successCount,
+      sourceUsed: 'Simulated',
+      metadata: { pairs_processed: forexPairs.length }
     });
 
     return new Response(
@@ -121,17 +134,25 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Fatal error:', error);
+    
+    const duration = Date.now() - startTime;
+    
     await logger.failure(error as Error, {
       source_used: 'Simulated',
       cache_hit: false,
       fallback_count: 0,
-      latency_ms: Date.now() - startTime,
+      latency_ms: duration,
     });
     
-    await slackAlerter.sendCriticalAlert({
-      type: 'halted',
+    // Send Slack failure alert
+    await slackAlerter.sendLiveAlert({
       etlName: 'ingest-forex-sentiment',
-      message: `Forex sentiment ingestion failed: ${(error as Error).message}`,
+      status: 'failed',
+      duration,
+      rowsInserted: 0,
+      rowsSkipped: 0,
+      sourceUsed: 'Simulated',
+      metadata: { error: (error as Error).message }
     });
     
     return new Response(

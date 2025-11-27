@@ -156,6 +156,8 @@ price: [current price]`
       }
     }
 
+    const duration = Date.now() - startTime;
+    
     // @guard: Heartbeat log to function_status
     await supabase.from('function_status').insert({
       function_name: 'ingest-dark-pool',
@@ -164,9 +166,20 @@ price: [current price]`
       rows_inserted: successCount,
       rows_skipped: stocks.length - successCount,
       fallback_used: null,
-      duration_ms: Date.now() - startTime,
+      duration_ms: duration,
       source_used: 'Perplexity AI',
       error_message: null,
+      metadata: { stocks_processed: stocks.length }
+    });
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-dark-pool',
+      status: 'success',
+      duration,
+      rowsInserted: successCount,
+      rowsSkipped: stocks.length - successCount,
+      sourceUsed: 'Perplexity AI',
       metadata: { stocks_processed: stocks.length }
     });
 
@@ -182,23 +195,29 @@ price: [current price]`
   } catch (error) {
     console.error('Fatal error:', error);
     
+    const duration = Date.now() - startTime;
+    
     await supabase.from('function_status').insert({
       function_name: 'ingest-dark-pool',
       executed_at: new Date().toISOString(),
       status: 'failure',
       rows_inserted: 0,
       rows_skipped: 0,
-      duration_ms: Date.now() - startTime,
+      duration_ms: duration,
       source_used: 'Perplexity AI',
       error_message: (error as Error).message,
       metadata: {}
     });
     
     // Send Slack failure alert
-    await slackAlerter.sendCriticalAlert({
-      type: 'auth_error',
+    await slackAlerter.sendLiveAlert({
       etlName: 'ingest-dark-pool',
-      message: `Dark Pool failed: ${(error as Error).message}`
+      status: 'failed',
+      duration,
+      rowsInserted: 0,
+      rowsSkipped: 0,
+      sourceUsed: 'Perplexity AI',
+      metadata: { error: (error as Error).message }
     });
 
     return new Response(

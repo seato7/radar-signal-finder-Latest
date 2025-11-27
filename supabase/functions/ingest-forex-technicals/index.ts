@@ -142,6 +142,8 @@ serve(async (req) => {
       }
     }
 
+    const duration = Date.now() - startTime;
+    
     // @guard: Heartbeat log to function_status
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-forex-technicals',
@@ -150,10 +152,21 @@ serve(async (req) => {
       rows_inserted: successCount,
       rows_skipped: errorCount,
       fallback_used: null,
-      duration_ms: Date.now() - startTime,
+      duration_ms: duration,
       source_used: 'Alpha Vantage',
       error_message: null,
       metadata: { pairs_processed: forexPairs.length }
+    });
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-forex-technicals',
+      status: 'success',
+      duration,
+      rowsInserted: successCount,
+      rowsSkipped: errorCount,
+      sourceUsed: 'Alpha Vantage',
+      metadata: { pairs_processed: pairsToProcess.length }
     });
 
     return new Response(
@@ -170,6 +183,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('Fatal error:', error);
     
+    const duration = Date.now() - startTime;
+    
     // @guard: Heartbeat log failure
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-forex-technicals',
@@ -178,10 +193,21 @@ serve(async (req) => {
       rows_inserted: 0,
       rows_skipped: 0,
       fallback_used: null,
-      duration_ms: Date.now() - startTime,
+      duration_ms: duration,
       source_used: 'Alpha Vantage',
       error_message: (error as Error).message,
       metadata: {}
+    });
+    
+    // Send Slack failure alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-forex-technicals',
+      status: 'failed',
+      duration,
+      rowsInserted: 0,
+      rowsSkipped: 0,
+      sourceUsed: 'Alpha Vantage',
+      metadata: { error: (error as Error).message }
     });
     
     return new Response(
