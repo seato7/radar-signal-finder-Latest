@@ -32,7 +32,6 @@ export default function DataSources() {
       const hasRun = localStorage.getItem('datasources_initialized');
       if (!hasRun) {
         setTimeout(async () => {
-          console.log('Auto-populating data sources on first load...');
           await runAllIngestions();
           localStorage.setItem('datasources_initialized', 'true');
         }, 2000);
@@ -84,7 +83,6 @@ export default function DataSources() {
       setSupplyChain(supply.data || []);
     } catch (error: any) {
       toast.error("Failed to load data sources");
-      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -102,7 +100,6 @@ export default function DataSources() {
       const { data, error } = await supabase.functions.invoke(functionName);
       
       if (error) {
-        console.error(`Error invoking ${functionName}:`, error);
         toast.warning(`${displayName} completed with warnings - check logs for details`);
       } else {
         toast.success(`${displayName} data refreshed successfully`);
@@ -113,7 +110,6 @@ export default function DataSources() {
         fetchAllData();
       }, 2000);
     } catch (error: any) {
-      console.error(`Failed to ingest ${displayName}:`, error);
       toast.error(`${displayName} refresh failed: ${error.message}`);
     } finally {
       setIngesting(prev => ({ ...prev, [functionName]: false }));

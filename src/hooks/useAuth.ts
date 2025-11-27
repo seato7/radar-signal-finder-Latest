@@ -21,7 +21,6 @@ export const useAuth = () => {
   const fetchSubscriptionStatus = async () => {
     try {
       setPlanLoading(true);
-      console.log('🔍 Fetching role for user:', context.user?.id);
       
       // Check user_roles table for subscription info
       const { data, error } = await supabase
@@ -30,20 +29,14 @@ export const useAuth = () => {
         .eq('user_id', context.user?.id)
         .maybeSingle();
       
-      console.log('📊 User role response:', { data, error });
-      
       if (error) {
-        console.error('❌ Error fetching role:', error);
         setUserPlan('free');
       } else if (data) {
-        console.log('✅ Setting user plan to:', data.role);
         setUserPlan(data.role || 'free');
       } else {
-        console.log('⚠️ No role found, defaulting to free');
         setUserPlan('free');
       }
     } catch (error) {
-      console.error('💥 Exception fetching subscription:', error);
       setUserPlan('free');
     } finally {
       setPlanLoading(false);

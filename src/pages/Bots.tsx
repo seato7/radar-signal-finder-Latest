@@ -27,8 +27,6 @@ const Bots = () => {
     mode: "paper",
     params: {}
   });
-
-  console.log('Current userPlan:', userPlan, 'planLoading:', planLoading);
   
   const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
   const liveBotCount = bots.filter(b => b.mode === 'live').length;
@@ -53,7 +51,7 @@ const Bots = () => {
         setBots(data);
       }
     } catch (error) {
-      console.error('Error fetching bots:', error);
+      // Error fetching bots - silently fail
     } finally {
       setLoading(false);
     }
