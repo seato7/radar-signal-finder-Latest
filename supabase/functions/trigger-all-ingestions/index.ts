@@ -6,14 +6,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// All ingestion functions to trigger
+// All automated ingestion functions (excludes user-initiated functions)
 const INGESTION_FUNCTIONS = [
   'ingest-prices-yahoo',
-  'ingest-prices-csv',
+  // 'ingest-prices-csv', // EXCLUDED: Requires csv_urls in body (user-initiated)
   'ingest-news-sentiment',
   'ingest-breaking-news',
   'ingest-form4',
-  'ingest-13f-holdings',
+  // 'ingest-13f-holdings', // EXCLUDED: Requires filing data in body (user-initiated)
   'ingest-congressional-trades',
   'ingest-etf-flows',
   'ingest-policy-feeds',
