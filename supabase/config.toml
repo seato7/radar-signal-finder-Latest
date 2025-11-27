@@ -138,3 +138,9 @@ verify_jwt = false
 [functions.verify-slack-webhook]
 verify_jwt = false
 
+[functions.monitor-ingestion-success-rates]
+verify_jwt = false
+
+[functions.trigger-all-ingestions]
+verify_jwt = false
+
