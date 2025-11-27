@@ -91,11 +91,35 @@ serve(async (req) => {
     let successCount = 0;
 
     for (const indicator of indicators) {
+      // Generate checksum for idempotency
+      const checksumData = JSON.stringify({
+        country: indicator.country,
+        indicator_type: indicator.indicator_type,
+        release_date: indicator.release_date
+      });
+      
+      const encoder = new TextEncoder();
+      const data = encoder.encode(checksumData);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      // Check if already exists
+      const { data: existing } = await supabaseClient
+        .from('economic_indicators')
+        .select('id')
+        .eq('country', indicator.country)
+        .eq('indicator_type', indicator.indicator_type)
+        .eq('release_date', indicator.release_date)
+        .single();
+      
+      if (existing) {
+        continue;
+      }
+
       const { error } = await supabaseClient
         .from('economic_indicators')
-        .upsert(indicator, {
-          onConflict: 'country,indicator_type,release_date',
-        });
+        .insert(indicator);
 
       if (error) {
         console.error('Error inserting indicator:', error);
@@ -108,6 +132,20 @@ serve(async (req) => {
           : 0;
 
         if (surprise > 0.02) { // >2% surprise
+          // Generate signal checksum
+          const signalChecksumData = JSON.stringify({
+            country: indicator.country,
+            indicator_type: indicator.indicator_type,
+            release_date: indicator.release_date,
+            type: 'signal'
+          });
+          
+          const signalEncoder = new TextEncoder();
+          const signalData = signalEncoder.encode(signalChecksumData);
+          const signalHashBuffer = await crypto.subtle.digest('SHA-256', signalData);
+          const signalHashArray = Array.from(new Uint8Array(signalHashBuffer));
+          const signalChecksum = signalHashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          
           await supabaseClient.from('signals').insert({
             signal_type: 'economic_indicator',
             direction: indicator.value > indicator.forecast_value ? 'up' : 'down',
@@ -119,7 +157,7 @@ serve(async (req) => {
               url: 'https://www.investing.com/economic-calendar/',
               timestamp: new Date().toISOString()
             },
-            checksum: `${indicator.country}-${indicator.indicator_type}-${indicator.release_date}`,
+            checksum: signalChecksum,
           });
         }
       }
