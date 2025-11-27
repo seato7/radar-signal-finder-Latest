@@ -76,34 +76,67 @@ serve(async (req) => {
     }
 
     const patents = [];
+    let errorCount = 0;
 
     for (const company of companies) {
       console.log(`Fetching patents for ${company.name} via Perplexity...`);
       
       try {
-        const response = await fetch('https://api.perplexity.ai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${perplexityKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'sonar',
-            messages: [{
-              role: 'user',
-              content: `List 3 most recent ${company.name} patents. For each one line with: NUMBER|TITLE|DATE|CATEGORY
+        let response;
+        let retries = 0;
+        const maxRetries = 3;
+        
+        // Retry logic for API calls
+        while (retries <= maxRetries) {
+          try {
+            response = await fetch('https://api.perplexity.ai/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${perplexityKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'sonar',
+                messages: [{
+                  role: 'user',
+                  content: `List 3 most recent ${company.name} patents. For each one line with: NUMBER|TITLE|DATE|CATEGORY
 Example: US12345678|Neural network processor|2025-10-15|AI/ML`
-            }],
-            temperature: 0.1,
-            max_tokens: 400,
-          }),
-        });
+                }],
+                temperature: 0.1,
+                max_tokens: 400,
+              }),
+            });
+            
+            // Check if rate limited
+            if (response.status === 429) {
+              retries++;
+              if (retries <= maxRetries) {
+                const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
+                console.log(`⚠️ Rate limited for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                continue;
+              }
+              throw new Error(`Rate limit exceeded for ${company.name} after ${maxRetries} retries`);
+            }
+            
+            break; // Success, exit retry loop
+          } catch (error) {
+            if (retries === maxRetries) {
+              console.error(`Failed to fetch patents for ${company.name} after ${maxRetries} retries:`, error);
+              throw error;
+            }
+            retries++;
+            const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
+            console.log(`⚠️ Request failed for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
+        }
 
-        if (response.ok) {
+        if (response && response.ok) {
           const data = await response.json();
           let content = data.choices?.[0]?.message?.content || '';
           
-          console.log(`Perplexity response for ${company.name}:`, content);
+          console.log(`✅ Perplexity response for ${company.name}:`, content.substring(0, 200));
           
           // Parse pipe-delimited patent data
           const lines = content.split('\n').filter((l: string) => l.trim() && l.includes('|'));
@@ -125,11 +158,18 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
               });
             }
           }
+          
+          console.log(`✅ Parsed ${lines.length} patents for ${company.name}`);
+        } else if (response) {
+          console.error(`❌ Perplexity API error for ${company.name}: ${response.status} ${response.statusText}`);
+          errorCount++;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Rate limit between companies
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (err) {
-        console.error(`Error processing ${company.name}:`, err);
+        console.error(`❌ Error processing ${company.name}:`, err instanceof Error ? err.message : String(err));
+        errorCount++;
       }
     }
 
@@ -150,13 +190,27 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
       function_name: 'ingest-patents',
       status: 'success',
       rows_inserted: patents.length,
-      rows_skipped: 0,
+      rows_skipped: errorCount,
       duration_ms: Date.now() - startTime,
       source_used: 'Perplexity USPTO',
     });
+    
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-patents',
+      status: 'success',
+      rowsInserted: patents.length,
+      rowsSkipped: errorCount,
+      sourceUsed: 'Perplexity USPTO',
+      duration: Date.now() - startTime,
+    });
 
     return new Response(
-      JSON.stringify({ success: true, count: patents.length }),
+      JSON.stringify({ 
+        success: true, 
+        count: patents.length, 
+        errors: errorCount,
+        companies_processed: companies.length 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
