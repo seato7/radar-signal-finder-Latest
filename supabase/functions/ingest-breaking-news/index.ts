@@ -90,7 +90,7 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
       throw new Error('PAYLOAD_VALIDATION_ERROR');
     }
     
-    // Make request with retry logic
+    // Make request with retry logic (handles rate limits gracefully)
     const result = await withRetry(
       async () => {
         const response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -104,26 +104,15 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
         const responseText = await response.text();
         
         if (contentType?.includes('text/html') || responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
-          console.error(`❌ HTML MASQUERADE for ${ticker}: Perplexity returned HTML instead of JSON`);
-          await logFailure(supabase, ticker, 'html_masquerade', 
-            `Perplexity returned HTML (login/rate-limit page) instead of JSON. Content-Type: ${contentType}`,
+          console.log(`⚠️ Rate limit HTML page for ${ticker} - will retry with exponential backoff`);
+          await logFailure(supabase, ticker, 'rate_limit_html', 
+            `Perplexity rate limit (HTML response)`,
             response.status,
             { content_preview: responseText.substring(0, 200) }
           );
           
-          await slackAlerter.sendCriticalAlert({
-            type: 'auth_error',
-            etlName: 'ingest-breaking-news',
-            message: `Perplexity API returning HTML instead of JSON for ${ticker}`,
-            details: { 
-              ticker, 
-              content_type: contentType,
-              issue: 'html_masquerade',
-              likely_cause: 'Incorrect endpoint, missing Accept header, or bot detection'
-            }
-          });
-          
-          throw new Error('HTML_MASQUERADE');
+          // Throw retriable error for exponential backoff
+          throw new Error('RATE_LIMIT_HTML');
         }
         
         let data;
@@ -137,10 +126,11 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
         return { response, data };
       },
       {
-        maxRetries: 3,
-        initialDelayMs: 1000,
+        maxRetries: 5,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
         onRetry: (attempt, error) => {
-          console.log(`⏳ Retry ${attempt}/3 for ${ticker}: ${error.message}`);
+          console.log(`⏳ Retry ${attempt}/5 for ${ticker}: ${error.message}`);
         }
       }
     );
@@ -168,9 +158,9 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
     }
 
     if (response.status === 429) {
-      console.log(`⚠️ Rate limit hit for ${ticker}, will retry with backoff`);
-      await logFailure(supabase, ticker, 'rate_limit', 'Perplexity rate limit exceeded', 429);
-      throw new Error('RATE_LIMIT');
+      console.log(`⚠️ Rate limit (429) for ${ticker}, will retry with backoff`);
+      await logFailure(supabase, ticker, 'rate_limit', 'Perplexity rate limit (429)', 429);
+      throw new Error('RATE_LIMIT_429');
     }
 
     if (!response.ok) {
@@ -205,8 +195,18 @@ async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabas
     
     return { ticker, content: validatedData.choices[0].message.content };
   } catch (err) {
-    if (err instanceof Error && !err.message.includes('AUTH_ERROR') && !err.message.includes('RATE_LIMIT')) {
-      await logFailure(supabase, ticker, 'unknown', err.message, null);
+    if (err instanceof Error) {
+      // Don't log rate limits as unknown errors, they're expected
+      if (!err.message.includes('AUTH_ERROR') && 
+          !err.message.includes('RATE_LIMIT') &&
+          !err.message.includes('HTML_MASQUERADE')) {
+        await logFailure(supabase, ticker, 'unknown', err.message, null);
+      }
+      // Return null for rate limits instead of throwing - function will continue with other tickers
+      if (err.message.includes('RATE_LIMIT') || err.message.includes('HTML_MASQUERADE')) {
+        console.log(`⏭️ Skipping ${ticker} due to rate limit, will try again later`);
+        return null;
+      }
     }
     throw err;
   }

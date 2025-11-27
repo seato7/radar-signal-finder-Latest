@@ -35,25 +35,57 @@ serve(async (req) => {
 
     console.log('Fetching recent congressional trades via Perplexity...');
     
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${perplexityKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [{
-          role: 'system',
-          content: 'You are a congressional trading data provider. Return only the requested data in the exact format specified.'
-        }, {
-          role: 'user',
-          content: `Get 10 most recent congressional stock trades from Senate/House disclosures. For each trade provide: REPRESENTATIVE: (full name), TICKER: (stock symbol), TYPE: (buy or sell), DATE: (transaction date YYYY-MM-DD), AMOUNT_MIN: (minimum dollar amount), AMOUNT_MAX: (maximum dollar amount), PARTY: (Democrat or Republican). Use real current data from congressional disclosure reports.`
-        }],
-        temperature: 0.1,
-        max_tokens: 1500,
-      }),
-    });
+    let response;
+    let retries = 0;
+    const maxRetries = 3;
+    
+    while (retries <= maxRetries) {
+      try {
+        response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${perplexityKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'sonar',
+            messages: [{
+              role: 'system',
+              content: 'You are a congressional trading data provider. Return only the requested data in the exact format specified.'
+            }, {
+              role: 'user',
+              content: `Get 10 most recent congressional stock trades from Senate/House disclosures. For each trade provide: REPRESENTATIVE: (full name), TICKER: (stock symbol), TYPE: (buy or sell), DATE: (transaction date YYYY-MM-DD), AMOUNT_MIN: (minimum dollar amount), AMOUNT_MAX: (maximum dollar amount), PARTY: (Democrat or Republican). Use real current data from congressional disclosure reports.`
+            }],
+            temperature: 0.1,
+            max_tokens: 1500,
+          }),
+        });
+        
+        // Check if rate limited
+        if (response.status === 429) {
+          retries++;
+          if (retries <= maxRetries) {
+            const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
+            console.log(`⚠️ Rate limited, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+          throw new Error('Rate limit exceeded after retries');
+        }
+        
+        break; // Success, exit retry loop
+      } catch (error) {
+        if (retries === maxRetries) throw error;
+        retries++;
+        const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
+        console.log(`⚠️ Request failed, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+    
+    if (!response) {
+      throw new Error('Failed to fetch after retries');
+    }
 
     const records = [];
 
