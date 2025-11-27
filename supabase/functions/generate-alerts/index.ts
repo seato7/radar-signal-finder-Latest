@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,6 +47,8 @@ serve(async (req) => {
     // Get all users
     const { data: users } = await supabaseClient.auth.admin.listUsers();
     
+    console.log(`[GENERATE-ALERTS] Found ${users.users.length} users`);
+    
     let alertsCreated = 0;
     const oneDayAgo = new Date();
     oneDayAgo.setDate(oneDayAgo.getDate() - 1);
@@ -58,12 +61,16 @@ serve(async (req) => {
         .eq('user_id', user.id)
         .maybeSingle();
       
+      console.log(`[GENERATE-ALERTS] User ${user.email}: watchlist = ${watchlist ? watchlist.tickers.join(', ') : 'NONE'}`);
+      
       if (!watchlist || !watchlist.tickers || watchlist.tickers.length === 0) {
         continue;
       }
       
       // For each high-scoring theme, check if any watchlist tickers are involved
       for (const theme of highScoringThemes) {
+        console.log(`[GENERATE-ALERTS] Processing theme "${theme.name}" for user ${user.email}`);
+        
         // Get signals mapped to this theme via signal_theme_map
         const { data: mappings } = await supabaseClient
           .from('signal_theme_map')
@@ -73,18 +80,26 @@ serve(async (req) => {
           `)
           .eq('theme_id', theme.id);
         
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": Retrieved ${mappings?.length || 0} signal mappings`);
+        
         const signals = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
+        
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${signals.length} signals after extraction`);
         
         // Filter for recent signals only
         const recentSignals = signals.filter((s: any) => 
           new Date(s.observed_at) >= oneDayAgo
         );
         
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${recentSignals.length} recent signals (last 24h)`);
+        
         if (!recentSignals || recentSignals.length === 0) continue;
         
         // Filter for watchlist tickers
         const relevantSignals = recentSignals
           .filter((s: any) => s.assets && watchlist.tickers.includes(s.assets.ticker));
+        
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${relevantSignals.length} relevant signals matching watchlist ${watchlist.tickers.join(', ')}`);
         
         if (relevantSignals.length === 0) continue;
         
@@ -143,6 +158,22 @@ serve(async (req) => {
       metadata: {
         high_scoring_themes: highScoringThemes.length,
         users_processed: users.users.length
+      }
+    });
+    
+    // Send Slack notification
+    const slackAlerter = new SlackAlerter();
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-alerts',
+      status: 'success',
+      duration: duration,
+      rowsInserted: alertsCreated,
+      rowsSkipped: 0,
+      sourceUsed: 'Alert Generation Engine',
+      metadata: {
+        high_scoring_themes: highScoringThemes.length,
+        users_processed: users.users.length,
+        themes_list: highScoringThemes.map(t => t.name).join(', ')
       }
     });
 

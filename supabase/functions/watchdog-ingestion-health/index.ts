@@ -240,6 +240,23 @@ Deno.serve(async (req) => {
         health_summary: healthSummary
       }
     });
+    
+    // Send Slack summary notification every 6 hours (only if there are issues)
+    const currentHour = new Date().getHours();
+    if ((currentHour === 0 || currentHour === 6 || currentHour === 12 || currentHour === 18) && (healthSummary.alerts_critical > 0 || healthSummary.alerts_warning > 0)) {
+      await slackAlerter.sendLiveAlert({
+        etlName: 'watchdog-ingestion-health',
+        status: healthSummary.overall_health === 'HEALTHY' ? 'success' : 'partial',
+        duration: duration,
+        sourceUsed: 'Watchdog Monitor',
+        metadata: {
+          total_functions: healthSummary.total_functions_monitored,
+          critical_alerts: healthSummary.alerts_critical,
+          warning_alerts: healthSummary.alerts_warning,
+          overall_health: healthSummary.overall_health
+        }
+      });
+    }
 
     return new Response(
       JSON.stringify({

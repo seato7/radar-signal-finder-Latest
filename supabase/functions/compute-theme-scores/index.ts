@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -424,6 +425,23 @@ serve(async (req) => {
           themes_processed: themes?.length || 0,
           themes_updated: updatedCount,
           mappings_created: mappingsCreated,
+          signals_processed: allSignals?.length || 0
+        }
+      });
+      
+      // Send Slack notification
+      const slackAlerter = new SlackAlerter();
+      await slackAlerter.sendLiveAlert({
+        etlName: 'compute-theme-scores',
+        status: 'success',
+        duration: duration,
+        rowsInserted: updatedCount + mappingsCreated,
+        rowsSkipped: (themes?.length || 0) - updatedCount,
+        sourceUsed: 'Theme Scoring Engine',
+        metadata: {
+          themes_processed: themes?.length || 0,
+          themes_updated: updatedCount,
+          new_mappings: mappingsCreated,
           signals_processed: allSignals?.length || 0
         }
       });
