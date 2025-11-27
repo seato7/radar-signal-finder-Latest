@@ -77,6 +77,7 @@ serve(async (req) => {
 
     const patents = [];
     let errorCount = 0;
+    let successCount = 0;
 
     for (const company of companies) {
       console.log(`Fetching patents for ${company.name} via Perplexity...`);
@@ -84,9 +85,9 @@ serve(async (req) => {
       try {
         let response;
         let retries = 0;
-        const maxRetries = 3;
+        const maxRetries = 5; // Increased retries
         
-        // Retry logic for API calls
+        // Retry logic with exponential backoff
         while (retries <= maxRetries) {
           try {
             response = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -107,68 +108,104 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
               }),
             });
             
-            // Check if rate limited
+            // Check response status
             if (response.status === 429) {
               retries++;
               if (retries <= maxRetries) {
-                const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
+                const backoffMs = Math.min(2000 * Math.pow(2, retries), 30000);
                 console.log(`⚠️ Rate limited for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
                 continue;
               }
-              throw new Error(`Rate limit exceeded for ${company.name} after ${maxRetries} retries`);
+              console.error(`❌ Rate limit exceeded for ${company.name} after ${maxRetries} retries`);
+              errorCount++;
+              break;
             }
             
-            break; // Success, exit retry loop
-          } catch (error) {
-            if (retries === maxRetries) {
-              console.error(`Failed to fetch patents for ${company.name} after ${maxRetries} retries:`, error);
-              throw error;
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unable to read error response');
+              console.error(`❌ Perplexity API error for ${company.name}: ${response.status} ${response.statusText} - ${errorText}`);
+              retries++;
+              if (retries <= maxRetries) {
+                const backoffMs = Math.min(2000 * Math.pow(2, retries), 30000);
+                console.log(`⚠️ API error for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                continue;
+              }
+              errorCount++;
+              break;
             }
+            
+            // Success - parse response
+            const data = await response.json();
+            let content = data.choices?.[0]?.message?.content || '';
+            
+            console.log(`✅ Perplexity response for ${company.name}:`, content.substring(0, 200));
+            
+            // Parse pipe-delimited patent data
+            const lines = content.split('\n').filter((l: string) => l.trim() && l.includes('|'));
+            
+            let companyPatents = 0;
+            for (const line of lines.slice(0, 3)) {
+              const parts = line.split('|').map((p: string) => p.trim());
+              if (parts.length >= 3) {
+                // Clean and parse the date
+                let filingDate = new Date().toISOString().split('T')[0];
+                if (parts[2]) {
+                  // Extract just the date portion (YYYY-MM-DD or YYYY-MM or YYYY)
+                  const dateMatch = parts[2].match(/(\d{4})-(\d{2})-(\d{2})|(\d{4})-(\d{2})|(\d{4})/);
+                  if (dateMatch) {
+                    if (dateMatch[1]) {
+                      // Full date YYYY-MM-DD
+                      filingDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+                    } else if (dateMatch[4]) {
+                      // YYYY-MM format
+                      filingDate = `${dateMatch[4]}-${dateMatch[5]}-01`;
+                    } else if (dateMatch[6]) {
+                      // Just YYYY
+                      filingDate = `${dateMatch[6]}-01-01`;
+                    }
+                  }
+                }
+                
+                patents.push({
+                  ticker: company.ticker,
+                  company: company.name,
+                  patent_number: parts[0] || `AUTO${Date.now()}_${companyPatents}`,
+                  patent_title: parts[1] || 'Technology Patent',
+                  filing_date: filingDate,
+                  technology_category: parts[3] || 'Technology',
+                  metadata: {
+                    data_source: 'perplexity_uspto',
+                    raw_line: line.substring(0, 200),
+                    raw_date: parts[2],
+                  },
+                });
+                companyPatents++;
+              }
+            }
+            
+            console.log(`✅ Parsed ${companyPatents} patents for ${company.name}`);
+            successCount++;
+            break; // Success, exit retry loop
+            
+          } catch (fetchError) {
             retries++;
-            const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
-            console.log(`⚠️ Request failed for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+            if (retries > maxRetries) {
+              console.error(`❌ Failed to fetch patents for ${company.name} after ${maxRetries} retries:`, fetchError instanceof Error ? fetchError.message : String(fetchError));
+              errorCount++;
+              break;
+            }
+            const backoffMs = Math.min(2000 * Math.pow(2, retries), 30000);
+            console.log(`⚠️ Network error for ${company.name}, retry ${retries}/${maxRetries} in ${backoffMs}ms:`, fetchError instanceof Error ? fetchError.message : String(fetchError));
             await new Promise(resolve => setTimeout(resolve, backoffMs));
           }
         }
 
-        if (response && response.ok) {
-          const data = await response.json();
-          let content = data.choices?.[0]?.message?.content || '';
-          
-          console.log(`✅ Perplexity response for ${company.name}:`, content.substring(0, 200));
-          
-          // Parse pipe-delimited patent data
-          const lines = content.split('\n').filter((l: string) => l.trim() && l.includes('|'));
-          
-          for (const line of lines.slice(0, 3)) {
-            const parts = line.split('|').map((p: string) => p.trim());
-            if (parts.length >= 3) {
-              patents.push({
-                ticker: company.ticker,
-                company: company.name,
-                patent_number: parts[0] || `AUTO${Date.now()}`,
-                patent_title: parts[1] || 'Technology Patent',
-                filing_date: parts[2] || new Date().toISOString().split('T')[0],
-                technology_category: parts[3] || 'Technology',
-                metadata: {
-                  data_source: 'perplexity_uspto',
-                  raw_line: line.substring(0, 200),
-                },
-              });
-            }
-          }
-          
-          console.log(`✅ Parsed ${lines.length} patents for ${company.name}`);
-        } else if (response) {
-          console.error(`❌ Perplexity API error for ${company.name}: ${response.status} ${response.statusText}`);
-          errorCount++;
-        }
-
-        // Rate limit between companies
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Rate limit between companies (longer delay)
+        await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (err) {
-        console.error(`❌ Error processing ${company.name}:`, err instanceof Error ? err.message : String(err));
+        console.error(`❌ Unexpected error processing ${company.name}:`, err instanceof Error ? err.message : String(err));
         errorCount++;
       }
     }

@@ -26,10 +26,18 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    const { filing_url, xml_content, manager_name, period_ended } = await req.json();
+    // This is a manual-only function, not for automated cron execution
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      throw new Error('This function requires POST body with filing_url, xml_content, and manager_name. It is not designed for automated cron execution.');
+    }
+    
+    const { filing_url, xml_content, manager_name, period_ended } = body;
     
     if (!filing_url || !xml_content || !manager_name) {
-      throw new Error('Missing required fields: filing_url, xml_content, manager_name');
+      throw new Error('Missing required POST body fields: filing_url, xml_content, manager_name');
     }
 
     // Simple regex-based XML parsing (safer for edge functions)
