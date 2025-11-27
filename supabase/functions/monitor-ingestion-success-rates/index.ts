@@ -22,10 +22,45 @@ serve(async (req) => {
 
     console.log('🔍 Checking ingestion success rates (last 24 hours)...');
 
-    // Get all ingestion runs from last 24 hours
+    // All automated ingestion functions to monitor
+    const MONITORED_FUNCTIONS = [
+      'ingest-prices-yahoo',
+      'ingest-news-sentiment',
+      'ingest-breaking-news',
+      'ingest-form4',
+      'ingest-congressional-trades',
+      'ingest-etf-flows',
+      'ingest-policy-feeds',
+      'ingest-dark-pool',
+      'ingest-finra-darkpool',
+      'ingest-options-flow',
+      'ingest-crypto-onchain',
+      'ingest-pattern-recognition',
+      'ingest-advanced-technicals',
+      'ingest-forex-technicals',
+      'ingest-forex-sentiment',
+      'ingest-earnings',
+      'ingest-economic-calendar',
+      'ingest-fred-economics',
+      'ingest-cot-reports',
+      'ingest-cot-cftc',
+      'ingest-google-trends',
+      'ingest-search-trends',
+      'ingest-reddit-sentiment',
+      'ingest-stocktwits',
+      'ingest-job-postings',
+      'ingest-patents',
+      'ingest-supply-chain',
+      'ingest-ai-research',
+      'ingest-short-interest',
+      'ingest-smart-money'
+    ];
+
+    // Get all ingestion runs from last 24 hours for monitored functions
     const { data: logs, error } = await supabaseClient
       .from('ingest_logs')
       .select('etl_name, status')
+      .in('etl_name', MONITORED_FUNCTIONS)
       .gte('started_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     if (error) throw error;
