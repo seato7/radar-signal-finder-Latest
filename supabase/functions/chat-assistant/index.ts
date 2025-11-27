@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { sendErrorAlert } from '../_shared/error-alerter.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -467,12 +468,14 @@ Remember: You are a MULTI-ASSET trading intelligence platform. Provide opportuni
 
     if (!response.ok) {
       if (response.status === 429) {
+        await sendErrorAlert('chat-assistant', new Error('Rate limit exceeded'), { status: 429 });
         return new Response(
           JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       if (response.status === 402) {
+        await sendErrorAlert('chat-assistant', new Error('AI credits exhausted'), { status: 402 });
         return new Response(
           JSON.stringify({ error: 'AI credits exhausted. Please add credits to your workspace.' }),
           { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -488,6 +491,7 @@ Remember: You are a MULTI-ASSET trading intelligence platform. Provide opportuni
 
   } catch (error) {
     console.error('Error in chat-assistant:', error);
+    await sendErrorAlert('chat-assistant', error, { url: req.url });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
