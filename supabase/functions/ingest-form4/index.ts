@@ -136,8 +136,8 @@ serve(async (req) => {
         console.log(`   Ticker match: ${issuerTickerMatch ? issuerTickerMatch[1] : 'NOT FOUND'}`);
         
         if (!issuerTickerMatch || !issuerTickerMatch[1]) {
-          console.log(`⚠️ No ticker in XML: ${xmlUrl}`);
-          parseErrors++;
+          console.log(`⚠️ No ticker in XML (likely non-public company): ${xmlUrl}`);
+          signalsSkipped++;
           continue;
         }
         
