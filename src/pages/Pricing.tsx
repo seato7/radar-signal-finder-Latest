@@ -9,8 +9,6 @@ import { supabase } from "@/integrations/supabase/client";
 
 const Pricing = () => {
   const { userPlan, refreshSubscription } = useAuth();
-  
-  console.log('Pricing page - userPlan:', userPlan);
 
   // Refresh subscription status when returning from checkout
   useEffect(() => {
@@ -137,7 +135,7 @@ const Pricing = () => {
         window.location.href = data.url;
       }
     } catch (error) {
-      console.error("Checkout error:", error);
+      // Checkout error - silently fail
     }
   };
 
