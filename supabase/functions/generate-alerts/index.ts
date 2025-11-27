@@ -71,29 +71,31 @@ serve(async (req) => {
       for (const theme of highScoringThemes) {
         console.log(`[GENERATE-ALERTS] Processing theme "${theme.name}" for user ${user.email}`);
         
-        // Get signals mapped to this theme via signal_theme_map
-        const { data: mappings } = await supabaseClient
+        // Get signals mapped to this theme
+        const { data: signals } = await supabaseClient
           .from('signal_theme_map')
           .select(`
-            signal_id,
-            signals!inner(id, asset_id, signal_type, direction, magnitude, observed_at, value_text, assets(ticker))
+            signals!inner(
+              id,
+              asset_id,
+              signal_type,
+              direction,
+              magnitude,
+              observed_at,
+              value_text,
+              assets(ticker)
+            )
           `)
           .eq('theme_id', theme.id);
         
-        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": Retrieved ${mappings?.length || 0} signal mappings`);
-        
-        const signals = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
-        
-        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${signals.length} signals after extraction`);
-        
-        // Filter for recent signals only
-        const recentSignals = signals.filter((s: any) => 
+        const extractedSignals = signals?.map((m: any) => m.signals).filter(Boolean) || [];
+        const recentSignals = extractedSignals.filter((s: any) => 
           new Date(s.observed_at) >= oneDayAgo
         );
         
-        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${recentSignals.length} recent signals (last 24h)`);
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${recentSignals.length} recent signals found`);
         
-        if (!recentSignals || recentSignals.length === 0) continue;
+        if (recentSignals.length === 0) continue;
         
         // Filter for watchlist tickers
         const relevantSignals = recentSignals

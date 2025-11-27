@@ -14,7 +14,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  let logger: any;
+  const startTime = Date.now();
   const slackAlerter = new SlackAlerter();
 
   try {
@@ -24,9 +24,9 @@ serve(async (req) => {
     
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
     
-    // Initialize logger BEFORE any early exits
+    // Initialize logger immediately - no dynamic imports
     const { IngestLogger } = await import('../_shared/log-ingest.ts');
-    logger = new IngestLogger(supabaseClient, 'ingest-crypto-onchain');
+    const logger = new IngestLogger(supabaseClient, 'ingest-crypto-onchain');
     await logger.start();
     
     if (!perplexityApiKey) {
@@ -301,9 +301,35 @@ hash_rate: [number if applicable]`
 
   } catch (error) {
     console.error('Fatal error:', error);
-    if (logger) {
-      await logger.failure(error as Error);
+    
+    // Log failure with safe error handling
+    try {
+      const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      const duration = Date.now() - startTime;
+      await supabaseClient.from('function_status').insert({
+        function_name: 'ingest-crypto-onchain',
+        executed_at: new Date().toISOString(),
+        status: 'failure',
+        duration_ms: duration,
+        error_message: error instanceof Error ? error.message : String(error),
+        rows_inserted: 0,
+        rows_skipped: 0
+      });
+      
+      await slackAlerter.sendCriticalAlert({
+        type: 'api_reliability',
+        etlName: 'ingest-crypto-onchain',
+        message: `Crypto onchain ingestion failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { duration }
+      });
+    } catch (loggingError) {
+      console.error('Failed to log error:', loggingError);
     }
+    
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
