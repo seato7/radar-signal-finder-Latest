@@ -144,3 +144,6 @@ verify_jwt = false
 [functions.trigger-all-ingestions]
 verify_jwt = false
 
+[functions.remind-manual-ingestion]
+verify_jwt = false
+
