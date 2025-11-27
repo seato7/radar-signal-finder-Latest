@@ -149,23 +149,32 @@ Example: US12345678|Neural network processor|2025-10-15|AI/ML`
             for (const line of lines.slice(0, 3)) {
               const parts = line.split('|').map((p: string) => p.trim());
               if (parts.length >= 3) {
-                // Clean and parse the date
+                // Robust date extraction and parsing
                 let filingDate = new Date().toISOString().split('T')[0];
                 if (parts[2]) {
-                  // Extract just the date portion (YYYY-MM-DD or YYYY-MM or YYYY)
-                  const dateMatch = parts[2].match(/(\d{4})-(\d{2})-(\d{2})|(\d{4})-(\d{2})|(\d{4})/);
+                  const dateStr = parts[2];
+                  
+                  // Try multiple date formats, prioritize most specific to least specific
+                  // 1. Full date: YYYY-MM-DD
+                  let dateMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
                   if (dateMatch) {
-                    if (dateMatch[1]) {
-                      // Full date YYYY-MM-DD
-                      filingDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-                    } else if (dateMatch[4]) {
-                      // YYYY-MM format
-                      filingDate = `${dateMatch[4]}-${dateMatch[5]}-01`;
-                    } else if (dateMatch[6]) {
-                      // Just YYYY
-                      filingDate = `${dateMatch[6]}-01-01`;
+                    filingDate = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+                  } else {
+                    // 2. Year-Month: YYYY-MM or "YYYY-MM (anything)"
+                    dateMatch = dateStr.match(/(\d{4})-(\d{2})/);
+                    if (dateMatch) {
+                      filingDate = `${dateMatch[1]}-${dateMatch[2]}-01`;
+                    } else {
+                      // 3. Just year anywhere in the string: extract first 4-digit number
+                      dateMatch = dateStr.match(/\b(20\d{2})\b/);
+                      if (dateMatch) {
+                        filingDate = `${dateMatch[1]}-01-01`;
+                      }
+                      // If no year found at all, use current date (already set above)
                     }
                   }
+                  
+                  console.log(`📅 Date parsing: "${dateStr}" → ${filingDate}`);
                 }
                 
                 patents.push({
