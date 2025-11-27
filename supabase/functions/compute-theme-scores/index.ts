@@ -218,12 +218,19 @@ serve(async (req) => {
       
       // Get asset tickers for mapped signals
       const signalData = mappings?.map((m: any) => m.signals).filter(Boolean) || [];
-      const assetIds = [...new Set(signalData.map(s => s.asset_id))];
+      const assetIds = [...new Set(signalData.map(s => s.asset_id).filter(Boolean))]; // Filter out nulls
       
-      const { data: assets, error: assetsError } = await supabaseClient
-        .from('assets')
-        .select('id, ticker')
-        .in('id', assetIds);
+      let assets: any[] = [];
+      let assetsError = null;
+      
+      if (assetIds.length > 0) {
+        const result = await supabaseClient
+          .from('assets')
+          .select('id, ticker')
+          .in('id', assetIds);
+        assets = result.data || [];
+        assetsError = result.error;
+      }
         
       if (assetsError) throw assetsError;
       
@@ -300,12 +307,19 @@ serve(async (req) => {
       console.log(`[THEME-SCORING] Retrieved ${recentSignals?.length || 0} signals from database (since ${since.toISOString()})`);
       
       // Get asset tickers
-      const assetIds = [...new Set(recentSignals?.map(s => s.asset_id) || [])];
+      const assetIds = [...new Set(recentSignals?.map(s => s.asset_id).filter(Boolean) || [])]; // Filter out nulls
       
-      const { data: assets, error: assetsError } = await supabaseClient
-        .from('assets')
-        .select('id, ticker')
-        .in('id', assetIds);
+      let assets: any[] = [];
+      let assetsError = null;
+      
+      if (assetIds.length > 0) {
+        const result = await supabaseClient
+          .from('assets')
+          .select('id, ticker')
+          .in('id', assetIds);
+        assets = result.data || [];
+        assetsError = result.error;
+      }
         
       if (assetsError) throw assetsError;
       
