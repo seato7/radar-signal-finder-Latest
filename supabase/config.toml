@@ -135,3 +135,6 @@ verify_jwt = false
 [functions.log-error]
 verify_jwt = false
 
+[functions.verify-slack-webhook]
+verify_jwt = false
+
