@@ -6,40 +6,40 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// All automated ingestion functions (excludes user-initiated functions)
+// ALL 32 data ingestion functions (user-initiated ones will fail gracefully if called without input)
 const INGESTION_FUNCTIONS = [
-  'ingest-prices-yahoo',
-  // 'ingest-prices-csv', // EXCLUDED: Requires csv_urls in body (user-initiated)
-  'ingest-news-sentiment',
-  'ingest-breaking-news',
-  'ingest-form4',
-  // 'ingest-13f-holdings', // EXCLUDED: Requires filing data in body (user-initiated)
-  'ingest-congressional-trades',
-  'ingest-etf-flows',
-  'ingest-policy-feeds',
-  'ingest-dark-pool',
-  'ingest-finra-darkpool',
-  'ingest-options-flow',
-  'ingest-crypto-onchain',
-  'ingest-pattern-recognition',
+  'ingest-13f-holdings',
   'ingest-advanced-technicals',
-  'ingest-forex-technicals',
-  'ingest-forex-sentiment',
+  'ingest-ai-research',
+  'ingest-breaking-news',
+  'ingest-congressional-trades',
+  'ingest-cot-cftc',
+  'ingest-cot-reports',
+  'ingest-crypto-onchain',
+  'ingest-dark-pool',
   'ingest-earnings',
   'ingest-economic-calendar',
+  'ingest-etf-flows',
+  'ingest-finra-darkpool',
+  'ingest-forex-sentiment',
+  'ingest-forex-technicals',
+  'ingest-form4',
   'ingest-fred-economics',
-  'ingest-cot-reports',
-  'ingest-cot-cftc',
   'ingest-google-trends',
-  'ingest-search-trends',
-  'ingest-reddit-sentiment',
-  'ingest-stocktwits',
   'ingest-job-postings',
+  'ingest-news-sentiment',
+  'ingest-options-flow',
   'ingest-patents',
-  'ingest-supply-chain',
-  'ingest-ai-research',
+  'ingest-pattern-recognition',
+  'ingest-policy-feeds',
+  'ingest-prices-csv',
+  'ingest-prices-yahoo',
+  'ingest-reddit-sentiment',
+  'ingest-search-trends',
   'ingest-short-interest',
-  'ingest-smart-money'
+  'ingest-smart-money',
+  'ingest-stocktwits',
+  'ingest-supply-chain'
 ];
 
 serve(async (req) => {
