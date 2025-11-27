@@ -72,6 +72,7 @@ serve(async (req) => {
     let signalsCreated = 0;
     let signalsSkipped = 0;
     let sourceUsed = 'SEC EDGAR';
+    let parseErrors = 0;
     
     for (const entryMatch of entries) {
       const entryContent = entryMatch[1];
@@ -79,83 +80,132 @@ serve(async (req) => {
       const linkMatch = entryContent.match(/<link\s+href="(.*?)"/i);
       const titleMatch = entryContent.match(/<title>(.*?)<\/title>/i);
       
-      if (!linkMatch || !titleMatch) continue;
+      if (!linkMatch || !titleMatch) {
+        continue;
+      }
       
       const filingUrl = linkMatch[1];
       const titleText = titleMatch[1];
       
-      // Extract ticker from title (format: "4 - TICKER (CompanyName)")
-      const tickerMatch = titleText.match(/4\s*-\s*([A-Z]+)/);
-      if (!tickerMatch) continue;
-      
-      const ticker = tickerMatch[1];
-      
-      // For demo: create insider signal without parsing full XML
-      const checksumData = JSON.stringify({
-        filing_url: filingUrl,
-        ticker
-      });
-      
-      const encoder = new TextEncoder();
-      const data = encoder.encode(checksumData);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      
-      // Find or create asset
-      let { data: asset } = await supabaseClient
-        .from('assets')
-        .select('id')
-        .eq('ticker', ticker)
-        .eq('exchange', 'US')
-        .maybeSingle();
-      
-      if (!asset) {
-        const { data: newAsset } = await supabaseClient
-          .from('assets')
-          .insert({
-            ticker,
-            exchange: 'US',
-            name: ticker,
-            metadata: {}
-          })
-          .select()
-          .single();
-        
-        asset = newAsset;
+      // Extract accession number from title to build XML URL
+      const accessionMatch = titleText.match(/\((\d{10}-\d{2}-\d{6})\)/);
+      if (!accessionMatch) {
+        console.log(`⚠️ No accession number in: ${titleText}`);
+        continue;
       }
       
-      // Insert insider signal with ON CONFLICT handling
-      const { error: insertError } = await supabaseClient
-        .from('signals')
-        .insert({
-          signal_type: 'insider_buy',
-          asset_id: asset?.id,
-          value_text: `Insider transaction: ${ticker}`,
-          direction: 'up',
-          magnitude: 1.0,
-          observed_at: new Date().toISOString(),
-          raw: {
-            ticker,
-            filing_url: filingUrl
-          },
-          citation: {
-            source: 'SEC Form 4',
-            url: filingUrl,
-            timestamp: new Date().toISOString()
-          },
-          checksum
-        });
+      const accessionNumber = accessionMatch[1];
       
-      if (insertError) {
-        if (insertError.code === '23505') { // Duplicate key
-          signalsSkipped++;
-        } else {
-          console.error('Insert error:', insertError);
-          throw insertError;
+      // Extract CIK from title
+      const cikMatch = titleText.match(/\((\d{10})\)/);
+      if (!cikMatch) {
+        console.log(`⚠️ No CIK in: ${titleText}`);
+        continue;
+      }
+      
+      const cik = cikMatch[1];
+      
+      // Build Form 4 XML URL
+      const xmlUrl = `https://www.sec.gov/cgi-bin/viewer?action=view&cik=${cik}&accession_number=${accessionNumber}&xbrl_type=v`;
+      
+      try {
+        // Fetch the filing page to extract ticker
+        const filingResponse = await withRetry(
+          async () => await fetch(filingUrl, {
+            headers: {
+              'User-Agent': SEC_USER_AGENT,
+              'Accept': 'text/html'
+            }
+          }),
+          { maxRetries: 2, initialDelayMs: 1000 }
+        );
+        
+        const filingHtml = await filingResponse.text();
+        
+        // Extract ticker from filing HTML (appears in issuer section)
+        const tickerMatch = filingHtml.match(/Trading Symbol:<\/strong>\s*([A-Z]+)/i) ||
+                           filingHtml.match(/Ticker:\s*([A-Z]+)/i) ||
+                           filingHtml.match(/Symbol:\s*([A-Z]+)/i);
+        
+        if (!tickerMatch) {
+          console.log(`⚠️ No ticker found in filing: ${filingUrl}`);
+          parseErrors++;
+          continue;
         }
-      } else {
-        signalsCreated++;
+        
+        const ticker = tickerMatch[1];
+        
+        // For demo: create insider signal without parsing full XML
+        const checksumData = JSON.stringify({
+          filing_url: filingUrl,
+          ticker
+        });
+        
+        const encoder = new TextEncoder();
+        const data = encoder.encode(checksumData);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        // Find or create asset
+        let { data: asset } = await supabaseClient
+          .from('assets')
+          .select('id')
+          .eq('ticker', ticker)
+          .eq('exchange', 'US')
+          .maybeSingle();
+        
+        if (!asset) {
+          const { data: newAsset } = await supabaseClient
+            .from('assets')
+            .insert({
+              ticker,
+              exchange: 'US',
+              name: ticker,
+              metadata: {}
+            })
+            .select()
+            .single();
+          
+          asset = newAsset;
+        }
+        
+        // Insert insider signal with ON CONFLICT handling
+        const { error: insertError } = await supabaseClient
+          .from('signals')
+          .insert({
+            signal_type: 'insider_buy',
+            asset_id: asset?.id,
+            value_text: `Insider transaction: ${ticker}`,
+            direction: 'up',
+            magnitude: 1.0,
+            observed_at: new Date().toISOString(),
+            raw: {
+              ticker,
+              filing_url: filingUrl
+            },
+            citation: {
+              source: 'SEC Form 4',
+              url: filingUrl,
+              timestamp: new Date().toISOString()
+            },
+            checksum
+          });
+        
+        if (insertError) {
+          if (insertError.code === '23505') { // Duplicate key
+            signalsSkipped++;
+          } else {
+            console.error('Insert error:', insertError);
+            throw insertError;
+          }
+        } else {
+          signalsCreated++;
+        }
+      } catch (filingError) {
+        console.error(`Error processing filing ${filingUrl}:`, filingError);
+        parseErrors++;
+        continue;
       }
     }
 
@@ -168,6 +218,7 @@ serve(async (req) => {
       completed_at: new Date().toISOString(),
       duration_seconds: durationSeconds,
       rows_inserted: signalsCreated,
+      rows_skipped: signalsSkipped,
       source_used: sourceUsed,
       fallback_count: 0,
       latency_ms: latency,
@@ -184,7 +235,10 @@ serve(async (req) => {
       duration_ms: latency,
       source_used: sourceUsed,
       error_message: null,
-      metadata: { filings_processed: Math.min(limit, entries.length) }
+      metadata: { 
+        filings_processed: Math.min(limit, entries.length),
+        parse_errors: parseErrors
+      }
     });
 
     // Send success alert
