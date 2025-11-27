@@ -22,7 +22,6 @@ serve(async (req) => {
   const logId = crypto.randomUUID();
   const slackAlerter = new SlackAlerter();
 
-  // Start logging
   await supabaseClient.from('ingest_logs').insert({
     id: logId,
     etl_name: 'ingest-form4',
@@ -43,7 +42,6 @@ serve(async (req) => {
   try {
     const { limit = 100 } = await req.json();
     
-    // Fetch Form 4 atom feed
     const SEC_USER_AGENT = "MyCompany info@example.com";
     const feedUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&count=${limit}&output=atom`;
     
@@ -54,63 +52,32 @@ serve(async (req) => {
           'Accept-Language': 'en-US'
         }
       }),
-      {
-        maxRetries: 3,
-        initialDelayMs: 2000,
-        onRetry: (attempt, error) => {
-          console.log(`⏳ Retry ${attempt}/3 for SEC feed: ${error.message}`);
-        }
-      }
+      { maxRetries: 3, initialDelayMs: 2000 }
     );
     
     const feedText = await feedResponse.text();
-    
-    // Parse atom feed using regex (safer for edge functions)
     const entryRegex = /<entry>(.*?)<\/entry>/gs;
     const entries = Array.from(feedText.matchAll(entryRegex)).slice(0, limit);
     
+    console.log(`📥 Found ${entries.length} entries in SEC feed`);
+    
     let signalsCreated = 0;
     let signalsSkipped = 0;
-    let sourceUsed = 'SEC EDGAR';
     let parseErrors = 0;
     
     for (const entryMatch of entries) {
       const entryContent = entryMatch[1];
       
-      const linkMatch = entryContent.match(/<link\s+href="(.*?)"/i);
-      const titleMatch = entryContent.match(/<title>(.*?)<\/title>/i);
+      console.log(`🔄 Processing entry ${signalsCreated + signalsSkipped + parseErrors + 1}/${entries.length}`);
       
-      if (!linkMatch || !titleMatch) {
-        continue;
-      }
+      const linkMatch = entryContent.match(/<link\s+href="(.*?)"/i);
+      if (!linkMatch) continue;
       
       const filingUrl = linkMatch[1];
-      const titleText = titleMatch[1];
-      
-      // Extract accession number from title to build XML URL
-      const accessionMatch = titleText.match(/\((\d{10}-\d{2}-\d{6})\)/);
-      if (!accessionMatch) {
-        console.log(`⚠️ No accession number in: ${titleText}`);
-        continue;
-      }
-      
-      const accessionNumber = accessionMatch[1];
-      
-      // Extract CIK from title
-      const cikMatch = titleText.match(/\((\d{10})\)/);
-      if (!cikMatch) {
-        console.log(`⚠️ No CIK in: ${titleText}`);
-        continue;
-      }
-      
-      const cik = cikMatch[1];
-      
-      // Build Form 4 XML URL
-      const xmlUrl = `https://www.sec.gov/cgi-bin/viewer?action=view&cik=${cik}&accession_number=${accessionNumber}&xbrl_type=v`;
       
       try {
-        // Fetch the filing page to extract ticker
-        const filingResponse = await withRetry(
+        // Fetch the filing index page
+        const indexResponse = await withRetry(
           async () => await fetch(filingUrl, {
             headers: {
               'User-Agent': SEC_USER_AGENT,
@@ -120,25 +87,99 @@ serve(async (req) => {
           { maxRetries: 2, initialDelayMs: 1000 }
         );
         
-        const filingHtml = await filingResponse.text();
+        const indexHtml = await indexResponse.text();
         
-        // Extract ticker from filing HTML (appears in issuer section)
-        const tickerMatch = filingHtml.match(/Trading Symbol:<\/strong>\s*([A-Z]+)/i) ||
-                           filingHtml.match(/Ticker:\s*([A-Z]+)/i) ||
-                           filingHtml.match(/Symbol:\s*([A-Z]+)/i);
+        console.log(`📄 Processing filing: ${filingUrl}`);
         
-        if (!tickerMatch) {
-          console.log(`⚠️ No ticker found in filing: ${filingUrl}`);
+        // Find Form 4 XML document link
+        const xmlMatch = indexHtml.match(/href="([^"]*\.xml)"/i);
+        if (!xmlMatch) {
+          console.log(`⚠️ No XML link found in filing: ${filingUrl}`);
           parseErrors++;
           continue;
         }
         
-        const ticker = tickerMatch[1];
+        console.log(`📦 Found XML: ${xmlMatch[1]}`);
         
-        // For demo: create insider signal without parsing full XML
+        // Build full XML URL
+        const xmlPath = xmlMatch[1];
+        const xmlUrl = xmlPath.startsWith('http') 
+          ? xmlPath 
+          : `https://www.sec.gov${xmlPath}`;
+        
+        // Fetch and parse Form 4 XML
+        const xmlResponse = await withRetry(
+          async () => await fetch(xmlUrl, {
+            headers: {
+              'User-Agent': SEC_USER_AGENT,
+              'Accept': 'application/xml'
+            }
+          }),
+          { maxRetries: 2, initialDelayMs: 1000 }
+        );
+        
+        const xmlText = await xmlResponse.text();
+        
+        // Parse XML for key fields using regex (safer for edge functions)
+        const issuerNameMatch = xmlText.match(/<issuerName>(.*?)<\/issuerName>/i);
+        const issuerTickerMatch = xmlText.match(/<issuerTradingSymbol>(.*?)<\/issuerTradingSymbol>/i);
+        
+        console.log(`🔍 Searching for ticker in XML (${xmlUrl.substring(0, 80)}...)`);
+        console.log(`   Ticker match: ${issuerTickerMatch ? issuerTickerMatch[1] : 'NOT FOUND'}`);
+        
+        if (!issuerTickerMatch || !issuerTickerMatch[1]) {
+          console.log(`⚠️ No ticker in XML: ${xmlUrl}`);
+          parseErrors++;
+          continue;
+        }
+        
+        const ticker = issuerTickerMatch[1].trim();
+        const issuerName = issuerNameMatch ? issuerNameMatch[1].trim() : ticker;
+        
+        console.log(`✅ Found ticker: ${ticker}, issuer: ${issuerName}`);
+        
+        // Parse transaction details
+        const transactionRegex = /<nonDerivativeTransaction>(.*?)<\/nonDerivativeTransaction>/gs;
+        const transactions = Array.from(xmlText.matchAll(transactionRegex));
+        
+        if (transactions.length === 0) {
+          console.log(`⚠️ No transactions found in XML: ${xmlUrl}`);
+          continue;
+        }
+        
+        // Process first transaction (simplified - could process all)
+        const txContent = transactions[0][1];
+        const txCodeMatch = txContent.match(/<transactionCode>(.*?)<\/transactionCode>/i);
+        const txSharesMatch = txContent.match(/<transactionShares>\s*<value>(.*?)<\/value>/i);
+        const txAcqDispMatch = txContent.match(/<transactionAcquiredDisposedCode>\s*<value>(.*?)<\/value>/i);
+        
+        if (!txCodeMatch || !txAcqDispMatch) {
+          console.log(`⚠️ Incomplete transaction data: ${xmlUrl}`);
+          parseErrors++;
+          continue;
+        }
+        
+        const txCode = txCodeMatch[1].trim();
+        const txShares = txSharesMatch ? parseFloat(txSharesMatch[1]) : 0;
+        const acqDisp = txAcqDispMatch[1].trim();
+        
+        // Determine signal type based on transaction
+        let signalType = 'insider_buy';
+        let direction = 'up';
+        
+        // A = Acquired, D = Disposed
+        if (acqDisp === 'D') {
+          signalType = 'insider_sell';
+          direction = 'down';
+        }
+        
+        // Generate checksum for idempotency
         const checksumData = JSON.stringify({
           filing_url: filingUrl,
-          ticker
+          ticker,
+          tx_code: txCode,
+          shares: txShares,
+          acq_disp: acqDisp
         });
         
         const encoder = new TextEncoder();
@@ -161,7 +202,7 @@ serve(async (req) => {
             .insert({
               ticker,
               exchange: 'US',
-              name: ticker,
+              name: issuerName,
               metadata: {}
             })
             .select()
@@ -170,18 +211,22 @@ serve(async (req) => {
           asset = newAsset;
         }
         
-        // Insert insider signal with ON CONFLICT handling
+        // Insert signal
         const { error: insertError } = await supabaseClient
           .from('signals')
           .insert({
-            signal_type: 'insider_buy',
+            signal_type: signalType,
             asset_id: asset?.id,
-            value_text: `Insider transaction: ${ticker}`,
-            direction: 'up',
-            magnitude: 1.0,
+            value_text: `${acqDisp === 'A' ? 'Acquired' : 'Disposed'} ${txShares.toLocaleString()} shares`,
+            direction,
+            magnitude: Math.min(txShares / 10000, 10), // Scale magnitude
             observed_at: new Date().toISOString(),
             raw: {
               ticker,
+              issuer_name: issuerName,
+              transaction_code: txCode,
+              shares: txShares,
+              acquired_disposed: acqDisp,
               filing_url: filingUrl
             },
             citation: {
@@ -193,7 +238,7 @@ serve(async (req) => {
           });
         
         if (insertError) {
-          if (insertError.code === '23505') { // Duplicate key
+          if (insertError.code === '23505') {
             signalsSkipped++;
           } else {
             console.error('Insert error:', insertError);
@@ -202,6 +247,7 @@ serve(async (req) => {
         } else {
           signalsCreated++;
         }
+        
       } catch (filingError) {
         console.error(`Error processing filing ${filingUrl}:`, filingError);
         parseErrors++;
@@ -212,19 +258,17 @@ serve(async (req) => {
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     const latency = Date.now() - startTime;
 
-    // Update log
     await supabaseClient.from('ingest_logs').update({
       status: 'success',
       completed_at: new Date().toISOString(),
       duration_seconds: durationSeconds,
       rows_inserted: signalsCreated,
       rows_skipped: signalsSkipped,
-      source_used: sourceUsed,
+      source_used: 'SEC EDGAR',
       fallback_count: 0,
       latency_ms: latency,
     }).eq('id', logId);
 
-    // @guard: Heartbeat log to function_status for monitoring
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-form4',
       executed_at: new Date().toISOString(),
@@ -233,7 +277,7 @@ serve(async (req) => {
       rows_skipped: signalsSkipped,
       fallback_used: null,
       duration_ms: latency,
-      source_used: sourceUsed,
+      source_used: 'SEC EDGAR',
       error_message: null,
       metadata: { 
         filings_processed: Math.min(limit, entries.length),
@@ -241,13 +285,12 @@ serve(async (req) => {
       }
     });
 
-    // Send success alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-form4',
       status: 'success',
       duration: durationSeconds,
       latencyMs: latency,
-      sourceUsed,
+      sourceUsed: 'SEC EDGAR',
       fallbackRatio: 0,
       rowsInserted: signalsCreated,
       rowsSkipped: signalsSkipped
@@ -256,7 +299,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       filings_processed: Math.min(limit, entries.length),
       signals_created: signalsCreated,
-      signals_skipped: signalsSkipped
+      signals_skipped: signalsSkipped,
+      parse_errors: parseErrors
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -265,7 +309,6 @@ serve(async (req) => {
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     const latency = Date.now() - startTime;
 
-    // Update log with failure
     await supabaseClient.from('ingest_logs').update({
       status: 'failed',
       completed_at: new Date().toISOString(),
@@ -273,7 +316,6 @@ serve(async (req) => {
       error_message: errorMessage,
     }).eq('id', logId);
 
-    // @guard: Heartbeat log to function_status for monitoring
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-form4',
       executed_at: new Date().toISOString(),
@@ -287,7 +329,6 @@ serve(async (req) => {
       metadata: {}
     });
 
-    // Log to ingest_failures
     await supabaseClient.from('ingest_failures').insert({
       etl_name: 'ingest-form4',
       ticker: null,
@@ -299,7 +340,6 @@ serve(async (req) => {
       metadata: {}
     });
 
-    // Send failure alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-form4',
       status: 'failed',
