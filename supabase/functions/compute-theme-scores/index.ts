@@ -414,6 +414,13 @@ serve(async (req) => {
   } catch (error) {
     console.error('[THEME-SCORING] ❌ Error:', error);
     
+    // Add more detailed error logging
+    if (error instanceof Error) {
+      console.error('[THEME-SCORING] Error name:', error.name);
+      console.error('[THEME-SCORING] Error message:', error.message);
+      console.error('[THEME-SCORING] Error stack:', error.stack);
+    }
+    
     const duration = Date.now() - startTime;
 
     // Log failure to function_status
@@ -427,11 +434,17 @@ serve(async (req) => {
       status: 'failure',
       executed_at: new Date().toISOString(),
       duration_ms: duration,
-      error_message: error instanceof Error ? error.message : 'Unknown error'
+      error_message: error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error',
+      metadata: {
+        error_stack: error instanceof Error ? error.stack : null
+      }
     });
 
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        error_type: error instanceof Error ? error.name : 'UnknownError'
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
