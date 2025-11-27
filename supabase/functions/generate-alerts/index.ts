@@ -72,9 +72,10 @@ serve(async (req) => {
         console.log(`[GENERATE-ALERTS] Processing theme "${theme.name}" for user ${user.email}`);
         
         // Get signals mapped to this theme
-        const { data: signals } = await supabaseClient
+        const { data: signalMaps, error: signalError } = await supabaseClient
           .from('signal_theme_map')
           .select(`
+            signal_id,
             signals!inner(
               id,
               asset_id,
@@ -82,16 +83,45 @@ serve(async (req) => {
               direction,
               magnitude,
               observed_at,
-              value_text,
-              assets(ticker)
+              value_text
             )
           `)
           .eq('theme_id', theme.id);
         
-        const extractedSignals = signals?.map((m: any) => m.signals).filter(Boolean) || [];
-        const recentSignals = extractedSignals.filter((s: any) => 
+        if (signalError) {
+          console.error(`[GENERATE-ALERTS] Error fetching signals for theme "${theme.name}":`, signalError);
+          continue;
+        }
+        
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": Retrieved ${signalMaps?.length || 0} signal mappings`);
+        
+        // Extract signals and filter for recent ones
+        const allSignals = signalMaps?.map((m: any) => m.signals).filter(Boolean) || [];
+        const recentSignals = allSignals.filter((s: any) => 
           new Date(s.observed_at) >= oneDayAgo
         );
+        
+        console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${recentSignals.length} recent signals (last 24h)`);
+        
+        if (recentSignals.length === 0) continue;
+        
+        // Get asset info for these signals
+        const assetIds = [...new Set(recentSignals.map((s: any) => s.asset_id).filter(Boolean))];
+        if (assetIds.length === 0) continue;
+        
+        const { data: assets } = await supabaseClient
+          .from('assets')
+          .select('id, ticker')
+          .in('id', assetIds);
+        
+        const assetMap = new Map(assets?.map(a => [a.id, a]) || []);
+        
+        // Attach asset info to signals
+        recentSignals.forEach((s: any) => {
+          if (s.asset_id) {
+            s.assets = assetMap.get(s.asset_id);
+          }
+        });
         
         console.log(`[GENERATE-ALERTS] Theme "${theme.name}": ${recentSignals.length} recent signals found`);
         
