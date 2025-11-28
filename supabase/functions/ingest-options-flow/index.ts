@@ -25,8 +25,16 @@ serve(async (req) => {
     console.log('Starting options flow ingestion...');
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
-
-    const tickers = ['AAPL', 'TSLA', 'NVDA'];
+    
+    // Fetch stocks dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .eq('asset_class', 'stock')
+      .limit(20); // Process 20 stocks per run for options flow
+    
+    if (assetsError) throw assetsError;
+    const tickers = assets?.map(a => a.ticker) || [];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured');

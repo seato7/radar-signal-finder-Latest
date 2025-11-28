@@ -240,21 +240,30 @@ serve(async (req) => {
     // Initialize Slack alerter
     const slackAlerter = new SlackAlerter();
     
-    // Send start alert
-    await slackAlerter.sendLiveAlert({
-      etlName: 'ingest-breaking-news',
-      status: 'started',
-      metadata: { tickers_count: 9 }
-    });
-    
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
-    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
+    
+    // Fetch assets dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .in('asset_class', ['stock', 'crypto'])
+      .limit(50); // Process 50 assets per run for breaking news
+    
+    if (assetsError) throw assetsError;
+    const tickers = assets?.map((a: any) => a.ticker) || [];
     const newsItems = [];
     let sourceUsed = 'Perplexity API';
     let cacheHit = false;
     let fallbackUsed = false;
     let authFailures = 0;
     const fetchStartTime = Date.now();
+    
+    // Send start alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-breaking-news',
+      status: 'started',
+      metadata: { tickers_count: tickers.length }
+    });
 
     // Check if API key is missing or invalid
     if (!perplexityKey) {

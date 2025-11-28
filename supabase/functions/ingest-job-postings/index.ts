@@ -25,15 +25,16 @@ serve(async (req) => {
     const adzunaAppId = Deno.env.get('ADZUNA_APP_ID');
     const adzunaAppKey = Deno.env.get('ADZUNA_APP_KEY');
 
-    const companies = [
-      { ticker: 'AAPL', name: 'Apple' },
-      { ticker: 'TSLA', name: 'Tesla' },
-      { ticker: 'NVDA', name: 'NVIDIA' },
-      { ticker: 'MSFT', name: 'Microsoft' },
-      { ticker: 'GOOGL', name: 'Google' },
-      { ticker: 'AMZN', name: 'Amazon' },
-      { ticker: 'META', name: 'Meta' },
-    ];
+    // Fetch companies dynamically from assets
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker, name')
+      .eq('asset_class', 'stock')
+      .limit(20); // Process 20 companies per run
+    
+    if (assetsError) throw assetsError;
+    
+    const companies = assets?.map((a: any) => ({ ticker: a.ticker, name: a.name })) || [];
 
     if (!adzunaAppId || !adzunaAppKey) {
       console.log('Adzuna API credentials not configured');
