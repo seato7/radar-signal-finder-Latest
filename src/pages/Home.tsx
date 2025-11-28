@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Play, Database, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast as sonnerToast } from "sonner";
 
 interface ThemeScore {
   id: string;
@@ -20,6 +21,8 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [themes, setThemes] = useState<ThemeScore[]>([]);
   const [loadingThemes, setLoadingThemes] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   const fetchThemes = async () => {
     setLoadingThemes(true);
@@ -38,6 +41,26 @@ const Home = () => {
   };
 
   useEffect(() => {
+    const checkAdminAccess = async () => {
+      try {
+        // Check admin access by calling admin-metrics
+        const { error } = await supabase.functions.invoke('admin-metrics', { 
+          body: { action: 'metrics' } 
+        });
+        
+        if (error) {
+          setIsAdmin(false);
+        } else {
+          setIsAdmin(true);
+        }
+      } catch (error) {
+        setIsAdmin(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    checkAdminAccess();
     fetchThemes();
   }, []);
 
@@ -171,12 +194,13 @@ const Home = () => {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className={`grid gap-6 ${isAdmin ? 'md:grid-cols-2' : ''}`}>
+        {isAdmin && (
           <Card className="shadow-data">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <RefreshCw className="h-5 w-5 text-primary" />
-                Data Ingest Pipeline
+                Data Ingest Pipeline (Admin)
               </CardTitle>
               <CardDescription>
                 Fetch latest market signals and data
@@ -193,6 +217,7 @@ const Home = () => {
               </Button>
             </CardContent>
           </Card>
+        )}
 
         <Card className="shadow-data">
           <CardHeader>
@@ -280,7 +305,7 @@ const Home = () => {
               <div>
                 <h4 className="font-medium text-foreground">Refresh Market Data</h4>
                 <p className="text-sm text-muted-foreground">
-                  Click "Run Data Ingest" above to fetch the latest market signals across all 11+ data sources
+                  All data sources refresh automatically (hourly for social data, daily for others). Visit the Data Ingestion page for schedules.
                 </p>
               </div>
             </div>
