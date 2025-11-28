@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Play, Database, RefreshCw } from "lucide-react";
+import { Database, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { toast as sonnerToast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 
 interface ThemeScore {
   id: string;
@@ -16,115 +16,77 @@ interface ThemeScore {
   as_of: string;
 }
 
+// Fetch themes with caching
+const fetchThemes = async (): Promise<ThemeScore[]> => {
+  const { data, error } = await supabase
+    .from('theme_scores')
+    .select(`
+      score,
+      component_scores,
+      positive_components,
+      computed_at,
+      themes!inner(id, name)
+    `)
+    .order('score', { ascending: false })
+    .limit(3);
+  
+  if (error) throw error;
+  
+  if (data && Array.isArray(data) && data.length > 0) {
+    // Group by theme ID to get unique themes (latest score for each)
+    const themeMap = new Map<string, any>();
+    data.forEach((item: any) => {
+      const themeId = item.themes.id;
+      if (!themeMap.has(themeId) || new Date(item.computed_at) > new Date(themeMap.get(themeId).computed_at)) {
+        themeMap.set(themeId, item);
+      }
+    });
+    
+    return Array.from(themeMap.values())
+      .map((item: any) => ({
+        id: item.themes.id,
+        name: item.themes.name,
+        score: item.score,
+        components: item.component_scores || {},
+        as_of: item.computed_at,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }
+  
+  return [];
+};
+
 const Home = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [themes, setThemes] = useState<ThemeScore[]>([]);
-  const [loadingThemes, setLoadingThemes] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const hasInitialized = useRef(false);
-  const isMountedRef = useRef(true);
-  const isFetchingRef = useRef(false);
+  
+  // Use React Query for caching with 15-minute stale time
+  const { data: themes = [], isLoading: loadingThemes, refetch } = useQuery({
+    queryKey: ['home-themes'],
+    queryFn: fetchThemes,
+    staleTime: 15 * 60 * 1000, // 15 minutes
+    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+    refetchOnWindowFocus: false, // Don't refetch when window regains focus
+  });
 
-  const fetchThemes = async () => {
-    // Check if still mounted and not already fetching
-    if (!isMountedRef.current || isFetchingRef.current) {
-      console.log('⏸️ Component unmounted or already fetching, skipping...');
-      return;
-    }
-
-    isFetchingRef.current = true;
-    console.log('🔄 Fetching themes...');
-    setLoadingThemes(true);
-
-    try {
-      // Fetch pre-computed theme scores directly from database (much faster!)
-      const { data, error } = await supabase
-        .from('theme_scores')
-        .select(`
-          score,
-          component_scores,
-          positive_components,
-          computed_at,
-          themes!inner(id, name)
-        `)
-        .order('score', { ascending: false })
-        .limit(3);
-      
-      if (error) throw error;
-      
-      // Check if still mounted before updating state
-      if (!isMountedRef.current) {
-        console.log('⏸️ Component unmounted, not updating state');
-        return;
-      }
-      
-      if (data && Array.isArray(data) && data.length > 0) {
-        const formatted = data.map((item: any) => ({
-          id: item.themes.id,
-          name: item.themes.name,
-          score: item.score,
-          components: item.component_scores || {},
-          as_of: item.computed_at,
-          weights: {} // Not needed for display
-        }));
-        console.log('✅ Loaded', formatted.length, 'themes');
-        setThemes(formatted);
-      } else {
-        setThemes([]);
-      }
-    } catch (error) {
-      console.error('❌ Error:', error);
-      if (isMountedRef.current) {
-        sonnerToast.error("Failed to load opportunities");
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoadingThemes(false);
-      }
-      isFetchingRef.current = false;
-      console.log('✅ Fetch complete');
-    }
-  };
-
-  useEffect(() => {
-    // Prevent double-run in React Strict Mode
-    if (hasInitialized.current) {
-      console.log('⏭️ Already initialized, skipping...');
-      return;
-    }
-    hasInitialized.current = true;
-    isMountedRef.current = true;
-
-    const init = async () => {
-      console.log('🚀 Initializing Home component...');
+  // Check admin status
+  const { data: isAdmin = false } = useQuery({
+    queryKey: ['user-admin-status'],
+    queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .single();
-        
-        if (isMountedRef.current) {
-          setIsAdmin(data?.role === 'admin');
-        }
-      }
-      if (isMountedRef.current) {
-        setCheckingAuth(false);
-        await fetchThemes();
-      }
-    };
-    
-    init();
-
-    // Cleanup function
-    return () => {
-      console.log('🧹 Cleaning up Home component...');
-      isMountedRef.current = false;
-    };
-  }, []); // Empty array - only run once on mount
+      if (!user) return false;
+      
+      const { data } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      
+      return data?.role === 'admin';
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
   const runIngest = async () => {
     setLoading(true);
@@ -159,7 +121,7 @@ const Home = () => {
         description="Run ETL pipelines and monitor system health"
         action={
           <Button
-            onClick={fetchThemes}
+            onClick={() => refetch()}
             disabled={loadingThemes}
             variant="outline"
             size="sm"
