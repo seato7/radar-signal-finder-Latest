@@ -20,52 +20,43 @@ const Home = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [themes, setThemes] = useState<ThemeScore[]>([]);
-  const [loadingThemes, setLoadingThemes] = useState(false);
+  const [loadingThemes, setLoadingThemes] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const fetchingRef = useRef(false);
+  const hasInitialized = useRef(false);
 
   const fetchThemes = async () => {
-    // Prevent concurrent fetches
-    if (fetchingRef.current) {
-      console.log('⏸️ Fetch already in progress, skipping');
-      return;
-    }
-    
-    fetchingRef.current = true;
+    console.log('🔄 Fetching themes...');
     setLoadingThemes(true);
-    console.log('🔄 fetchThemes started');
     
     try {
       const { data, error } = await supabase.functions.invoke('get-themes', {
         body: { days: 45 }
       });
       
-      console.log('📦 Response:', data?.length || 0, 'themes');
-      
       if (error) throw error;
       
       if (data && Array.isArray(data) && data.length > 0) {
         const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
         const top3 = sorted.slice(0, 3);
-        console.log('✅ Setting', top3.length, 'themes');
+        console.log('✅ Loaded', top3.length, 'themes');
         setThemes(top3);
       } else {
-        console.log('⚠️ No valid data');
         setThemes([]);
       }
     } catch (error) {
-      console.error('❌ Fetch error:', error);
+      console.error('❌ Error:', error);
       sonnerToast.error("Failed to load opportunities");
     } finally {
       setLoadingThemes(false);
-      fetchingRef.current = false;
-      console.log('✅ fetchThemes completed, loading=false');
     }
   };
 
   useEffect(() => {
-    console.log('🎬 Component mounted');
+    // Prevent double-run in React Strict Mode and multiple mounts
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -78,9 +69,7 @@ const Home = () => {
         setIsAdmin(data?.role === 'admin');
       }
       setCheckingAuth(false);
-      
-      // Only fetch themes once after auth check
-      fetchThemes();
+      await fetchThemes();
     };
     
     init();
