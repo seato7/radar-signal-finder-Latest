@@ -165,3 +165,6 @@ verify_jwt = false
 [functions.generate-signals-from-jobpostings]
 verify_jwt = false
 
+[functions.populate-assets]
+verify_jwt = false
+
