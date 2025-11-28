@@ -37,11 +37,20 @@ const Home = () => {
     isFetchingRef.current = true;
     console.log('🔄 Fetching themes...');
     setLoadingThemes(true);
-    
+
     try {
-      const { data, error } = await supabase.functions.invoke('get-themes', {
-        body: { days: 45 }
-      });
+      // Fetch pre-computed theme scores directly from database (much faster!)
+      const { data, error } = await supabase
+        .from('theme_scores')
+        .select(`
+          score,
+          component_scores,
+          positive_components,
+          computed_at,
+          themes!inner(id, name)
+        `)
+        .order('score', { ascending: false })
+        .limit(3);
       
       if (error) throw error;
       
@@ -52,10 +61,16 @@ const Home = () => {
       }
       
       if (data && Array.isArray(data) && data.length > 0) {
-        const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
-        const top3 = sorted.slice(0, 3);
-        console.log('✅ Loaded', top3.length, 'themes');
-        setThemes(top3);
+        const formatted = data.map((item: any) => ({
+          id: item.themes.id,
+          name: item.themes.name,
+          score: item.score,
+          components: item.component_scores || {},
+          as_of: item.computed_at,
+          weights: {} // Not needed for display
+        }));
+        console.log('✅ Loaded', formatted.length, 'themes');
+        setThemes(formatted);
       } else {
         setThemes([]);
       }
