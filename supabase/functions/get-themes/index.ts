@@ -29,6 +29,9 @@ function computeThemeScore(signals: any[]): { score: number; components: Record<
   for (const key in WEIGHTS) components[key] = 0.0;
 
   const now = new Date();
+  const signalContributions: Record<string, number[]> = {};
+  for (const key in WEIGHTS) signalContributions[key] = [];
+
   for (const signal of signals) {
     const observedAt = new Date(signal.observed_at);
     const daysAgo = (now.getTime() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
@@ -41,45 +44,54 @@ function computeThemeScore(signals: any[]): { score: number; components: Record<
     
     // Policy signals
     if (type.startsWith('policy_') || type === 'policy_approval') {
-      components.PolicyMomentum += contribution;
+      signalContributions.PolicyMomentum.push(contribution);
     }
     // Smart money, dark pool, institutional flows
     else if (type === 'smart_money_flow' || type === 'dark_pool_activity' || type.startsWith('filing_')) {
-      components.FlowPressure += contribution;
+      signalContributions.FlowPressure.push(contribution);
     }
     // Insider & congressional trades
     else if (type.startsWith('insider_') || type.startsWith('congressional_') || type === 'politician_buy') {
-      components.BigMoneyConfirm += contribution;
+      signalContributions.BigMoneyConfirm.push(contribution);
     }
     // Sentiment & attention signals
     else if (type === 'sentiment_extreme' || type.startsWith('social_') || type === 'news_mention') {
-      components.Attention += contribution;
+      signalContributions.Attention.push(contribution);
     }
     // Technical signals (RSI, MACD, stochastic, patterns)
     else if (type.startsWith('technical_') || type === 'chart_pattern') {
-      components.TechEdge += contribution;
+      signalContributions.TechEdge.push(contribution);
     }
     // Crypto whale & exchange flows
     else if (type === 'crypto_whale_activity' || type === 'crypto_exchange_outflow' || type === 'crypto_exchange_inflow') {
-      components.InsiderPoliticianConfirm += contribution * 0.5;
+      signalContributions.InsiderPoliticianConfirm.push(contribution * 0.5);
     }
     // Economic & risk indicators
     else if (type.startsWith('risk_') || type === 'economic_indicator') {
-      components.RiskFlags += contribution;
+      signalContributions.RiskFlags.push(contribution);
     }
   }
 
-  // Calculate weighted score (normalize component values to 0-10 range)
+  // Normalize components: count of signals scaled logarithmically
+  for (const [component, contributions] of Object.entries(signalContributions)) {
+    const count = contributions.length;
+    if (count > 0) {
+      // Use logarithmic scaling: more signals = higher score, but with diminishing returns
+      // log2(count + 1) gives: 1 signal = 1, 3 signals = 2, 7 signals = 3, 15 signals = 4, etc.
+      // Multiply by 2.5 to stretch the scale
+      components[component] = Math.min(Math.log2(count + 1) * 2.5, 10);
+    }
+  }
+
+  // Calculate weighted score
   let score = 0.0;
   for (const [component, value] of Object.entries(components)) {
     const weight = WEIGHTS[component as keyof typeof WEIGHTS];
-    // Normalize: value represents signal count, scale appropriately
-    const normalized = Math.min(value * 2, 10); // Scale down for realistic scores
-    score += weight * normalized;
+    score += weight * value;
   }
   
-  // Final score is 0-100
-  score = Math.max(0, Math.min(100, score));
+  // Scale to 0-100 range (max possible raw score is ~53, scale up)
+  score = Math.max(0, Math.min(100, score * 1.5));
   
   const positives = Object.entries(components)
     .filter(([k, v]) => v > 0.1 && WEIGHTS[k as keyof typeof WEIGHTS] > 0)
@@ -125,27 +137,25 @@ serve(async (req) => {
       const { data: directSignals } = await supabaseClient
         .from('signals')
         .select('id')
-        .eq('theme_id', theme.id)
-        .gte('observed_at', since.toISOString());
+        .eq('theme_id', theme.id);
       
       const directSignalIds = directSignals?.map(s => s.id) || [];
       const allSignalIds = [...new Set([...signalIds, ...directSignalIds])];
       
-      // Fetch full signal data in batches to avoid "Request Header Fields Too Large" error
+      // Fetch full signal data in batches
       let signals: any[] = [];
       if (allSignalIds.length > 0) {
-        const BATCH_SIZE = 100; // Query 100 signals at a time
+        const BATCH_SIZE = 100;
         
         for (let i = 0; i < allSignalIds.length; i += BATCH_SIZE) {
           const batch = allSignalIds.slice(i, i + BATCH_SIZE);
           const { data, error: signalsError } = await supabaseClient
             .from('signals')
             .select('id, signal_type, observed_at, magnitude')
-            .in('id', batch)
-            .gte('observed_at', since.toISOString());
+            .in('id', batch);
           
           if (signalsError) {
-            console.error(`Error fetching signals for theme ${theme.name}:`, signalsError);
+            console.error(`Error fetching batch:`, signalsError);
           } else if (data) {
             signals.push(...data);
           }
