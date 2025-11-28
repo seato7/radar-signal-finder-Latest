@@ -26,17 +26,22 @@ serve(async (req) => {
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
 
-    const companies = [
-      { name: 'Apple', ticker: 'AAPL' },
-      { name: 'Microsoft', ticker: 'MSFT' },
-      { name: 'NVIDIA', ticker: 'NVDA' },
-    ];
+    // Fetch companies dynamically from assets
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker, name')
+      .eq('asset_class', 'stock')
+      .limit(15); // Process 15 companies per run
+    
+    if (assetsError) throw assetsError;
+    
+    const companies = assets?.map((a: any) => ({ name: a.name, ticker: a.ticker })) || [];
 
     if (!perplexityKey) {
       console.log('⚠️ Perplexity API key not configured - using mock data');
       
       // Insert mock patent data
-      const mockPatents = companies.map((company, idx) => ({
+      const mockPatents = companies.map((company: any, idx: number) => ({
         ticker: company.ticker,
         company: company.name,
         patent_number: `US${11000000 + idx * 1000 + Math.floor(Math.random() * 1000)}`,

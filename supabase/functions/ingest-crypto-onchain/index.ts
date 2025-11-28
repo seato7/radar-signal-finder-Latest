@@ -52,13 +52,12 @@ serve(async (req) => {
 
     console.log('Crypto on-chain metrics ingestion started with Perplexity AI...');
 
-    // Only process top 3 crypto assets to reduce Perplexity API usage
+    // Fetch crypto assets dynamically (limit to top 10 for Perplexity API efficiency)
     const { data: cryptoAssets } = await supabaseClient
       .from('assets')
       .select('*')
       .eq('asset_class', 'crypto')
-      .in('ticker', ['BTC/USD', 'ETH/USD', 'SOL/USD']) // Top 3 most reliable for on-chain data
-      .limit(3);
+      .limit(10); // Process 10 crypto assets per run
 
     if (!cryptoAssets || cryptoAssets.length === 0) {
       console.log('No crypto assets found - completing successfully');

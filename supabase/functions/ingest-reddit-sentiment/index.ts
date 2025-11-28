@@ -22,6 +22,16 @@ serve(async (req) => {
 
     console.log('Starting Reddit sentiment ingestion...');
     
+    // Fetch assets dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .in('asset_class', ['stock', 'crypto'])
+      .limit(30); // Process 30 assets per run
+    
+    if (assetsError) throw assetsError;
+    const dynamicTickers = assets?.map((a: any) => a.ticker) || ['AAPL', 'TSLA', 'NVDA']; // Fallback to defaults if no assets
+    
     const redditClientId = Deno.env.get('REDDIT_CLIENT_ID');
     const redditClientSecret = Deno.env.get('REDDIT_CLIENT_SECRET');
 
@@ -29,9 +39,9 @@ serve(async (req) => {
     if (!redditClientId || !redditClientSecret) {
       console.log('Reddit credentials not configured, using sample data');
       
-      const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
+      const tickers = dynamicTickers;
       
-      const signals = tickers.map(ticker => {
+      const signals = tickers.map((ticker: string) => {
         const bullishCount = Math.floor(Math.random() * 50) + 10;
         const bearishCount = Math.floor(Math.random() * 30) + 5;
         const mentionCount = bullishCount + bearishCount + Math.floor(Math.random() * 20);
@@ -82,9 +92,9 @@ serve(async (req) => {
     if (!authResponse.ok) {
       console.log('Reddit auth failed, using sample data');
       
-      const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
+      const tickers = dynamicTickers;
       
-      const signals = tickers.map(ticker => {
+      const signals = tickers.map((ticker: string) => {
         const bullishCount = Math.floor(Math.random() * 50) + 10;
         const bearishCount = Math.floor(Math.random() * 30) + 5;
         const mentionCount = bullishCount + bearishCount + Math.floor(Math.random() * 20);

@@ -49,8 +49,15 @@ serve(async (req) => {
 
     console.log('Starting StockTwits sentiment ingestion...');
 
-    // Popular tickers to track
-    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'SPY', 'QQQ'];
+    // Fetch stocks dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .in('asset_class', ['stock', 'crypto'])
+      .limit(30); // Process 30 assets per run for StockTwits sentiment
+    
+    if (assetsError) throw assetsError;
+    const tickers = assets?.map((a: any) => a.ticker) || [];
     const signals = [];
 
     for (const ticker of tickers) {

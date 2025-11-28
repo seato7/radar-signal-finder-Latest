@@ -25,8 +25,16 @@ serve(async (req) => {
     console.log('Starting supply chain signals ingestion...');
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
-
-    const tickers = ['AAPL', 'TSLA', 'NVDA'];
+    
+    // Fetch stocks dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .eq('asset_class', 'stock')
+      .limit(15); // Process 15 stocks per run for supply chain
+    
+    if (assetsError) throw assetsError;
+    const tickers = assets?.map((a: any) => a.ticker) || [];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured');

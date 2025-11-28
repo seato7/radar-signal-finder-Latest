@@ -25,8 +25,15 @@ serve(async (req) => {
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
 
-    // Major companies with recent earnings
-    const tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'NFLX'];
+    // Fetch stocks dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .eq('asset_class', 'stock')
+      .limit(25); // Process 25 stocks per run for earnings
+    
+    if (assetsError) throw assetsError;
+    const tickers = assets?.map(a => a.ticker) || [];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured, using mock data');

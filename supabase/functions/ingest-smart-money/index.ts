@@ -25,7 +25,7 @@ serve(async (req) => {
       .from('assets')
       .select('*')
       .in('asset_class', ['stock', 'forex', 'crypto'])
-      .limit(100);
+      .limit(50); // Process 50 assets per run for smart money flow
 
     if (!assets) throw new Error('No assets found');
 

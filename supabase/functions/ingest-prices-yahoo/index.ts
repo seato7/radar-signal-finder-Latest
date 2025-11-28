@@ -330,23 +330,41 @@ Deno.serve(async (req) => {
       metadata: { execution_id: executionId }
     });
     
-    // === Fetch assets with defensive limits ===
+    // === Fetch assets with batch rotation ===
+    // Get the last batch offset from metadata
+    const { data: lastRun } = await supabaseClient
+      .from('function_status')
+      .select('metadata')
+      .eq('function_name', 'ingest-prices-yahoo')
+      .order('executed_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    const lastOffset = lastRun?.metadata?.next_offset || 0;
+    const BATCH_SIZE = 50; // Process 50 assets per run
+    
     const { data: allAssets, error: assetsError } = await supabaseClient
       .from('assets')
       .select('*')
-      .limit(1000);
+      .range(lastOffset, lastOffset + BATCH_SIZE - 1);
     
     if (assetsError) {
       throw new Error(`Assets fetch failed: ${assetsError.message}`);
     }
     
-    // === PRODUCTION HARDENING: Granular batching (15 tickers per run) ===
-    const BATCH_SIZE = 15;
+    // Calculate next offset (wrap around to 0 when reaching end)
+    const { count: totalAssets } = await supabaseClient
+      .from('assets')
+      .select('*', { count: 'exact', head: true });
+    
+    const nextOffset = (lastOffset + BATCH_SIZE) >= (totalAssets || 0) ? 0 : lastOffset + BATCH_SIZE;
+    
+    // === PRODUCTION HARDENING: Process batch ===
     const TICKER_DELAY_MS = 350; // 350ms base delay
     const MAX_EXECUTION_TIME_MS = 50000; // 50 second hard limit
     
-    const assets = (allAssets || []).slice(0, BATCH_SIZE);
-    console.log(`📊 Processing ${assets.length} tickers (batch size: ${BATCH_SIZE})`);
+    const assets = allAssets || [];
+    console.log(`📊 Processing ${assets.length} tickers (batch ${Math.floor(lastOffset / BATCH_SIZE) + 1}, offset ${lastOffset}-${lastOffset + BATCH_SIZE})`);
     
     const executionDeadline = startTime + MAX_EXECUTION_TIME_MS;
     
@@ -461,7 +479,10 @@ Deno.serve(async (req) => {
         failed: failedCount,
         fallback_rate: parseFloat(fallbackRate),
         batch_size: BATCH_SIZE,
-        avg_time_per_ticker: totalProcessed > 0 ? (duration / totalProcessed).toFixed(0) : 0
+        avg_time_per_ticker: totalProcessed > 0 ? (duration / totalProcessed).toFixed(0) : 0,
+        batch_offset: lastOffset,
+        next_offset: nextOffset,
+        total_assets_in_db: totalAssets
       }
     });
     

@@ -31,7 +31,7 @@ serve(async (req) => {
       .from('assets')
       .select('*')
       .eq('asset_class', 'stock')
-      .limit(10);
+      .limit(25); // Process 25 stocks per run for dark pool
 
     if (!stocks) throw new Error('No stocks found');
 

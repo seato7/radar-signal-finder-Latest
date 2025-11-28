@@ -26,14 +26,21 @@ serve(async (req) => {
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
 
-    // Popular tickers to track
-    const tickers = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NFLX'];
+    // Fetch stocks dynamically from database
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker')
+      .in('asset_class', ['stock', 'crypto'])
+      .limit(30); // Process 30 assets per run for Google Trends
+    
+    if (assetsError) throw assetsError;
+    const tickers = assets?.map((a: any) => a.ticker) || [];
     
     if (!perplexityKey) {
       console.log('Perplexity API key not configured, using mock data');
       
       // Generate mock trend data
-      const trends = tickers.map(ticker => ({
+      const trends = tickers.map((ticker: string) => ({
         ticker,
         keyword: ticker,
         period_start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
