@@ -87,9 +87,14 @@ function computeComponentScores(signals: Signal[], asOf: Date = new Date()): Rec
       components.TechEdge += contribution;
     } 
     
-    // CapexMomentum: futures positioning
-    else if (['cot_positioning'].includes(signal.signal_type)) {
+    // CapexMomentum: capital expenditure indicators (hiring, expansion)
+    else if (['capex_hiring', 'capex_expansion', 'facility_expansion'].includes(signal.signal_type)) {
       components.CapexMomentum += contribution;
+    }
+    
+    // COT positioning → BigMoneyConfirm (institutional positioning)
+    else if (['cot_positioning'].includes(signal.signal_type)) {
+      components.BigMoneyConfirm += contribution;
     }
     
     // RiskFlags: risk-related signals
@@ -158,6 +163,24 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
 
 // Calculate relevance between signal and theme based on keyword matching
 function calculateRelevance(signal: Signal, theme: Theme): number {
+  // HIGH-VALUE SIGNALS: Always relevant regardless of keywords
+  // These institutional/capex signals represent broad market forces
+  const highValueSignalTypes = [
+    'dark_pool_activity',
+    'cot_positioning', 
+    'capex_hiring',
+    'politician_buy',
+    'politician_sell',
+    'filing_13f_new',
+    'filing_13f_increase',
+    'smart_money_flow'
+  ];
+  
+  // Give high-value signals automatic minimum relevance
+  if (highValueSignalTypes.includes(signal.signal_type)) {
+    return 0.8; // High relevance - these always matter
+  }
+  
   // Combine ticker, signal type, and value_text for matching
   const signalText = `${signal.ticker} ${signal.signal_type} ${(signal as any).value_text || ''}`.toLowerCase();
   
