@@ -106,21 +106,24 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
   components: Record<string, number>;
   positives: string[];
 } {
-  const components = computeComponentScores(signals, asOf);
+  const rawComponents = computeComponentScores(signals, asOf);
   
-  // Calculate weighted score with proper normalization
+  // Normalize and cap each component individually
+  const normalizedComponents: Record<string, number> = {};
   let rawScore = 0.0;
-  const componentCount = Object.keys(WEIGHTS).length;
   
-  for (const [component, value] of Object.entries(components)) {
+  for (const [component, rawValue] of Object.entries(rawComponents)) {
     const weight = WEIGHTS[component as keyof typeof WEIGHTS];
     
     // Normalize using logarithmic scale to prevent explosion from large signal counts
     // This ensures diminishing returns as signal count increases
-    const normalized = value > 0 ? Math.log10(1 + value) * 10 : 0;
+    const normalized = rawValue > 0 ? Math.log10(1 + rawValue) * 10 : 0;
     
     // Cap each component at 100 after normalization
     const capped = Math.min(normalized, 100);
+    
+    // Store the normalized value for display
+    normalizedComponents[component] = capped;
     
     rawScore += weight * capped;
   }
@@ -134,11 +137,23 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
   const score = Math.max(0, Math.min(100, (rawScore / maxPossibleScore) * 100));
   
   // Identify positive components (using lower threshold for logarithmic scale)
-  const positives = Object.entries(components)
+  const positives = Object.entries(normalizedComponents)
     .filter(([k, v]) => v > 0.1 && WEIGHTS[k as keyof typeof WEIGHTS] > 0)
     .map(([k]) => k);
   
-  return { score, components, positives };
+  // Validation: Alert if any component exceeds 100 (should never happen)
+  for (const [component, value] of Object.entries(normalizedComponents)) {
+    if (value > 100) {
+      console.error(`[THEME-SCORING] ⚠️ VALIDATION ERROR: ${component} exceeds 100 (${value.toFixed(2)})`);
+    }
+  }
+  
+  // Validation: Alert if final score is suspiciously high
+  if (score > 95) {
+    console.warn(`[THEME-SCORING] ⚠️ HIGH SCORE ALERT: Theme scored ${score.toFixed(2)}/100 with ${signals.length} signals`);
+  }
+  
+  return { score, components: normalizedComponents, positives };
 }
 
 // Calculate relevance between signal and theme based on keyword matching
