@@ -80,11 +80,19 @@ def compute_theme_score(signals: List[Signal], as_of: datetime = None) -> Tuple[
         
         raw_score += weight * capped
     
-    # Final score: normalize the raw weighted sum to 0-100 range
-    # Maximum possible score is sum of positive weights * 100
-    max_possible_score = sum(w * 100 for w in WEIGHTS.values() if w > 0)
+    # Final score: normalize based on ACTIVE components only
+    # This prevents penalizing themes for missing data sources
+    active_max_score = sum(
+        WEIGHTS[comp] * 100 
+        for comp, val in normalized_components.items() 
+        if val > 0 and WEIGHTS[comp] > 0
+    )
     
-    score = max(0, min(100, (raw_score / max_possible_score) * 100))
+    # Fallback to theoretical max if no components active
+    if active_max_score == 0:
+        score = 0
+    else:
+        score = max(0, min(100, (raw_score / active_max_score) * 100))
     
     # Identify positive components (using lower threshold for logarithmic scale)
     positives = [k for k, v in normalized_components.items() if v > 0.1 and WEIGHTS[k] > 0]

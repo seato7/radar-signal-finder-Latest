@@ -133,13 +133,14 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
     rawScore += weight * capped;
   }
   
-  // Final score: normalize the raw weighted sum to 0-100 range
-  // Maximum possible score is sum of positive weights * 100
-  const maxPossibleScore = Object.values(WEIGHTS)
-    .filter(w => w > 0)
-    .reduce((sum, w) => sum + w * 100, 0);
+  // Final score: normalize based on ACTIVE components only
+  // This prevents penalizing themes for missing data sources
+  const activeMaxScore = Object.entries(normalizedComponents)
+    .filter(([comp, val]) => val > 0 && WEIGHTS[comp as keyof typeof WEIGHTS] > 0)
+    .reduce((sum, [comp, val]) => sum + WEIGHTS[comp as keyof typeof WEIGHTS] * 100, 0);
   
-  const score = Math.max(0, Math.min(100, (rawScore / maxPossibleScore) * 100));
+  // Fallback to 0 if no components active
+  const score = activeMaxScore === 0 ? 0 : Math.max(0, Math.min(100, (rawScore / activeMaxScore) * 100));
   
   // Identify positive components (using lower threshold for logarithmic scale)
   const positives = Object.entries(normalizedComponents)
