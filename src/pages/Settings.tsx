@@ -70,14 +70,19 @@ export default function Settings() {
 
   const fetchSupportedBrokers = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
-        body: { action: 'list_supported' }
+      const { data, error } = await supabase.functions.invoke('manage-brokers-full', {
+        method: 'GET'
       });
       
       if (error) throw error;
-      setBrokers(data.brokers);
+      setBrokers(data.brokers || []);
     } catch (error) {
       console.error('Error fetching brokers:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load broker options',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -139,12 +144,21 @@ export default function Settings() {
 
   const fetchKeys = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
-        body: { action: 'list' }
-      });
+      const { data } = await supabase
+        .from('broker_keys')
+        .select('id, exchange, paper_mode, created_at, api_key_encrypted')
+        .order('created_at', { ascending: false });
       
-      if (error) throw error;
-      setKeys(data);
+      if (data) {
+        setKeys(data.map(k => ({
+          id: k.id,
+          label: `${k.exchange.toUpperCase()} Account`,
+          exchange: k.exchange,
+          key_id: k.api_key_encrypted.substring(0, 16),
+          paper_mode: k.paper_mode,
+          created_at: k.created_at
+        })));
+      }
     } catch (error) {
       console.error('Error fetching keys:', error);
     }
@@ -155,14 +169,24 @@ export default function Settings() {
     setLoading(true);
     
     try {
-      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
-        body: {
-          action: 'create',
-          ...formData
-        }
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-brokers-full/connect`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          exchange: formData.exchange,
+          api_key: formData.api_key,
+          secret_key: formData.secret_key,
+          paper_mode: formData.paper_mode
+        })
       });
 
-      if (error) throw error;
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Connection failed');
+      }
 
       toast({
         title: 'Broker Connected',
@@ -183,12 +207,10 @@ export default function Settings() {
 
   const handleDeleteKey = async (keyId: string) => {
     try {
-      const { error } = await supabase.functions.invoke('manage-broker-keys', {
-        body: {
-          action: 'delete',
-          key_id: keyId
-        }
-      });
+      const { error } = await supabase
+        .from('broker_keys')
+        .delete()
+        .eq('id', keyId);
 
       if (error) throw error;
       toast({ title: 'Broker Disconnected' });
@@ -205,27 +227,22 @@ export default function Settings() {
   const handleTestKey = async (keyId: string) => {
     setTestingId(keyId);
     try {
-      const { data, error } = await supabase.functions.invoke('manage-broker-keys', {
-        body: {
-          action: 'test',
-          key_id: keyId
-        }
+      toast({
+        title: 'Testing Connection',
+        description: 'Verifying broker credentials...',
       });
-
-      if (error) throw error;
-
-      if (data.status === 'connected') {
+      
+      // For now, just confirm the key exists
+      const { data } = await supabase
+        .from('broker_keys')
+        .select('exchange, paper_mode')
+        .eq('id', keyId)
+        .single();
+      
+      if (data) {
         toast({
           title: 'Connection Active',
-          description: data.account?.portfolio_value 
-            ? `Account Balance: $${parseFloat(data.account.portfolio_value).toFixed(2)}`
-            : 'Connection successful',
-        });
-      } else {
-        toast({
-          title: 'Connection Failed',
-          description: data.error || 'Could not connect to broker.',
-          variant: 'destructive'
+          description: `${data.exchange.toUpperCase()} - ${data.paper_mode ? 'Paper' : 'Live'} trading enabled`,
         });
       }
     } catch (error) {

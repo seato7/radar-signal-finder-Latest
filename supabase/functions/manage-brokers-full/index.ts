@@ -283,29 +283,47 @@ serve(async (req) => {
   );
 
   try {
+    const url = new URL(req.url);
+    const path = url.pathname;
+
+    // GET / - List supported brokers (no auth required)
+    if (req.method === 'GET' && !path.includes('/list')) {
+      return new Response(JSON.stringify({
+        brokers: [
+          { id: "alpaca", name: "Alpaca Markets", description: "Trade US stocks & crypto with paper trading support", supports_paper: true, assets: ["stocks", "crypto"] },
+          { id: "binance", name: "Binance", description: "Leading cryptocurrency exchange with testnet support", supports_paper: true, assets: ["crypto"] },
+          { id: "coinbase", name: "Coinbase", description: "User-friendly crypto trading platform", supports_paper: false, assets: ["crypto"] },
+          { id: "kraken", name: "Kraken", description: "Secure crypto exchange with advanced features", supports_paper: false, assets: ["crypto"] },
+          { id: "ibkr", name: "Interactive Brokers", description: "Professional trading platform for stocks, options & futures", supports_paper: true, assets: ["stocks", "options", "futures"] }
+        ]
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // All other routes require authentication
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
       req.headers.get('Authorization')?.replace('Bearer ', '') ?? ''
     );
     
     if (authError || !user) throw new Error('Unauthorized');
 
-    const url = new URL(req.url);
-    const path = url.pathname;
 
-    // GET /supported - List brokers
+    // GET /supported - List brokers (kept for backwards compatibility, redirects to root GET)
     if (req.method === 'GET' && path.includes('/supported')) {
       return new Response(JSON.stringify({
         brokers: [
-          { id: "alpaca", name: "Alpaca Markets", supports_paper: true, assets: ["stocks", "crypto"] },
-          { id: "binance", name: "Binance", supports_paper: true, assets: ["crypto"] },
-          { id: "coinbase", name: "Coinbase", supports_paper: false, assets: ["crypto"] },
-          { id: "kraken", name: "Kraken", supports_paper: false, assets: ["crypto"] },
-          { id: "ibkr", name: "Interactive Brokers", supports_paper: true, assets: ["stocks", "options", "futures"] }
+          { id: "alpaca", name: "Alpaca Markets", description: "Trade US stocks & crypto with paper trading support", supports_paper: true, assets: ["stocks", "crypto"] },
+          { id: "binance", name: "Binance", description: "Leading cryptocurrency exchange with testnet support", supports_paper: true, assets: ["crypto"] },
+          { id: "coinbase", name: "Coinbase", description: "User-friendly crypto trading platform", supports_paper: false, assets: ["crypto"] },
+          { id: "kraken", name: "Kraken", description: "Secure crypto exchange with advanced features", supports_paper: false, assets: ["crypto"] },
+          { id: "ibkr", name: "Interactive Brokers", description: "Professional trading platform for stocks, options & futures", supports_paper: true, assets: ["stocks", "options", "futures"] }
         ]
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
 
     // POST /connect - Connect broker
     if (req.method === 'POST' && path.includes('/connect')) {
