@@ -37,10 +37,12 @@ serve(async (req) => {
     
     let response;
     let retries = 0;
-    const maxRetries = 3;
+    const maxRetries = 5;
+    let lastError: Error | null = null;
     
     while (retries <= maxRetries) {
       try {
+        console.log(`🔄 Fetching congressional trades, attempt ${retries + 1}/${maxRetries + 1}`);
         response = await fetch('https://api.perplexity.ai/chat/completions', {
           method: 'POST',
           headers: {
@@ -61,30 +63,53 @@ serve(async (req) => {
           }),
         });
         
-        // Check if rate limited
+        // Check if rate limited or other API errors
         if (response.status === 429) {
+          const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
+          lastError = new Error(`Rate limited (429)`);
+          console.log(`⚠️ Rate limited, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
           retries++;
           if (retries <= maxRetries) {
-            const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
-            console.log(`⚠️ Rate limited, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             continue;
           }
+          console.error(`❌ Rate limit exceeded after ${maxRetries + 1} attempts`);
           throw new Error('Rate limit exceeded after retries');
         }
         
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unable to read error');
+          const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
+          lastError = new Error(`API error ${response.status}: ${errorText}`);
+          console.error(`❌ Perplexity API error: ${response.status} - ${errorText}`);
+          retries++;
+          if (retries <= maxRetries) {
+            console.log(`⚠️ Retrying in ${backoffMs}ms (${retries + 1}/${maxRetries + 1})`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+          throw lastError;
+        }
+        
+        console.log(`✅ Successfully fetched congressional trades`);
         break; // Success, exit retry loop
-      } catch (error) {
-        if (retries === maxRetries) throw error;
+        
+      } catch (fetchError) {
+        const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
+        lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+        console.error(`❌ Network error:`, lastError.message);
         retries++;
-        const backoffMs = Math.min(1000 * Math.pow(2, retries), 10000);
-        console.log(`⚠️ Request failed, retry ${retries}/${maxRetries} in ${backoffMs}ms`);
+        if (retries > maxRetries) {
+          console.error(`❌ Failed after ${maxRetries + 1} attempts:`, lastError.message);
+          throw lastError;
+        }
+        console.log(`⚠️ Network error, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
         await new Promise(resolve => setTimeout(resolve, backoffMs));
       }
     }
     
     if (!response) {
-      throw new Error('Failed to fetch after retries');
+      throw lastError || new Error('Failed to fetch after retries');
     }
 
     const records = [];
