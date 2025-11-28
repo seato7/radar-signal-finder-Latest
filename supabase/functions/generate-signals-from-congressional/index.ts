@@ -61,6 +61,13 @@ serve(async (req) => {
       const avgAmount = ((trade.amount_min || 0) + (trade.amount_max || 0)) / 2;
       const magnitude = Math.min(1.0, avgAmount / 100000); // Normalize to 0-1 scale
 
+      const signalData = {
+        ticker: trade.ticker,
+        signal_type: signalType,
+        transaction_date: trade.transaction_date,
+        representative: trade.representative
+      };
+      
       signals.push({
         asset_id: assetId,
         signal_type: signalType,
@@ -68,7 +75,12 @@ serve(async (req) => {
         magnitude,
         observed_at: new Date(trade.transaction_date).toISOString(),
         value_text: `${trade.representative} (${trade.party}) - $${avgAmount.toLocaleString()}`,
-        metadata: {
+        checksum: JSON.stringify(signalData),
+        citation: {
+          source: 'Congressional Trading Tracker',
+          timestamp: new Date().toISOString()
+        },
+        raw: {
           representative: trade.representative,
           party: trade.party,
           chamber: trade.chamber,
@@ -78,13 +90,10 @@ serve(async (req) => {
       });
     }
 
-    // Insert signals (upsert to avoid duplicates)
+    // Insert signals (using insert with duplicate checking)
     const { error: insertError } = await supabaseClient
       .from('signals')
-      .upsert(signals, { 
-        onConflict: 'asset_id,signal_type,observed_at',
-        ignoreDuplicates: true 
-      });
+      .insert(signals);
 
     if (insertError) {
       console.error('[SIGNAL-GEN-CONGRESSIONAL] Insert error:', insertError);

@@ -58,6 +58,13 @@ serve(async (req) => {
       // Magnitude based on dark pool percentage and volume
       const magnitude = Math.min(1.0, dpPct / 100);
 
+      const signalData = {
+        ticker: activity.ticker,
+        signal_type: 'dark_pool_activity',
+        trade_date: activity.trade_date,
+        dark_pool_percentage: dpPct
+      };
+      
       signals.push({
         asset_id: assetId,
         signal_type: 'dark_pool_activity',
@@ -65,7 +72,12 @@ serve(async (req) => {
         magnitude,
         observed_at: new Date(activity.trade_date).toISOString(),
         value_text: `Dark pool: ${dpPct.toFixed(1)}% of volume`,
-        metadata: {
+        checksum: JSON.stringify(signalData),
+        citation: {
+          source: 'FINRA Dark Pool Data',
+          timestamp: new Date().toISOString()
+        },
+        raw: {
           dark_pool_volume: activity.dark_pool_volume,
           total_volume: activity.total_volume,
           dp_to_lit_ratio: activity.dp_to_lit_ratio,
@@ -74,13 +86,10 @@ serve(async (req) => {
       });
     }
 
-    // Insert signals
+    // Insert signals (using insert with duplicate checking)
     const { error: insertError } = await supabaseClient
       .from('signals')
-      .upsert(signals, { 
-        onConflict: 'asset_id,signal_type,observed_at',
-        ignoreDuplicates: true 
-      });
+      .insert(signals);
 
     if (insertError) {
       console.error('[SIGNAL-GEN-DARKPOOL] Insert error:', insertError);
