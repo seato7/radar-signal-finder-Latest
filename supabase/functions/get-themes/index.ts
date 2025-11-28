@@ -92,13 +92,36 @@ serve(async (req) => {
 
     const results = [];
     for (const theme of themes || []) {
-      const { data: signals } = await supabaseClient
+      // Get signals via signal_theme_map table (newer approach) AND direct theme_id (legacy)
+      const { data: mappedSignals } = await supabaseClient
+        .from('signal_theme_map')
+        .select('signal_id')
+        .eq('theme_id', theme.id);
+      
+      const signalIds = mappedSignals?.map(m => m.signal_id) || [];
+      
+      // Also get signals with direct theme_id
+      const { data: directSignals } = await supabaseClient
         .from('signals')
-        .select('id, signal_type, observed_at, magnitude')
+        .select('id')
         .eq('theme_id', theme.id)
         .gte('observed_at', since.toISOString());
+      
+      const directSignalIds = directSignals?.map(s => s.id) || [];
+      const allSignalIds = [...new Set([...signalIds, ...directSignalIds])];
+      
+      // Fetch full signal data
+      let signals: any[] = [];
+      if (allSignalIds.length > 0) {
+        const { data } = await supabaseClient
+          .from('signals')
+          .select('id, signal_type, observed_at, magnitude')
+          .in('id', allSignalIds)
+          .gte('observed_at', since.toISOString());
+        signals = data || [];
+      }
 
-      const { score, components } = computeThemeScore(signals || []);
+      const { score, components } = computeThemeScore(signals);
 
       results.push({
         id: theme.id,
