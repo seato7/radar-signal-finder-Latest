@@ -26,11 +26,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    console.log('[POPULATE-ASSETS] Starting comprehensive asset population with 1,200+ assets...');
+    console.log('[POPULATE-ASSETS] Starting comprehensive asset population with 1,241+ assets...');
 
-    // Combine all asset sources - Total: ~1,200+ assets
+    // Combine all asset sources - Total: ~1,241+ assets
     const allAssets = [
-      ...SP500_STOCKS.map(a => ({ ...a, asset_class: 'stock' })),        // ~500 stocks (complete S&P 500)
+      ...SP500_STOCKS.map(a => ({ ...a, asset_class: 'stock' })),        // 500 stocks (complete S&P 500)
       ...RUSSELL_2000.map(a => ({ ...a, asset_class: 'stock' })),        // 185 stocks (small-cap growth)
       ...INTERNATIONAL_STOCKS.map(a => ({ ...a, asset_class: 'stock' })), // 202 stocks (global leaders)
       ...CRYPTO_ASSETS.map(a => ({ ...a, asset_class: 'crypto' })),      // 191 crypto pairs (majors + alts)
