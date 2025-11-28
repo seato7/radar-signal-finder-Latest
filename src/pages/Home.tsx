@@ -16,45 +16,44 @@ interface ThemeScore {
   as_of: string;
 }
 
-// Fetch themes with caching
+// Fetch themes with caching - gets latest score for each distinct theme
 const fetchThemes = async (): Promise<ThemeScore[]> => {
-  const { data, error } = await supabase
-    .from('theme_scores')
-    .select(`
-      score,
-      component_scores,
-      positive_components,
-      computed_at,
-      themes!inner(id, name)
-    `)
-    .order('score', { ascending: false })
-    .limit(3);
+  // Get all themes first
+  const { data: allThemes, error: themesError } = await supabase
+    .from('themes')
+    .select('id, name');
   
-  if (error) throw error;
+  if (themesError) throw themesError;
+  if (!allThemes || allThemes.length === 0) return [];
   
-  if (data && Array.isArray(data) && data.length > 0) {
-    // Group by theme ID to get unique themes (latest score for each)
-    const themeMap = new Map<string, any>();
-    data.forEach((item: any) => {
-      const themeId = item.themes.id;
-      if (!themeMap.has(themeId) || new Date(item.computed_at) > new Date(themeMap.get(themeId).computed_at)) {
-        themeMap.set(themeId, item);
-      }
-    });
-    
-    return Array.from(themeMap.values())
-      .map((item: any) => ({
-        id: item.themes.id,
-        name: item.themes.name,
-        score: item.score,
-        components: item.component_scores || {},
-        as_of: item.computed_at,
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3);
-  }
+  // Get latest score for each theme
+  const themeScores = await Promise.all(
+    allThemes.map(async (theme) => {
+      const { data, error } = await supabase
+        .from('theme_scores')
+        .select('score, component_scores, computed_at')
+        .eq('theme_id', theme.id)
+        .order('computed_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (error || !data) return null;
+      
+      return {
+        id: theme.id,
+        name: theme.name,
+        score: data.score,
+        components: data.component_scores || {},
+        as_of: data.computed_at,
+      };
+    })
+  );
   
-  return [];
+  // Filter out nulls, sort by score, and take top 3
+  return themeScores
+    .filter((theme): theme is ThemeScore => theme !== null)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
 };
 
 const Home = () => {
