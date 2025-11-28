@@ -36,17 +36,22 @@ function computeThemeScore(signals: any[]): { score: number; components: Record<
     const magnitude = signal.magnitude || 1.0;
     const contribution = magnitude * decay;
     
-    if (['policy_keyword', 'policy_mention'].includes(signal.signal_type)) {
+    // Map actual signal types to scoring components
+    const type = signal.signal_type;
+    
+    if (type.startsWith('policy_') || type === 'policy_approval') {
       components.PolicyMomentum += contribution;
-    } else if (['flow_pressure', 'flow_pressure_etf'].includes(signal.signal_type)) {
+    } else if (type.startsWith('smart_money') || type === 'dark_pool_activity' || type.startsWith('filing_')) {
       components.FlowPressure += contribution;
-    } else if (['filing_13f_new', 'filing_13f_increase'].includes(signal.signal_type)) {
+    } else if (type.startsWith('insider_') || type.startsWith('congressional_') || type === 'politician_buy') {
       components.BigMoneyConfirm += contribution;
-    } else if (['insider_buy', 'politician_buy'].includes(signal.signal_type)) {
-      components.InsiderPoliticianConfirm += contribution;
-    } else if (['social_mention', 'news_mention'].includes(signal.signal_type)) {
+    } else if (type.startsWith('sentiment_') || type.startsWith('social_') || type === 'news_mention') {
       components.Attention += contribution;
-    } else if (signal.signal_type.startsWith('risk_')) {
+    } else if (type.startsWith('technical_') || type === 'chart_pattern') {
+      components.TechEdge += contribution;
+    } else if (type.startsWith('crypto_')) {
+      components.InsiderPoliticianConfirm += contribution * 0.5; // Whale activity similar to insider trades
+    } else if (type.startsWith('risk_') || type === 'economic_indicator') {
       components.RiskFlags += contribution;
     }
   }
