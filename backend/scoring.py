@@ -57,25 +57,39 @@ def compute_component_scores(signals: List[Signal], as_of: datetime = None) -> D
 def compute_theme_score(signals: List[Signal], as_of: datetime = None) -> Tuple[float, Dict[str, float], List[str]]:
     """
     Compute theme score from signals.
-    Returns: (score, components, positives)
+    Returns: (score, normalized_components, positives)
     """
-    components = compute_component_scores(signals, as_of)
+    raw_components = compute_component_scores(signals, as_of)
     
-    # Calculate weighted score
-    score = 0.0
-    for component, value in components.items():
+    # Normalize and cap each component individually
+    normalized_components = {}
+    raw_score = 0.0
+    
+    for component, raw_value in raw_components.items():
         weight = WEIGHTS[component]
-        # Normalize to 0-100 scale (cap component contributions)
-        normalized = min(value * 10, 100)
-        score += weight * normalized
+        
+        # Normalize using logarithmic scale to prevent explosion from large signal counts
+        # This ensures diminishing returns as signal count increases
+        normalized = math.log10(1 + raw_value) * 10 if raw_value > 0 else 0
+        
+        # Cap each component at 100 after normalization
+        capped = min(normalized, 100)
+        
+        # Store the normalized value
+        normalized_components[component] = capped
+        
+        raw_score += weight * capped
     
-    # Ensure score is in 0-100 range
-    score = max(0, min(100, score))
+    # Final score: normalize the raw weighted sum to 0-100 range
+    # Maximum possible score is sum of positive weights * 100
+    max_possible_score = sum(w * 100 for w in WEIGHTS.values() if w > 0)
     
-    # Identify positive components (contributing > threshold)
-    positives = [k for k, v in components.items() if v > 0.5 and WEIGHTS[k] > 0]
+    score = max(0, min(100, (raw_score / max_possible_score) * 100))
     
-    return score, components, positives
+    # Identify positive components (using lower threshold for logarithmic scale)
+    positives = [k for k, v in normalized_components.items() if v > 0.1 and WEIGHTS[k] > 0]
+    
+    return score, normalized_components, positives
 
 def get_weights() -> Dict[str, float]:
     """Return current scoring weights"""
