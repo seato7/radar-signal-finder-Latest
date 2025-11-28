@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Play, Database, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast as sonnerToast } from "sonner";
+
+// Global flag to prevent multiple initializations across component remounts
+let globalInitialized = false;
 
 interface ThemeScore {
   id: string;
@@ -23,10 +26,10 @@ const Home = () => {
   const [loadingThemes, setLoadingThemes] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const hasInitialized = useRef(false);
   const isFetchingRef = useRef(false);
 
-  const fetchThemes = async () => {
+  // Memoized fetch function to prevent recreating on every render
+  const fetchThemes = useCallback(async () => {
     // Prevent concurrent fetches
     if (isFetchingRef.current) {
       console.log('⏸️ Already fetching, skipping...');
@@ -45,6 +48,7 @@ const Home = () => {
       if (error) throw error;
       
       if (data && Array.isArray(data) && data.length > 0) {
+        // FIXED: Sort DESCENDING (highest scores first), not ascending
         const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
         const top3 = sorted.slice(0, 3);
         console.log('✅ Loaded', top3.length, 'themes');
@@ -60,14 +64,18 @@ const Home = () => {
       isFetchingRef.current = false;
       console.log('✅ Fetch complete, loadingThemes set to false');
     }
-  };
+  }, []); // Empty deps - function doesn't depend on any props/state
 
   useEffect(() => {
-    // Prevent double-run in React Strict Mode and multiple mounts
-    if (hasInitialized.current) return;
-    hasInitialized.current = true;
+    // Use global flag to prevent multiple initializations across component remounts
+    if (globalInitialized) {
+      console.log('⏭️ Already initialized globally, skipping...');
+      return;
+    }
+    globalInitialized = true;
 
     const init = async () => {
+      console.log('🚀 Initializing Home component...');
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data } = await supabase
@@ -83,7 +91,7 @@ const Home = () => {
     };
     
     init();
-  }, []);
+  }, [fetchThemes]);
 
   const runIngest = async () => {
     setLoading(true);
