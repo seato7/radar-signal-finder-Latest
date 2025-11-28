@@ -70,15 +70,17 @@ const DataIngestion = () => {
       }
 
       try {
-        // Check admin access by calling admin-metrics
-        const { error } = await supabase.functions.invoke('admin-metrics', { 
-          body: { action: 'metrics' } 
-        });
+        // Check user_roles table directly
+        const { data, error } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
         
-        if (error) {
-          setIsAdmin(false);
-        } else {
+        if (!error && data?.role === 'admin') {
           setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
         }
       } catch (error) {
         setIsAdmin(false);
