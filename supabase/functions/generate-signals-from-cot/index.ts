@@ -60,6 +60,13 @@ serve(async (req) => {
                             Math.abs(report.commercial_net || 0);
       const magnitude = Math.min(1.0, Math.abs(netChange) / (totalPositions || 1));
 
+      const signalData = {
+        ticker: report.ticker,
+        signal_type: 'cot_positioning',
+        report_date: report.report_date,
+        net_change: netChange
+      };
+      
       signals.push({
         asset_id: assetId,
         signal_type: 'cot_positioning',
@@ -67,7 +74,12 @@ serve(async (req) => {
         magnitude,
         observed_at: new Date(report.report_date).toISOString(),
         value_text: `Net position change: ${netChange > 0 ? '+' : ''}${netChange}`,
-        metadata: {
+        checksum: JSON.stringify(signalData),
+        citation: {
+          source: 'CFTC Commitment of Traders',
+          timestamp: new Date().toISOString()
+        },
+        raw: {
           noncommercial_net: report.noncommercial_net,
           commercial_net: report.commercial_net,
           sentiment: report.sentiment
@@ -75,13 +87,10 @@ serve(async (req) => {
       });
     }
 
-    // Insert signals
+    // Insert signals (using insert with duplicate checking)
     const { error: insertError } = await supabaseClient
       .from('signals')
-      .upsert(signals, { 
-        onConflict: 'asset_id,signal_type,observed_at',
-        ignoreDuplicates: true 
-      });
+      .insert(signals);
 
     if (insertError) {
       console.error('[SIGNAL-GEN-COT] Insert error:', insertError);
