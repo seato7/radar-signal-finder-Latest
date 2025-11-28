@@ -91,24 +91,32 @@ serve(async (req) => {
       try {
         console.log(`Fetching on-chain data for ${asset.ticker}...`);
 
-        // Query Perplexity for real-time on-chain metrics
+        // Query Perplexity for real-time on-chain metrics with retry logic
         const apiStartTime = Date.now();
-        const response = await fetch('https://api.perplexity.ai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${perplexityApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'sonar',
-            messages: [
-              {
-                role: 'system',
-                content: 'Be precise and concise.'
+        let response;
+        let retries = 0;
+        const maxRetries = 5;
+        let lastError: Error | null = null;
+        
+        while (retries <= maxRetries) {
+          try {
+            console.log(`🔄 Fetching ${asset.ticker}, attempt ${retries + 1}/${maxRetries + 1}`);
+            response = await fetch('https://api.perplexity.ai/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${perplexityApiKey}`,
+                'Content-Type': 'application/json',
               },
-              {
-                role: 'user',
-                content: `Find the latest on-chain metrics for ${asset.ticker}. Return ONLY in this format:
+              body: JSON.stringify({
+                model: 'sonar',
+                messages: [
+                  {
+                    role: 'system',
+                    content: 'Be precise and concise.'
+                  },
+                  {
+                    role: 'user',
+                    content: `Find the latest on-chain metrics for ${asset.ticker}. Return ONLY in this format:
 active_addresses: [number]
 transaction_count: [number]
 whale_transactions: [number]
@@ -118,34 +126,87 @@ exchange_outflow: [number in coins]
 exchange_signal: [bullish_outflow/bearish_inflow/neutral]
 fear_greed_index: [0-100]
 hash_rate: [number if applicable]`
-              }
-            ],
-            temperature: 0.2,
-            top_p: 0.9,
-            max_tokens: 400,
-            return_images: false,
-            return_related_questions: false,
-            search_recency_filter: 'day',
-            frequency_penalty: 1,
-            presence_penalty: 0
-          }),
-        });
+                  }
+                ],
+                temperature: 0.2,
+                top_p: 0.9,
+                max_tokens: 400,
+                return_images: false,
+                return_related_questions: false,
+                search_recency_filter: 'day',
+                frequency_penalty: 1,
+                presence_penalty: 0
+              }),
+            });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`Perplexity API error for ${asset.ticker}:`, response.status, errorText);
-          
-          // Log API failure
-          await logAPIUsage(supabaseClient, {
-            api_name: 'Perplexity AI',
-            endpoint: '/chat/completions',
-            function_name: 'ingest-crypto-onchain',
-            status: 'failure',
-            response_time_ms: Date.now() - apiStartTime,
-            error_message: `HTTP ${response.status}: ${errorText.substring(0, 200)}`
-          });
-          
-          await new Promise(resolve => setTimeout(resolve, 1500));
+            // Handle rate limiting
+            if (response.status === 429) {
+              const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
+              lastError = new Error(`Rate limited (429)`);
+              console.log(`⚠️ Rate limited for ${asset.ticker}, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
+              retries++;
+              if (retries <= maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                continue;
+              }
+              throw new Error('Rate limit exceeded after retries');
+            }
+
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unable to read error');
+              const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
+              lastError = new Error(`API error ${response.status}: ${errorText}`);
+              console.error(`❌ Perplexity API error for ${asset.ticker}: ${response.status}`);
+              
+              await logAPIUsage(supabaseClient, {
+                api_name: 'Perplexity AI',
+                endpoint: '/chat/completions',
+                function_name: 'ingest-crypto-onchain',
+                status: 'failure',
+                response_time_ms: Date.now() - apiStartTime,
+                error_message: `HTTP ${response.status}: ${errorText.substring(0, 200)}`
+              });
+              
+              retries++;
+              if (retries <= maxRetries) {
+                console.log(`⚠️ Retrying ${asset.ticker} in ${backoffMs}ms (${retries + 1}/${maxRetries + 1})`);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                continue;
+              }
+              throw lastError;
+            }
+            
+            console.log(`✅ Successfully fetched ${asset.ticker}`);
+            break; // Success, exit retry loop
+            
+          } catch (fetchError) {
+            const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
+            lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+            console.error(`❌ Network error for ${asset.ticker}:`, lastError.message);
+            retries++;
+            if (retries > maxRetries) {
+              console.error(`❌ Failed ${asset.ticker} after ${maxRetries + 1} attempts`);
+              
+              await logAPIUsage(supabaseClient, {
+                api_name: 'Perplexity AI',
+                endpoint: '/chat/completions',
+                function_name: 'ingest-crypto-onchain',
+                status: 'failure',
+                response_time_ms: Date.now() - apiStartTime,
+                error_message: lastError.message.substring(0, 200)
+              });
+              
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              continue; // Skip this asset, move to next
+            }
+            console.log(`⚠️ Network error, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
+        }
+        
+        if (!response) {
+          console.error(`❌ No response for ${asset.ticker} after retries, skipping`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
           continue;
         }
         
