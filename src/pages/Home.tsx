@@ -254,13 +254,17 @@ const Home = () => {
       {themes.length > 0 && (
         <Card className="shadow-data">
           <CardHeader>
-            <CardTitle>Today's Theme Scores</CardTitle>
-            <CardDescription>Top scored themes with component breakdown</CardDescription>
+            <CardTitle>Investment Theme Scores</CardTitle>
+            <CardDescription>
+              AI-powered composite scores (0-100) combining signals from 11+ data sources: institutional holdings, 
+              insider trades, policy changes, social sentiment, and more. Higher scores indicate stronger multi-signal convergence.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {themes.map((theme) => {
                 const topComponents = getTopComponents(theme.components);
+                const isStale = theme.score === 0;
                 return (
                   <div
                     key={theme.id}
@@ -274,11 +278,17 @@ const Home = () => {
                           className={`${
                             theme.score >= 80 ? 'border-success text-success' :
                             theme.score >= 60 ? 'border-accent text-accent' :
-                            'border-warning text-warning'
+                            theme.score > 0 ? 'border-warning text-warning' :
+                            'border-muted text-muted-foreground'
                           }`}
                         >
                           Score: {theme.score.toFixed(1)}
                         </Badge>
+                        {isStale && (
+                          <Badge variant="outline" className="border-warning text-warning text-xs">
+                            Stale Data
+                          </Badge>
+                        )}
                       </div>
                       <span className="text-xs text-muted-foreground">
                         {new Date(theme.as_of).toLocaleTimeString()}
@@ -286,12 +296,21 @@ const Home = () => {
                     </div>
                     <div className="flex gap-2">
                       <span className="text-sm text-muted-foreground">Top Components:</span>
-                      {topComponents.map((comp) => (
-                        <Badge key={comp} variant="secondary" className="text-xs">
-                          {comp}
-                        </Badge>
-                      ))}
+                      {topComponents.length > 0 ? (
+                        topComponents.map((comp) => (
+                          <Badge key={comp} variant="secondary" className="text-xs">
+                            {comp}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">No active signals</span>
+                      )}
                     </div>
+                    {isStale && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        💡 Signals need to be mapped to themes. Visit <strong>Data Sources</strong> to refresh data.
+                      </p>
+                    )}
                   </div>
                 );
               })}
