@@ -120,9 +120,9 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
   for (const [component, rawValue] of Object.entries(rawComponents)) {
     const weight = WEIGHTS[component as keyof typeof WEIGHTS];
     
-    // Normalize using logarithmic scale to prevent explosion from large signal counts
-    // This ensures diminishing returns as signal count increases
-    const normalized = rawValue > 0 ? Math.log10(1 + rawValue) * 10 : 0;
+    // Normalize using logarithmic scale with adjusted multiplier for better score distribution
+    // Multiplier of 30 allows components to reach higher scores while maintaining diminishing returns
+    const normalized = rawValue > 0 ? Math.log10(1 + rawValue) * 30 : 0;
     
     // Cap each component at 100 after normalization
     const capped = Math.min(normalized, 100);
