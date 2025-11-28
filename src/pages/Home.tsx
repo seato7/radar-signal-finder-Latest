@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,93 +23,76 @@ const Home = () => {
   const [loadingThemes, setLoadingThemes] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
-
-  // Debug effect to track state changes
-  useEffect(() => {
-    console.log('🔍 State changed - loadingThemes:', loadingThemes, 'themes count:', themes.length);
-  }, [loadingThemes, themes]);
+  const fetchingRef = useRef(false);
 
   const fetchThemes = async () => {
+    // Prevent concurrent fetches
+    if (fetchingRef.current) {
+      console.log('⏸️ Fetch already in progress, skipping');
+      return;
+    }
+    
+    fetchingRef.current = true;
+    setLoadingThemes(true);
+    console.log('🔄 fetchThemes started');
+    
     try {
-      console.log('🔄 Starting fetchThemes...');
-      setLoadingThemes(true);
-      
       const { data, error } = await supabase.functions.invoke('get-themes', {
         body: { days: 45 }
       });
       
-      if (error) {
-        console.error('❌ Error:', error);
-        sonnerToast.error("Failed to load opportunities");
-        setLoadingThemes(false);
-        return;
-      }
+      console.log('📦 Response:', data?.length || 0, 'themes');
       
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        console.warn('⚠️ No data');
+      if (error) throw error;
+      
+      if (data && Array.isArray(data) && data.length > 0) {
+        const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
+        const top3 = sorted.slice(0, 3);
+        console.log('✅ Setting', top3.length, 'themes');
+        setThemes(top3);
+      } else {
+        console.log('⚠️ No valid data');
         setThemes([]);
-        setLoadingThemes(false);
-        return;
       }
-      
-      const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
-      const top3 = sorted.slice(0, 3);
-      
-      console.log('✅ About to update state with:', top3.length, 'themes');
-      setThemes(top3);
-      setLoadingThemes(false);
-      console.log('✅ State updates called');
     } catch (error) {
-      console.error("💥 Exception:", error);
+      console.error('❌ Fetch error:', error);
       sonnerToast.error("Failed to load opportunities");
+    } finally {
       setLoadingThemes(false);
+      fetchingRef.current = false;
+      console.log('✅ fetchThemes completed, loading=false');
     }
   };
 
   useEffect(() => {
-    const checkAdminAccess = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          setIsAdmin(false);
-          setCheckingAuth(false);
-          return;
-        }
-
-        // Check user_roles table directly
-        const { data, error } = await supabase
+    console.log('🎬 Component mounted');
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', user.id)
           .single();
         
-        if (!error && data?.role === 'admin') {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
-        }
-      } catch (error) {
-        setIsAdmin(false);
-      } finally {
-        setCheckingAuth(false);
+        setIsAdmin(data?.role === 'admin');
       }
+      setCheckingAuth(false);
+      
+      // Only fetch themes once after auth check
+      fetchThemes();
     };
-
-    checkAdminAccess();
-    fetchThemes();
+    
+    init();
   }, []);
 
   const runIngest = async () => {
     setLoading(true);
     try {
-      // Note: Data ingestion now runs automatically via scheduled edge functions
-      // This manual trigger is kept for backward compatibility
       toast({
         title: "Data Sources Active",
         description: "All data sources are automatically refreshed. Visit Data Sources page for manual updates.",
       });
-
-      setTimeout(() => fetchThemes(), 1000);
     } catch (error) {
       toast({
         title: "Error",
