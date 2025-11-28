@@ -25,39 +25,41 @@ const Home = () => {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   const fetchThemes = async () => {
-    setLoadingThemes(true);
     try {
-      console.log('Fetching themes...');
+      setLoadingThemes(true);
+      console.log('🔄 Fetching themes from edge function...');
+      
       const { data, error } = await supabase.functions.invoke('get-themes', {
         body: { days: 45 }
       });
       
-      console.log('Themes response:', { data, error, dataType: typeof data, isArray: Array.isArray(data) });
+      console.log('📦 Raw response:', { data, error });
       
       if (error) {
-        console.error('Error fetching themes:', error);
-        sonnerToast.error("Failed to load investment opportunities: " + error.message);
+        console.error('❌ Error fetching themes:', error);
+        sonnerToast.error("Failed to load opportunities");
+        setLoadingThemes(false);
         return;
       }
       
-      if (!data || !Array.isArray(data)) {
-        console.error('Invalid themes data:', data);
-        sonnerToast.error("Invalid data format received");
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('⚠️ No themes data received');
+        setThemes([]);
+        setLoadingThemes(false);
         return;
       }
       
-      console.log(`Received ${data.length} themes`);
+      // Sort and get top 3
+      const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
+      const top3 = sorted.slice(0, 3);
       
-      // Always show top 3 themes, sorted by score
-      const sortedThemes = data.sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
-      const top3 = sortedThemes.slice(0, 3);
-      console.log('Top 3 themes:', top3.map(t => ({ name: t.name, score: t.score })));
-      
+      console.log('✅ Setting themes:', top3.map(t => `${t.name}: ${t.score}`));
       setThemes(top3);
+      setLoadingThemes(false);
+      console.log('✅ State updated, loading=false');
     } catch (error) {
-      console.error("Failed to fetch themes:", error);
-      sonnerToast.error("Failed to load investment opportunities");
-    } finally {
+      console.error("💥 Exception in fetchThemes:", error);
+      sonnerToast.error("Failed to load opportunities");
       setLoadingThemes(false);
     }
   };
