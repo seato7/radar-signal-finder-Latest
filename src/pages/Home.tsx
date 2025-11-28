@@ -27,18 +27,33 @@ const Home = () => {
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
+      console.log('Fetching themes...');
       const { data, error } = await supabase.functions.invoke('get-themes', {
         body: { days: 45 }
       });
       
+      console.log('Themes response:', { data, error, dataType: typeof data, isArray: Array.isArray(data) });
+      
       if (error) {
         console.error('Error fetching themes:', error);
-        throw error;
+        sonnerToast.error("Failed to load investment opportunities: " + error.message);
+        return;
       }
       
+      if (!data || !Array.isArray(data)) {
+        console.error('Invalid themes data:', data);
+        sonnerToast.error("Invalid data format received");
+        return;
+      }
+      
+      console.log(`Received ${data.length} themes`);
+      
       // Always show top 3 themes, sorted by score
-      const sortedThemes = (data || []).sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
-      setThemes(sortedThemes.slice(0, 3)); // Top 3 themes
+      const sortedThemes = data.sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
+      const top3 = sortedThemes.slice(0, 3);
+      console.log('Top 3 themes:', top3.map(t => ({ name: t.name, score: t.score })));
+      
+      setThemes(top3);
     } catch (error) {
       console.error("Failed to fetch themes:", error);
       sonnerToast.error("Failed to load investment opportunities");
