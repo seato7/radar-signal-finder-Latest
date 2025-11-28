@@ -106,11 +106,17 @@ export default function APIUsage() {
       daily: 12, // various daily jobs fallback
       weekly: 2, // weekly jobs fallback
       total: 38,
-      cost: 38 * 0.005
+      cost: 38 * 0.005 // $0.005 per request
     },
     lovableAI: {
       weekly: 20, // AI research reports
-      cost: (20 / 7) * 0.0002 * 5000 // ~5K tokens per report avg
+      tokensPerReport: 5000, // Average tokens per report
+      // Gemini 2.5 Flash: $0.075/1M input + $0.30/1M output tokens
+      // Assuming 70% input, 30% output for typical reports
+      costPerReport: (5000 * 0.7 * 0.075 / 1000) + (5000 * 0.3 * 0.30 / 1000),
+      get cost() {
+        return (this.weekly / 7) * this.costPerReport;
+      }
     },
     get totalDaily() {
       return this.perplexity.cost + this.lovableAI.cost;
@@ -173,9 +179,9 @@ export default function APIUsage() {
               <div className="text-2xl font-bold">${dailyEstimate.lovableAI.cost.toFixed(3)}/day</div>
               <div className="text-xs text-muted-foreground">
                 AI research reports (weekly)
-                <div className="mt-1">
-                  • {dailyEstimate.lovableAI.weekly} reports/week
-                  <div>• ~5K tokens per report</div>
+                <div className="mt-1 space-y-0.5">
+                  <div>• {dailyEstimate.lovableAI.weekly} reports/week</div>
+                  <div>• ~{dailyEstimate.lovableAI.tokensPerReport.toLocaleString()} tokens per report</div>
                 </div>
               </div>
             </div>
