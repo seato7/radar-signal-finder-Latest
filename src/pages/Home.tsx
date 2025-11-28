@@ -24,8 +24,16 @@ const Home = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const hasInitialized = useRef(false);
+  const isFetchingRef = useRef(false);
 
   const fetchThemes = async () => {
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) {
+      console.log('⏸️ Already fetching, skipping...');
+      return;
+    }
+
+    isFetchingRef.current = true;
     console.log('🔄 Fetching themes...');
     setLoadingThemes(true);
     
@@ -49,6 +57,8 @@ const Home = () => {
       sonnerToast.error("Failed to load opportunities");
     } finally {
       setLoadingThemes(false);
+      isFetchingRef.current = false;
+      console.log('✅ Fetch complete, loadingThemes set to false');
     }
   };
 
