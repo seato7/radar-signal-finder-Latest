@@ -43,15 +43,24 @@ const Home = () => {
   useEffect(() => {
     const checkAdminAccess = async () => {
       try {
-        // Check admin access by calling admin-metrics
-        const { error } = await supabase.functions.invoke('admin-metrics', { 
-          body: { action: 'metrics' } 
-        });
-        
-        if (error) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
           setIsAdmin(false);
-        } else {
+          setCheckingAuth(false);
+          return;
+        }
+
+        // Check user_roles table directly
+        const { data, error } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (!error && data?.role === 'admin') {
           setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
         }
       } catch (error) {
         setIsAdmin(false);
