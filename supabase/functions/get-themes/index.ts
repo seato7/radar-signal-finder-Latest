@@ -131,15 +131,25 @@ serve(async (req) => {
       const directSignalIds = directSignals?.map(s => s.id) || [];
       const allSignalIds = [...new Set([...signalIds, ...directSignalIds])];
       
-      // Fetch full signal data
+      // Fetch full signal data in batches to avoid "Request Header Fields Too Large" error
       let signals: any[] = [];
       if (allSignalIds.length > 0) {
-        const { data } = await supabaseClient
-          .from('signals')
-          .select('id, signal_type, observed_at, magnitude')
-          .in('id', allSignalIds)
-          .gte('observed_at', since.toISOString());
-        signals = data || [];
+        const BATCH_SIZE = 100; // Query 100 signals at a time
+        
+        for (let i = 0; i < allSignalIds.length; i += BATCH_SIZE) {
+          const batch = allSignalIds.slice(i, i + BATCH_SIZE);
+          const { data, error: signalsError } = await supabaseClient
+            .from('signals')
+            .select('id, signal_type, observed_at, magnitude')
+            .in('id', batch)
+            .gte('observed_at', since.toISOString());
+          
+          if (signalsError) {
+            console.error(`Error fetching signals for theme ${theme.name}:`, signalsError);
+          } else if (data) {
+            signals.push(...data);
+          }
+        }
       }
 
       const { score, components } = computeThemeScore(signals);

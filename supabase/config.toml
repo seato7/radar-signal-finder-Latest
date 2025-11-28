@@ -1,5 +1,8 @@
 project_id = "detxhoqiarohjevedmxh"
 
+[functions.get-themes]
+verify_jwt = false
+
 [functions.ingest-orchestrator]
 verify_jwt = false
 

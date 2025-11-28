@@ -31,12 +31,17 @@ const Home = () => {
         body: { days: 45 }
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching themes:', error);
+        throw error;
+      }
+      
       // Always show top 3 themes, sorted by score
       const sortedThemes = (data || []).sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
       setThemes(sortedThemes.slice(0, 3)); // Top 3 themes
     } catch (error) {
       console.error("Failed to fetch themes:", error);
+      sonnerToast.error("Failed to load investment opportunities");
     } finally {
       setLoadingThemes(false);
     }
