@@ -108,20 +108,34 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
 } {
   const components = computeComponentScores(signals, asOf);
   
-  // Calculate weighted score
-  let score = 0.0;
+  // Calculate weighted score with proper normalization
+  let rawScore = 0.0;
+  const componentCount = Object.keys(WEIGHTS).length;
+  
   for (const [component, value] of Object.entries(components)) {
     const weight = WEIGHTS[component as keyof typeof WEIGHTS];
-    const normalized = Math.min(value * 10, 100);
-    score += weight * normalized;
+    
+    // Normalize using logarithmic scale to prevent explosion from large signal counts
+    // This ensures diminishing returns as signal count increases
+    const normalized = value > 0 ? Math.log10(1 + value) * 10 : 0;
+    
+    // Cap each component at 100 after normalization
+    const capped = Math.min(normalized, 100);
+    
+    rawScore += weight * capped;
   }
   
-  // Ensure score is in 0-100 range
-  score = Math.max(0, Math.min(100, score));
+  // Final score: normalize the raw weighted sum to 0-100 range
+  // Maximum possible score is sum of positive weights * 100
+  const maxPossibleScore = Object.values(WEIGHTS)
+    .filter(w => w > 0)
+    .reduce((sum, w) => sum + w * 100, 0);
   
-  // Identify positive components
+  const score = Math.max(0, Math.min(100, (rawScore / maxPossibleScore) * 100));
+  
+  // Identify positive components (using lower threshold for logarithmic scale)
   const positives = Object.entries(components)
-    .filter(([k, v]) => v > 0.5 && WEIGHTS[k as keyof typeof WEIGHTS] > 0)
+    .filter(([k, v]) => v > 0.1 && WEIGHTS[k as keyof typeof WEIGHTS] > 0)
     .map(([k]) => k);
   
   return { score, components, positives };
