@@ -36,37 +36,53 @@ function computeThemeScore(signals: any[]): { score: number; components: Record<
     const magnitude = signal.magnitude || 1.0;
     const contribution = magnitude * decay;
     
-    // Map actual signal types to scoring components
+    // Map actual signal types from database to scoring components
     const type = signal.signal_type;
     
+    // Policy signals
     if (type.startsWith('policy_') || type === 'policy_approval') {
       components.PolicyMomentum += contribution;
-    } else if (type.startsWith('smart_money') || type === 'dark_pool_activity' || type.startsWith('filing_')) {
+    }
+    // Smart money, dark pool, institutional flows
+    else if (type === 'smart_money_flow' || type === 'dark_pool_activity' || type.startsWith('filing_')) {
       components.FlowPressure += contribution;
-    } else if (type.startsWith('insider_') || type.startsWith('congressional_') || type === 'politician_buy') {
+    }
+    // Insider & congressional trades
+    else if (type.startsWith('insider_') || type.startsWith('congressional_') || type === 'politician_buy') {
       components.BigMoneyConfirm += contribution;
-    } else if (type.startsWith('sentiment_') || type.startsWith('social_') || type === 'news_mention') {
+    }
+    // Sentiment & attention signals
+    else if (type === 'sentiment_extreme' || type.startsWith('social_') || type === 'news_mention') {
       components.Attention += contribution;
-    } else if (type.startsWith('technical_') || type === 'chart_pattern') {
+    }
+    // Technical signals (RSI, MACD, stochastic, patterns)
+    else if (type.startsWith('technical_') || type === 'chart_pattern') {
       components.TechEdge += contribution;
-    } else if (type.startsWith('crypto_')) {
-      components.InsiderPoliticianConfirm += contribution * 0.5; // Whale activity similar to insider trades
-    } else if (type.startsWith('risk_') || type === 'economic_indicator') {
+    }
+    // Crypto whale & exchange flows
+    else if (type === 'crypto_whale_activity' || type === 'crypto_exchange_outflow' || type === 'crypto_exchange_inflow') {
+      components.InsiderPoliticianConfirm += contribution * 0.5;
+    }
+    // Economic & risk indicators
+    else if (type.startsWith('risk_') || type === 'economic_indicator') {
       components.RiskFlags += contribution;
     }
   }
 
+  // Calculate weighted score (normalize component values to 0-10 range)
   let score = 0.0;
   for (const [component, value] of Object.entries(components)) {
     const weight = WEIGHTS[component as keyof typeof WEIGHTS];
-    const normalized = Math.min(value * 10, 100);
+    // Normalize: value represents signal count, scale appropriately
+    const normalized = Math.min(value * 2, 10); // Scale down for realistic scores
     score += weight * normalized;
   }
   
+  // Final score is 0-100
   score = Math.max(0, Math.min(100, score));
   
   const positives = Object.entries(components)
-    .filter(([k, v]) => v > 0.5 && WEIGHTS[k as keyof typeof WEIGHTS] > 0)
+    .filter(([k, v]) => v > 0.1 && WEIGHTS[k as keyof typeof WEIGHTS] > 0)
     .map(([k]) => k);
   
   return { score, components, positives };

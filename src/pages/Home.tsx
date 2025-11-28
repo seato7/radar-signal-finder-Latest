@@ -32,9 +32,9 @@ const Home = () => {
       });
       
       if (error) throw error;
-      // Only show themes with actual scores > 0
-      const scoredThemes = (data || []).filter((t: ThemeScore) => t.score > 0);
-      setThemes(scoredThemes.slice(0, 3)); // Top 3 scored themes
+      // Always show top 3 themes, sorted by score
+      const sortedThemes = (data || []).sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
+      setThemes(sortedThemes.slice(0, 3)); // Top 3 themes
     } catch (error) {
       console.error("Failed to fetch themes:", error);
     } finally {
@@ -252,67 +252,75 @@ const Home = () => {
         </Card>
       </div>
 
-      {/* Theme Scores Table */}
-      {themes.length > 0 && (
-        <Card className="shadow-data">
-          <CardHeader>
-            <CardTitle>Investment Theme Scores</CardTitle>
-            <CardDescription>
-              AI-powered composite scores (0-100) combining signals from 11+ data sources: institutional holdings, 
-              insider trades, policy changes, social sentiment, and more. Higher scores indicate stronger multi-signal convergence.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {themes.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p className="mb-2">🔄 Processing latest market data...</p>
-                <p className="text-sm">Scores will appear as signals are analyzed (typically within a few minutes)</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {themes.map((theme) => {
-                  const topComponents = getTopComponents(theme.components);
-                  return (
-                    <div
-                      key={theme.id}
-                      className="p-4 rounded-lg border border-border bg-card hover:bg-muted/30 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-bold text-lg text-foreground">{theme.name}</h3>
-                          <Badge 
-                            variant="outline" 
-                            className={`${
-                              theme.score >= 80 ? 'border-success text-success' :
-                              theme.score >= 60 ? 'border-accent text-accent' :
-                              'border-warning text-warning'
-                            }`}
-                          >
-                            Score: {theme.score.toFixed(1)}
-                          </Badge>
+      {/* Top Investment Opportunities */}
+      <Card className="shadow-data">
+        <CardHeader>
+          <CardTitle>Top 3 Investment Opportunities Right Now</CardTitle>
+          <CardDescription>
+            AI-powered scores (0-100) combining 23K+ recent signals from institutional flows, technical analysis, 
+            sentiment data, and smart money movements. Higher scores = stronger multi-signal convergence.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingThemes ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+              <p>Loading top opportunities...</p>
+            </div>
+          ) : themes.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p className="mb-2">No themes available yet</p>
+              <p className="text-sm">Signals are being processed</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {themes.map((theme, index) => {
+                const topComponents = getTopComponents(theme.components);
+                return (
+                  <div
+                    key={theme.id}
+                    className="p-4 rounded-lg border border-border bg-card hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
+                          {index + 1}
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(theme.as_of).toLocaleTimeString()}
-                        </span>
+                        <h3 className="font-bold text-lg text-foreground">{theme.name}</h3>
+                        <Badge 
+                          variant="outline" 
+                          className={`${
+                            theme.score >= 70 ? 'border-success text-success' :
+                            theme.score >= 40 ? 'border-accent text-accent' :
+                            'border-warning text-warning'
+                          }`}
+                        >
+                          Score: {theme.score.toFixed(1)}
+                        </Badge>
                       </div>
-                      {topComponents.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          <span className="text-sm text-muted-foreground">Key Signals:</span>
-                          {topComponents.map((comp) => (
-                            <Badge key={comp} variant="secondary" className="text-xs">
-                              {comp}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(theme.as_of).toLocaleTimeString()}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                    {topComponents.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-sm text-muted-foreground">Key Signals:</span>
+                        {topComponents.map((comp) => (
+                          <Badge key={comp} variant="secondary" className="text-xs">
+                            {comp}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Building signal profile...</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="shadow-data">
         <CardHeader>
