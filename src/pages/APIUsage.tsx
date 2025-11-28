@@ -99,6 +99,27 @@ export default function APIUsage() {
   const perplexityUsage = usageSummary?.find(api => api.api_name === 'Perplexity');
   const perplexityAlert = perplexityUsage && Number(perplexityUsage.total_calls) > (timeRange === 24 ? 200 : 200 * (timeRange / 24));
 
+  // Calculate daily estimates based on cron schedule
+  const dailyEstimate = {
+    perplexity: {
+      hourly: 24, // ingest-prices-yahoo fallback
+      daily: 12, // various daily jobs fallback
+      weekly: 2, // weekly jobs fallback
+      total: 38,
+      cost: 38 * 0.005
+    },
+    lovableAI: {
+      weekly: 20, // AI research reports
+      cost: (20 / 7) * 0.0002 * 5000 // ~5K tokens per report avg
+    },
+    get totalDaily() {
+      return this.perplexity.cost + this.lovableAI.cost;
+    },
+    get monthlyProjection() {
+      return this.totalDaily * 30;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -126,6 +147,60 @@ export default function APIUsage() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Daily Cost Estimate Card */}
+      <Card className="md:col-span-2 lg:col-span-4">
+        <CardHeader>
+          <CardTitle>Estimated Daily API Costs (Based on Cron Schedule)</CardTitle>
+          <CardDescription>Projected costs based on scheduled ingestion jobs</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">Perplexity (Fallback)</div>
+              <div className="text-2xl font-bold">${dailyEstimate.perplexity.cost.toFixed(3)}/day</div>
+              <div className="text-xs text-muted-foreground">
+                ~{dailyEstimate.perplexity.total} calls/day
+                <div className="mt-1 space-y-0.5">
+                  <div>• Hourly jobs (24x): {dailyEstimate.perplexity.hourly} calls</div>
+                  <div>• Daily jobs (1x): {dailyEstimate.perplexity.daily} calls</div>
+                  <div>• Weekly jobs (~0.14x): {dailyEstimate.perplexity.weekly} calls</div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">Lovable AI (Gemini)</div>
+              <div className="text-2xl font-bold">${dailyEstimate.lovableAI.cost.toFixed(3)}/day</div>
+              <div className="text-xs text-muted-foreground">
+                AI research reports (weekly)
+                <div className="mt-1">
+                  • {dailyEstimate.lovableAI.weekly} reports/week
+                  <div>• ~5K tokens per report</div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">Total Estimated Cost</div>
+              <div className="text-2xl font-bold text-primary">${dailyEstimate.totalDaily.toFixed(3)}/day</div>
+              <div className="text-lg font-semibold mt-2">${dailyEstimate.monthlyProjection.toFixed(2)}/month</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Based on scheduled cron jobs + fallback usage
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-muted rounded-lg text-sm">
+            <div className="font-medium mb-2">📊 Actual vs Estimated:</div>
+            <div className="space-y-1 text-muted-foreground">
+              <div>• Current {timeRange}h cost: ${totalCost.toFixed(4)}</div>
+              <div>• Projected daily: ${((totalCost / timeRange) * 24).toFixed(4)}</div>
+              <div>• Estimated daily: ${dailyEstimate.totalDaily.toFixed(4)}</div>
+              <div className="text-xs mt-2">
+                Note: Estimates assume typical fallback usage (2-5% of calls). Actual costs may vary based on primary API reliability.
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
