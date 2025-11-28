@@ -68,9 +68,9 @@ def compute_theme_score(signals: List[Signal], as_of: datetime = None) -> Tuple[
     for component, raw_value in raw_components.items():
         weight = WEIGHTS[component]
         
-        # Normalize using logarithmic scale to prevent explosion from large signal counts
-        # This ensures diminishing returns as signal count increases
-        normalized = math.log10(1 + raw_value) * 10 if raw_value > 0 else 0
+        # Normalize using logarithmic scale with adjusted multiplier for better score distribution
+        # Multiplier of 30 allows components to reach higher scores while maintaining diminishing returns
+        normalized = math.log10(1 + raw_value) * 30 if raw_value > 0 else 0
         
         # Cap each component at 100 after normalization
         capped = min(normalized, 100)
