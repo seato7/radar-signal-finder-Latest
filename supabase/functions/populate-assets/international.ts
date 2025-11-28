@@ -1,4 +1,4 @@
-// Major International Stocks (ADRs and direct listings)
+// Major International Stocks (200+ ADRs and direct listings)
 export const INTERNATIONAL_STOCKS = [
   // Chinese Tech & E-commerce
   { ticker: 'BABA', name: 'Alibaba Group Holding Limited', exchange: 'NYSE' },
@@ -11,6 +11,16 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'BILI', name: 'Bilibili Inc.', exchange: 'NASDAQ' },
   { ticker: 'VIPS', name: 'Vipshop Holdings Limited', exchange: 'NYSE' },
   { ticker: 'NTES', name: 'NetEase Inc.', exchange: 'NASDAQ' },
+  { ticker: 'IQ', name: 'iQIYI Inc.', exchange: 'NASDAQ' },
+  { ticker: 'HUYA', name: 'HUYA Inc.', exchange: 'NYSE' },
+  { ticker: 'DOYU', name: 'DouYu International Holdings Limited', exchange: 'NASDAQ' },
+  { ticker: 'WB', name: 'Weibo Corporation', exchange: 'NASDAQ' },
+  { ticker: 'YY', name: 'JOYY Inc.', exchange: 'NASDAQ' },
+  { ticker: 'MOMO', name: 'Hello Group Inc.', exchange: 'NASDAQ' },
+  { ticker: 'ATHM', name: 'Autohome Inc.', exchange: 'NYSE' },
+  { ticker: 'SOHU', name: 'Sohu.com Limited', exchange: 'NASDAQ' },
+  { ticker: 'SINA', name: 'SINA Corporation', exchange: 'NASDAQ' },
+  { ticker: 'ZTO', name: 'ZTO Express (Cayman) Inc.', exchange: 'NYSE' },
   
   // European Tech & Luxury
   { ticker: 'ASML', name: 'ASML Holding N.V.', exchange: 'NASDAQ' },
@@ -21,6 +31,8 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'GRAB', name: 'Grab Holdings Limited', exchange: 'NASDAQ' },
   { ticker: 'SPOT', name: 'Spotify Technology S.A.', exchange: 'NYSE' },
   { ticker: 'ARM', name: 'Arm Holdings plc', exchange: 'NASDAQ' },
+  { ticker: 'ADYEN', name: 'Adyen N.V.', exchange: 'OTC' },
+  { ticker: 'ASML', name: 'ASML Holding N.V.', exchange: 'NASDAQ' },
   
   // Japanese
   { ticker: 'SONY', name: 'Sony Group Corporation', exchange: 'NYSE' },
@@ -31,9 +43,27 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'SMFG', name: 'Sumitomo Mitsui Financial Group Inc.', exchange: 'NYSE' },
   { ticker: 'MFG', name: 'Mizuho Financial Group Inc.', exchange: 'NYSE' },
   { ticker: 'KB', name: 'KB Financial Group Inc.', exchange: 'NYSE' },
+  { ticker: 'FUJHY', name: 'Fujifilm Holdings Corporation', exchange: 'OTC' },
+  { ticker: 'NSANY', name: 'Nissan Motor Co. Ltd.', exchange: 'OTC' },
+  { ticker: 'PCRFY', name: 'Panasonic Corporation', exchange: 'OTC' },
+  { ticker: 'SNEJF', name: 'Sony Group Corporation', exchange: 'OTC' },
+  { ticker: 'TKPHF', name: 'Takeda Pharmaceutical Company Limited', exchange: 'OTC' },
+  { ticker: 'DNZOY', name: 'Denso Corporation', exchange: 'OTC' },
+  { ticker: 'KDDIY', name: 'KDDI Corporation', exchange: 'OTC' },
+  { ticker: 'NTDOY', name: 'Nintendo Co. Ltd.', exchange: 'OTC' },
+  { ticker: 'SFTBY', name: 'SoftBank Group Corp.', exchange: 'OTC' },
+  { ticker: 'FANUY', name: 'Fanuc Corporation', exchange: 'OTC' },
+  { ticker: 'SZKMY', name: 'Suzuki Motor Corporation', exchange: 'OTC' },
+  { ticker: 'SBGSY', name: 'Subaru Corporation', exchange: 'OTC' },
   
   // Korean
   { ticker: 'LPL', name: 'LG Display Co. Ltd.', exchange: 'NYSE' },
+  { ticker: 'KB', name: 'KB Financial Group Inc.', exchange: 'NYSE' },
+  { ticker: 'SHG', name: 'Shinhan Financial Group Co. Ltd.', exchange: 'NYSE' },
+  { ticker: 'PKX', name: 'POSCO Holdings Inc.', exchange: 'NYSE' },
+  { ticker: 'KEP', name: 'Korea Electric Power Corporation', exchange: 'NYSE' },
+  { ticker: 'SKM', name: 'SK Telecom Co. Ltd.', exchange: 'NYSE' },
+  { ticker: 'KT', name: 'KT Corporation', exchange: 'NYSE' },
   
   // Brazilian
   { ticker: 'VALE', name: 'Vale S.A.', exchange: 'NYSE' },
@@ -41,10 +71,19 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'ITUB', name: 'Itaú Unibanco Holding S.A.', exchange: 'NYSE' },
   { ticker: 'BBD', name: 'Banco Bradesco S.A.', exchange: 'NYSE' },
   { ticker: 'NU', name: 'Nu Holdings Ltd.', exchange: 'NYSE' },
+  { ticker: 'ABEV', name: 'Ambev S.A.', exchange: 'NYSE' },
+  { ticker: 'EBR', name: 'Centrais Elétricas Brasileiras S.A. - Eletrobrás', exchange: 'NYSE' },
+  { ticker: 'CIG', name: 'Companhia Energética de Minas Gerais', exchange: 'NYSE' },
+  { ticker: 'SID', name: 'Companhia Siderúrgica Nacional', exchange: 'NYSE' },
+  { ticker: 'GGB', name: 'Gerdau S.A.', exchange: 'NYSE' },
+  { ticker: 'ERJ', name: 'Embraer S.A.', exchange: 'NYSE' },
   
   // Australian
   { ticker: 'BHP', name: 'BHP Group Limited', exchange: 'NYSE' },
   { ticker: 'RIO', name: 'Rio Tinto Group', exchange: 'NYSE' },
+  { ticker: 'AAUK', name: 'Angico Eagle Mines Limited', exchange: 'NYSE' },
+  { ticker: 'NCM', name: 'Newcrest Mining Limited', exchange: 'OTC' },
+  { ticker: 'WPL', name: 'Woodside Energy Group Ltd.', exchange: 'OTC' },
   
   // Israeli
   { ticker: 'TEVA', name: 'Teva Pharmaceutical Industries Limited', exchange: 'NYSE' },
@@ -53,6 +92,9 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'NICE', name: 'NICE Ltd.', exchange: 'NASDAQ' },
   { ticker: 'CHKP', name: 'Check Point Software Technologies Ltd.', exchange: 'NASDAQ' },
   { ticker: 'CYBR', name: 'CyberArk Software Ltd.', exchange: 'NASDAQ' },
+  { ticker: 'FVRR', name: 'Fiverr International Ltd.', exchange: 'NYSE' },
+  { ticker: 'LMND', name: 'Lemonade Inc.', exchange: 'NYSE' },
+  { ticker: 'GLBE', name: 'Global-E Online Ltd.', exchange: 'NASDAQ' },
   
   // Canadian
   { ticker: 'CNQ', name: 'Canadian Natural Resources Limited', exchange: 'NYSE' },
@@ -63,6 +105,15 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'TD', name: 'The Toronto-Dominion Bank', exchange: 'NYSE' },
   { ticker: 'BNS', name: 'The Bank of Nova Scotia', exchange: 'NYSE' },
   { ticker: 'CM', name: 'Canadian Imperial Bank of Commerce', exchange: 'NYSE' },
+  { ticker: 'SU', name: 'Suncor Energy Inc.', exchange: 'NYSE' },
+  { ticker: 'CP', name: 'Canadian Pacific Kansas City Limited', exchange: 'NYSE' },
+  { ticker: 'CNI', name: 'Canadian National Railway Company', exchange: 'NYSE' },
+  { ticker: 'ABX', name: 'Barrick Gold Corporation', exchange: 'NYSE' },
+  { ticker: 'GOLD', name: 'Barrick Gold Corporation', exchange: 'NYSE' },
+  { ticker: 'IMO', name: 'Imperial Oil Limited', exchange: 'NYSE' },
+  { ticker: 'MFC', name: 'Manulife Financial Corporation', exchange: 'NYSE' },
+  { ticker: 'SLF', name: 'Sun Life Financial Inc.', exchange: 'NYSE' },
+  { ticker: 'POW', name: 'Power Corporation of Canada', exchange: 'OTC' },
   
   // European Industrials
   { ticker: 'SIEGY', name: 'Siemens AG', exchange: 'OTC' },
@@ -83,6 +134,25 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'DT', name: 'Deutsche Telekom AG', exchange: 'NYSE' },
   { ticker: 'ERIC', name: 'Telefonaktiebolaget LM Ericsson', exchange: 'NASDAQ' },
   { ticker: 'NOK', name: 'Nokia Corporation', exchange: 'NYSE' },
+  { ticker: 'RDS.A', name: 'Shell plc', exchange: 'NYSE' },
+  { ticker: 'BP', name: 'BP p.l.c.', exchange: 'NYSE' },
+  { ticker: 'TTE', name: 'TotalEnergies SE', exchange: 'NYSE' },
+  { ticker: 'E', name: 'Eni S.p.A.', exchange: 'NYSE' },
+  { ticker: 'EQNR', name: 'Equinor ASA', exchange: 'NYSE' },
+  { ticker: 'STM', name: 'STMicroelectronics N.V.', exchange: 'NYSE' },
+  { ticker: 'NGLOY', name: 'Anglo American plc', exchange: 'OTC' },
+  { ticker: 'DEO', name: 'Diageo plc', exchange: 'NYSE' },
+  { ticker: 'UNLY', name: 'Unilever PLC', exchange: 'NYSE' },
+  { ticker: 'BAYRY', name: 'Bayer Aktiengesellschaft', exchange: 'OTC' },
+  { ticker: 'BASFY', name: 'BASF SE', exchange: 'OTC' },
+  { ticker: 'RHHBY', name: 'Roche Holding AG', exchange: 'OTC' },
+  { ticker: 'NSRGY', name: 'Nestlé S.A.', exchange: 'OTC' },
+  { ticker: 'LVMUY', name: 'LVMH Moët Hennessy Louis Vuitton SE', exchange: 'OTC' },
+  { ticker: 'AIRYY', name: 'Airbus SE', exchange: 'OTC' },
+  { ticker: 'BMWYY', name: 'Bayerische Motoren Werke AG', exchange: 'OTC' },
+  { ticker: 'VLKAF', name: 'Volkswagen AG', exchange: 'OTC' },
+  { ticker: 'DDAIF', name: 'Daimler AG', exchange: 'OTC' },
+  { ticker: 'HESAY', name: 'Henkel AG & Co. KGaA', exchange: 'OTC' },
   
   // Indian
   { ticker: 'INFY', name: 'Infosys Limited', exchange: 'NYSE' },
@@ -90,6 +160,10 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'HDB', name: 'HDFC Bank Limited', exchange: 'NYSE' },
   { ticker: 'IBN', name: 'ICICI Bank Limited', exchange: 'NYSE' },
   { ticker: 'VEDL', name: 'Vedanta Limited', exchange: 'NYSE' },
+  { ticker: 'SIFY', name: 'Sify Technologies Limited', exchange: 'NASDAQ' },
+  { ticker: 'TTM', name: 'Tata Motors Limited', exchange: 'NYSE' },
+  { ticker: 'RDY', name: 'Dr. Reddy\'s Laboratories Limited', exchange: 'NYSE' },
+  { ticker: 'MHNC', name: 'Mahindra & Mahindra Limited', exchange: 'OTC' },
   
   // South Korean
   { ticker: 'KB', name: 'KB Financial Group Inc.', exchange: 'NYSE' },
@@ -98,10 +172,14 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'TSM', name: 'Taiwan Semiconductor Manufacturing Company Limited', exchange: 'NYSE' },
   { ticker: 'UMC', name: 'United Microelectronics Corporation', exchange: 'NYSE' },
   { ticker: 'ASX', name: 'ASE Technology Holding Co. Ltd.', exchange: 'NYSE' },
+  { ticker: 'CHT', name: 'Chunghwa Telecom Co. Ltd.', exchange: 'NYSE' },
+  { ticker: 'FE', name: 'Far EasTone Telecommunications Co. Ltd.', exchange: 'NYSE' },
   
   // Mexican
   { ticker: 'AMX', name: 'América Móvil S.A.B. de C.V.', exchange: 'NYSE' },
   { ticker: 'TV', name: 'Grupo Televisa S.A.B.', exchange: 'NYSE' },
+  { ticker: 'FMX', name: 'Fomento Económico Mexicano S.A.B. de C.V.', exchange: 'NYSE' },
+  { ticker: 'TLEVF', name: 'Grupo Televisa S.A.B.', exchange: 'OTC' },
   
   // African & Middle Eastern
   { ticker: 'GOLD', name: 'Barrick Gold Corporation', exchange: 'NYSE' },
@@ -116,6 +194,10 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'FNV', name: 'Franco-Nevada Corporation', exchange: 'NYSE' },
   { ticker: 'WPM', name: 'Wheaton Precious Metals Corp.', exchange: 'NYSE' },
   { ticker: 'OR', name: 'Osisko Gold Royalties Ltd.', exchange: 'NYSE' },
+  { ticker: 'PAAS', name: 'Pan American Silver Corp.', exchange: 'NASDAQ' },
+  { ticker: 'HL', name: 'Hecla Mining Company', exchange: 'NYSE' },
+  { ticker: 'CDE', name: 'Coeur Mining Inc.', exchange: 'NYSE' },
+  { ticker: 'EGO', name: 'Eldorado Gold Corporation', exchange: 'NYSE' },
   
   // Emerging Markets Mixed
   { ticker: 'ERJ', name: 'Embraer S.A.', exchange: 'NYSE' },
@@ -124,4 +206,8 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'ABEV', name: 'Ambev S.A.', exchange: 'NYSE' },
   { ticker: 'CIG', name: 'Companhia Energética de Minas Gerais', exchange: 'NYSE' },
   { ticker: 'EBR', name: 'Centrais Elétricas Brasileiras S.A. - Eletrobrás', exchange: 'NYSE' },
+  { ticker: 'CBD', name: 'Companhia Brasileira de Distribuição', exchange: 'NYSE' },
+  { ticker: 'TIMB', name: 'TIM S.A.', exchange: 'NYSE' },
+  { ticker: 'VIV', name: 'Telefônica Brasil S.A.', exchange: 'NYSE' },
+  { ticker: 'SBS', name: 'Companhia de Saneamento Básico do Estado de São Paulo', exchange: 'NYSE' },
 ];
