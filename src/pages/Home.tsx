@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Play, Database, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast as sonnerToast } from "sonner";
-
-// Global flag to prevent multiple initializations across component remounts
-let globalInitialized = false;
 
 interface ThemeScore {
   id: string;
@@ -26,13 +23,14 @@ const Home = () => {
   const [loadingThemes, setLoadingThemes] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const hasInitialized = useRef(false);
+  const isMountedRef = useRef(true);
   const isFetchingRef = useRef(false);
 
-  // Memoized fetch function to prevent recreating on every render
-  const fetchThemes = useCallback(async () => {
-    // Prevent concurrent fetches
-    if (isFetchingRef.current) {
-      console.log('⏸️ Already fetching, skipping...');
+  const fetchThemes = async () => {
+    // Check if still mounted and not already fetching
+    if (!isMountedRef.current || isFetchingRef.current) {
+      console.log('⏸️ Component unmounted or already fetching, skipping...');
       return;
     }
 
@@ -47,8 +45,13 @@ const Home = () => {
       
       if (error) throw error;
       
+      // Check if still mounted before updating state
+      if (!isMountedRef.current) {
+        console.log('⏸️ Component unmounted, not updating state');
+        return;
+      }
+      
       if (data && Array.isArray(data) && data.length > 0) {
-        // FIXED: Sort DESCENDING (highest scores first), not ascending
         const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
         const top3 = sorted.slice(0, 3);
         console.log('✅ Loaded', top3.length, 'themes');
@@ -58,21 +61,26 @@ const Home = () => {
       }
     } catch (error) {
       console.error('❌ Error:', error);
-      sonnerToast.error("Failed to load opportunities");
+      if (isMountedRef.current) {
+        sonnerToast.error("Failed to load opportunities");
+      }
     } finally {
-      setLoadingThemes(false);
+      if (isMountedRef.current) {
+        setLoadingThemes(false);
+      }
       isFetchingRef.current = false;
-      console.log('✅ Fetch complete, loadingThemes set to false');
+      console.log('✅ Fetch complete');
     }
-  }, []); // Empty deps - function doesn't depend on any props/state
+  };
 
   useEffect(() => {
-    // Use global flag to prevent multiple initializations across component remounts
-    if (globalInitialized) {
-      console.log('⏭️ Already initialized globally, skipping...');
+    // Prevent double-run in React Strict Mode
+    if (hasInitialized.current) {
+      console.log('⏭️ Already initialized, skipping...');
       return;
     }
-    globalInitialized = true;
+    hasInitialized.current = true;
+    isMountedRef.current = true;
 
     const init = async () => {
       console.log('🚀 Initializing Home component...');
@@ -84,14 +92,24 @@ const Home = () => {
           .eq('user_id', user.id)
           .single();
         
-        setIsAdmin(data?.role === 'admin');
+        if (isMountedRef.current) {
+          setIsAdmin(data?.role === 'admin');
+        }
       }
-      setCheckingAuth(false);
-      await fetchThemes();
+      if (isMountedRef.current) {
+        setCheckingAuth(false);
+        await fetchThemes();
+      }
     };
     
     init();
-  }, [fetchThemes]);
+
+    // Cleanup function
+    return () => {
+      console.log('🧹 Cleaning up Home component...');
+      isMountedRef.current = false;
+    };
+  }, []); // Empty array - only run once on mount
 
   const runIngest = async () => {
     setLoading(true);
