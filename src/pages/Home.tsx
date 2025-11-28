@@ -24,41 +24,43 @@ const Home = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
+  // Debug effect to track state changes
+  useEffect(() => {
+    console.log('🔍 State changed - loadingThemes:', loadingThemes, 'themes count:', themes.length);
+  }, [loadingThemes, themes]);
+
   const fetchThemes = async () => {
     try {
+      console.log('🔄 Starting fetchThemes...');
       setLoadingThemes(true);
-      console.log('🔄 Fetching themes from edge function...');
       
       const { data, error } = await supabase.functions.invoke('get-themes', {
         body: { days: 45 }
       });
       
-      console.log('📦 Raw response:', { data, error });
-      
       if (error) {
-        console.error('❌ Error fetching themes:', error);
+        console.error('❌ Error:', error);
         sonnerToast.error("Failed to load opportunities");
         setLoadingThemes(false);
         return;
       }
       
       if (!data || !Array.isArray(data) || data.length === 0) {
-        console.warn('⚠️ No themes data received');
+        console.warn('⚠️ No data');
         setThemes([]);
         setLoadingThemes(false);
         return;
       }
       
-      // Sort and get top 3
       const sorted = [...data].sort((a: ThemeScore, b: ThemeScore) => b.score - a.score);
       const top3 = sorted.slice(0, 3);
       
-      console.log('✅ Setting themes:', top3.map(t => `${t.name}: ${t.score}`));
+      console.log('✅ About to update state with:', top3.length, 'themes');
       setThemes(top3);
       setLoadingThemes(false);
-      console.log('✅ State updated, loading=false');
+      console.log('✅ State updates called');
     } catch (error) {
-      console.error("💥 Exception in fetchThemes:", error);
+      console.error("💥 Exception:", error);
       sonnerToast.error("Failed to load opportunities");
       setLoadingThemes(false);
     }
