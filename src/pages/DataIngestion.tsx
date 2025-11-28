@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Play, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { toast as sonnerToast } from 'sonner';
 
 interface DataSource {
   id: string;
@@ -50,10 +52,43 @@ const dataSources: DataSource[] = [
 ];
 
 const DataIngestion = () => {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Record<string, 'idle' | 'success' | 'error'>>({});
   const [triggeringAll, setTriggeringAll] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const checkAdminAccess = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        sonnerToast.error('Please login to access this page');
+        navigate('/auth');
+        return;
+      }
+
+      try {
+        // Check admin access by calling admin-metrics
+        const { error } = await supabase.functions.invoke('admin-metrics', { 
+          body: { action: 'metrics' } 
+        });
+        
+        if (error) {
+          setIsAdmin(false);
+        } else {
+          setIsAdmin(true);
+        }
+      } catch (error) {
+        setIsAdmin(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    checkAdminAccess();
+  }, [navigate]);
 
   const triggerFunction = async (functionName: string, sourceId: string) => {
     setLoading(prev => ({ ...prev, [sourceId]: true }));
@@ -129,10 +164,72 @@ const DataIngestion = () => {
     return <Clock className="h-4 w-4 text-muted-foreground" />;
   };
 
+  if (checkingAuth) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Data Ingestion Pipeline"
+          description="Fetch latest market signals and data"
+        />
+        <Card>
+          <CardHeader>
+            <CardTitle>Automated Data Pipeline</CardTitle>
+            <CardDescription>
+              All data sources are automatically updated on a scheduled basis
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-red-500">Real-time</Badge>
+                <span className="text-sm text-muted-foreground">Every 15 minutes</span>
+              </div>
+              <p className="text-sm">Breaking news, options flow, and sentiment data</p>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-orange-500">Hourly</Badge>
+                <span className="text-sm text-muted-foreground">Every hour</span>
+              </div>
+              <p className="text-sm">Technical analysis, crypto metrics, and social signals</p>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-blue-500">Daily</Badge>
+                <span className="text-sm text-muted-foreground">Once per day</span>
+              </div>
+              <p className="text-sm">Congressional trades, insider transactions, earnings, and more</p>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-purple-500">Weekly</Badge>
+                <span className="text-sm text-muted-foreground">Once per week</span>
+              </div>
+              <p className="text-sm">CFTC Commitment of Traders reports</p>
+            </div>
+
+            <div className="mt-6 p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                All data ingestion runs automatically on a cron schedule. No manual intervention required.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Data Ingestion Control"
+        title="Data Ingestion Control (Admin)"
         description="Manually trigger data ingestion for all alternative data sources"
       />
 
