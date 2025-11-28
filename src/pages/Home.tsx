@@ -32,7 +32,9 @@ const Home = () => {
       });
       
       if (error) throw error;
-      setThemes(data.slice(0, 3)); // Top 3 themes
+      // Only show themes with actual scores > 0
+      const scoredThemes = (data || []).filter((t: ThemeScore) => t.score > 0);
+      setThemes(scoredThemes.slice(0, 3)); // Top 3 scored themes
     } catch (error) {
       console.error("Failed to fetch themes:", error);
     } finally {
@@ -261,60 +263,53 @@ const Home = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {themes.map((theme) => {
-                const topComponents = getTopComponents(theme.components);
-                const isStale = theme.score === 0;
-                return (
-                  <div
-                    key={theme.id}
-                    className="p-4 rounded-lg border border-border bg-card hover:bg-muted/30 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-lg text-foreground">{theme.name}</h3>
-                        <Badge 
-                          variant="outline" 
-                          className={`${
-                            theme.score >= 80 ? 'border-success text-success' :
-                            theme.score >= 60 ? 'border-accent text-accent' :
-                            theme.score > 0 ? 'border-warning text-warning' :
-                            'border-muted text-muted-foreground'
-                          }`}
-                        >
-                          Score: {theme.score.toFixed(1)}
-                        </Badge>
-                        {isStale && (
-                          <Badge variant="outline" className="border-warning text-warning text-xs">
-                            Stale Data
+            {themes.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="mb-2">🔄 Processing latest market data...</p>
+                <p className="text-sm">Scores will appear as signals are analyzed (typically within a few minutes)</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {themes.map((theme) => {
+                  const topComponents = getTopComponents(theme.components);
+                  return (
+                    <div
+                      key={theme.id}
+                      className="p-4 rounded-lg border border-border bg-card hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-bold text-lg text-foreground">{theme.name}</h3>
+                          <Badge 
+                            variant="outline" 
+                            className={`${
+                              theme.score >= 80 ? 'border-success text-success' :
+                              theme.score >= 60 ? 'border-accent text-accent' :
+                              'border-warning text-warning'
+                            }`}
+                          >
+                            Score: {theme.score.toFixed(1)}
                           </Badge>
-                        )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(theme.as_of).toLocaleTimeString()}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(theme.as_of).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-sm text-muted-foreground">Top Components:</span>
-                      {topComponents.length > 0 ? (
-                        topComponents.map((comp) => (
-                          <Badge key={comp} variant="secondary" className="text-xs">
-                            {comp}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">No active signals</span>
+                      {topComponents.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          <span className="text-sm text-muted-foreground">Key Signals:</span>
+                          {topComponents.map((comp) => (
+                            <Badge key={comp} variant="secondary" className="text-xs">
+                              {comp}
+                            </Badge>
+                          ))}
+                        </div>
                       )}
                     </div>
-                    {isStale && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        💡 Signals need to be mapped to themes. Visit <strong>Data Sources</strong> to refresh data.
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
