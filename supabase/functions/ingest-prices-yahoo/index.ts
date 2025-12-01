@@ -228,12 +228,22 @@ Deno.serve(async (req) => {
       );
     }
     
-    await supabaseClient.from('ingest_logs').insert({
-      etl_name: 'ingest-prices-yahoo',
-      status: 'running',
-      started_at: new Date().toISOString(),
-      metadata: { execution_id: executionId, batch_id: batchId, batch_size: batchAssets.length }
-    });
+    const { data: logEntry, error: logError } = await supabaseClient
+      .from('ingest_logs')
+      .insert({
+        etl_name: 'ingest-prices-yahoo',
+        status: 'running',
+        started_at: new Date().toISOString(),
+        metadata: { execution_id: executionId, batch_id: batchId, batch_size: batchAssets.length }
+      })
+      .select()
+      .single();
+    
+    if (logError) {
+      throw new Error(`Failed to create log entry: ${logError.message}`);
+    }
+    
+    const logId = logEntry.id;
     
     let inserted = 0;
     let successCount = 0;
@@ -286,52 +296,70 @@ Deno.serve(async (req) => {
     }
     
     const duration = Date.now() - startTime;
-    const status = failedCount === 0 ? 'success' : failedCount === batchAssets.length ? 'failure' : 'partial_success';
+    // Map to valid status values: 'success' or 'failure' (no partial_success allowed)
+    const logStatus = failedCount === 0 ? 'success' : 'failure';
+    const functionStatus = failedCount === 0 ? 'success' : 'failure';
     
-    await supabaseClient.from('ingest_logs').insert({
-      etl_name: 'ingest-prices-yahoo',
-      status,
-      started_at: new Date(startTime).toISOString(),
-      completed_at: new Date().toISOString(),
-      duration_seconds: duration / 1000,
-      rows_inserted: inserted,
-      rows_skipped: failedCount,
-      source_used: 'Yahoo Finance',
-      metadata: {
-        execution_id: executionId,
-        batch_id: batchId,
-        tickers_processed: successCount + failedCount,
-        success: successCount,
-        failed: failedCount,
-        error_sample: errorDetails.slice(0, 5)
-      }
-    });
+    // UPDATE the existing log entry
+    const { error: updateError } = await supabaseClient
+      .from('ingest_logs')
+      .update({
+        status: logStatus,
+        completed_at: new Date().toISOString(),
+        duration_seconds: duration / 1000,
+        rows_inserted: inserted,
+        rows_skipped: failedCount,
+        source_used: 'Yahoo Finance',
+        metadata: {
+          execution_id: executionId,
+          batch_id: batchId,
+          batch_size: batchAssets.length,
+          tickers_processed: successCount + failedCount,
+          success: successCount,
+          failed: failedCount,
+          error_sample: errorDetails.slice(0, 5),
+          partial_success: failedCount > 0 && successCount > 0
+        }
+      })
+      .eq('id', logId);
     
-    await supabaseClient.from('function_status').insert({
-      function_name: 'ingest-prices-yahoo',
-      status,
-      executed_at: new Date().toISOString(),
-      duration_ms: duration,
-      rows_inserted: inserted,
-      rows_skipped: failedCount,
-      source_used: 'Yahoo Finance',
-      metadata: {
-        execution_id: executionId,
-        batch_id: batchId,
-        tickers_processed: successCount + failedCount,
-        success: successCount,
-        failed: failedCount
-      }
-    });
+    if (updateError) {
+      console.error(`⚠️ Failed to update log: ${updateError.message}`);
+    }
+    
+    // Insert function_status heartbeat
+    const { error: statusError } = await supabaseClient
+      .from('function_status')
+      .insert({
+        function_name: 'ingest-prices-yahoo',
+        status: functionStatus,
+        executed_at: new Date().toISOString(),
+        duration_ms: Math.round(duration), // CRITICAL: Must be integer
+        rows_inserted: inserted,
+        rows_skipped: failedCount,
+        source_used: 'Yahoo Finance',
+        metadata: {
+          execution_id: executionId,
+          batch_id: batchId,
+          tickers_processed: successCount + failedCount,
+          success: successCount,
+          failed: failedCount,
+          partial_success: failedCount > 0 && successCount > 0
+        }
+      });
+    
+    if (statusError) {
+      console.error(`⚠️ Failed to insert function_status: ${statusError.message}`);
+    }
     
     console.log(`✅ [${executionId}] BATCH ${batchId} COMPLETE in ${(duration/1000).toFixed(1)}s`);
     console.log(`   📊 ${successCount}/${batchAssets.length} tickers | ${inserted} prices | ${failedCount} failed`);
     
-    // Only send Slack alert on failure or partial success
-    if (status !== 'success') {
+    // Send Slack alert on any failures
+    if (logStatus !== 'success') {
       await slackAlerter.sendLiveAlert({
         etlName: `ingest-prices-yahoo-batch-${batchId}`,
-        status: status === 'failure' ? 'failed' : 'partial',
+        status: 'failed',
         duration,
         sourceUsed: 'Yahoo Finance',
         rowsInserted: inserted,
@@ -339,7 +367,8 @@ Deno.serve(async (req) => {
         metadata: {
           execution_id: executionId,
           batch_id: batchId,
-          tickers_processed: successCount + failedCount
+          tickers_processed: successCount + failedCount,
+          partial_success: failedCount > 0 && successCount > 0
         }
       });
     }
