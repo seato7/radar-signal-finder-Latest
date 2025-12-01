@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
     );
 
     const slackAlerter = new SlackAlerter();
-    const STUCK_THRESHOLD_MS = 4 * 60 * 1000; // 4 minutes (lowered from 8 for faster detection)
+    const STUCK_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes - allows distributed batch processing
     const stuckTimestamp = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString();
 
     console.log(`🔍 Searching for jobs stuck since before ${stuckTimestamp}`);
@@ -43,13 +43,13 @@ Deno.serve(async (req) => {
     }
 
     if (!stuckJobs || stuckJobs.length === 0) {
-      console.log('✅ No stuck jobs found (4-minute threshold)');
+      console.log('✅ No stuck jobs found (20-minute threshold)');
       return new Response(
         JSON.stringify({
           success: true,
           killed: 0,
           retried: 0,
-          message: 'No stuck jobs found (4-minute threshold)',
+          message: 'No stuck jobs found (20-minute threshold)',
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
           status: 'failure',
           completed_at: new Date().toISOString(),
           duration_seconds: duration,
-          error_message: `Job killed after ${Math.floor(duration / 60)} minutes (stuck threshold: 4 minutes)`,
+          error_message: `Job killed after ${Math.floor(duration / 60)} minutes (stuck threshold: 20 minutes)`,
         })
         .eq('id', job.id);
 
