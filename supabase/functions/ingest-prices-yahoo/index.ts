@@ -298,11 +298,12 @@ Deno.serve(async (req) => {
     }
     
     const duration = Date.now() - startTime;
-    // Map to valid status values: 'success' or 'failure' (no partial_success allowed)
-    const logStatus = failedCount === 0 ? 'success' : 'failure';
-    const functionStatus = failedCount === 0 ? 'success' : 'failure';
+    // Determine status based on success rate (not just any failures)
+    const successRate = successCount / batchAssets.length;
+    const logStatus = successRate >= 0.8 ? 'success' : 'failure'; // 80%+ is success
+    const functionStatus = successRate >= 0.8 ? 'success' : 'failure';
     
-    console.log(`🔄 Updating log ${logId} with status: ${logStatus}`);
+    console.log(`🔄 Updating log ${logId} with status: ${logStatus} (${successCount}/${batchAssets.length} = ${(successRate * 100).toFixed(1)}%)`);
     
     // UPDATE the existing log entry
     const { data: updateData, error: updateError, count } = await supabaseClient
@@ -321,6 +322,7 @@ Deno.serve(async (req) => {
           tickers_processed: successCount + failedCount,
           success: successCount,
           failed: failedCount,
+          success_rate: (successRate * 100).toFixed(1),
           error_sample: errorDetails.slice(0, 5),
           partial_success: failedCount > 0 && successCount > 0
         }
