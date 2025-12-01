@@ -194,15 +194,38 @@ async function fetchFromAlphaVantage(
   }
 }
 
+// === PRODUCTION HARDENING: Ticker Normalization for Yahoo Finance ===
+function normalizeTickerForYahoo(ticker: string, assetClass?: string): string {
+  // Crypto: BTC/USD → BTC-USD
+  if (assetClass === 'crypto' || ticker.includes('/USD') || ticker.includes('/EUR') || ticker.includes('/USDT') || ticker.includes('/BTC')) {
+    return ticker.replace(/\//g, '-');
+  }
+  
+  // Forex: EUR/USD → EURUSD=X
+  if (assetClass === 'forex' || /^[A-Z]{3}\/[A-Z]{3}$/.test(ticker)) {
+    return ticker.replace('/', '') + '=X';
+  }
+  
+  // Commodities: Add =F suffix for futures if not already present
+  if (assetClass === 'commodity' && !ticker.endsWith('=F') && !ticker.endsWith('USD') && !ticker.includes('=') && ticker.length <= 6) {
+    return ticker + '=F';
+  }
+  
+  // Stocks: Replace dots with hyphens (BRK.B → BRK-B)
+  return ticker.replace(/\./g, '-');
+}
+
 // === Fetch from Yahoo Finance with Enhanced Retry and Rate Limiting ===
 async function fetchFromYahoo(
   ticker: string,
+  assetClass: string,
   supabaseClient: any
 ): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
   const apiStartTime = Date.now();
   try {
-    // Yahoo Finance uses hyphens, not dots (BRK.B → BRK-B)
-    const yahooTicker = ticker.replace(/\./g, '-');
+    // Normalize ticker for Yahoo Finance API
+    const yahooTicker = normalizeTickerForYahoo(ticker, assetClass);
+    console.log(`  🔄 Normalized: ${ticker} → ${yahooTicker} (${assetClass})`);
     
     // Use range parameter for most current data (query2 domain is more reliable)
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${yahooTicker}?range=1y&interval=1d`;
@@ -330,41 +353,86 @@ Deno.serve(async (req) => {
       metadata: { execution_id: executionId }
     });
     
-    // === Fetch assets with batch rotation ===
-    // Get the last batch offset from metadata
-    const { data: lastRun } = await supabaseClient
-      .from('function_status')
-      .select('metadata')
-      .eq('function_name', 'ingest-prices-yahoo')
-      .order('executed_at', { ascending: false })
-      .limit(1)
-      .single();
-    
-    const lastOffset = lastRun?.metadata?.next_offset || 0;
+    // === PRODUCTION OPTIMIZATION: Prioritize stale/missing prices, then batch rotation ===
     const BATCH_SIZE = 50; // Process 50 assets per run
     
-    const { data: allAssets, error: assetsError } = await supabaseClient
+    // First, try to get 50 assets that have no prices or very stale prices
+    const { data: staleAssets, error: staleError } = await supabaseClient
       .from('assets')
-      .select('*')
-      .range(lastOffset, lastOffset + BATCH_SIZE - 1);
+      .select(`
+        id, 
+        ticker, 
+        name, 
+        exchange, 
+        asset_class,
+        created_at
+      `)
+      .order('created_at', { ascending: false })
+      .limit(BATCH_SIZE * 2); // Get 100 to filter down
     
-    if (assetsError) {
-      throw new Error(`Assets fetch failed: ${assetsError.message}`);
+    if (staleError) {
+      throw new Error(`Stale assets fetch failed: ${staleError.message}`);
     }
     
-    // Calculate next offset (wrap around to 0 when reaching end)
-    const { count: totalAssets } = await supabaseClient
-      .from('assets')
-      .select('*', { count: 'exact', head: true });
+    // Check which ones have NO prices or very old prices (>24h)
+    const assetTickers = staleAssets?.map(a => a.ticker) || [];
+    const { data: recentPrices } = await supabaseClient
+      .from('prices')
+      .select('ticker, updated_at')
+      .in('ticker', assetTickers)
+      .gte('updated_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
     
-    const nextOffset = (lastOffset + BATCH_SIZE) >= (totalAssets || 0) ? 0 : lastOffset + BATCH_SIZE;
+    const tickersWithRecentPrices = new Set(recentPrices?.map(p => p.ticker) || []);
+    
+    // Prioritize assets without recent prices (crypto, forex, commodities especially)
+    const stalePriority = staleAssets?.filter(a => !tickersWithRecentPrices.has(a.ticker)).slice(0, BATCH_SIZE) || [];
+    
+    let assets = stalePriority;
+    let nextOffset = 0;
+    let totalAssets = 0;
+    let lastOffset = 0;
+    
+    // If we don't have enough stale assets, fill with batch rotation
+    if (assets.length < BATCH_SIZE) {
+      const { data: lastRun } = await supabaseClient
+        .from('function_status')
+        .select('metadata')
+        .eq('function_name', 'ingest-prices-yahoo')
+        .order('executed_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      lastOffset = lastRun?.metadata?.next_offset || 0;
+      
+      const { data: batchAssets, error: batchError } = await supabaseClient
+        .from('assets')
+        .select('*')
+        .range(lastOffset, lastOffset + BATCH_SIZE - 1);
+      
+      if (batchError) {
+        throw new Error(`Batch assets fetch failed: ${batchError.message}`);
+      }
+      
+      // Calculate next offset (wrap around to 0 when reaching end)
+      const { count: totalAssetsCount } = await supabaseClient
+        .from('assets')
+        .select('*', { count: 'exact', head: true });
+      
+      totalAssets = totalAssetsCount || 0;
+      nextOffset = (lastOffset + BATCH_SIZE) >= totalAssets ? 0 : lastOffset + BATCH_SIZE;
+      
+      // Merge stale + batch assets, remove duplicates
+      const existingTickers = new Set(assets.map(a => a.ticker));
+      const additionalAssets = (batchAssets || []).filter(a => !existingTickers.has(a.ticker));
+      assets = [...assets, ...additionalAssets].slice(0, BATCH_SIZE);
+    }
+    
+    console.log(`📊 Processing ${assets.length} tickers (${stalePriority.length} stale priority + ${assets.length - stalePriority.length} batch rotation)`);
+    console.log(`   Asset classes: ${[...new Set(assets.map(a => a.asset_class))].join(', ')}`);
     
     // === PRODUCTION HARDENING: Process batch ===
     const TICKER_DELAY_MS = 350; // 350ms base delay
     const MAX_EXECUTION_TIME_MS = 50000; // 50 second hard limit
-    
-    const assets = allAssets || [];
-    console.log(`📊 Processing ${assets.length} tickers (batch ${Math.floor(lastOffset / BATCH_SIZE) + 1}, offset ${lastOffset}-${lastOffset + BATCH_SIZE})`);
     
     const executionDeadline = startTime + MAX_EXECUTION_TIME_MS;
     
@@ -402,7 +470,7 @@ Deno.serve(async (req) => {
         // === Fallback to Yahoo ===
         console.log(`⚠️ ${ticker} - Alpha failed (${alphaResult.error}), trying Yahoo...`);
         
-        const yahooResult = await fetchFromYahoo(ticker, supabaseClient);
+        const yahooResult = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
         
         if (yahooResult.success && yahooResult.data) {
           prices = yahooResult.data;
