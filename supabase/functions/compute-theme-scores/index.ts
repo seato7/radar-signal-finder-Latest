@@ -55,50 +55,59 @@ function computeComponentScores(signals: Signal[], asOf: Date = new Date()): Rec
     const magnitude = signal.magnitude || 1.0;
     const contribution = magnitude * decay;
     
-    // === UPDATED SIGNAL TYPE MAPPINGS (matches actual DB signal types) ===
+    // === UPDATED SIGNAL TYPE MAPPINGS (all 32 sources) ===
     
     // PolicyMomentum: policy-related signals
-    if (['policy_keyword', 'policy_mention', 'policy_approval'].includes(signal.signal_type)) {
+    if (['policy_keyword', 'policy_mention', 'policy_approval', 'policy_regulatory'].includes(signal.signal_type)) {
       components.PolicyMomentum += contribution;
     } 
     
     // FlowPressure: capital flows and crypto movements
-    else if (['flow_pressure', 'flow_pressure_etf', 'crypto_whale_activity', 'crypto_exchange_outflow'].includes(signal.signal_type)) {
+    else if (['flow_pressure', 'flow_pressure_etf', 'etf_flow', 'crypto_whale_activity', 'crypto_exchange_outflow'].includes(signal.signal_type)) {
       components.FlowPressure += contribution;
     } 
     
     // BigMoneyConfirm: institutional money and dark pool
-    else if (['filing_13f_new', 'filing_13f_increase', 'smart_money_flow', 'dark_pool_activity'].includes(signal.signal_type)) {
+    else if ([
+      'filing_13f_new', 'filing_13f_increase', 'institutional_13f',
+      'smart_money_flow', 'dark_pool_activity', 'cot_positioning',
+      'unusual_options'
+    ].includes(signal.signal_type)) {
       components.BigMoneyConfirm += contribution;
     } 
     
     // InsiderPoliticianConfirm: insider trading
-    else if (['insider_buy', 'politician_buy', 'insider_sell', 'politician_sell'].includes(signal.signal_type)) {
+    else if (['insider_buy', 'politician_buy', 'insider_sell', 'politician_sell', 'insider_trading'].includes(signal.signal_type)) {
       components.InsiderPoliticianConfirm += contribution;
     } 
     
     // Attention: sentiment and social signals
-    else if (['social_mention', 'news_mention', 'sentiment_extreme'].includes(signal.signal_type)) {
+    else if ([
+      'social_mention', 'news_mention', 'sentiment_extreme',
+      'social_sentiment_reddit', 'social_sentiment_stocktwits',
+      'search_interest'
+    ].includes(signal.signal_type)) {
       components.Attention += contribution;
     } 
     
-    // TechEdge: technical analysis signals (NEW - this was missing!)
-    else if (['technical_stochastic', 'technical_ma_crossover', 'technical_rsi', 'chart_pattern'].includes(signal.signal_type)) {
+    // TechEdge: technical analysis and innovation
+    else if ([
+      'technical_stochastic', 'technical_ma_crossover', 'technical_rsi', 
+      'chart_pattern', 'innovation_patent', 'earnings_surprise'
+    ].includes(signal.signal_type)) {
       components.TechEdge += contribution;
     } 
     
-    // CapexMomentum: capital expenditure indicators (hiring, expansion)
-    else if (['capex_hiring', 'capex_expansion', 'facility_expansion'].includes(signal.signal_type)) {
+    // CapexMomentum: capital expenditure indicators (hiring, expansion, supply chain)
+    else if ([
+      'capex_hiring', 'capex_expansion', 'facility_expansion',
+      'supply_chain_indicator'
+    ].includes(signal.signal_type)) {
       components.CapexMomentum += contribution;
     }
     
-    // COT positioning → BigMoneyConfirm (institutional positioning)
-    else if (['cot_positioning'].includes(signal.signal_type)) {
-      components.BigMoneyConfirm += contribution;
-    }
-    
-    // RiskFlags: risk-related signals
-    else if (signal.signal_type.startsWith('risk_')) {
+    // RiskFlags: risk-related signals (short interest)
+    else if (signal.signal_type.startsWith('risk_') || signal.signal_type === 'short_interest') {
       components.RiskFlags += contribution;
     }
   }
