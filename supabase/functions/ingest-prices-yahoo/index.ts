@@ -180,7 +180,6 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   const executionId = crypto.randomUUID();
   const slackAlerter = new SlackAlerter();
-  console.log(`🚀 [${executionId}] BACKGROUND MODE START @ ${new Date().toISOString()}`);
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -192,159 +191,169 @@ Deno.serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseKey);
     
-    // Fetch ALL assets - background task will process them
-    const { data: assets, error: assetsError } = await supabaseClient
-      .from('assets')
-      .select(`id, ticker, name, exchange, asset_class`);
+    // Get batch_id from request body or default to 0
+    const body = await req.json().catch(() => ({}));
+    const batchId = body.batch_id ?? 0;
+    const BATCH_SIZE = 20;
     
-    if (assetsError || !assets || assets.length === 0) {
+    console.log(`🚀 [${executionId}] BATCH ${batchId} START @ ${new Date().toISOString()}`);
+    
+    // Fetch ALL assets and slice by batch
+    const { data: allAssets, error: assetsError } = await supabaseClient
+      .from('assets')
+      .select(`id, ticker, name, exchange, asset_class`)
+      .order('ticker');
+    
+    if (assetsError || !allAssets || allAssets.length === 0) {
       throw new Error(`Assets fetch failed: ${assetsError?.message || 'No assets found'}`);
     }
     
-    console.log(`📋 Queued ${assets.length} assets for BACKGROUND processing (100 concurrent)`);
+    // Calculate batch boundaries
+    const startIdx = batchId * BATCH_SIZE;
+    const endIdx = Math.min(startIdx + BATCH_SIZE, allAssets.length);
+    const batchAssets = allAssets.slice(startIdx, endIdx);
     
-    // Background task that continues after response
-    const backgroundTask = async () => {
-      let inserted = 0;
-      let successCount = 0;
-      let failedCount = 0;
-      const errorDetails: string[] = [];
-      const taskStart = Date.now();
-      
-      await supabaseClient.from('ingest_logs').insert({
-        etl_name: 'ingest-prices-yahoo',
-        status: 'running',
-        started_at: new Date().toISOString(),
-        metadata: { execution_id: executionId, mode: 'background', total_assets: assets.length }
-      });
-      
-      const MAX_CONCURRENT = 100;
-      const chunks = [];
-      for (let i = 0; i < assets.length; i += MAX_CONCURRENT) {
-        chunks.push(assets.slice(i, i + MAX_CONCURRENT));
+    console.log(`📦 Processing batch ${batchId}: assets ${startIdx}-${endIdx-1} (${batchAssets.length} assets)`);
+    
+    if (batchAssets.length === 0) {
+      console.log(`⚠️ Batch ${batchId} is empty (total assets: ${allAssets.length})`);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          batch_id: batchId,
+          message: 'Batch empty - no assets to process',
+          total_assets: allAssets.length
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    await supabaseClient.from('ingest_logs').insert({
+      etl_name: 'ingest-prices-yahoo',
+      status: 'running',
+      started_at: new Date().toISOString(),
+      metadata: { execution_id: executionId, batch_id: batchId, batch_size: batchAssets.length }
+    });
+    
+    let inserted = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    const errorDetails: string[] = [];
+    
+    // Process batch concurrently
+    const results = await Promise.allSettled(
+      batchAssets.map(async (asset) => {
+        const ticker = asset.ticker;
+        
+        if (!ticker || ticker.length > 10) {
+          return { success: false, ticker, error: 'Invalid ticker', count: 0 };
+        }
+        
+        const yahooResult = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
+        
+        if (!yahooResult.success || !yahooResult.data || yahooResult.data.length === 0) {
+          return { success: false, ticker, error: yahooResult.error || 'No data', count: 0 };
+        }
+        
+        const prices = yahooResult.data;
+        prices.forEach(p => p.asset_id = asset.id);
+        
+        const { error: upsertError } = await supabaseClient
+          .from('prices')
+          .upsert(prices, {
+            onConflict: 'ticker,date',
+            ignoreDuplicates: false
+          });
+        
+        if (upsertError) {
+          return { success: false, ticker, error: upsertError.message, count: 0 };
+        }
+        
+        return { success: true, ticker, count: prices.length };
+      })
+    );
+    
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.success) {
+        inserted += result.value.count;
+        successCount++;
+      } else {
+        const error = result.status === 'fulfilled' ? result.value.error : (result.reason as Error).message;
+        const ticker = result.status === 'fulfilled' ? result.value.ticker : 'unknown';
+        failedCount++;
+        errorDetails.push(`${ticker}: ${error}`);
       }
-      
-      for (const [chunkIndex, chunk] of chunks.entries()) {
-        console.log(`\n📦 Chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} assets)`);
-        const chunkStart = Date.now();
-        
-        const results = await Promise.allSettled(
-          chunk.map(async (asset) => {
-            const ticker = asset.ticker;
-            
-            if (!ticker || ticker.length > 10) {
-              return { success: false, ticker, error: 'Invalid ticker', count: 0 };
-            }
-            
-            const yahooResult = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
-            
-            if (!yahooResult.success || !yahooResult.data || yahooResult.data.length === 0) {
-              return { success: false, ticker, error: yahooResult.error || 'No data', count: 0 };
-            }
-            
-            const prices = yahooResult.data;
-            prices.forEach(p => p.asset_id = asset.id);
-            
-            const { error: upsertError } = await supabaseClient
-              .from('prices')
-              .upsert(prices, {
-                onConflict: 'ticker,date',
-                ignoreDuplicates: false
-              });
-            
-            if (upsertError) {
-              return { success: false, ticker, error: upsertError.message, count: 0 };
-            }
-            
-            return { success: true, ticker, count: prices.length };
-          })
-        );
-        
-        for (const result of results) {
-          if (result.status === 'fulfilled' && result.value.success) {
-            inserted += result.value.count;
-            successCount++;
-          } else {
-            const error = result.status === 'fulfilled' ? result.value.error : (result.reason as Error).message;
-            const ticker = result.status === 'fulfilled' ? result.value.ticker : 'unknown';
-            failedCount++;
-            errorDetails.push(`${ticker}: ${error}`);
-          }
-        }
-        
-        const chunkDuration = ((Date.now() - chunkStart) / 1000).toFixed(1);
-        console.log(`✅ Chunk ${chunkIndex + 1} completed in ${chunkDuration}s (success: ${successCount}, failed: ${failedCount})`);
+    }
+    
+    const duration = Date.now() - startTime;
+    const status = failedCount === 0 ? 'success' : failedCount === batchAssets.length ? 'failure' : 'partial_success';
+    
+    await supabaseClient.from('ingest_logs').insert({
+      etl_name: 'ingest-prices-yahoo',
+      status,
+      started_at: new Date(startTime).toISOString(),
+      completed_at: new Date().toISOString(),
+      duration_seconds: duration / 1000,
+      rows_inserted: inserted,
+      rows_skipped: failedCount,
+      source_used: 'Yahoo Finance',
+      metadata: {
+        execution_id: executionId,
+        batch_id: batchId,
+        tickers_processed: successCount + failedCount,
+        success: successCount,
+        failed: failedCount,
+        error_sample: errorDetails.slice(0, 5)
       }
-      
-      const duration = Date.now() - taskStart;
-      const status = failedCount === 0 ? 'success' : failedCount === (successCount + failedCount) ? 'failure' : 'partial_success';
-      
-      await supabaseClient.from('ingest_logs').insert({
-        etl_name: 'ingest-prices-yahoo',
-        status,
-        started_at: new Date(taskStart).toISOString(),
-        completed_at: new Date().toISOString(),
-        duration_seconds: duration / 1000,
-        rows_inserted: inserted,
-        rows_skipped: failedCount,
-        source_used: 'Yahoo Finance',
-        metadata: {
-          execution_id: executionId,
-          tickers_processed: successCount + failedCount,
-          success: successCount,
-          failed: failedCount,
-          background_mode: true,
-          error_sample: errorDetails.slice(0, 10)
-        }
-      });
-      
-      await supabaseClient.from('function_status').insert({
-        function_name: 'ingest-prices-yahoo',
-        status,
-        executed_at: new Date().toISOString(),
-        duration_ms: duration,
-        rows_inserted: inserted,
-        rows_skipped: failedCount,
-        source_used: 'Yahoo Finance',
-        metadata: {
-          execution_id: executionId,
-          tickers_processed: successCount + failedCount,
-          success: successCount,
-          failed: failedCount,
-          background_mode: true
-        }
-      });
-      
-      console.log(`✅ [${executionId}] BACKGROUND COMPLETE in ${(duration/1000).toFixed(1)}s`);
-      console.log(`   📊 ${successCount + failedCount} tickers | ${inserted} prices | ${failedCount} failed`);
-      
+    });
+    
+    await supabaseClient.from('function_status').insert({
+      function_name: 'ingest-prices-yahoo',
+      status,
+      executed_at: new Date().toISOString(),
+      duration_ms: duration,
+      rows_inserted: inserted,
+      rows_skipped: failedCount,
+      source_used: 'Yahoo Finance',
+      metadata: {
+        execution_id: executionId,
+        batch_id: batchId,
+        tickers_processed: successCount + failedCount,
+        success: successCount,
+        failed: failedCount
+      }
+    });
+    
+    console.log(`✅ [${executionId}] BATCH ${batchId} COMPLETE in ${(duration/1000).toFixed(1)}s`);
+    console.log(`   📊 ${successCount}/${batchAssets.length} tickers | ${inserted} prices | ${failedCount} failed`);
+    
+    // Only send Slack alert on failure or partial success
+    if (status !== 'success') {
       await slackAlerter.sendLiveAlert({
-        etlName: 'ingest-prices-yahoo',
-        status: status === 'success' ? 'success' : status === 'failure' ? 'failed' : 'partial',
+        etlName: `ingest-prices-yahoo-batch-${batchId}`,
+        status: status === 'failure' ? 'failed' : 'partial',
         duration,
         sourceUsed: 'Yahoo Finance',
         rowsInserted: inserted,
         rowsSkipped: failedCount,
         metadata: {
           execution_id: executionId,
-          tickers_processed: successCount + failedCount,
-          background_mode: true
+          batch_id: batchId,
+          tickers_processed: successCount + failedCount
         }
       });
-    };
+    }
     
-    // Start background task without awaiting - function returns immediately
-    backgroundTask().catch(err => console.error('Background task error:', err));
-    
-    // Return immediately - processing continues in background
     return new Response(
       JSON.stringify({
         success: true,
         execution_id: executionId,
-        message: 'Background processing started',
-        assets_queued: assets.length,
-        estimated_duration_s: Math.ceil(assets.length / 100) * 10,
-        note: 'Function returns immediately - query database for updated prices'
+        batch_id: batchId,
+        assets_processed: batchAssets.length,
+        prices_inserted: inserted,
+        success_count: successCount,
+        failed_count: failedCount,
+        duration_s: (duration / 1000).toFixed(1)
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
