@@ -44,18 +44,25 @@ serve(async (req) => {
     let skipped = 0;
     let errors = 0;
 
+    // Remove duplicates from source data first
+    const uniqueAssets = Array.from(
+      new Map(allAssets.map(a => [`${a.ticker}|${a.exchange}`, a])).values()
+    );
+    
+    console.log(`[POPULATE-ASSETS] After deduplication: ${uniqueAssets.length} unique assets (removed ${allAssets.length - uniqueAssets.length} duplicates)`);
+
     // Batch insert for efficiency
     const batchSize = 100;
-    for (let i = 0; i < allAssets.length; i += batchSize) {
-      const batch = allAssets.slice(i, i + batchSize);
+    for (let i = 0; i < uniqueAssets.length; i += batchSize) {
+      const batch = uniqueAssets.slice(i, i + batchSize);
       
       const { data: existing } = await supabaseClient
         .from('assets')
-        .select('ticker')
+        .select('ticker, exchange')
         .in('ticker', batch.map(a => a.ticker));
       
-      const existingTickers = new Set(existing?.map(e => e.ticker) || []);
-      const newAssets = batch.filter(a => !existingTickers.has(a.ticker));
+      const existingKeys = new Set(existing?.map(e => `${e.ticker}|${e.exchange}`) || []);
+      const newAssets = batch.filter(a => !existingKeys.has(`${a.ticker}|${a.exchange}`));
       
       if (newAssets.length > 0) {
         const { error } = await supabaseClient
