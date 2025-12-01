@@ -239,11 +239,13 @@ Deno.serve(async (req) => {
       .select()
       .single();
     
-    if (logError) {
-      throw new Error(`Failed to create log entry: ${logError.message}`);
+    if (logError || !logEntry) {
+      console.error(`⚠️ Failed to create log entry: ${logError?.message}`);
+      throw new Error(`Failed to create log entry: ${logError?.message}`);
     }
     
     const logId = logEntry.id;
+    console.log(`📝 Created log entry with ID: ${logId}`);
     
     let inserted = 0;
     let successCount = 0;
@@ -300,13 +302,15 @@ Deno.serve(async (req) => {
     const logStatus = failedCount === 0 ? 'success' : 'failure';
     const functionStatus = failedCount === 0 ? 'success' : 'failure';
     
+    console.log(`🔄 Updating log ${logId} with status: ${logStatus}`);
+    
     // UPDATE the existing log entry
-    const { error: updateError } = await supabaseClient
+    const { data: updateData, error: updateError, count } = await supabaseClient
       .from('ingest_logs')
       .update({
         status: logStatus,
         completed_at: new Date().toISOString(),
-        duration_seconds: duration / 1000,
+        duration_seconds: Math.round(duration / 1000),
         rows_inserted: inserted,
         rows_skipped: failedCount,
         source_used: 'Yahoo Finance',
@@ -321,10 +325,16 @@ Deno.serve(async (req) => {
           partial_success: failedCount > 0 && successCount > 0
         }
       })
-      .eq('id', logId);
+      .eq('id', logId)
+      .select();
     
     if (updateError) {
-      console.error(`⚠️ Failed to update log: ${updateError.message}`);
+      console.error(`❌ UPDATE ERROR for log ${logId}: ${updateError.message}`);
+      console.error(`❌ UPDATE ERROR details: ${JSON.stringify(updateError)}`);
+    } else if (!updateData || updateData.length === 0) {
+      console.error(`⚠️ UPDATE returned no rows for log ${logId} - row may not exist`);
+    } else {
+      console.log(`✅ Successfully updated log ${logId}, affected ${updateData.length} rows`);
     }
     
     // Insert function_status heartbeat
@@ -349,7 +359,7 @@ Deno.serve(async (req) => {
       });
     
     if (statusError) {
-      console.error(`⚠️ Failed to insert function_status: ${statusError.message}`);
+      console.error(`❌ Failed to insert function_status: ${statusError.message}`);
     }
     
     console.log(`✅ [${executionId}] BATCH ${batchId} COMPLETE in ${(duration/1000).toFixed(1)}s`);
