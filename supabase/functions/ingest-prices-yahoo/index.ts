@@ -213,20 +213,22 @@ Deno.serve(async (req) => {
         ticker, 
         name, 
         exchange, 
-        asset_class,
-        prices!left(updated_at)
+        asset_class
       `)
-      .order('prices.updated_at', { ascending: true, nullsFirst: true })
       .limit(250); // Process 250 assets per run (completes in ~30s)
     
     if (assetsError || !assets || assets.length === 0) {
       throw new Error(`Assets fetch failed: ${assetsError?.message || 'No assets found'}`);
     }
     
-    console.log(`🚀 Processing ${assets.length} PRIORITY assets in parallel (250 concurrent)`);
+    console.log(`🚀 Processing ${assets.length} assets in batches (50 concurrent at a time)`);
     
-    // Process all assets in single batch (250 concurrent fits within CPU limit)
-    const chunks = [assets];
+    // Process in chunks of 50 concurrent requests to avoid CPU timeout
+    const MAX_CONCURRENT = 50;
+    const chunks = [];
+    for (let i = 0; i < assets.length; i += MAX_CONCURRENT) {
+      chunks.push(assets.slice(i, i + MAX_CONCURRENT));
+    }
     
     for (const [chunkIndex, chunk] of chunks.entries()) {
       console.log(`\n📦 Chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} assets)`);
