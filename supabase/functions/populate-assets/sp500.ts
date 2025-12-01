@@ -386,7 +386,6 @@ export const SP500_STOCKS = [
   { ticker: 'EVRG', name: 'Evergy Inc.', exchange: 'NYSE' },
   { ticker: 'PNW', name: 'Pinnacle West Capital Corporation', exchange: 'NYSE' },
   { ticker: 'AES', name: 'The AES Corporation', exchange: 'NYSE' },
-  { ticker: 'WEC', name: 'Wisconsin Energy Corporation', exchange: 'NYSE' },
   
   // Additional S&P 500 Members
   { ticker: 'TGT', name: 'Target Corporation', exchange: 'NYSE' },
@@ -407,7 +406,6 @@ export const SP500_STOCKS = [
   { ticker: 'COIN', name: 'Coinbase Global Inc.', exchange: 'NASDAQ' },
   { ticker: 'ROKU', name: 'Roku Inc.', exchange: 'NASDAQ' },
   { ticker: 'SPOT', name: 'Spotify Technology S.A.', exchange: 'NYSE' },
-  { ticker: 'SQ', name: 'Square Inc.', exchange: 'NYSE' },
   { ticker: 'TWLO', name: 'Twilio Inc.', exchange: 'NYSE' },
   { ticker: 'DOCU', name: 'DocuSign Inc.', exchange: 'NASDAQ' },
   { ticker: 'OKTA', name: 'Okta Inc.', exchange: 'NASDAQ' },
