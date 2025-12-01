@@ -205,23 +205,28 @@ Deno.serve(async (req) => {
       metadata: { execution_id: executionId, mode: 'parallel' }
     });
     
-    // Fetch ALL assets
+    // Fetch assets with priority: stale prices first, then no prices, then oldest updates
     const { data: assets, error: assetsError } = await supabaseClient
       .from('assets')
-      .select('id, ticker, name, exchange, asset_class');
+      .select(`
+        id, 
+        ticker, 
+        name, 
+        exchange, 
+        asset_class,
+        prices!left(updated_at)
+      `)
+      .order('prices.updated_at', { ascending: true, nullsFirst: true })
+      .limit(250); // Process 250 assets per run (completes in ~30s)
     
     if (assetsError || !assets || assets.length === 0) {
       throw new Error(`Assets fetch failed: ${assetsError?.message || 'No assets found'}`);
     }
     
-    console.log(`🚀 Processing ${assets.length} assets in parallel (100 concurrent chunks)`);
+    console.log(`🚀 Processing ${assets.length} PRIORITY assets in parallel (250 concurrent)`);
     
-    // Process in chunks of 100 concurrent requests
-    const MAX_CONCURRENT = 100;
-    const chunks = [];
-    for (let i = 0; i < assets.length; i += MAX_CONCURRENT) {
-      chunks.push(assets.slice(i, i + MAX_CONCURRENT));
-    }
+    // Process all assets in single batch (250 concurrent fits within CPU limit)
+    const chunks = [assets];
     
     for (const [chunkIndex, chunk] of chunks.entries()) {
       console.log(`\n📦 Chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} assets)`);
