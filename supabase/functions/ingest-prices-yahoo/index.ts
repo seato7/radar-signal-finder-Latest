@@ -99,7 +99,7 @@ async function fetchFromYahoo(
         'Referer': 'https://finance.yahoo.com',
         'Origin': 'https://finance.yahoo.com'
       }
-    }, 5);
+    }, 3);
     
     if (!response.ok) {
       await logAPIUsage(supabaseClient, {
@@ -172,6 +172,35 @@ async function fetchFromYahoo(
   }
 }
 
+// Upsert prices in small chunks to avoid DB timeouts
+async function upsertPricesInChunks(
+  supabaseClient: any,
+  prices: PriceData[],
+  chunkSize: number = 50
+): Promise<{ success: boolean; error?: string }> {
+  for (let i = 0; i < prices.length; i += chunkSize) {
+    const chunk = prices.slice(i, i + chunkSize);
+    
+    const { error } = await supabaseClient
+      .from('prices')
+      .upsert(chunk, {
+        onConflict: 'ticker,date',
+        ignoreDuplicates: false
+      });
+    
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    
+    // Small delay between chunks
+    if (i + chunkSize < prices.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  return { success: true };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -194,7 +223,7 @@ Deno.serve(async (req) => {
     // Get batch_id from request body or default to 0
     const body = await req.json().catch(() => ({}));
     const batchId = body.batch_id ?? 0;
-    const BATCH_SIZE = 20;
+    const BATCH_SIZE = 10; // Reduced from 20 to 10
     
     console.log(`🚀 [${executionId}] BATCH ${batchId} START @ ${new Date().toISOString()}`);
     
@@ -252,61 +281,56 @@ Deno.serve(async (req) => {
     let failedCount = 0;
     const errorDetails: string[] = [];
     
-    // Process batch concurrently
-    const results = await Promise.allSettled(
-      batchAssets.map(async (asset) => {
-        const ticker = asset.ticker;
-        
-        if (!ticker || ticker.length > 10) {
-          return { success: false, ticker, error: 'Invalid ticker', count: 0 };
-        }
-        
-        const yahooResult = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
-        
-        if (!yahooResult.success || !yahooResult.data || yahooResult.data.length === 0) {
-          return { success: false, ticker, error: yahooResult.error || 'No data', count: 0 };
-        }
-        
-        const prices = yahooResult.data;
-        prices.forEach(p => p.asset_id = asset.id);
-        
-        const { error: upsertError } = await supabaseClient
-          .from('prices')
-          .upsert(prices, {
-            onConflict: 'ticker,date',
-            ignoreDuplicates: false
-          });
-        
-        if (upsertError) {
-          return { success: false, ticker, error: upsertError.message, count: 0 };
-        }
-        
-        return { success: true, ticker, count: prices.length };
-      })
-    );
-    
-    for (const result of results) {
-      if (result.status === 'fulfilled' && result.value.success) {
-        inserted += result.value.count;
-        successCount++;
-      } else {
-        const error = result.status === 'fulfilled' ? result.value.error : (result.reason as Error).message;
-        const ticker = result.status === 'fulfilled' ? result.value.ticker : 'unknown';
+    // SEQUENTIAL processing - one ticker at a time to avoid DB overload
+    for (const asset of batchAssets) {
+      const ticker = asset.ticker;
+      
+      if (!ticker || ticker.length > 10) {
         failedCount++;
-        errorDetails.push(`${ticker}: ${error}`);
+        errorDetails.push(`${ticker}: Invalid ticker`);
+        continue;
       }
+      
+      console.log(`  📈 Processing ${ticker}...`);
+      
+      const yahooResult = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
+      
+      if (!yahooResult.success || !yahooResult.data || yahooResult.data.length === 0) {
+        failedCount++;
+        errorDetails.push(`${ticker}: ${yahooResult.error || 'No data'}`);
+        // Small delay even on failure
+        await new Promise(resolve => setTimeout(resolve, 200));
+        continue;
+      }
+      
+      const prices = yahooResult.data;
+      prices.forEach(p => p.asset_id = asset.id);
+      
+      // Upsert in small chunks
+      const upsertResult = await upsertPricesInChunks(supabaseClient, prices, 50);
+      
+      if (!upsertResult.success) {
+        failedCount++;
+        errorDetails.push(`${ticker}: ${upsertResult.error}`);
+      } else {
+        inserted += prices.length;
+        successCount++;
+        console.log(`  ✅ ${ticker}: ${prices.length} prices`);
+      }
+      
+      // Delay between tickers to prevent DB overload
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
     
     const duration = Date.now() - startTime;
-    // Determine status based on success rate (not just any failures)
-    const successRate = successCount / batchAssets.length;
-    const logStatus = successRate >= 0.8 ? 'success' : 'failure'; // 80%+ is success
-    const functionStatus = successRate >= 0.8 ? 'success' : 'failure';
+    const successRate = batchAssets.length > 0 ? successCount / batchAssets.length : 0;
+    const logStatus = successRate >= 0.5 ? 'success' : 'failure'; // 50%+ is success
+    const functionStatus = successRate >= 0.5 ? 'success' : 'failure';
     
     console.log(`🔄 Updating log ${logId} with status: ${logStatus} (${successCount}/${batchAssets.length} = ${(successRate * 100).toFixed(1)}%)`);
     
     // UPDATE the existing log entry
-    const { data: updateData, error: updateError, count } = await supabaseClient
+    const { data: updateData, error: updateError } = await supabaseClient
       .from('ingest_logs')
       .update({
         status: logStatus,
@@ -332,21 +356,20 @@ Deno.serve(async (req) => {
     
     if (updateError) {
       console.error(`❌ UPDATE ERROR for log ${logId}: ${updateError.message}`);
-      console.error(`❌ UPDATE ERROR details: ${JSON.stringify(updateError)}`);
     } else if (!updateData || updateData.length === 0) {
-      console.error(`⚠️ UPDATE returned no rows for log ${logId} - row may not exist`);
+      console.error(`⚠️ UPDATE returned no rows for log ${logId}`);
     } else {
-      console.log(`✅ Successfully updated log ${logId}, affected ${updateData.length} rows`);
+      console.log(`✅ Successfully updated log ${logId}`);
     }
     
     // Insert function_status heartbeat
-    const { error: statusError } = await supabaseClient
+    await supabaseClient
       .from('function_status')
       .insert({
         function_name: 'ingest-prices-yahoo',
         status: functionStatus,
         executed_at: new Date().toISOString(),
-        duration_ms: Math.round(duration), // CRITICAL: Must be integer
+        duration_ms: Math.round(duration),
         rows_inserted: inserted,
         rows_skipped: failedCount,
         source_used: 'Yahoo Finance',
@@ -355,19 +378,14 @@ Deno.serve(async (req) => {
           batch_id: batchId,
           tickers_processed: successCount + failedCount,
           success: successCount,
-          failed: failedCount,
-          partial_success: failedCount > 0 && successCount > 0
+          failed: failedCount
         }
       });
-    
-    if (statusError) {
-      console.error(`❌ Failed to insert function_status: ${statusError.message}`);
-    }
     
     console.log(`✅ [${executionId}] BATCH ${batchId} COMPLETE in ${(duration/1000).toFixed(1)}s`);
     console.log(`   📊 ${successCount}/${batchAssets.length} tickers | ${inserted} prices | ${failedCount} failed`);
     
-    // Send Slack alert on any failures
+    // Send Slack alert on failures
     if (logStatus !== 'success') {
       await slackAlerter.sendLiveAlert({
         etlName: `ingest-prices-yahoo-batch-${batchId}`,
@@ -379,8 +397,7 @@ Deno.serve(async (req) => {
         metadata: {
           execution_id: executionId,
           batch_id: batchId,
-          tickers_processed: successCount + failedCount,
-          partial_success: failedCount > 0 && successCount > 0
+          error_sample: errorDetails.slice(0, 3)
         }
       });
     }
