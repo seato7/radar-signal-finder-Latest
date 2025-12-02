@@ -6,7 +6,7 @@ import logging
 import os
 from backend.db import init_db, close_db
 from backend.init_admin import init_admin
-from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin, auth, broker, api_keys, analytics, assets_populate
+from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin, auth, broker, api_keys, analytics, assets_populate, prices
 from backend.config import settings
 from backend.logging_config import setup_logging
 from backend.metrics import metrics
@@ -29,10 +29,22 @@ async def lifespan(app: FastAPI):
     db = get_db()
     await auto_populate_assets(db)
     
+    # Start price scheduler if enabled
+    if settings.PRICE_SCHEDULER_ENABLED:
+        from backend.services.price_scheduler import start_scheduler
+        start_scheduler(interval_minutes=settings.PRICE_SCHEDULER_INTERVAL_MINUTES)
+        logger.info(f"Price scheduler enabled with {settings.PRICE_SCHEDULER_INTERVAL_MINUTES}min interval")
+    
     metrics.increment("app_starts")
     yield
     # Shutdown
     logger.info("Shutting down Opportunity Radar API")
+    
+    # Stop scheduler
+    if settings.PRICE_SCHEDULER_ENABLED:
+        from backend.services.price_scheduler import stop_scheduler
+        stop_scheduler()
+    
     await close_db()
 
 app = FastAPI(
@@ -104,6 +116,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(broker.router)
 app.include_router(api_keys.router)
 app.include_router(analytics.router)
+app.include_router(prices.router, prefix="/api/prices", tags=["prices"])
 
 # Request counting middleware
 @app.middleware("http")

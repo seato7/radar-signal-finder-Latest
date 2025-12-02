@@ -37,13 +37,18 @@ class Settings(BaseSettings):
     # Broker encryption key (separate from JWT secret for security)
     BROKER_ENCRYPTION_KEY: Optional[str] = None  # For encrypting broker API keys
     
-    # Supabase configuration (for edge function calls)
+    # Supabase configuration (for syncing data from Railway)
     SUPABASE_URL: Optional[str] = None
+    SUPABASE_SERVICE_KEY: Optional[str] = None  # Service role key for write access
     
     # Alpaca broker configuration
     ALPACA_API_KEY: Optional[str] = None
     ALPACA_SECRET_KEY: Optional[str] = None
     ALPACA_PAPER_MODE: bool = True  # Safety: default to paper trading
+    
+    # Price scheduler configuration
+    PRICE_SCHEDULER_ENABLED: bool = True
+    PRICE_SCHEDULER_INTERVAL_MINUTES: int = 5
     
     class Config:
         env_file = ".env"
