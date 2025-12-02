@@ -54,3 +54,41 @@ async def get_metrics():
             "status": "error",
             "error": str(e)
         }
+
+@router.get("/ingestion")
+async def get_ingestion_health():
+    """Get price ingestion health status"""
+    from backend.services.price_scheduler import get_scheduler_stats
+    from backend.services.supabase_sync import SupabaseSync
+    
+    stats = get_scheduler_stats()
+    
+    # Get recent ingestion logs from Supabase
+    recent_logs = []
+    try:
+        async with SupabaseSync() as sync:
+            if sync.is_configured:
+                response = await sync.session.get(
+                    f"{sync.url}/rest/v1/ingest_logs",
+                    params={
+                        "select": "etl_name,status,rows_inserted,duration_seconds,created_at,error_message",
+                        "etl_name": "eq.railway-price-scheduler",
+                        "order": "created_at.desc",
+                        "limit": "10"
+                    }
+                )
+                if response.status_code == 200:
+                    recent_logs = response.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch ingestion logs: {str(e)}")
+    
+    return {
+        "status": "healthy" if stats["success_rate"] >= 90 else "degraded",
+        "scheduler": stats,
+        "recent_runs": recent_logs,
+        "thresholds": {
+            "target_success_rate": 95,
+            "current_success_rate": stats["success_rate"],
+            "meets_target": stats["success_rate"] >= 95
+        }
+    }
