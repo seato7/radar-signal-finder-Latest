@@ -1,12 +1,21 @@
-"""Price Ingestion API Routes"""
+"""Price Ingestion API Routes with Tiered Scheduling"""
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime, timezone
 import asyncio
 import logging
 
 from backend.etl.yahoo_prices import fetch_all_prices, YahooPriceFetcher
 from backend.services.supabase_sync import SupabaseSync, sync_prices_to_supabase
+from backend.services.price_scheduler import (
+    start_scheduler,
+    stop_scheduler,
+    get_scheduler_stats,
+    trigger_immediate_run,
+    get_tier_config,
+    update_tier_interval,
+    TIER_INTERVALS
+)
 from backend.metrics import metrics
 
 router = APIRouter()
@@ -21,6 +30,99 @@ _last_ingestion = {
     "stats": {}
 }
 
+
+# ===================== SCHEDULER ENDPOINTS =====================
+
+@router.post("/scheduler/start")
+async def start_price_scheduler(
+    custom_intervals: Optional[Dict[str, int]] = None
+):
+    """
+    Start the tiered price scheduler.
+    
+    Default intervals:
+    - crypto: 2 minutes (most volatile)
+    - forex: 3 minutes (24/5 market)
+    - equity/commodity/index/etf: 5 minutes
+    
+    Pass custom_intervals to override, e.g. {"crypto": 1, "forex": 2}
+    """
+    try:
+        start_scheduler(custom_intervals)
+        return {
+            "status": "started",
+            "tier_intervals": get_tier_config(),
+            "message": "Tiered scheduler started successfully"
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to start scheduler: {str(e)}")
+
+
+@router.post("/scheduler/stop")
+async def stop_price_scheduler():
+    """Stop the tiered price scheduler"""
+    try:
+        stop_scheduler()
+        return {"status": "stopped", "message": "Scheduler stopped"}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to stop scheduler: {str(e)}")
+
+
+@router.get("/scheduler/status")
+async def get_scheduler_status():
+    """Get detailed scheduler status and stats per tier"""
+    return get_scheduler_stats()
+
+
+@router.get("/scheduler/tiers")
+async def get_tier_intervals():
+    """Get current tier configuration"""
+    return {
+        "tiers": get_tier_config(),
+        "description": {
+            "crypto": "Most volatile - fastest updates",
+            "forex": "24/5 markets - moderate updates",
+            "equity": "Market hours - standard updates",
+            "commodity": "Market hours - standard updates",
+            "index": "Market hours - standard updates",
+            "etf": "Market hours - standard updates"
+        }
+    }
+
+
+@router.put("/scheduler/tier/{asset_class}")
+async def update_tier(
+    asset_class: str,
+    interval_minutes: int = Query(..., ge=1, le=60, description="Interval in minutes")
+):
+    """Update interval for a specific asset class tier (1-60 minutes)"""
+    if update_tier_interval(asset_class, interval_minutes):
+        return {
+            "status": "updated",
+            "asset_class": asset_class,
+            "new_interval": interval_minutes,
+            "note": "Restart scheduler for changes to take effect"
+        }
+    raise HTTPException(404, f"Unknown asset class: {asset_class}")
+
+
+@router.post("/scheduler/trigger")
+async def trigger_scheduler_run(
+    asset_class: Optional[str] = Query(None, description="Specific tier to run, or all if empty")
+):
+    """Trigger an immediate run of the scheduler (specific tier or all)"""
+    try:
+        await trigger_immediate_run(asset_class)
+        return {
+            "status": "triggered",
+            "asset_class": asset_class or "all",
+            "message": f"Immediate ingestion triggered for {asset_class or 'all tiers'}"
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Trigger failed: {str(e)}")
+
+
+# ===================== MANUAL INGESTION ENDPOINTS =====================
 
 @router.get("/status")
 async def get_ingestion_status():
@@ -40,14 +142,11 @@ async def trigger_price_ingestion(
     test_mode: bool = Query(False, description="Test with 5 tickers only")
 ):
     """
-    Trigger price ingestion from Yahoo Finance to Supabase.
-    
-    - **asset_class**: Optional filter (stock, crypto, forex, commodity)
-    - **test_mode**: If true, only fetch 5 test tickers
+    Trigger manual price ingestion from Yahoo Finance to Supabase.
+    For automated updates, use /scheduler/start instead.
     """
     global _last_ingestion
     
-    # Check if already running
     if _last_ingestion["status"] == "running":
         return {
             "status": "already_running",
@@ -55,7 +154,6 @@ async def trigger_price_ingestion(
             "message": "Ingestion already in progress"
         }
     
-    # Start background ingestion
     background_tasks.add_task(
         _run_ingestion,
         asset_class=asset_class,
@@ -82,39 +180,31 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
         
         try:
             async with SupabaseSync() as sync:
-                # Fetch assets from Supabase
                 logger.info("Fetching assets from Supabase...")
                 assets = await sync.get_assets()
                 
                 if not assets:
                     raise Exception("No assets found in Supabase")
                 
-                # Filter by asset class if specified
                 if asset_class:
                     assets = [a for a in assets if a.get("asset_class") == asset_class]
                 
-                # Test mode: only 5 tickers
                 if test_mode:
-                    # Pick diverse test set
                     test_tickers = {"AAPL", "MSFT", "BTC", "ETH", "EUR/USD"}
                     assets = [a for a in assets if a["ticker"] in test_tickers][:5]
                 
                 total_assets = len(assets)
                 logger.info(f"Processing {total_assets} assets...")
                 
-                # Fetch prices from Yahoo
                 prices, fetch_stats = await fetch_all_prices(assets)
                 
                 logger.info(f"Fetched {len(prices)} prices, syncing to Supabase...")
                 
-                # Sync to Supabase
                 inserted, failed, errors = await sync.upsert_prices(prices)
                 
-                # Calculate duration
                 end_time = datetime.now(timezone.utc)
                 duration = (end_time - start_time).total_seconds()
                 
-                # Log to Supabase
                 await sync.log_ingestion(
                     etl_name="railway-price-ingestion",
                     status="success" if failed == 0 else "partial",
@@ -130,7 +220,6 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
                     }
                 )
                 
-                # Update metrics
                 metrics.inc("price_ingestion_runs")
                 metrics.set("price_ingestion_success_rate", inserted / max(total_assets, 1))
                 
@@ -156,7 +245,6 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
             _last_ingestion["completed_at"] = datetime.now(timezone.utc).isoformat()
             _last_ingestion["stats"] = {"error": str(e)}
             
-            # Log failure
             try:
                 async with SupabaseSync() as sync:
                     await sync.log_ingestion(
@@ -174,10 +262,7 @@ async def sync_price_ingestion(
     asset_class: Optional[str] = Query(None),
     test_mode: bool = Query(False)
 ):
-    """
-    Synchronous price ingestion - waits for completion.
-    Use for testing or when you need immediate results.
-    """
+    """Synchronous price ingestion - waits for completion."""
     global _last_ingestion
     
     if _last_ingestion["status"] == "running":
@@ -191,12 +276,11 @@ async def sync_price_ingestion(
     }
 
 
+# ===================== TEST & COVERAGE ENDPOINTS =====================
+
 @router.get("/test")
 async def test_price_fetch():
-    """
-    Quick test of Yahoo Finance connectivity.
-    Fetches prices for 5 test tickers.
-    """
+    """Quick test of Yahoo Finance connectivity."""
     test_assets = [
         {"id": None, "ticker": "AAPL", "asset_class": "stock"},
         {"id": None, "ticker": "MSFT", "asset_class": "stock"},
@@ -224,11 +308,9 @@ async def get_price_coverage():
             return {"error": "Supabase not configured"}
         
         try:
-            # Get total assets
             assets = await sync.get_assets()
             total = len(assets)
             
-            # Get prices with recent updates
             response = await sync.session.get(
                 f"{sync.url}/rest/v1/prices",
                 params={"select": "ticker,updated_at"}
@@ -240,7 +322,6 @@ async def get_price_coverage():
             prices = response.json()
             covered = len(set(p["ticker"] for p in prices))
             
-            # Group by asset class
             by_class = {}
             for asset in assets:
                 ac = asset.get("asset_class", "unknown")
