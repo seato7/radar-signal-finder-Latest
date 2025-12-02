@@ -29,11 +29,11 @@ async def lifespan(app: FastAPI):
     db = get_db()
     await auto_populate_assets(db)
     
-    # Start price scheduler if enabled
+    # Start tiered price scheduler if enabled
     if settings.PRICE_SCHEDULER_ENABLED:
-        from backend.services.price_scheduler import start_scheduler
-        start_scheduler(interval_minutes=settings.PRICE_SCHEDULER_INTERVAL_MINUTES)
-        logger.info(f"Price scheduler enabled with {settings.PRICE_SCHEDULER_INTERVAL_MINUTES}min interval")
+        from backend.services.price_scheduler import start_scheduler, TIER_INTERVALS
+        start_scheduler()
+        logger.info(f"Tiered price scheduler started: {TIER_INTERVALS}")
     
     metrics.increment("app_starts")
     yield
