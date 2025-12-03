@@ -65,27 +65,25 @@ class SupabaseSync:
         for i in range(0, len(prices), BATCH_SIZE):
             batch = prices[i:i + BATCH_SIZE]
             
-            # Transform to Supabase schema
+            # Records should already have correct schema from yahoo_prices.py:
+            # asset_id, ticker, date, close, checksum
+            # Just pass them through without transformation
             records = []
             for p in batch:
                 records.append({
                     "asset_id": p.get("asset_id"),
                     "ticker": p["ticker"],
-                    "price": p["price"],
-                    "change_24h": p.get("change_24h"),
-                    "change_percent_24h": p.get("change_percent_24h"),
-                    "volume_24h": p.get("volume_24h"),
-                    "market_cap": p.get("market_cap"),
-                    "high_52w": p.get("high_52w"),
-                    "low_52w": p.get("low_52w"),
-                    "source": p.get("source", "yahoo_finance"),
-                    "updated_at": datetime.now(timezone.utc).isoformat()
+                    "date": p["date"],
+                    "close": p["close"],
+                    "checksum": p["checksum"]
                 })
             
             try:
+                # Use upsert with on_conflict on checksum (unique constraint)
                 response = await self.session.post(
                     f"{self.url}/rest/v1/prices",
                     json=records,
+                    params={"on_conflict": "checksum"},
                     headers={"Prefer": "resolution=merge-duplicates,return=minimal"}
                 )
                 

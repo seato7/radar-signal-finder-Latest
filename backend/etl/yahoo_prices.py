@@ -361,14 +361,23 @@ class YahooPriceFetcher:
         # Convert to price records matching the actual prices table schema
         price_records = []
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        skipped_invalid_prices = 0
         
         for yahoo_ticker, price_data in all_prices.items():
             asset = ticker_map.get(yahoo_ticker)
             if not asset:
                 continue
             
+            price = price_data["price"]
+            
+            # Skip invalid prices (CHECK constraint requires close > 0)
+            if price is None or price <= 0:
+                skipped_invalid_prices += 1
+                logger.debug(f"Skipping invalid price for {asset['ticker']}: {price}")
+                continue
+            
             # Generate checksum for deduplication
-            checksum_data = f"{asset['ticker']}|{price_data['price']}|{today}"
+            checksum_data = f"{asset['ticker']}|{price}|{today}"
             checksum = hashlib.sha256(checksum_data.encode()).hexdigest()
             
             # Only include columns that exist in the prices table
@@ -376,11 +385,25 @@ class YahooPriceFetcher:
                 "asset_id": asset.get("id"),
                 "ticker": asset["ticker"],
                 "date": today,
-                "close": price_data["price"],
+                "close": float(price),  # Ensure it's a float
                 "checksum": checksum
             })
         
-        return price_records, self.stats
+        if skipped_invalid_prices > 0:
+            logger.info(f"Skipped {skipped_invalid_prices} invalid prices (zero/negative)")
+        
+        # Ensure stats are JSON serializable
+        serializable_stats = {
+            "fetched": self.stats["fetched"],
+            "failed": self.stats["failed"],
+            "retries": self.stats["retries"],
+            "start_time": self.stats["start_time"],
+            "end_time": self.stats["end_time"],
+            "skipped_invalid_prices": skipped_invalid_prices,
+            "skipped_cross_pairs": skipped_count
+        }
+        
+        return price_records, serializable_stats
 
 
 async def fetch_all_prices(assets: List[Dict[str, str]]) -> Tuple[List[Dict], Dict]:
