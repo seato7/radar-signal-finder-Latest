@@ -85,9 +85,9 @@ serve(async (req) => {
     }
 
     // ===== 2️⃣ INGEST FUNCTION CACHING + LOGGING =====
+    // NOTE: ingest-prices-yahoo REMOVED - price ingestion handled by Railway backend (Twelve Data)
     console.log('\n2️⃣ Testing Ingest Function Logging...');
     const ingestFunctions = [
-      'ingest-prices-yahoo',
       'ingest-crypto-onchain',
       'ingest-breaking-news',
       'ingest-forex-sentiment',

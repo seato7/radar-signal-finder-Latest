@@ -7,8 +7,8 @@ const corsHeaders = {
 };
 
 // @guard: Expected function intervals for freshness monitoring
+// NOTE: ingest-prices-yahoo REMOVED - price ingestion handled by Railway backend (Twelve Data)
 const FUNCTION_INTERVALS: Record<string, number> = {
-  'ingest-prices-yahoo': 15,
   'ingest-breaking-news': 180,
   'ingest-news-sentiment': 180,
   'ingest-smart-money': 360,

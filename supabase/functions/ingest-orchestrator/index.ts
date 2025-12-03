@@ -22,9 +22,9 @@ Deno.serve(async (req) => {
     const { frequency = 'all' } = await req.json().catch(() => ({}));
     
     // Define ingestion jobs by frequency
+    // NOTE: ingest-prices-yahoo REMOVED - price ingestion handled by Railway backend (Twelve Data)
     const jobs = {
       hourly: [
-        'ingest-prices-yahoo',
         'ingest-advanced-technicals',
         'ingest-forex-technicals',
         'ingest-news-sentiment',

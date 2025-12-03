@@ -65,7 +65,7 @@ class SupabaseSync:
         for i in range(0, len(prices), BATCH_SIZE):
             batch = prices[i:i + BATCH_SIZE]
             
-            # Records should already have correct schema from yahoo_prices.py:
+            # Records should have correct schema from twelvedata_prices.py:
             # asset_id, ticker, date, close, checksum
             # Just pass them through without transformation
             records = []
