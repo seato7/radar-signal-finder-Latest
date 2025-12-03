@@ -20,38 +20,87 @@ serve(async (req) => {
 
     if (reminderType === '13f-holdings') {
       emoji = '💼';
-      message = `*Quarterly 13F Holdings Reminder* 💼\n\n` +
-        `Time to ingest the latest SEC 13F filings!\n\n` +
+      message = `*🔔 QUARTERLY 13F HOLDINGS REMINDER* 💼\n\n` +
+        `📅 *Deadline:* 45 days after quarter end\n\n` +
         `*What to do:*\n` +
-        `• Visit SEC EDGAR for major institutional investors\n` +
-        `• Download latest 13F-HR filings (XML format)\n` +
-        `• Use \`ingest-13f-holdings\` function with filing data\n\n` +
-        `*Major filers to check:*\n` +
-        `• Vanguard Group (CIK: 0001067983)\n` +
-        `• BlackRock (CIK: 0001364742)\n` +
-        `• State Street (CIK: 0001364846)\n` +
-        `• Fidelity (CIK: 0000315066)\n` +
-        `• Berkshire Hathaway (CIK: 0001067983)\n\n` +
-        `_Filings are due 45 days after quarter end_`;
-    } else if (reminderType === 'prices-csv') {
+        `1. Visit SEC EDGAR: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=13F-HR&dateb=&owner=include&count=40\n` +
+        `2. Download latest 13F-HR filings (XML format)\n` +
+        `3. Upload via \`ingest-13f-holdings\` endpoint\n\n` +
+        `*🎯 Priority Filers (by AUM):*\n` +
+        `• Vanguard Group - CIK: 0001067983\n` +
+        `• BlackRock - CIK: 0001364742\n` +
+        `• State Street - CIK: 0001364846\n` +
+        `• Fidelity - CIK: 0000315066\n` +
+        `• Berkshire Hathaway - CIK: 0001067983\n` +
+        `• Bridgewater Associates - CIK: 0001350694\n` +
+        `• Renaissance Technologies - CIK: 0001037389\n\n` +
+        `*📊 Quarter Schedule:*\n` +
+        `• Q1 (Jan-Mar) → Due May 15\n` +
+        `• Q2 (Apr-Jun) → Due Aug 14\n` +
+        `• Q3 (Jul-Sep) → Due Nov 14\n` +
+        `• Q4 (Oct-Dec) → Due Feb 14`;
+    } else if (reminderType === 'etf-flows-weekly') {
       emoji = '📊';
-      message = `*Monthly Price Data Import Reminder* 📊\n\n` +
-        `Time to bulk import price data if you have new datasets!\n\n` +
-        `*What to do:*\n` +
-        `• Prepare CSV file with columns: ticker, date, close\n` +
-        `• Use \`ingest-prices-csv\` function with your CSV data\n` +
-        `• Verify date format: YYYY-MM-DD\n\n` +
-        `*Good for:*\n` +
-        `• Historical data backfills\n` +
-        `• Alternative data sources\n` +
-        `• Custom ticker imports\n\n` +
-        `_Skip if you don't have new data this month_`;
+      message = `*🔔 WEEKLY ETF FLOWS DATA CHECK* 📊\n\n` +
+        `Time to verify ETF flows data is current!\n\n` +
+        `*Auto-ingestion Status:*\n` +
+        `The \`ingest-etf-flows\` function now runs automatically using Perplexity AI.\n\n` +
+        `*Manual Check:*\n` +
+        `If you have premium ETF flow data sources, you can supplement:\n` +
+        `• ETF.com Premium Data\n` +
+        `• Bloomberg Terminal exports\n` +
+        `• Morningstar Direct exports\n\n` +
+        `*Format for manual upload:*\n` +
+        `CSV with columns: date, ticker, flow (in millions)\n\n` +
+        `_This is optional - automatic ingestion handles major ETFs_`;
+    } else if (reminderType === 'data-quality-check') {
+      emoji = '🔍';
+      message = `*🔔 WEEKLY DATA QUALITY CHECK* 🔍\n\n` +
+        `Time for your weekly data integrity review!\n\n` +
+        `*Check These Dashboards:*\n` +
+        `1. Ingestion Health: /ingestion-health\n` +
+        `2. Data Sources: /data-sources\n` +
+        `3. Pipeline Tests: /pipeline-tests\n\n` +
+        `*Key Metrics to Review:*\n` +
+        `• Success rates > 95% for all functions\n` +
+        `• No stale data > 24 hours\n` +
+        `• Signal generation is active\n` +
+        `• Theme scores are updating\n\n` +
+        `*Common Issues to Watch:*\n` +
+        `• API rate limits hit\n` +
+        `• Perplexity key expiration\n` +
+        `• Database connection issues\n` +
+        `• Duplicate key errors`;
+    } else if (reminderType === 'monthly-review') {
+      emoji = '📈';
+      message = `*🔔 MONTHLY DATA PIPELINE REVIEW* 📈\n\n` +
+        `Time for comprehensive monthly review!\n\n` +
+        `*Review Checklist:*\n` +
+        `□ Check all 34 ingestion functions running\n` +
+        `□ Review Perplexity API usage/costs\n` +
+        `□ Verify Twelve Data price ingestion\n` +
+        `□ Check database storage usage\n` +
+        `□ Review signal generation quality\n` +
+        `□ Audit alert delivery logs\n\n` +
+        `*Data Sources Health:*\n` +
+        `• Perplexity AI (12 functions)\n` +
+        `• SEC EDGAR (2 functions)\n` +
+        `• Alpha Vantage (1 function)\n` +
+        `• Reddit API (1 function)\n` +
+        `• FRED API (1 function)\n` +
+        `• Internal calculations (6 functions)\n\n` +
+        `*Action Items:*\n` +
+        `• Rotate API keys if needed\n` +
+        `• Check Slack alert delivery\n` +
+        `• Review error rates in function_status`;
+    } else {
+      message = `*🔔 REMINDER: ${reminderType}*\n\nPlease check the relevant ingestion function.`;
     }
 
     if (!SLACK_WEBHOOK_URL) {
-      console.log('Reminder:', message);
+      console.log('Reminder (no Slack webhook):', message);
       return new Response(
-        JSON.stringify({ success: true, message: 'Logged (no Slack webhook)' }),
+        JSON.stringify({ success: true, message: 'Logged (no Slack webhook configured)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -65,6 +114,18 @@ serve(async (req) => {
             type: 'mrkdwn',
             text: message
           }
+        },
+        {
+          type: 'divider'
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `_Sent by Insider Pulse Pipeline Monitor | ${new Date().toISOString()}_`
+            }
+          ]
         }
       ]
     };

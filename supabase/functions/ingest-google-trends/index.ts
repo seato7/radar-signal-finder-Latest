@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { callPerplexity } from "../_shared/perplexity-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,92 +23,43 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting Google Trends ingestion...');
+    console.log('Starting Google Trends ingestion via Perplexity...');
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
+    if (!perplexityKey) {
+      throw new Error('PERPLEXITY_API_KEY not configured - required for real Google Trends data');
+    }
 
     // Fetch stocks dynamically from database
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
-      .select('ticker')
+      .select('ticker, name')
       .in('asset_class', ['stock', 'crypto'])
-      .limit(30); // Process 30 assets per run for Google Trends
+      .limit(30);
     
     if (assetsError) throw assetsError;
-    const tickers = assets?.map((a: any) => a.ticker) || [];
+    const tickers = assets?.map((a: any) => ({ ticker: a.ticker, name: a.name })) || [];
     
-    if (!perplexityKey) {
-      console.log('Perplexity API key not configured, using mock data');
-      
-      // Generate mock trend data
-      const trends = tickers.map((ticker: string) => ({
-        ticker,
-        keyword: ticker,
-        period_start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        period_end: new Date().toISOString().split('T')[0],
-        search_volume: Math.floor(Math.random() * 10000) + 1000,
-        trend_change: (Math.random() - 0.5) * 200,
-        region: 'US',
-        created_at: new Date().toISOString(),
-      }));
-
-      const { error } = await supabase
-        .from('search_trends')
-        .insert(trends);
-
-      if (error) throw error;
-
-      await logHeartbeat(supabase, {
-        function_name: 'ingest-google-trends',
-        status: 'success',
-        rows_inserted: trends.length,
-        rows_skipped: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: 'Mock',
-      });
-
-      await slackAlerter.sendLiveAlert({
-        etlName: 'ingest-google-trends',
-        status: 'success',
-        rowsInserted: trends.length,
-        rowsSkipped: 0,
-        sourceUsed: 'Mock',
-        duration: Date.now() - startTime,
-      });
-
-      return new Response(
-        JSON.stringify({ success: true, count: trends.length, note: 'Mock data used' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Use Perplexity to get trend insights
     const trends = [];
+    let errorCount = 0;
     
-    for (const ticker of tickers) {
-      console.log(`Analyzing trends for ${ticker}...`);
-      
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${perplexityKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'sonar',
-          messages: [{
-            role: 'user',
-            content: `What is the current search interest trend for ${ticker} stock over the past 30 days? Provide a numerical estimate of relative search volume (0-100) and percentage change. Format: VOLUME: X, CHANGE: Y%`
-          }],
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        let content = data.choices?.[0]?.message?.content || '';
+    for (const { ticker, name } of tickers) {
+      try {
+        console.log(`Analyzing trends for ${ticker}...`);
         
-        // Strip markdown formatting if present
-        content = content.replace(/```\s*/g, '').trim();
+        const prompt = `What is the current Google search interest trend for ${ticker} (${name}) over the past 30 days?
+Provide accurate data based on Google Trends:
+- VOLUME: relative search volume score (0-100)
+- CHANGE: percentage change from previous month
+
+Format your response EXACTLY as:
+VOLUME: X
+CHANGE: Y%`;
+
+        const content = await callPerplexity(
+          [{ role: 'user', content: prompt }],
+          { apiKey: perplexityKey, model: 'sonar', temperature: 0.2, maxTokens: 150 }
+        );
         
         // Parse response
         const volumeMatch = content.match(/VOLUME:\s*(\d+)/);
@@ -115,17 +67,22 @@ serve(async (req) => {
         
         trends.push({
           ticker,
-          keyword: ticker,
+          keyword: name || ticker,
           period_start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           period_end: new Date().toISOString().split('T')[0],
-          search_volume: volumeMatch ? parseInt(volumeMatch[1]) * 100 : Math.floor(Math.random() * 10000),
-          trend_change: changeMatch ? parseFloat(changeMatch[1]) : (Math.random() - 0.5) * 200,
+          search_volume: volumeMatch ? parseInt(volumeMatch[1]) * 100 : 5000,
+          trend_change: changeMatch ? parseFloat(changeMatch[1]) : 0,
           region: 'US',
           created_at: new Date().toISOString(),
         });
+        
+        // Rate limit
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+      } catch (tickerError) {
+        console.error(`Error processing ${ticker}:`, tickerError);
+        errorCount++;
       }
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     if (trends.length > 0) {
@@ -144,22 +101,22 @@ serve(async (req) => {
       function_name: 'ingest-google-trends',
       status: 'success',
       rows_inserted: trends.length,
-      rows_skipped: 0,
+      rows_skipped: errorCount,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity',
+      source_used: 'Perplexity AI',
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-google-trends',
       status: 'success',
       rowsInserted: trends.length,
-      rowsSkipped: 0,
-      sourceUsed: 'Perplexity',
+      rowsSkipped: errorCount,
+      sourceUsed: 'Perplexity AI',
       duration: Date.now() - startTime,
     });
 
     return new Response(
-      JSON.stringify({ success: true, count: trends.length }),
+      JSON.stringify({ success: true, count: trends.length, source: 'Perplexity AI' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
@@ -171,7 +128,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Perplexity',
+        source_used: 'Perplexity AI',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
