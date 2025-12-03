@@ -1,7 +1,7 @@
 """Price Scheduler - Tiered automated price ingestion by asset class"""
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -179,7 +179,7 @@ def get_scheduler_stats() -> dict:
 
 
 def start_scheduler(custom_intervals: Optional[Dict[str, int]] = None):
-    """Start the tiered price scheduler"""
+    """Start the tiered price scheduler with staggered start times"""
     global _scheduler, TIER_INTERVALS
     
     if _scheduler and _scheduler.running:
@@ -192,21 +192,37 @@ def start_scheduler(custom_intervals: Optional[Dict[str, int]] = None):
     
     _scheduler = AsyncIOScheduler()
     
-    # Create a job for each tier
+    # Stagger start times to avoid simultaneous Yahoo API calls
+    # Each tier starts X minutes after the previous one
+    STAGGER_OFFSETS = {
+        "crypto": 0,      # Starts immediately
+        "forex": 2,       # Starts 2 min after crypto
+        "equity": 4,      # Starts 4 min after crypto
+        "commodity": 6,   # Starts 6 min after crypto
+        "index": 8,       # Starts 8 min after crypto
+        "etf": 9,         # Starts 9 min after crypto
+    }
+    
+    now = datetime.now(timezone.utc)
+    
+    # Create a job for each tier with staggered start times
     for asset_class, interval_minutes in TIER_INTERVALS.items():
+        offset_minutes = STAGGER_OFFSETS.get(asset_class, 0)
+        start_time = now.replace(second=0, microsecond=0) + timedelta(minutes=offset_minutes)
+        
         _scheduler.add_job(
             run_tiered_ingestion,
-            trigger=IntervalTrigger(minutes=interval_minutes),
+            trigger=IntervalTrigger(minutes=interval_minutes, start_date=start_time),
             args=[asset_class],
             id=f"price_ingestion_{asset_class}",
-            name=f"{asset_class.title()} Price Ingestion ({interval_minutes}min)",
+            name=f"{asset_class.title()} Price Ingestion ({interval_minutes}min, offset +{offset_minutes}m)",
             replace_existing=True,
             max_instances=1
         )
-        logger.info(f"Scheduled {asset_class} prices every {interval_minutes} minutes")
+        logger.info(f"Scheduled {asset_class} prices every {interval_minutes} min (starts at +{offset_minutes}m)")
     
     _scheduler.start()
-    logger.info(f"Tiered price scheduler started with {len(TIER_INTERVALS)} tiers")
+    logger.info(f"Tiered price scheduler started with {len(TIER_INTERVALS)} tiers (staggered)")
 
 
 def stop_scheduler():
