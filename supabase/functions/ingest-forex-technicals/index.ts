@@ -7,8 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Alpha Vantage is FREE - no API key required for basic endpoints
-const ALPHA_VANTAGE_API_KEY = Deno.env.get('ALPHA_VANTAGE_API_KEY') || 'demo';
+// TwelveData API for forex technicals
+const TWELVEDATA_API_KEY = Deno.env.get('TWELVEDATA_API_KEY') || '';
 
 interface TechnicalIndicators {
   rsi_14?: number;
@@ -21,6 +21,9 @@ interface TechnicalIndicators {
   ema_200?: number;
   atr_14?: number;
   close_price?: number;
+  bollinger_upper?: number;
+  bollinger_middle?: number;
+  bollinger_lower?: number;
 }
 
 serve(async (req) => {
@@ -36,7 +39,29 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('📊 Starting forex technical indicators ingestion...');
+    console.log('📊 Starting forex technical indicators ingestion via TwelveData...');
+
+    if (!TWELVEDATA_API_KEY) {
+      console.error('❌ TWELVEDATA_API_KEY not configured');
+      
+      await supabaseClient.from('function_status').insert({
+        function_name: 'ingest-forex-technicals',
+        executed_at: new Date().toISOString(),
+        status: 'failure',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        fallback_used: null,
+        duration_ms: Date.now() - startTime,
+        source_used: 'TwelveData',
+        error_message: 'TWELVEDATA_API_KEY not configured',
+        metadata: {}
+      });
+      
+      return new Response(
+        JSON.stringify({ success: false, error: 'TWELVEDATA_API_KEY not configured' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Get all forex pairs
     const { data: forexPairs, error: pairsError } = await supabaseClient
@@ -51,20 +76,21 @@ serve(async (req) => {
     let successCount = 0;
     let errorCount = 0;
 
-    // Process limited number of pairs to prevent timeout
+    // Process limited number of pairs to prevent timeout (TwelveData has 8 calls/min on free tier)
     const pairsToProcess = forexPairs.slice(0, 5);
     console.log(`Processing ${pairsToProcess.length} pairs to prevent timeout`);
 
     for (const pair of pairsToProcess) {
       try {
-        // Alpha Vantage uses format: from_currency=EUR&to_currency=USD
-        const [fromCurrency, toCurrency] = pair.ticker.split('/');
+        // TwelveData uses format: EUR/USD
+        const ticker = pair.ticker;
         
-        // Fetch technical indicators from Alpha Vantage
-        const indicators = await fetchTechnicalIndicators(fromCurrency, toCurrency, pair.ticker);
+        // Fetch technical indicators from TwelveData
+        const indicators = await fetchTechnicalIndicatorsFromTwelveData(ticker);
         
         if (!indicators) {
-          console.log(`⚠️ No data for ${pair.ticker}`);
+          console.log(`⚠️ No data for ${ticker}`);
+          errorCount++;
           continue;
         }
 
@@ -105,8 +131,8 @@ serve(async (req) => {
             value_text: `RSI ${indicators.rsi_14?.toFixed(2)} - ${rsiSignal}`,
             observed_at: new Date().toISOString(),
             citation: {
-              source: 'Alpha Vantage Technical Analysis',
-              url: 'https://www.alphavantage.co/',
+              source: 'TwelveData Technical Analysis',
+              url: 'https://twelvedata.com/',
               timestamp: new Date().toISOString()
             },
             checksum: `${pair.ticker}-rsi-${Date.now()}`,
@@ -122,8 +148,8 @@ serve(async (req) => {
             value_text: `${maCrossover.replace('_', ' ').toUpperCase()}`,
             observed_at: new Date().toISOString(),
             citation: {
-              source: 'Alpha Vantage Technical Analysis',
-              url: 'https://www.alphavantage.co/',
+              source: 'TwelveData Technical Analysis',
+              url: 'https://twelvedata.com/',
               timestamp: new Date().toISOString()
             },
             checksum: `${pair.ticker}-ma-${Date.now()}`,
@@ -133,8 +159,8 @@ serve(async (req) => {
         successCount++;
         console.log(`✅ Processed ${pair.ticker}`);
         
-        // Rate limiting - Alpha Vantage free tier: 5 API calls per minute
-        await new Promise(resolve => setTimeout(resolve, 12000));
+        // Rate limiting - TwelveData free tier: 8 API calls per minute
+        await new Promise(resolve => setTimeout(resolve, 8000));
         
       } catch (error) {
         console.error(`❌ Error processing ${pair.ticker}:`, error);
@@ -153,9 +179,9 @@ serve(async (req) => {
       rows_skipped: errorCount,
       fallback_used: null,
       duration_ms: duration,
-      source_used: 'Alpha Vantage',
+      source_used: 'TwelveData',
       error_message: null,
-      metadata: { pairs_processed: forexPairs.length }
+      metadata: { pairs_processed: pairsToProcess.length }
     });
     
     // Send Slack success alert
@@ -165,16 +191,17 @@ serve(async (req) => {
       duration,
       rowsInserted: successCount,
       rowsSkipped: errorCount,
-      sourceUsed: 'Alpha Vantage',
+      sourceUsed: 'TwelveData',
       metadata: { pairs_processed: pairsToProcess.length }
     });
 
     return new Response(
       JSON.stringify({
         success: true,
-        processed: forexPairs.length,
+        processed: pairsToProcess.length,
         successful: successCount,
         errors: errorCount,
+        source: 'TwelveData',
         message: `Ingested technical indicators for ${successCount} forex pairs`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -194,7 +221,7 @@ serve(async (req) => {
       rows_skipped: 0,
       fallback_used: null,
       duration_ms: duration,
-      source_used: 'Alpha Vantage',
+      source_used: 'TwelveData',
       error_message: (error as Error).message,
       metadata: {}
     });
@@ -206,7 +233,7 @@ serve(async (req) => {
       duration,
       rowsInserted: 0,
       rowsSkipped: 0,
-      sourceUsed: 'Alpha Vantage',
+      sourceUsed: 'TwelveData',
       metadata: { error: (error as Error).message }
     });
     
@@ -217,160 +244,74 @@ serve(async (req) => {
   }
 });
 
-async function fetchTechnicalIndicators(fromCurrency: string, toCurrency: string, ticker: string): Promise<TechnicalIndicators | null> {
-  const perplexityApiKey = Deno.env.get('PERPLEXITY_API_KEY');
-  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-
-  // Try Alpha Vantage first
-  const primaryFetch = async () => {
-    const fxUrl = `https://www.alphavantage.co/query?function=FX_DAILY&from_symbol=${fromCurrency}&to_symbol=${toCurrency}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+async function fetchTechnicalIndicatorsFromTwelveData(ticker: string): Promise<TechnicalIndicators | null> {
+  try {
+    // TwelveData expects format like "EUR/USD"
+    const symbol = ticker.replace('/', '');  // API may need EURUSD format
     
-    console.log(`Fetching forex data for ${ticker}...`);
-    const fxResp = await fetch(fxUrl);
-    const fxData = await fxResp.json();
+    // Fetch RSI
+    const rsiUrl = `https://api.twelvedata.com/rsi?symbol=${ticker}&interval=1day&time_period=14&apikey=${TWELVEDATA_API_KEY}`;
+    const rsiResp = await fetch(rsiUrl);
+    const rsiData = await rsiResp.json();
     
-    if (fxData['Note'] || fxData['Error Message']) {
-      throw new Error('Alpha Vantage API limit or error');
+    // Check for API errors
+    if (rsiData.code === 400 || rsiData.status === 'error') {
+      console.log(`⚠️ TwelveData error for ${ticker}: ${rsiData.message || 'Unknown error'}`);
+      return null;
     }
     
-    const timeSeriesData = fxData['Time Series FX (Daily)'];
-    if (!timeSeriesData) return null;
-
-    const dates = Object.keys(timeSeriesData).sort().reverse();
-    const closePrices = dates.slice(0, 200).map(date => parseFloat(timeSeriesData[date]['4. close']));
+    const rsi_14 = rsiData.values?.[0]?.rsi ? parseFloat(rsiData.values[0].rsi) : undefined;
+    
+    // Rate limit delay between calls
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Fetch SMA 50
+    const sma50Url = `https://api.twelvedata.com/sma?symbol=${ticker}&interval=1day&time_period=50&apikey=${TWELVEDATA_API_KEY}`;
+    const sma50Resp = await fetch(sma50Url);
+    const sma50Data = await sma50Resp.json();
+    const sma_50 = sma50Data.values?.[0]?.sma ? parseFloat(sma50Data.values[0].sma) : undefined;
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Fetch SMA 200
+    const sma200Url = `https://api.twelvedata.com/sma?symbol=${ticker}&interval=1day&time_period=200&apikey=${TWELVEDATA_API_KEY}`;
+    const sma200Resp = await fetch(sma200Url);
+    const sma200Data = await sma200Resp.json();
+    const sma_200 = sma200Data.values?.[0]?.sma ? parseFloat(sma200Data.values[0].sma) : undefined;
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Fetch MACD
+    const macdUrl = `https://api.twelvedata.com/macd?symbol=${ticker}&interval=1day&apikey=${TWELVEDATA_API_KEY}`;
+    const macdResp = await fetch(macdUrl);
+    const macdData = await macdResp.json();
+    
+    const macd_line = macdData.values?.[0]?.macd ? parseFloat(macdData.values[0].macd) : undefined;
+    const macd_signal = macdData.values?.[0]?.macd_signal ? parseFloat(macdData.values[0].macd_signal) : undefined;
+    const macd_histogram = macdData.values?.[0]?.macd_hist ? parseFloat(macdData.values[0].macd_hist) : undefined;
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Fetch current price
+    const priceUrl = `https://api.twelvedata.com/price?symbol=${ticker}&apikey=${TWELVEDATA_API_KEY}`;
+    const priceResp = await fetch(priceUrl);
+    const priceData = await priceResp.json();
+    const close_price = priceData.price ? parseFloat(priceData.price) : undefined;
+    
+    console.log(`📊 ${ticker}: RSI=${rsi_14?.toFixed(2)}, SMA50=${sma_50?.toFixed(5)}, SMA200=${sma_200?.toFixed(5)}, Price=${close_price?.toFixed(5)}`);
     
     return {
-      close_price: parseFloat(timeSeriesData[dates[0]]['4. close']),
-      rsi_14: calculateRSI(closePrices, 14),
-      sma_50: calculateSMA(closePrices, 50),
-      sma_200: calculateSMA(closePrices, 200),
+      rsi_14,
+      sma_50,
+      sma_200,
+      macd_line,
+      macd_signal,
+      macd_histogram,
+      close_price,
     };
-  };
-
-  // Fallback to AI if primary fails
-  if (perplexityApiKey || lovableApiKey) {
-    try {
-      const result = await primaryFetch();
-      if (result) return result;
-    } catch (error) {
-      console.error(`Alpha Vantage failed for ${ticker}, trying AI fallback...`);
-    }
-
-    // Try Perplexity
-    if (perplexityApiKey) {
-      try {
-        const response = await fetch('https://api.perplexity.ai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${perplexityApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'sonar',
-            messages: [{
-              role: 'user',
-              content: `Find latest forex technical indicators for ${ticker}. Return ONLY:
-close_price: [number]
-rsi_14: [number 0-100]
-sma_50: [number]
-sma_200: [number]`
-            }],
-            temperature: 0.2,
-            max_tokens: 300,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const content = data.choices?.[0]?.message?.content || '';
-          
-          return {
-            close_price: parseFloat(content.match(/close_price:\s*([\d.]+)/)?.[1] || '0'),
-            rsi_14: parseFloat(content.match(/rsi_14:\s*([\d.]+)/)?.[1] || '0'),
-            sma_50: parseFloat(content.match(/sma_50:\s*([\d.]+)/)?.[1] || '0'),
-            sma_200: parseFloat(content.match(/sma_200:\s*([\d.]+)/)?.[1] || '0'),
-          };
-        }
-      } catch (e) {
-        console.error('Perplexity fallback failed:', e);
-      }
-    }
-
-    // Try Gemini
-    if (lovableApiKey) {
-      try {
-        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [{
-              role: 'user',
-              content: `Find latest forex technical indicators for ${ticker}. Return ONLY:
-close_price: [number]
-rsi_14: [number 0-100]
-sma_50: [number]
-sma_200: [number]`
-            }],
-            temperature: 0.2,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const content = data.choices?.[0]?.message?.content || '';
-          
-          return {
-            close_price: parseFloat(content.match(/close_price:\s*([\d.]+)/)?.[1] || '0'),
-            rsi_14: parseFloat(content.match(/rsi_14:\s*([\d.]+)/)?.[1] || '0'),
-            sma_50: parseFloat(content.match(/sma_50:\s*([\d.]+)/)?.[1] || '0'),
-            sma_200: parseFloat(content.match(/sma_200:\s*([\d.]+)/)?.[1] || '0'),
-          };
-        }
-      } catch (e) {
-        console.error('Gemini fallback failed:', e);
-      }
-    }
-  } else {
-    // No fallback available, try primary only
-    try {
-      return await primaryFetch();
-    } catch (error) {
-      console.error(`Error fetching ${ticker}:`, error);
-    }
+    
+  } catch (error) {
+    console.error(`Error fetching TwelveData for ${ticker}:`, error);
+    return null;
   }
-
-  return null;
-}
-
-// Helper function to calculate RSI
-function calculateRSI(prices: number[], period: number): number | undefined {
-  if (prices.length < period + 1) return undefined;
-  
-  let gains = 0;
-  let losses = 0;
-  
-  for (let i = 1; i <= period; i++) {
-    const change = prices[i - 1] - prices[i];
-    if (change > 0) gains += change;
-    else losses += Math.abs(change);
-  }
-  
-  const avgGain = gains / period;
-  const avgLoss = losses / period;
-  
-  if (avgLoss === 0) return 100;
-  
-  const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
-}
-
-// Helper function to calculate SMA
-function calculateSMA(prices: number[], period: number): number | undefined {
-  if (prices.length < period) return undefined;
-  const sum = prices.slice(0, period).reduce((a, b) => a + b, 0);
-  return sum / period;
 }

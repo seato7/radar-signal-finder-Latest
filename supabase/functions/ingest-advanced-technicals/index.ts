@@ -7,8 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Alpha Vantage for free data
-const ALPHA_VANTAGE_KEY = Deno.env.get('ALPHA_VANTAGE_API_KEY') || 'demo';
+// Uses existing price data from database - no external API calls needed
+// Source: Internal price database (populated by TwelveData via Railway backend)
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -92,7 +92,7 @@ serve(async (req) => {
       rows_skipped: errorCount,
       fallback_used: null,
       duration_ms: Date.now() - startTime,
-      source_used: 'Advanced Technical Analysis',
+      source_used: 'Internal Price Database (TwelveData)',
       error_message: null,
       metadata: { assets_processed: assets.length }
     });
@@ -106,7 +106,7 @@ serve(async (req) => {
       duration: Date.now() - startTime,
       rowsInserted: successCount,
       rowsSkipped: errorCount,
-      sourceUsed: 'Advanced Technical Analysis',
+      sourceUsed: 'Internal Price Database (TwelveData)',
       metadata: { assets_processed: assets.length, errors: errorCount }
     });
 
@@ -132,7 +132,7 @@ serve(async (req) => {
       rows_skipped: 0,
       fallback_used: null,
       duration_ms: Date.now() - startTime,
-      source_used: 'Advanced Technical Analysis',
+      source_used: 'Internal Price Database (TwelveData)',
       error_message: (error as Error).message,
       metadata: {}
     });
@@ -266,7 +266,7 @@ async function generateSignalsFromTechnicals(supabase: any, asset: any, indicato
       value_text: `${indicators.breakout_signal.replace('_', ' ').toUpperCase()} at $${indicators.current_price.toFixed(2)}`,
       observed_at: new Date().toISOString(),
       citation: {
-        source: 'Advanced Technical Analysis',
+        source: 'Internal Price Database (TwelveData)',
         url: 'https://opportunityradar.app',
         timestamp: new Date().toISOString()
       },
@@ -287,7 +287,7 @@ async function generateSignalsFromTechnicals(supabase: any, asset: any, indicato
       value_text: `Stochastic ${indicators.stochastic_signal}: ${indicators.stochastic_k.toFixed(1)}`,
       observed_at: new Date().toISOString(),
       citation: {
-        source: 'Advanced Technical Analysis',
+        source: 'Internal Price Database (TwelveData)',
         url: 'https://opportunityradar.app',
         timestamp: new Date().toISOString()
       },

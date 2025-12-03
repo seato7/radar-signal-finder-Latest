@@ -1,16 +1,16 @@
 -- ============================================
--- OPTIMIZED Supabase Cron Job Setup
--- Cost-optimized ingestion pipeline for Opportunity Radar
+-- OPTIMIZED Supabase Cron Job Setup v2.0
+-- Cost-optimized ingestion pipeline - Perplexity minimized
 -- ============================================
 -- 
--- NOTE: Price ingestion is now handled by Railway backend using Twelve Data API
--- The ingest-prices-yahoo function has been DEPRECATED and removed from cron
+-- KEY CHANGES:
+-- - Forex technicals now uses TwelveData (not Perplexity)
+-- - Advanced technicals uses internal price DB (not Perplexity)
+-- - Breaking news reduced to every 6 hours
+-- - Crypto on-chain reduced to every 12 hours
+-- - News sentiment reduced to every 12 hours
 -- 
--- New price refresh schedule (via Railway backend):
--- - Crypto: every 10 minutes
--- - Forex: every 10 minutes  
--- - Stocks: every 30 minutes
--- - Commodities: every 30 minutes
+-- Price ingestion handled by Railway backend using TwelveData
 --
 -- ============================================
 
@@ -19,10 +19,9 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- ============================================
--- REMOVE DEPRECATED YAHOO PRICE CRON JOB
+-- REMOVE DEPRECATED JOBS
 -- ============================================
 
--- Drop the old Yahoo price ingestion cron job if it exists
 SELECT cron.unschedule('15min-prices-ingest') WHERE EXISTS (
   SELECT 1 FROM cron.job WHERE jobname = '15min-prices-ingest'
 );
@@ -31,14 +30,28 @@ SELECT cron.unschedule('daily-market-close-prices') WHERE EXISTS (
   SELECT 1 FROM cron.job WHERE jobname = 'daily-market-close-prices'
 );
 
+-- Remove old frequent schedules
+SELECT cron.unschedule('3h-breaking-news') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = '3h-breaking-news'
+);
+
+SELECT cron.unschedule('6h-crypto-onchain') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = '6h-crypto-onchain'
+);
+
+SELECT cron.unschedule('6h-news-sentiment') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = '6h-news-sentiment'
+);
+
 -- ============================================
--- MEDIUM FREQUENCY (3 hours)
+-- LOW FREQUENCY PERPLEXITY JOBS (12 hours)
+-- These REQUIRE Perplexity - no alternative
 -- ============================================
 
--- Breaking news (every 3 hours - down from 15 min)
+-- Breaking news (every 12 hours - reduced from 3h)
 SELECT cron.schedule(
-  '3h-breaking-news',
-  '0 */3 * * *',
+  '12h-breaking-news',
+  '0 */12 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-breaking-news',
@@ -47,11 +60,36 @@ SELECT cron.schedule(
   $$
 );
 
+-- Crypto On-Chain (every 12 hours - reduced from 6h)
+-- REQUIRES Perplexity for unique blockchain metrics
+SELECT cron.schedule(
+  '12h-crypto-onchain',
+  '15 */12 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-crypto-onchain',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- News Sentiment (every 12 hours - reduced from 6h)
+SELECT cron.schedule(
+  '12h-news-sentiment',
+  '30 */12 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-news-sentiment',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
 -- ============================================
--- STANDARD FREQUENCY (6 hours)
+-- STANDARD FREQUENCY (6 hours) - Non-Perplexity
 -- ============================================
 
--- FRED Economic Data
+-- FRED Economic Data (uses FRED API)
 SELECT cron.schedule(
   '6h-fred-economics',
   '0 */6 * * *',
@@ -63,19 +101,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Crypto On-Chain Metrics
-SELECT cron.schedule(
-  '6h-crypto-onchain',
-  '5 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-crypto-onchain',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- 13F Holdings
+-- 13F Holdings (uses SEC EDGAR)
 SELECT cron.schedule(
   '6h-13f-holdings',
   '10 */6 * * *',
@@ -87,7 +113,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Earnings Reports
+-- Earnings Reports (uses Alpha Vantage)
 SELECT cron.schedule(
   '6h-earnings',
   '15 */6 * * *',
@@ -99,7 +125,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Google Trends
+-- Google Trends (uses SerpAPI/free tier)
 SELECT cron.schedule(
   '6h-google-trends',
   '20 */6 * * *',
@@ -111,7 +137,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Options Flow
+-- Options Flow (uses CBOE/free data)
 SELECT cron.schedule(
   '6h-options-flow',
   '25 */6 * * *',
@@ -123,19 +149,7 @@ SELECT cron.schedule(
   $$
 );
 
--- News Sentiment
-SELECT cron.schedule(
-  '6h-news-sentiment',
-  '30 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-news-sentiment',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Short Interest
+-- Short Interest (uses FINRA)
 SELECT cron.schedule(
   '6h-short-interest',
   '35 */6 * * *',
@@ -147,7 +161,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Smart Money
+-- Smart Money (uses SEC EDGAR)
 SELECT cron.schedule(
   '6h-smart-money',
   '40 */6 * * *',
@@ -159,7 +173,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Dark Pool
+-- Dark Pool (uses FINRA)
 SELECT cron.schedule(
   '6h-dark-pool',
   '45 */6 * * *',
@@ -171,11 +185,23 @@ SELECT cron.schedule(
   $$
 );
 
+-- Forex Technicals (NOW uses TwelveData - NO Perplexity)
+SELECT cron.schedule(
+  '6h-forex-technicals',
+  '50 */6 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-forex-technicals',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
 -- ============================================
 -- DAILY JOBS (Once per day)
 -- ============================================
 
--- Form 4 Insider Trading (daily at 6AM UTC)
+-- Form 4 Insider Trading (daily at 6AM UTC) - uses SEC EDGAR
 SELECT cron.schedule(
   'daily-form4',
   '0 6 * * *',
@@ -187,7 +213,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Policy Feeds (daily at 7AM UTC)
+-- Policy Feeds (daily at 7AM UTC) - uses RSS feeds
 SELECT cron.schedule(
   'daily-policy-feeds',
   '0 7 * * *',
@@ -199,7 +225,7 @@ SELECT cron.schedule(
   $$
 );
 
--- ETF Flows (daily at 8AM UTC)
+-- ETF Flows (daily at 8AM UTC) - uses Alpha Vantage
 SELECT cron.schedule(
   'daily-etf-flows',
   '0 8 * * *',
@@ -211,7 +237,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Congressional Trades (daily at 9AM UTC)
+-- Congressional Trades (daily at 9AM UTC) - uses Capitol Trades
 SELECT cron.schedule(
   'daily-congressional-trades',
   '0 9 * * *',
@@ -223,7 +249,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Job Postings (daily at 10AM UTC)
+-- Job Postings (daily at 10AM UTC) - uses Adzuna API
 SELECT cron.schedule(
   'daily-job-postings',
   '0 10 * * *',
@@ -235,7 +261,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Patents (daily at 11AM UTC)
+-- Patents (daily at 11AM UTC) - uses USPTO
 SELECT cron.schedule(
   'daily-patents',
   '0 11 * * *',
@@ -247,7 +273,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Supply Chain (daily at 12PM UTC)
+-- Supply Chain (daily at 12PM UTC) - uses news aggregation
 SELECT cron.schedule(
   'daily-supply-chain',
   '0 12 * * *',
@@ -259,7 +285,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Advanced Technicals (daily at market close - 9PM UTC)
+-- Advanced Technicals (daily - uses INTERNAL PRICE DB, no external API)
 SELECT cron.schedule(
   'daily-advanced-technicals',
   '15 21 * * *',
@@ -271,7 +297,7 @@ SELECT cron.schedule(
   $$
 );
 
--- Pattern Recognition (daily at market close - 9:30PM UTC)
+-- Pattern Recognition (daily - uses INTERNAL PRICE DB, no external API)
 SELECT cron.schedule(
   'daily-pattern-recognition',
   '30 21 * * *',
@@ -283,11 +309,35 @@ SELECT cron.schedule(
   $$
 );
 
+-- Reddit Sentiment (daily at 2PM UTC) - uses Reddit API
+SELECT cron.schedule(
+  'daily-reddit-sentiment',
+  '0 14 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-reddit-sentiment',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Forex Sentiment (daily at 3PM UTC) - uses multiple sources
+SELECT cron.schedule(
+  'daily-forex-sentiment',
+  '0 15 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-forex-sentiment',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
 -- ============================================
 -- WEEKLY JOBS (Once per week)
 -- ============================================
 
--- COT Reports (Fridays at 11PM UTC)
+-- COT Reports (Fridays at 11PM UTC) - uses CFTC data
 SELECT cron.schedule(
   'weekly-cot-reports',
   '0 23 * * 5',
@@ -369,21 +419,25 @@ SELECT cron.schedule(
 -- SELECT * FROM cron.job ORDER BY jobname;
 
 -- ============================================
--- NOTES
+-- COST SAVINGS SUMMARY
 -- ============================================
 -- 
--- Price ingestion is NO LONGER handled by Supabase cron!
--- It runs on the Railway backend using Twelve Data API with tiered intervals:
--- - Crypto/Forex: every 10 minutes
--- - Stocks/Commodities: every 30 minutes
+-- Perplexity Usage BEFORE optimization:
+-- - Breaking news: 8 calls/day (3h interval)
+-- - Crypto on-chain: 4 calls/day (6h interval)
+-- - News sentiment: 4 calls/day (6h interval)
+-- - Forex technicals: 4 calls/day (6h interval) ❌ NOW USES TWELVEDATA
+-- - Advanced technicals: Uses DB prices (no Perplexity)
+-- TOTAL: ~20 Perplexity calls/day
 --
--- To check Railway price scheduler status:
--- GET /api/prices/debug/price-ingestion-status
+-- Perplexity Usage AFTER optimization:
+-- - Breaking news: 2 calls/day (12h interval)
+-- - Crypto on-chain: 2 calls/day (12h interval)
+-- - News sentiment: 2 calls/day (12h interval)
+-- - Forex technicals: 0 calls (uses TwelveData)
+-- - Advanced technicals: 0 calls (uses DB prices)
+-- TOTAL: ~6 Perplexity calls/day
 --
--- To manually trigger price ingestion:
--- POST /api/prices/scheduler/trigger
+-- SAVINGS: 70% reduction in Perplexity API usage
+-- Estimated monthly savings: $30-50/month
 --
--- Key Changes from previous version:
--- ❌ REMOVED: ingest-prices-yahoo (now handled by Railway + Twelve Data)
--- ✅ All other ingestion functions remain on Supabase cron
--- 
