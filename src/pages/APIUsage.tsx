@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { AlertTriangle, TrendingUp, DollarSign, Activity, CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, TrendingUp, DollarSign, Activity, CheckCircle2, XCircle, Info } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#a4de6c', '#d084d0', '#ffb3ba'];
@@ -50,17 +50,6 @@ export default function APIUsage() {
     }
   });
 
-  // Fetch Yahoo Finance health
-  const { data: yahooHealth } = useQuery({
-    queryKey: ["yahoo-health"],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("check_yahoo_reliability");
-      if (error) throw error;
-      return data?.[0];
-    },
-    refetchInterval: 60000 // Refresh every 60s
-  });
-
   // Fetch recent API logs for time-series chart
   const { data: apiLogs } = useQuery({
     queryKey: ["api-logs", timeRange],
@@ -99,30 +88,35 @@ export default function APIUsage() {
   const perplexityUsage = usageSummary?.find(api => api.api_name === 'Perplexity');
   const perplexityAlert = perplexityUsage && Number(perplexityUsage.total_calls) > (timeRange === 24 ? 200 : 200 * (timeRange / 24));
 
-  // Calculate daily estimates based on cron schedule
+  // Calculate daily estimates based on current architecture
   const dailyEstimate = {
+    twelveData: {
+      // Grow plan: $79/mo, 55 credits/min
+      monthlyFixed: 79,
+      description: "Twelve Data Grow plan (unlimited daily, 55 credits/min)",
+      get daily() {
+        return this.monthlyFixed / 30;
+      }
+    },
     perplexity: {
-      hourly: 24, // ingest-prices-yahoo fallback
-      daily: 12, // various daily jobs fallback
+      daily: 12, // various jobs fallback
       weekly: 2, // weekly jobs fallback
-      total: 38,
-      cost: 38 * 0.005 // $0.005 per request
+      total: 14,
+      cost: 14 * 0.005 // $0.005 per request
     },
     lovableAI: {
       weekly: 20, // AI research reports
       tokensPerReport: 5000, // Average tokens per report
-      // Gemini 2.5 Flash: $0.075/1M input + $0.30/1M output tokens
-      // Assuming 70% input, 30% output for typical reports
       costPerReport: (5000 * 0.7 * 0.075 / 1000) + (5000 * 0.3 * 0.30 / 1000),
       get cost() {
         return (this.weekly / 7) * this.costPerReport;
       }
     },
     get totalDaily() {
-      return this.perplexity.cost + this.lovableAI.cost;
+      return this.twelveData.daily + this.perplexity.cost + this.lovableAI.cost;
     },
     get monthlyProjection() {
-      return this.totalDaily * 30;
+      return this.twelveData.monthlyFixed + (this.perplexity.cost + this.lovableAI.cost) * 30;
     }
   };
 
@@ -133,16 +127,14 @@ export default function APIUsage() {
         description="Real-time monitoring of external API usage, costs, and reliability"
       />
 
-      {/* Alerts */}
-      {yahooHealth?.should_enable_fallback && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Yahoo Finance Reliability Alert:</strong> Success rate at {yahooHealth.reliability_pct}% (below 95% threshold). 
-            Consider re-enabling Perplexity fallback for ingest-prices-yahoo.
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* Info Banner - Twelve Data Migration */}
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription>
+          <strong>Price Data Provider:</strong> Prices are now powered by Twelve Data (Grow plan - $79/mo). 
+          Crypto/Forex refresh every 10 min, Stocks/Commodities every 30 min.
+        </AlertDescription>
+      </Alert>
 
       {perplexityAlert && (
         <Alert variant="destructive">
@@ -157,52 +149,59 @@ export default function APIUsage() {
       {/* Daily Cost Estimate Card */}
       <Card className="md:col-span-2 lg:col-span-4">
         <CardHeader>
-          <CardTitle>Estimated Daily API Costs (Based on Cron Schedule)</CardTitle>
-          <CardDescription>Projected costs based on scheduled ingestion jobs</CardDescription>
+          <CardTitle>Estimated Monthly API Costs</CardTitle>
+          <CardDescription>Fixed and variable costs based on current data providers</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">Twelve Data (Prices)</div>
+              <div className="text-2xl font-bold">${dailyEstimate.twelveData.monthlyFixed}/mo</div>
+              <div className="text-xs text-muted-foreground">
+                Grow plan - fixed cost
+                <div className="mt-1 space-y-0.5">
+                  <div>• 55 credits/min limit</div>
+                  <div>• Crypto/Forex: 10 min</div>
+                  <div>• Stocks/Commodities: 30 min</div>
+                </div>
+              </div>
+            </div>
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Perplexity (Fallback)</div>
-              <div className="text-2xl font-bold">${dailyEstimate.perplexity.cost.toFixed(3)}/day</div>
+              <div className="text-2xl font-bold">${(dailyEstimate.perplexity.cost * 30).toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
                 ~{dailyEstimate.perplexity.total} calls/day
                 <div className="mt-1 space-y-0.5">
-                  <div>• Hourly jobs (24x): {dailyEstimate.perplexity.hourly} calls</div>
-                  <div>• Daily jobs (1x): {dailyEstimate.perplexity.daily} calls</div>
-                  <div>• Weekly jobs (~0.14x): {dailyEstimate.perplexity.weekly} calls</div>
+                  <div>• Daily jobs: {dailyEstimate.perplexity.daily} calls</div>
+                  <div>• Weekly jobs: {dailyEstimate.perplexity.weekly} calls</div>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Lovable AI (Gemini)</div>
-              <div className="text-2xl font-bold">${dailyEstimate.lovableAI.cost.toFixed(3)}/day</div>
+              <div className="text-2xl font-bold">${(dailyEstimate.lovableAI.cost * 30).toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
                 AI research reports (weekly)
                 <div className="mt-1 space-y-0.5">
                   <div>• {dailyEstimate.lovableAI.weekly} reports/week</div>
-                  <div>• ~{dailyEstimate.lovableAI.tokensPerReport.toLocaleString()} tokens per report</div>
+                  <div>• ~{dailyEstimate.lovableAI.tokensPerReport.toLocaleString()} tokens/report</div>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Total Estimated Cost</div>
-              <div className="text-2xl font-bold text-primary">${dailyEstimate.totalDaily.toFixed(3)}/day</div>
-              <div className="text-lg font-semibold mt-2">${dailyEstimate.monthlyProjection.toFixed(2)}/month</div>
+              <div className="text-sm font-medium text-muted-foreground">Total Monthly Cost</div>
+              <div className="text-2xl font-bold text-primary">${dailyEstimate.monthlyProjection.toFixed(2)}/mo</div>
+              <div className="text-lg font-semibold mt-2">${dailyEstimate.totalDaily.toFixed(2)}/day</div>
               <div className="text-xs text-muted-foreground mt-1">
-                Based on scheduled cron jobs + fallback usage
+                Based on current data providers
               </div>
             </div>
           </div>
           <div className="mt-4 p-3 bg-muted rounded-lg text-sm">
             <div className="font-medium mb-2">📊 Actual vs Estimated:</div>
             <div className="space-y-1 text-muted-foreground">
-              <div>• Current {timeRange}h cost: ${totalCost.toFixed(4)}</div>
-              <div>• Projected daily: ${((totalCost / timeRange) * 24).toFixed(4)}</div>
-              <div>• Estimated daily: ${dailyEstimate.totalDaily.toFixed(4)}</div>
-              <div className="text-xs mt-2">
-                Note: Estimates assume typical fallback usage (2-5% of calls). Actual costs may vary based on primary API reliability.
-              </div>
+              <div>• Current {timeRange}h API cost (excl. Twelve Data): ${totalCost.toFixed(4)}</div>
+              <div>• Twelve Data is a fixed monthly cost, not per-call</div>
             </div>
           </div>
         </CardContent>
@@ -229,7 +228,7 @@ export default function APIUsage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Estimated Cost</CardTitle>
+            <CardTitle className="text-sm font-medium">Variable API Cost</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -239,7 +238,7 @@ export default function APIUsage() {
               <>
                 <div className="text-2xl font-bold">${totalCost.toFixed(4)}</div>
                 <p className="text-xs text-muted-foreground">
-                  Projected monthly: ${((totalCost / timeRange) * 24 * 30).toFixed(2)}
+                  Excl. Twelve Data fixed cost
                 </p>
               </>
             )}
@@ -265,24 +264,14 @@ export default function APIUsage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Yahoo Finance Health</CardTitle>
-            {yahooHealth?.should_enable_fallback ? (
-              <XCircle className="h-4 w-4 text-destructive" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-            )}
+            <CardTitle className="text-sm font-medium">Price Data Provider</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            {!yahooHealth ? (
-              <Skeleton className="h-8 w-24" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{yahooHealth.reliability_pct?.toFixed(1)}%</div>
-                <p className="text-xs text-muted-foreground">
-                  {yahooHealth.successful_calls}/{yahooHealth.total_calls} calls (24h)
-                </p>
-              </>
-            )}
+            <div className="text-2xl font-bold">Twelve Data</div>
+            <p className="text-xs text-muted-foreground">
+              Grow plan (55 credits/min)
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -327,7 +316,7 @@ export default function APIUsage() {
             <Card>
               <CardHeader>
                 <CardTitle>Cost Distribution</CardTitle>
-                <CardDescription>Estimated cost by API (paid APIs only)</CardDescription>
+                <CardDescription>Estimated cost by API (variable costs only)</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -411,32 +400,36 @@ export default function APIUsage() {
             </CardContent>
           </Card>
 
-          {/* API Configuration Reference */}
+          {/* API Costs Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle>API Configuration</CardTitle>
-              <CardDescription>Pricing and limits for each API</CardDescription>
+              <CardTitle>API Cost Configuration</CardTitle>
+              <CardDescription>Configured cost rates and limits for each API</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left p-2">API</th>
-                      <th className="text-right p-2">Cost/Call</th>
+                      <th className="text-left p-2">API Name</th>
+                      <th className="text-right p-2">Cost per Call</th>
                       <th className="text-right p-2">Daily Limit</th>
+                      <th className="text-center p-2">Type</th>
                       <th className="text-left p-2">Notes</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {apiCosts?.map((api) => (
-                      <tr key={api.api_name} className="border-b hover:bg-muted/50">
-                        <td className="p-2 font-medium">{api.api_name}</td>
-                        <td className="text-right p-2">
-                          {api.is_paid ? `$${Number(api.cost_per_call).toFixed(6)}` : "Free"}
+                    {apiCosts?.map((cost) => (
+                      <tr key={cost.api_name} className="border-b hover:bg-muted/50">
+                        <td className="p-2 font-medium">{cost.api_name}</td>
+                        <td className="text-right p-2">${cost.cost_per_call?.toFixed(4) || '0.0000'}</td>
+                        <td className="text-right p-2">{cost.daily_limit?.toLocaleString() || 'Unlimited'}</td>
+                        <td className="text-center p-2">
+                          <Badge variant={cost.is_paid ? "secondary" : "outline"}>
+                            {cost.is_paid ? "Paid" : "Free"}
+                          </Badge>
                         </td>
-                        <td className="text-right p-2">{api.daily_limit || "Unlimited"}</td>
-                        <td className="p-2 text-muted-foreground">{api.notes}</td>
+                        <td className="p-2 text-muted-foreground text-xs">{cost.notes || '-'}</td>
                       </tr>
                     ))}
                   </tbody>

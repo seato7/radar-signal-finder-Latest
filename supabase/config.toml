@@ -18,9 +18,6 @@ verify_jwt = false
 [functions.daily-ingestion-digest]
 verify_jwt = false
 
-[functions.ingest-prices-yahoo]
-verify_jwt = false
-
 [functions.ingest-breaking-news]
 verify_jwt = false
 
@@ -167,4 +164,3 @@ verify_jwt = false
 
 [functions.populate-assets]
 verify_jwt = false
-

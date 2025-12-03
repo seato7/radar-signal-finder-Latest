@@ -2,25 +2,33 @@
 -- OPTIMIZED Supabase Cron Job Setup
 -- Cost-optimized ingestion pipeline for Opportunity Radar
 -- ============================================
+-- 
+-- NOTE: Price ingestion is now handled by Railway backend using Twelve Data API
+-- The ingest-prices-yahoo function has been DEPRECATED and removed from cron
+-- 
+-- New price refresh schedule (via Railway backend):
+-- - Crypto: every 10 minutes
+-- - Forex: every 10 minutes  
+-- - Stocks: every 30 minutes
+-- - Commodities: every 30 minutes
+--
+-- ============================================
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- ============================================
--- HIGH FREQUENCY (15 minutes)
+-- REMOVE DEPRECATED YAHOO PRICE CRON JOB
 -- ============================================
 
--- Prices ingestion (every 15 minutes - Yahoo only, no fallback)
-SELECT cron.schedule(
-  '15min-prices-ingest',
-  '*/15 * * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-prices-yahoo',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
+-- Drop the old Yahoo price ingestion cron job if it exists
+SELECT cron.unschedule('15min-prices-ingest') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = '15min-prices-ingest'
+);
+
+SELECT cron.unschedule('daily-market-close-prices') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = 'daily-market-close-prices'
 );
 
 -- ============================================
@@ -115,94 +123,10 @@ SELECT cron.schedule(
   $$
 );
 
--- Patents
-SELECT cron.schedule(
-  '6h-patents',
-  '30 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-patents',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Congressional Trades
-SELECT cron.schedule(
-  '6h-congressional-trades',
-  '35 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-congressional-trades',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Dark Pool Activity
-SELECT cron.schedule(
-  '6h-dark-pool',
-  '40 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-dark-pool',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- ETF Flows
-SELECT cron.schedule(
-  '6h-etf-flows',
-  '45 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-etf-flows',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- FINRA Dark Pool
-SELECT cron.schedule(
-  '6h-finra-darkpool',
-  '50 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-finra-darkpool',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Form 4 Insider Trading
-SELECT cron.schedule(
-  '6h-form4',
-  '55 */6 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-form4',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Job Postings
-SELECT cron.schedule(
-  '6h-job-postings',
-  '0 1,7,13,19 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-job-postings',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
 -- News Sentiment
 SELECT cron.schedule(
   '6h-news-sentiment',
-  '5 1,7,13,19 * * *',
+  '30 */6 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-news-sentiment',
@@ -211,46 +135,10 @@ SELECT cron.schedule(
   $$
 );
 
--- Policy Feeds
-SELECT cron.schedule(
-  '6h-policy-feeds',
-  '10 1,7,13,19 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-policy-feeds',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Reddit Sentiment
-SELECT cron.schedule(
-  '6h-reddit-sentiment',
-  '15 1,7,13,19 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-reddit-sentiment',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Search Trends
-SELECT cron.schedule(
-  '6h-search-trends',
-  '20 1,7,13,19 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-search-trends',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
 -- Short Interest
 SELECT cron.schedule(
   '6h-short-interest',
-  '25 1,7,13,19 * * *',
+  '35 */6 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-short-interest',
@@ -259,10 +147,10 @@ SELECT cron.schedule(
   $$
 );
 
--- Smart Money Flow
+-- Smart Money
 SELECT cron.schedule(
   '6h-smart-money',
-  '30 1,7,13,19 * * *',
+  '40 */6 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-smart-money',
@@ -271,22 +159,98 @@ SELECT cron.schedule(
   $$
 );
 
--- StockTwits Sentiment
+-- Dark Pool
 SELECT cron.schedule(
-  '6h-stocktwits',
-  '35 1,7,13,19 * * *',
+  '6h-dark-pool',
+  '45 */6 * * *',
   $$
   SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-stocktwits',
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-dark-pool',
     headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
   ) as request_id;
   $$
 );
 
--- Supply Chain Intelligence
+-- ============================================
+-- DAILY JOBS (Once per day)
+-- ============================================
+
+-- Form 4 Insider Trading (daily at 6AM UTC)
 SELECT cron.schedule(
-  '6h-supply-chain',
-  '40 1,7,13,19 * * *',
+  'daily-form4',
+  '0 6 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-form4',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Policy Feeds (daily at 7AM UTC)
+SELECT cron.schedule(
+  'daily-policy-feeds',
+  '0 7 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-policy-feeds',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- ETF Flows (daily at 8AM UTC)
+SELECT cron.schedule(
+  'daily-etf-flows',
+  '0 8 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-etf-flows',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Congressional Trades (daily at 9AM UTC)
+SELECT cron.schedule(
+  'daily-congressional-trades',
+  '0 9 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-congressional-trades',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Job Postings (daily at 10AM UTC)
+SELECT cron.schedule(
+  'daily-job-postings',
+  '0 10 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-job-postings',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Patents (daily at 11AM UTC)
+SELECT cron.schedule(
+  'daily-patents',
+  '0 11 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-patents',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Supply Chain (daily at 12PM UTC)
+SELECT cron.schedule(
+  'daily-supply-chain',
+  '0 12 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-supply-chain',
@@ -295,22 +259,10 @@ SELECT cron.schedule(
   $$
 );
 
--- COT Reports
+-- Advanced Technicals (daily at market close - 9PM UTC)
 SELECT cron.schedule(
-  '6h-cot-reports',
-  '45 1,7,13,19 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-cot-reports',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Advanced Technicals
-SELECT cron.schedule(
-  '6h-advanced-technicals',
-  '50 1,7,13,19 * * *',
+  'daily-advanced-technicals',
+  '15 21 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-advanced-technicals',
@@ -319,10 +271,10 @@ SELECT cron.schedule(
   $$
 );
 
--- Pattern Recognition
+-- Pattern Recognition (daily at market close - 9:30PM UTC)
 SELECT cron.schedule(
-  '6h-pattern-recognition',
-  '55 1,7,13,19 * * *',
+  'daily-pattern-recognition',
+  '30 21 * * *',
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-pattern-recognition',
@@ -331,94 +283,27 @@ SELECT cron.schedule(
   $$
 );
 
--- Forex Technicals
-SELECT cron.schedule(
-  '6h-forex-technicals',
-  '0 2,8,14,20 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-forex-technicals',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
+-- ============================================
+-- WEEKLY JOBS (Once per week)
+-- ============================================
 
--- AI Research
+-- COT Reports (Fridays at 11PM UTC)
 SELECT cron.schedule(
-  '6h-ai-research',
-  '5 2,8,14,20 * * *',
+  'weekly-cot-reports',
+  '0 23 * * 5',
   $$
   SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-ai-research',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Forex Sentiment
-SELECT cron.schedule(
-  '6h-forex-sentiment',
-  '10 2,8,14,20 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-forex-sentiment',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Signal Generation (Alerts)
-SELECT cron.schedule(
-  '6h-generate-alerts',
-  '15 2,8,14,20 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/generate-alerts',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Theme Discovery
-SELECT cron.schedule(
-  '6h-theme-discovery',
-  '20 2,8,14,20 * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/mine-and-discover-themes',
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-cot-cftc',
     headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
   ) as request_id;
   $$
 );
 
 -- ============================================
--- SYSTEM HEALTH & CLEANUP (Every 15 Minutes)
+-- MONITORING & MAINTENANCE
 -- ============================================
 
-SELECT cron.schedule(
-  'health-monitoring',
-  '*/15 * * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/api-alerts-errors',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Cleanup Orphaned Logs (every hour)
-SELECT cron.schedule(
-  'cleanup-orphaned-logs',
-  '0 * * * *',
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/cleanup-orphaned-logs',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
--- Daily Ingestion Digest (9AM AEST = 11PM UTC previous day)
+-- Daily ingestion digest (daily at 11PM UTC)
 SELECT cron.schedule(
   'daily-ingestion-digest',
   '0 23 * * *',
@@ -430,48 +315,75 @@ SELECT cron.schedule(
   $$
 );
 
+-- Cleanup orphaned logs (daily at 3AM UTC)
+SELECT cron.schedule(
+  'daily-cleanup-logs',
+  '0 3 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/cleanup-orphaned-logs',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Watchdog health check (every hour)
+SELECT cron.schedule(
+  'hourly-watchdog',
+  '0 * * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/watchdog-ingestion-health',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Theme scores computation (every 6 hours)
+SELECT cron.schedule(
+  '6h-theme-scores',
+  '50 */6 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/compute-theme-scores',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Generate alerts (every 6 hours after theme scores)
+SELECT cron.schedule(
+  '6h-generate-alerts',
+  '55 */6 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/generate-alerts',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
 -- ============================================
--- UTILITY QUERIES FOR MANAGEMENT
+-- VIEW ALL SCHEDULED JOBS
 -- ============================================
-
--- View all scheduled jobs
--- SELECT jobname, schedule, active FROM cron.job ORDER BY jobname;
-
--- View recent job runs with errors
--- SELECT * FROM cron.job_run_details 
--- WHERE status != 'succeeded' 
--- ORDER BY start_time DESC LIMIT 20;
-
--- Unschedule a specific job
--- SELECT cron.unschedule('job-name-here');
-
--- Unschedule ALL jobs (CAREFUL!)
--- SELECT cron.unschedule(jobname) FROM cron.job;
-
--- Check last run times
--- SELECT 
---   j.jobname,
---   j.schedule,
---   MAX(r.start_time) as last_run,
---   MAX(CASE WHEN r.status = 'succeeded' THEN r.start_time END) as last_success
--- FROM cron.job j
--- LEFT JOIN cron.job_run_details r ON j.jobid = r.jobid
--- GROUP BY j.jobname, j.schedule
--- ORDER BY last_run DESC;
+-- SELECT * FROM cron.job ORDER BY jobname;
 
 -- ============================================
--- OPTIMIZATION SUMMARY
+-- NOTES
 -- ============================================
 -- 
--- Key Changes:
--- ✅ ingest-prices-yahoo: Every 15 minutes (Yahoo only, no Perplexity fallback)
--- ✅ ingest-breaking-news: Every 3 hours (down from 15 min)
--- ✅ ingest-crypto-onchain: Every 6 hours (down from daily)
--- ✅ ingest-fred-economics: Every 6 hours (now scheduled)
--- ✅ All 26 dormant functions: Now on 6-hour schedule
+-- Price ingestion is NO LONGER handled by Supabase cron!
+-- It runs on the Railway backend using Twelve Data API with tiered intervals:
+-- - Crypto/Forex: every 10 minutes
+-- - Stocks/Commodities: every 30 minutes
+--
+-- To check Railway price scheduler status:
+-- GET /api/prices/debug/price-ingestion-status
+--
+-- To manually trigger price ingestion:
+-- POST /api/prices/scheduler/trigger
+--
+-- Key Changes from previous version:
+-- ❌ REMOVED: ingest-prices-yahoo (now handled by Railway + Twelve Data)
+-- ✅ All other ingestion functions remain on Supabase cron
 -- 
--- Expected Results:
--- 📊 Data freshness: ≤15min for prices, ≤3h for news, ≤6h for all else
--- 💰 Perplexity API usage: <200 calls/day (down from 900+)
--- 🔄 All ingestion now automated (no manual triggers needed)
--- ⚡ Staggered execution prevents resource contention

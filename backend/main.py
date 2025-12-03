@@ -29,21 +29,20 @@ async def lifespan(app: FastAPI):
     db = get_db()
     await auto_populate_assets(db)
     
-    # Start tiered price scheduler if enabled
-    if settings.PRICE_SCHEDULER_ENABLED:
-        from backend.services.price_scheduler import start_scheduler, TIER_INTERVALS
-        start_scheduler()
-        logger.info(f"Tiered price scheduler started: {TIER_INTERVALS}")
+    # Start tiered Twelve Data price scheduler
+    # Note: Uses TD_REFRESH_* env vars for intervals
+    from backend.services.price_scheduler import start_scheduler, get_tier_config
+    start_scheduler()
+    logger.info(f"Twelve Data price scheduler started: {get_tier_config()}")
     
     metrics.increment("app_starts")
     yield
     # Shutdown
     logger.info("Shutting down Opportunity Radar API")
     
-    # Stop scheduler
-    if settings.PRICE_SCHEDULER_ENABLED:
-        from backend.services.price_scheduler import stop_scheduler
-        stop_scheduler()
+    # Stop Twelve Data scheduler
+    from backend.services.price_scheduler import stop_scheduler
+    stop_scheduler()
     
     await close_db()
 

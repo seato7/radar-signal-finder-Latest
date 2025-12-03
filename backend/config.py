@@ -61,12 +61,6 @@ class Settings(BaseSettings):
     TD_MAX_CREDITS_PER_MINUTE: int = 55
     TD_MAX_SYMBOLS_PER_BATCH: int = 50  # Conservative batch size
     
-    # ============================================================
-    # DEPRECATED: Old Yahoo scheduler config (will be removed)
-    # These are no longer used - kept only for backwards compatibility
-    # ============================================================
-    PRICE_SCHEDULER_ENABLED: bool = True  # DEPRECATED: Remove from Railway
-    PRICE_SCHEDULER_INTERVAL_MINUTES: int = 5  # DEPRECATED: Remove from Railway
     
     class Config:
         env_file = ".env"

@@ -3,29 +3,37 @@
 -- ============================================
 -- Run this script in your Supabase SQL Editor
 -- Make sure to replace YOUR_SERVICE_ROLE_KEY with your actual service role key
+--
+-- NOTE: Price ingestion has been migrated to Railway backend using Twelve Data API
+-- The ingest-prices-yahoo function is DEPRECATED and should not be scheduled
+--
+-- ============================================
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- ============================================
+-- REMOVE DEPRECATED YAHOO PRICE CRON JOBS
+-- ============================================
+
+-- Drop any old Yahoo price cron jobs
+SELECT cron.unschedule('daily-market-close-prices') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = 'daily-market-close-prices'
+);
+
+SELECT cron.unschedule('15min-prices-ingest') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = '15min-prices-ingest'
+);
+
+-- ============================================
 -- Daily Market Close Jobs (4PM EST / 9PM UTC)
+-- NOTE: Prices are now handled by Railway backend
 -- ============================================
 
 SELECT cron.schedule(
-  'daily-market-close-prices',
-  '0 21 * * *', -- 9PM UTC = 4PM EST
-  $$
-  SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-prices-yahoo',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
-  ) as request_id;
-  $$
-);
-
-SELECT cron.schedule(
   'daily-market-close-technicals',
-  '15 21 * * *', -- 9:15PM UTC (15min after prices)
+  '15 21 * * *', -- 9:15PM UTC (15min after market close)
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-advanced-technicals',
@@ -36,7 +44,7 @@ SELECT cron.schedule(
 
 SELECT cron.schedule(
   'daily-market-close-patterns',
-  '30 21 * * *', -- 9:30PM UTC (30min after prices)
+  '30 21 * * *', -- 9:30PM UTC (30min after market close)
   $$
   SELECT net.http_post(
     url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-pattern-recognition',
@@ -98,43 +106,56 @@ SELECT cron.schedule(
 );
 
 SELECT cron.schedule(
-  '6h-signals-generation',
+  '6h-forex-technicals',
   '30 */6 * * *', -- Every 6 hours at :30
   $$
   SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/generate-alerts',
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-forex-technicals',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+SELECT cron.schedule(
+  '6h-theme-scores',
+  '45 */6 * * *', -- Every 6 hours at :45
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/compute-theme-scores',
     headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
   ) as request_id;
   $$
 );
 
 -- ============================================
--- Health Monitoring (Every 15 Minutes)
+-- Every 3 Hours Jobs  
 -- ============================================
 
 SELECT cron.schedule(
-  'health-monitoring',
-  '*/15 * * * *', -- Every 15 minutes
+  '3h-breaking-news',
+  '0 */3 * * *', -- Every 3 hours
   $$
   SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/api-alerts-errors',
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-breaking-news',
     headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
   ) as request_id;
   $$
 );
 
 -- ============================================
--- Utility Queries for Management
+-- NOTES
 -- ============================================
-
--- View all scheduled jobs
--- SELECT * FROM cron.job ORDER BY jobname;
-
--- View recent job runs
--- SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 20;
-
--- Unschedule a job (example)
--- SELECT cron.unschedule('job-name-here');
-
--- Unschedule all jobs (CAREFUL!)
--- SELECT cron.unschedule(jobname) FROM cron.job;
+-- 
+-- PRICE INGESTION IS NOW ON RAILWAY BACKEND (NOT SUPABASE CRON)
+-- 
+-- The Railway backend handles price ingestion using Twelve Data API:
+-- - Crypto: every 10 minutes
+-- - Forex: every 10 minutes
+-- - Stocks: every 30 minutes
+-- - Commodities: every 30 minutes
+--
+-- To check status: GET /api/prices/debug/price-ingestion-status
+-- To trigger manually: POST /api/prices/scheduler/trigger
+--
+-- DO NOT re-add ingest-prices-yahoo to cron - it is deprecated!
+--
