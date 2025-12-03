@@ -26,19 +26,14 @@ serve(async (req) => {
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
 
     if (!perplexityKey) {
-      console.log('Perplexity API key not configured');
-      return new Response(
-        JSON.stringify({ error: 'Perplexity API key required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      throw new Error('Perplexity API key not configured');
     }
 
     console.log('Fetching recent congressional trades via Perplexity...');
     
     let response;
     let retries = 0;
-    const maxRetries = 5;
-    let lastError: Error | null = null;
+    const maxRetries = 3;
     
     while (retries <= maxRetries) {
       try {
@@ -53,160 +48,163 @@ serve(async (req) => {
             model: 'sonar',
             messages: [{
               role: 'system',
-              content: 'You are a congressional trading data provider. Return only the requested data in the exact format specified.'
+              content: 'You are a congressional trading data provider. Return ONLY structured data in the exact format requested. No explanations.'
             }, {
               role: 'user',
-              content: `Get 10 most recent congressional stock trades from Senate/House disclosures. For each trade provide: REPRESENTATIVE: (full name), TICKER: (stock symbol), TYPE: (buy or sell), DATE: (transaction date YYYY-MM-DD), AMOUNT_MIN: (minimum dollar amount), AMOUNT_MAX: (maximum dollar amount), PARTY: (Democrat or Republican). Use real current data from congressional disclosure reports.`
+              content: `List the 10 most recent congressional stock trades from official Senate/House financial disclosures (last 30 days). Format each trade EXACTLY like this:
+
+TRADE:
+REPRESENTATIVE: [Full Name]
+TICKER: [Stock Symbol]
+TYPE: [buy/sell]
+DATE: [YYYY-MM-DD]
+AMOUNT_MIN: [number without $ or commas]
+AMOUNT_MAX: [number without $ or commas]
+PARTY: [Democrat/Republican]
+CHAMBER: [Senate/House]
+
+Use real data from official congressional disclosures. Include trades from members like Nancy Pelosi, Tommy Tuberville, Dan Crenshaw, etc.`
             }],
             temperature: 0.1,
-            max_tokens: 1500,
+            max_tokens: 2000,
           }),
         });
         
-        // Check if rate limited or other API errors
         if (response.status === 429) {
-          const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
-          lastError = new Error(`Rate limited (429)`);
+          const backoffMs = Math.min(3000 * Math.pow(2, retries), 30000);
           console.log(`⚠️ Rate limited, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
           retries++;
           if (retries <= maxRetries) {
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             continue;
           }
-          console.error(`❌ Rate limit exceeded after ${maxRetries + 1} attempts`);
           throw new Error('Rate limit exceeded after retries');
         }
         
         if (!response.ok) {
           const errorText = await response.text().catch(() => 'Unable to read error');
-          const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
-          lastError = new Error(`API error ${response.status}: ${errorText}`);
           console.error(`❌ Perplexity API error: ${response.status} - ${errorText}`);
           retries++;
           if (retries <= maxRetries) {
-            console.log(`⚠️ Retrying in ${backoffMs}ms (${retries + 1}/${maxRetries + 1})`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            await new Promise(resolve => setTimeout(resolve, 3000 * retries));
             continue;
           }
-          throw lastError;
+          throw new Error(`Perplexity API error: ${response.status}`);
         }
         
         console.log(`✅ Successfully fetched congressional trades`);
-        break; // Success, exit retry loop
+        break;
         
       } catch (fetchError) {
-        const backoffMs = Math.min(2000 * Math.pow(2, retries), 60000);
-        lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
-        console.error(`❌ Network error:`, lastError.message);
+        console.error(`❌ Fetch error:`, fetchError);
         retries++;
         if (retries > maxRetries) {
-          console.error(`❌ Failed after ${maxRetries + 1} attempts:`, lastError.message);
-          throw lastError;
+          throw fetchError;
         }
-        console.log(`⚠️ Network error, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        await new Promise(resolve => setTimeout(resolve, 3000 * retries));
       }
     }
     
     if (!response) {
-      throw lastError || new Error('Failed to fetch after retries');
+      throw new Error('Failed to fetch after retries');
     }
 
-    const records = [];
-
-    if (response.ok) {
-      const data = await response.json();
-      let content = data.choices?.[0]?.message?.content || '';
+    const records: any[] = [];
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    console.log('Perplexity response received, parsing...');
+    
+    // Parse structured response
+    const tradeBlocks = content.split(/TRADE:/i).filter((b: string) => b.trim());
+    
+    for (const block of tradeBlocks) {
+      const repMatch = block.match(/REPRESENTATIVE:\s*(.+)/i);
+      const tickerMatch = block.match(/TICKER:\s*([A-Z]+)/i);
+      const typeMatch = block.match(/TYPE:\s*(buy|sell)/i);
+      const dateMatch = block.match(/DATE:\s*(\d{4}-\d{2}-\d{2})/i);
+      const minMatch = block.match(/AMOUNT_MIN:\s*\$?([\d,]+)/i);
+      const maxMatch = block.match(/AMOUNT_MAX:\s*\$?([\d,]+)/i);
+      const partyMatch = block.match(/PARTY:\s*(Democrat|Republican)/i);
+      const chamberMatch = block.match(/CHAMBER:\s*(Senate|House)/i);
       
-      console.log('Perplexity response:', content);
-      
-      const lines = content.split('\n');
-      let currentTrade: any = {};
-      
-      for (const line of lines) {
-        const repMatch = line.match(/REPRESENTATIVE:\s*(.+)/i);
-        const tickerMatch = line.match(/TICKER:\s*([A-Z]+)/i);
-        const typeMatch = line.match(/TYPE:\s*(buy|sell)/i);
-        const dateMatch = line.match(/DATE:\s*(\d{4}-\d{2}-\d{2})/i);
-        const minMatch = line.match(/AMOUNT_MIN:\s*\$?([\d,]+)/i);
-        const maxMatch = line.match(/AMOUNT_MAX:\s*\$?([\d,]+)/i);
-        const partyMatch = line.match(/PARTY:\s*(Democrat|Republican)/i);
+      if (repMatch && tickerMatch) {
+        const transactionDate = dateMatch?.[1] || new Date().toISOString().split('T')[0];
         
-        if (repMatch) {
-          if (currentTrade.representative && currentTrade.ticker) {
-            records.push({
-              ticker: currentTrade.ticker,
-              representative: currentTrade.representative,
-              party: currentTrade.party || 'Unknown',
-              transaction_type: currentTrade.transaction_type || 'buy',
-              transaction_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
-              filed_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
-              amount_min: currentTrade.amount_min || null,
-              amount_max: currentTrade.amount_max || null,
-              metadata: {
-                data_source: 'perplexity_congressional',
-              },
-              created_at: new Date().toISOString(),
-            });
-          }
-          currentTrade = { representative: repMatch[1].trim() };
-        }
-        if (tickerMatch) currentTrade.ticker = tickerMatch[1];
-        if (typeMatch) currentTrade.transaction_type = typeMatch[1].toLowerCase();
-        if (dateMatch) currentTrade.transaction_date = dateMatch[1];
-        if (minMatch) currentTrade.amount_min = parseInt(minMatch[1].replace(/,/g, ''));
-        if (maxMatch) currentTrade.amount_max = parseInt(maxMatch[1].replace(/,/g, ''));
-        if (partyMatch) currentTrade.party = partyMatch[1];
-      }
-      
-      // Add last trade
-      if (currentTrade.representative && currentTrade.ticker) {
         records.push({
-          ticker: currentTrade.ticker,
-          representative: currentTrade.representative,
-          party: currentTrade.party || 'Unknown',
-          transaction_type: currentTrade.transaction_type || 'buy',
-          transaction_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
-          filed_date: currentTrade.transaction_date || new Date().toISOString().split('T')[0],
-          amount_min: currentTrade.amount_min || null,
-          amount_max: currentTrade.amount_max || null,
+          ticker: tickerMatch[1].toUpperCase().substring(0, 20),
+          representative: repMatch[1].trim().substring(0, 100),
+          party: partyMatch?.[1] || 'Unknown',
+          chamber: chamberMatch?.[1] || null,
+          transaction_type: typeMatch?.[1]?.toLowerCase() || 'buy',
+          transaction_date: transactionDate,
+          filed_date: transactionDate,
+          amount_min: minMatch ? parseInt(minMatch[1].replace(/,/g, '')) : null,
+          amount_max: maxMatch ? parseInt(maxMatch[1].replace(/,/g, '')) : null,
           metadata: {
             data_source: 'perplexity_congressional',
+            ingested_at: new Date().toISOString(),
           },
-          created_at: new Date().toISOString(),
         });
       }
     }
+    
+    console.log(`Parsed ${records.length} congressional trades`);
+
+    let inserted = 0;
+    let skipped = 0;
 
     if (records.length > 0) {
-      const { error } = await supabase
-        .from('congressional_trades')
-        .insert(records);
+      // Insert with conflict handling
+      for (const record of records) {
+        const { error } = await supabase
+          .from('congressional_trades')
+          .upsert(record, {
+            onConflict: 'representative,ticker,transaction_date',
+            ignoreDuplicates: true
+          });
 
-      if (error) {
-        console.error('Database error:', error);
-        throw error;
+        if (error) {
+          if (error.code === '23505') {
+            skipped++;
+          } else {
+            console.error('Insert error:', error);
+          }
+        } else {
+          inserted++;
+        }
       }
-
-      console.log(`Inserted ${records.length} congressional trade records`);
+      
+      console.log(`Inserted ${inserted} congressional trade records, skipped ${skipped} duplicates`);
     }
 
     await logHeartbeat(supabase, {
       function_name: 'ingest-congressional-trades',
       status: 'success',
-      rows_inserted: records.length,
-      rows_skipped: 0,
+      rows_inserted: inserted,
+      rows_skipped: skipped,
       duration_ms: Date.now() - startTime,
       source_used: 'Perplexity AI',
     });
 
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-congressional-trades',
+      status: 'success',
+      duration: Date.now() - startTime,
+      rowsInserted: inserted,
+      rowsSkipped: skipped,
+      sourceUsed: 'Perplexity AI',
+    });
+
     return new Response(
-      JSON.stringify({ success: true, count: records.length }),
+      JSON.stringify({ success: true, inserted, skipped }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in ingest-congressional-trades:', error);
+    
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    
     await logHeartbeat(supabase, {
       function_name: 'ingest-congressional-trades',
       status: 'failure',
@@ -217,9 +215,8 @@ serve(async (req) => {
       error_message: error instanceof Error ? error.message : 'Unknown error',
     });
 
-    // Send Slack failure alert
     await slackAlerter.sendCriticalAlert({
-      type: 'auth_error',
+      type: 'api_reliability',
       etlName: 'ingest-congressional-trades',
       message: `Congressional trades failed: ${error instanceof Error ? error.message : 'Unknown error'}`
     });
