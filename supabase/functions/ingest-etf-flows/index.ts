@@ -2,19 +2,36 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { IngestLogger } from "../_shared/log-ingest.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { callPerplexity } from "../_shared/perplexity-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function computeZScore(values: number[], currentValue: number): number {
-  if (values.length < 2) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  const stdev = Math.sqrt(variance) || 0.01;
-  return (currentValue - mean) / stdev;
-}
+// Major ETFs to track flows for
+const TRACKED_ETFS = [
+  { ticker: 'SPY', name: 'SPDR S&P 500 ETF' },
+  { ticker: 'QQQ', name: 'Invesco QQQ Trust' },
+  { ticker: 'IWM', name: 'iShares Russell 2000 ETF' },
+  { ticker: 'DIA', name: 'SPDR Dow Jones ETF' },
+  { ticker: 'XLF', name: 'Financial Select Sector SPDR' },
+  { ticker: 'XLK', name: 'Technology Select Sector SPDR' },
+  { ticker: 'XLE', name: 'Energy Select Sector SPDR' },
+  { ticker: 'XLV', name: 'Health Care Select Sector SPDR' },
+  { ticker: 'XLI', name: 'Industrial Select Sector SPDR' },
+  { ticker: 'XLP', name: 'Consumer Staples Select Sector SPDR' },
+  { ticker: 'XLY', name: 'Consumer Discretionary Select Sector SPDR' },
+  { ticker: 'XLB', name: 'Materials Select Sector SPDR' },
+  { ticker: 'XLU', name: 'Utilities Select Sector SPDR' },
+  { ticker: 'XLRE', name: 'Real Estate Select Sector SPDR' },
+  { ticker: 'GLD', name: 'SPDR Gold Shares' },
+  { ticker: 'SLV', name: 'iShares Silver Trust' },
+  { ticker: 'USO', name: 'United States Oil Fund' },
+  { ticker: 'TLT', name: 'iShares 20+ Year Treasury Bond ETF' },
+  { ticker: 'HYG', name: 'iShares iBoxx High Yield Corporate Bond ETF' },
+  { ticker: 'EEM', name: 'iShares MSCI Emerging Markets ETF' },
+];
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -32,179 +49,170 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    // Parse request body with defaults
-    let csv_urls: string[] = [];
-    
-    try {
-      const body = await req.json();
-      csv_urls = body.csv_urls || [];
-    } catch {
-      // Body is empty or invalid - use defaults
+    console.log('📊 Starting ETF flows ingestion via Perplexity...');
+
+    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
+    if (!perplexityKey) {
+      throw new Error('PERPLEXITY_API_KEY not configured - required for real ETF flow data');
     }
-    
-    // Default CSV URLs if not provided - ADD DEFAULT SAMPLE DATA
-    if (csv_urls.length === 0) {
-      // Use sample ETF flow data from a public source
-      csv_urls = [
-        'https://raw.githubusercontent.com/datasets/s-and-p-500-companies-financials/main/data/constituents-financials.csv'
-      ];
-      console.log('⚠️ No csv_urls provided - using default sample data');
-    }
-    
-    console.log(`Processing ${csv_urls.length} ETF flow CSV files`);
-    
+
     let signalsCreated = 0;
     let signalsSkipped = 0;
-    
-    // Add 8-minute timeout guard
-    const TIMEOUT_MS = 480000; // 8 minutes
-    const timeoutAt = startTime + TIMEOUT_MS;
-    
-    for (const csvUrl of csv_urls) {
-      // Check timeout guard
-      if (Date.now() >= timeoutAt) {
-        console.error(`⏱️ TIMEOUT: Exceeded ${TIMEOUT_MS / 1000}s runtime, aborting`);
-        break;
-      }
-      
-      const response = await fetch(csvUrl);
-      const csvText = await response.text();
-      
-      // Parse CSV
-      const lines = csvText.trim().split('\n');
-      const headers = lines[0].toLowerCase().split(',');
-      
-      const dateIdx = headers.findIndex(h => h.includes('date'));
-      const tickerIdx = headers.findIndex(h => h.includes('ticker') || h.includes('symbol'));
-      const flowIdx = headers.findIndex(h => h.includes('flow'));
-      
-      if (dateIdx === -1 || tickerIdx === -1 || flowIdx === -1) {
-        continue;
-      }
-      
-      const flows: Record<string, any[]> = {};
-      
-      // Parse rows
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',');
-        const ticker = cols[tickerIdx]?.trim();
-        const date = cols[dateIdx]?.trim();
-        const flow = parseFloat(cols[flowIdx]);
+    const today = new Date().toISOString().split('T')[0];
+
+    for (const etf of TRACKED_ETFS) {
+      try {
+        console.log(`Fetching ETF flows for ${etf.ticker}...`);
         
-        if (!ticker || !date || isNaN(flow)) continue;
-        
-        if (!flows[ticker]) flows[ticker] = [];
-        flows[ticker].push({ date, flow });
-      }
-      
-      // Compute z-scores per ticker
-      for (const [ticker, tickerFlows] of Object.entries(flows)) {
-        tickerFlows.sort((a, b) => a.date.localeCompare(b.date));
-        
-        for (let i = 0; i < tickerFlows.length; i++) {
-          const window = tickerFlows.slice(Math.max(0, i - 60), i + 1);
-          const zScore = computeZScore(window.map(f => f.flow), tickerFlows[i].flow);
-          
-          // Generate checksum
-          const checksumData = JSON.stringify({
-            date: tickerFlows[i].date,
-            ticker,
-            url: csvUrl
+        const prompt = `What are the latest fund flows for ${etf.ticker} (${etf.name})?
+Provide recent ETF flow data:
+- DAILY_FLOW: most recent daily fund flow in millions USD (positive = inflow, negative = outflow)
+- WEEKLY_FLOW: past 7 days total flow in millions USD
+- MONTHLY_FLOW: past 30 days total flow in millions USD
+- AUM: current assets under management in billions USD
+
+Format your response EXACTLY as:
+DAILY_FLOW: X
+WEEKLY_FLOW: Y
+MONTHLY_FLOW: Z
+AUM: A`;
+
+        const content = await callPerplexity(
+          [{ role: 'user', content: prompt }],
+          { apiKey: perplexityKey, model: 'sonar', temperature: 0.2, maxTokens: 200 }
+        );
+
+        // Parse response
+        const dailyMatch = content.match(/DAILY_FLOW:\s*(-?[\d,.]+)/);
+        const weeklyMatch = content.match(/WEEKLY_FLOW:\s*(-?[\d,.]+)/);
+        const monthlyMatch = content.match(/MONTHLY_FLOW:\s*(-?[\d,.]+)/);
+        const aumMatch = content.match(/AUM:\s*([\d,.]+)/);
+
+        const parseNum = (match: RegExpMatchArray | null) => 
+          match ? parseFloat(match[1].replace(/,/g, '')) : 0;
+
+        const dailyFlow = parseNum(dailyMatch);
+        const weeklyFlow = parseNum(weeklyMatch);
+        const monthlyFlow = parseNum(monthlyMatch);
+        const aum = parseNum(aumMatch);
+
+        // Find asset
+        const { data: asset } = await supabaseClient
+          .from('assets')
+          .select('id')
+          .eq('ticker', etf.ticker)
+          .single();
+
+        // Generate checksum
+        const checksumData = JSON.stringify({ date: today, ticker: etf.ticker });
+        const encoder = new TextEncoder();
+        const data = encoder.encode(checksumData);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // Check if exists
+        const { data: existing } = await supabaseClient
+          .from('signals')
+          .select('id')
+          .eq('checksum', checksum)
+          .single();
+
+        if (existing) {
+          signalsSkipped++;
+          continue;
+        }
+
+        // Determine flow strength
+        const flowMagnitude = Math.abs(dailyFlow) / (aum * 10 || 1); // Normalize by AUM
+        const isSignificant = Math.abs(dailyFlow) > 100 || flowMagnitude > 0.001;
+
+        // Insert signal
+        const { error } = await supabaseClient
+          .from('signals')
+          .insert({
+            signal_type: 'flow_pressure_etf',
+            asset_id: asset?.id,
+            value_text: etf.ticker,
+            direction: dailyFlow > 0 ? 'up' : dailyFlow < 0 ? 'down' : 'neutral',
+            magnitude: Math.min(flowMagnitude * 100, 1.0),
+            observed_at: new Date().toISOString(),
+            raw: {
+              ticker: etf.ticker,
+              daily_flow_millions: dailyFlow,
+              weekly_flow_millions: weeklyFlow,
+              monthly_flow_millions: monthlyFlow,
+              aum_billions: aum,
+              flow_pct_of_aum: flowMagnitude * 100,
+            },
+            citation: {
+              source: 'Perplexity AI - ETF Flows',
+              url: `https://www.etf.com/${etf.ticker}`,
+              timestamp: new Date().toISOString()
+            },
+            checksum
           });
-          
-          const encoder = new TextEncoder();
-          const data = encoder.encode(checksumData);
-          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-          
-          // Check exists
-          const { data: existing } = await supabaseClient
-            .from('signals')
-            .select('id')
-            .eq('checksum', checksum)
-            .single();
-          
-          if (existing) {
-            signalsSkipped++;
-            continue;
-          }
-          
-          // Find asset
-          const { data: asset } = await supabaseClient
-            .from('assets')
-            .select('id')
-            .eq('ticker', ticker)
-            .single();
-          
-          // Insert signal
-          await supabaseClient
-            .from('signals')
-            .insert({
-              signal_type: 'flow_pressure_etf',
-              asset_id: asset?.id,
-              value_text: ticker,
-              direction: zScore > 0 ? 'up' : zScore < 0 ? 'down' : 'neutral',
-              magnitude: Math.abs(zScore),
-              observed_at: new Date(tickerFlows[i].date).toISOString(),
-              raw: {
-                ticker,
-                flow: tickerFlows[i].flow,
-                z_score: zScore
-              },
-              citation: {
-                source: 'ETF Flows CSV',
-                url: csvUrl,
-                timestamp: new Date().toISOString()
-              },
-              checksum
-            });
-          
+
+        if (error) {
+          console.error(`Error inserting flow for ${etf.ticker}:`, error);
+          signalsSkipped++;
+        } else {
           signalsCreated++;
         }
+
+        // Rate limit
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+      } catch (etfError) {
+        console.error(`Error processing ${etf.ticker}:`, etfError);
+        signalsSkipped++;
       }
     }
 
+    const duration = Date.now() - startTime;
+
     await logger.success({
-      source_used: 'ETF Flows CSV',
+      source_used: 'Perplexity AI',
       cache_hit: false,
       fallback_count: 0,
-      latency_ms: Date.now() - startTime,
+      latency_ms: duration,
       rows_inserted: signalsCreated,
       rows_skipped: signalsSkipped,
-      metadata: { csv_count: csv_urls.length }
+      metadata: { etf_count: TRACKED_ETFS.length }
     });
 
     console.log(`✅ ETF flows complete: ${signalsCreated} signals created`);
     
-    // Send Slack success alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-etf-flows',
       status: 'success',
-      duration: Date.now() - startTime,
+      duration,
       rowsInserted: signalsCreated,
       rowsSkipped: signalsSkipped,
-      sourceUsed: 'ETF Flows CSV',
-      metadata: { csv_count: csv_urls.length }
+      sourceUsed: 'Perplexity AI',
+      metadata: { etf_count: TRACKED_ETFS.length }
     });
 
     return new Response(JSON.stringify({
+      success: true,
       signals_created: signalsCreated,
-      signals_skipped: signalsSkipped
+      signals_skipped: signalsSkipped,
+      source: 'Perplexity AI'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    const duration = Date.now() - startTime;
+    
     await logger.failure(error as Error, {
-      source_used: 'ETF Flows CSV',
+      source_used: 'Perplexity AI',
       cache_hit: false,
       fallback_count: 0,
-      latency_ms: Date.now() - startTime,
+      latency_ms: duration,
     });
 
-    // Send Slack failure alert
     await slackAlerter.sendCriticalAlert({
-      type: 'auth_error',
+      type: 'halted',
       etlName: 'ingest-etf-flows',
       message: `ETF flows ingestion failed: ${(error as Error).message}`
     });
