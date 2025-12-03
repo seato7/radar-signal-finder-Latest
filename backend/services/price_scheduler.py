@@ -1,30 +1,40 @@
-"""Price Scheduler - Tiered automated price ingestion by asset class"""
+"""Price Scheduler - Twelve Data tiered price ingestion with rate limiting"""
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from backend.etl.yahoo_prices import fetch_all_prices
+from backend.etl.twelvedata_prices import (
+    fetch_crypto_prices,
+    fetch_forex_prices,
+    fetch_stock_prices,
+    fetch_commodity_prices,
+    TwelveDataPriceFetcher,
+)
 from backend.services.supabase_sync import SupabaseSync
 
 logger = logging.getLogger(__name__)
 
 # Tiered intervals by asset class (in minutes)
-# Increased to account for Yahoo rate limiting and large asset counts
-# Crypto: 171 assets, ~3min per batch with rate limits
-# Forex: 87 assets, ~2min per batch with rate limits
+# Based on user spec:
+# - Crypto: 171 assets, refresh every 10 minutes
+# - Forex: 87 assets, refresh every 10 minutes  
+# - Stocks: 731 assets, refresh every 30 minutes
+# - Commodities: 54 assets, refresh every 30 minutes
 TIER_INTERVALS = {
-    "crypto": 5,      # Every 5 minutes (was 2, too fast with 171 assets)
-    "forex": 5,       # Every 5 minutes (was 3, too fast with 87 assets)
-    "equity": 10,     # Every 10 minutes
-    "commodity": 10,  # Every 10 minutes
-    "index": 10,      # Every 10 minutes
-    "etf": 10,        # Every 10 minutes
+    "crypto": 10,     # ~17 credits per run
+    "forex": 10,      # ~9 credits per run
+    "equity": 30,     # ~73 credits per run (distributed over 30 min)
+    "stock": 30,      # Alias for equity
+    "commodity": 30,  # ~5 credits per run
+    "index": 30,      # Included with stocks
+    "etf": 30,        # Included with stocks
 }
 
-DEFAULT_INTERVAL_MINUTES = 5
+DEFAULT_INTERVAL_MINUTES = 30
 
 # Global scheduler instance
 _scheduler: Optional[AsyncIOScheduler] = None
@@ -40,15 +50,60 @@ _scheduler_stats: Dict[str, dict] = {
         "last_failure_at": None,
         "last_error": None,
         "total_prices_synced": 0,
-        "average_duration_seconds": 0
+        "average_duration_seconds": 0,
+        "credits_used_last_hour": 0
     }
 }
 
 # Track running state per tier
 _running_tiers: Dict[str, bool] = {}
 
+# Credit usage tracking
+_credits_log: List[Dict] = []
 
-async def run_tiered_ingestion(asset_class: str):
+
+def _log_credit_usage(asset_class: str, credits_used: int):
+    """Log credit usage for monitoring"""
+    global _credits_log
+    _credits_log.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "asset_class": asset_class,
+        "credits_used": credits_used
+    })
+    # Keep only last hour of logs
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    _credits_log = [
+        log for log in _credits_log 
+        if datetime.fromisoformat(log["timestamp"].replace("Z", "+00:00")) > cutoff
+    ]
+
+
+def get_credits_used_last_hour() -> int:
+    """Get total credits used in the last hour"""
+    return sum(log["credits_used"] for log in _credits_log)
+
+
+async def ingest_crypto_prices_from_twelvedata():
+    """Ingest crypto prices from Twelve Data"""
+    await _run_tier_ingestion("crypto", fetch_crypto_prices)
+
+
+async def ingest_forex_prices_from_twelvedata():
+    """Ingest forex prices from Twelve Data"""
+    await _run_tier_ingestion("forex", fetch_forex_prices)
+
+
+async def ingest_stock_prices_from_twelvedata():
+    """Ingest stock prices from Twelve Data"""
+    await _run_tier_ingestion("equity", fetch_stock_prices)
+
+
+async def ingest_commodity_prices_from_twelvedata():
+    """Ingest commodity prices from Twelve Data"""
+    await _run_tier_ingestion("commodity", fetch_commodity_prices)
+
+
+async def _run_tier_ingestion(asset_class: str, fetch_func):
     """Execute a scheduled price ingestion for a specific asset class tier"""
     global _scheduler_stats, _running_tiers
     
@@ -70,7 +125,8 @@ async def run_tiered_ingestion(asset_class: str):
             "last_run_at": None,
             "last_success_at": None,
             "total_prices_synced": 0,
-            "average_duration_seconds": 0
+            "average_duration_seconds": 0,
+            "last_credits_used": 0
         }
     
     _scheduler_stats[tier_key]["total_runs"] += 1
@@ -85,16 +141,27 @@ async def run_tiered_ingestion(asset_class: str):
             
             # Get assets filtered by asset class
             all_assets = await sync.get_assets()
-            assets = [a for a in all_assets if a.get("asset_class", "").lower() == tier_key]
+            
+            # Handle asset class aliases
+            if tier_key == "equity":
+                assets = [a for a in all_assets if a.get("asset_class", "").lower() in ("equity", "stock", "etf", "index")]
+            else:
+                assets = [a for a in all_assets if a.get("asset_class", "").lower() == tier_key]
             
             if not assets:
                 logger.info(f"No {asset_class} assets found to process")
+                _running_tiers[tier_key] = False
                 return
             
-            logger.info(f"Starting {asset_class} ingestion for {len(assets)} assets")
+            logger.info(f"Starting Twelve Data {asset_class} ingestion for {len(assets)} assets")
             
-            # Fetch prices
-            prices, fetch_stats = await fetch_all_prices(assets)
+            # Fetch prices using Twelve Data
+            prices, fetch_stats = await fetch_func(assets)
+            
+            # Log credit usage
+            credits_used = len(assets)  # 1 credit per symbol
+            _log_credit_usage(asset_class, credits_used)
+            _scheduler_stats[tier_key]["last_credits_used"] = credits_used
             
             # Sync to Supabase
             inserted, failed, errors = await sync.upsert_prices(prices)
@@ -110,6 +177,7 @@ async def run_tiered_ingestion(asset_class: str):
             _scheduler_stats["global"]["successful_runs"] += 1
             _scheduler_stats["global"]["last_success_at"] = end_time.isoformat()
             _scheduler_stats["global"]["total_prices_synced"] += inserted
+            _scheduler_stats["global"]["credits_used_last_hour"] = get_credits_used_last_hour()
             
             # Calculate running average duration
             total_runs = _scheduler_stats[tier_key]["total_runs"]
@@ -120,23 +188,24 @@ async def run_tiered_ingestion(asset_class: str):
             
             # Log to Supabase
             await sync.log_ingestion(
-                etl_name=f"railway-price-{tier_key}",
+                etl_name=f"twelvedata-price-{tier_key}",
                 status="success",
                 rows_inserted=inserted,
                 rows_skipped=failed,
                 duration_seconds=int(duration),
-                source_used="yahoo_finance",
+                source_used="twelvedata",
                 metadata={
                     "asset_class": asset_class,
                     "total_assets": len(assets),
                     "fetch_stats": fetch_stats,
-                    "tier_interval_minutes": TIER_INTERVALS.get(tier_key, DEFAULT_INTERVAL_MINUTES)
+                    "tier_interval_minutes": TIER_INTERVALS.get(tier_key, DEFAULT_INTERVAL_MINUTES),
+                    "credits_used": credits_used
                 }
             )
             
             logger.info(
-                f"{asset_class} ingestion completed: {inserted}/{len(assets)} prices "
-                f"in {duration:.1f}s (interval: {TIER_INTERVALS.get(tier_key, DEFAULT_INTERVAL_MINUTES)}min)"
+                f"Twelve Data {asset_class} ingestion completed: {inserted}/{len(assets)} prices "
+                f"in {duration:.1f}s (credits: {credits_used})"
             )
             
     except Exception as e:
@@ -151,10 +220,10 @@ async def run_tiered_ingestion(asset_class: str):
         try:
             async with SupabaseSync() as sync:
                 await sync.log_ingestion(
-                    etl_name=f"railway-price-{tier_key}",
+                    etl_name=f"twelvedata-price-{tier_key}",
                     status="failure",
                     error_message=str(e),
-                    source_used="yahoo_finance"
+                    source_used="twelvedata"
                 )
         except:
             pass
@@ -174,7 +243,9 @@ def get_scheduler_stats() -> dict:
         "global_success_rate": (
             _scheduler_stats["global"]["successful_runs"] / _scheduler_stats["global"]["total_runs"] * 100
             if _scheduler_stats["global"]["total_runs"] > 0 else 0
-        )
+        ),
+        "credits_used_last_hour": get_credits_used_last_hour(),
+        "data_provider": "Twelve Data"
     }
 
 
@@ -192,37 +263,44 @@ def start_scheduler(custom_intervals: Optional[Dict[str, int]] = None):
     
     _scheduler = AsyncIOScheduler()
     
-    # Stagger start times to avoid simultaneous Yahoo API calls
-    # Each tier starts X minutes after the previous one
+    # Stagger start times to distribute API calls
+    # Crypto and Forex run every 10 min, stocks/commodities every 30 min
     STAGGER_OFFSETS = {
         "crypto": 0,      # Starts immediately
-        "forex": 2,       # Starts 2 min after crypto
-        "equity": 4,      # Starts 4 min after crypto
-        "commodity": 6,   # Starts 6 min after crypto
-        "index": 8,       # Starts 8 min after crypto
-        "etf": 9,         # Starts 9 min after crypto
+        "forex": 5,       # Starts 5 min after crypto
+        "equity": 2,      # Starts 2 min after crypto  
+        "commodity": 7,   # Starts 7 min after crypto
     }
     
     now = datetime.now(timezone.utc)
     
+    # Map asset classes to their ingestion functions
+    INGESTION_FUNCTIONS = {
+        "crypto": ingest_crypto_prices_from_twelvedata,
+        "forex": ingest_forex_prices_from_twelvedata,
+        "equity": ingest_stock_prices_from_twelvedata,
+        "commodity": ingest_commodity_prices_from_twelvedata,
+    }
+    
     # Create a job for each tier with staggered start times
-    for asset_class, interval_minutes in TIER_INTERVALS.items():
+    for asset_class, ingestion_func in INGESTION_FUNCTIONS.items():
+        interval_minutes = TIER_INTERVALS.get(asset_class, DEFAULT_INTERVAL_MINUTES)
         offset_minutes = STAGGER_OFFSETS.get(asset_class, 0)
         start_time = now.replace(second=0, microsecond=0) + timedelta(minutes=offset_minutes)
         
         _scheduler.add_job(
-            run_tiered_ingestion,
+            ingestion_func,
             trigger=IntervalTrigger(minutes=interval_minutes, start_date=start_time),
-            args=[asset_class],
-            id=f"price_ingestion_{asset_class}",
-            name=f"{asset_class.title()} Price Ingestion ({interval_minutes}min, offset +{offset_minutes}m)",
+            id=f"twelvedata_price_{asset_class}",
+            name=f"Twelve Data {asset_class.title()} Prices ({interval_minutes}min, offset +{offset_minutes}m)",
             replace_existing=True,
-            max_instances=1
+            max_instances=1,
+            coalesce=True
         )
-        logger.info(f"Scheduled {asset_class} prices every {interval_minutes} min (starts at +{offset_minutes}m)")
+        logger.info(f"Scheduled Twelve Data {asset_class} prices every {interval_minutes} min (starts at +{offset_minutes}m)")
     
     _scheduler.start()
-    logger.info(f"Tiered price scheduler started with {len(TIER_INTERVALS)} tiers (staggered)")
+    logger.info(f"Twelve Data price scheduler started with {len(INGESTION_FUNCTIONS)} tiers (staggered)")
 
 
 def stop_scheduler():
@@ -237,14 +315,28 @@ def stop_scheduler():
 
 
 async def trigger_immediate_run(asset_class: Optional[str] = None):
-    """Trigger an immediate ingestion run for specific tier or all (sequentially to avoid rate limits)"""
+    """Trigger an immediate ingestion run for specific tier or all (sequentially to respect rate limits)"""
     if asset_class:
-        await run_tiered_ingestion(asset_class)
+        asset_class = asset_class.lower()
+        if asset_class == "crypto":
+            await ingest_crypto_prices_from_twelvedata()
+        elif asset_class == "forex":
+            await ingest_forex_prices_from_twelvedata()
+        elif asset_class in ("equity", "stock"):
+            await ingest_stock_prices_from_twelvedata()
+        elif asset_class == "commodity":
+            await ingest_commodity_prices_from_twelvedata()
+        else:
+            raise ValueError(f"Unknown asset class: {asset_class}")
     else:
-        # Run tiers sequentially with delay to avoid Yahoo rate limits
-        for ac in TIER_INTERVALS.keys():
-            await run_tiered_ingestion(ac)
-            await asyncio.sleep(60)  # 1 min delay between tiers
+        # Run all tiers sequentially with delay to respect rate limits
+        await ingest_crypto_prices_from_twelvedata()
+        await asyncio.sleep(30)  # 30s delay between tiers
+        await ingest_forex_prices_from_twelvedata()
+        await asyncio.sleep(30)
+        await ingest_stock_prices_from_twelvedata()
+        await asyncio.sleep(30)
+        await ingest_commodity_prices_from_twelvedata()
 
 
 def get_tier_config() -> Dict[str, int]:

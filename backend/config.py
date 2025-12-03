@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     PRICE_SCHEDULER_ENABLED: bool = True
     PRICE_SCHEDULER_INTERVAL_MINUTES: int = 5
     
+    # Twelve Data API configuration
+    TWELVEDATA_API_KEY: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
