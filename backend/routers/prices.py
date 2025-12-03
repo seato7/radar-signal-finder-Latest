@@ -1,12 +1,16 @@
-"""Price Ingestion API Routes with Tiered Scheduling"""
+"""Price Ingestion API Routes - Twelve Data with Tiered Scheduling"""
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import Optional, List, Dict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import asyncio
 import logging
+import os
 
-from backend.etl.yahoo_prices import fetch_all_prices, YahooPriceFetcher
-from backend.services.supabase_sync import SupabaseSync, sync_prices_to_supabase
+from backend.etl.twelvedata_prices import (
+    TwelveDataPriceFetcher,
+    fetch_all_prices_twelvedata,
+)
+from backend.services.supabase_sync import SupabaseSync
 from backend.services.price_scheduler import (
     start_scheduler,
     stop_scheduler,
@@ -14,6 +18,7 @@ from backend.services.price_scheduler import (
     trigger_immediate_run,
     get_tier_config,
     update_tier_interval,
+    get_credits_used_last_hour,
     TIER_INTERVALS
 )
 from backend.metrics import metrics
@@ -30,6 +35,78 @@ _last_ingestion = {
     "stats": {}
 }
 
+# Track errors for debugging endpoint
+_recent_errors: List[Dict] = []
+
+
+def _log_error(source: str, error: str):
+    """Log error for debug endpoint"""
+    global _recent_errors
+    _recent_errors.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": source,
+        "error": error
+    })
+    # Keep only last 100 errors
+    _recent_errors = _recent_errors[-100:]
+
+
+# ===================== DEBUG / HEALTH ENDPOINTS =====================
+
+@router.get("/debug/price-ingestion-status")
+async def get_price_ingestion_debug_status():
+    """
+    Debug endpoint showing complete price ingestion health.
+    Returns last run times, symbol counts, errors, and credit usage.
+    """
+    stats = get_scheduler_stats()
+    
+    # Get recent errors from last hour
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent_errors = [
+        e for e in _recent_errors 
+        if datetime.fromisoformat(e["timestamp"].replace("Z", "+00:00")) > cutoff
+    ]
+    
+    return {
+        "data_provider": "Twelve Data",
+        "scheduler_active": stats.get("scheduler_active", False),
+        "tier_intervals": {
+            "crypto": "10 minutes",
+            "forex": "10 minutes",
+            "stocks": "30 minutes",
+            "commodities": "30 minutes"
+        },
+        "last_runs": {
+            tier: {
+                "last_run_at": data.get("last_run_at"),
+                "last_success_at": data.get("last_success_at"),
+                "successful_runs": data.get("successful_runs", 0),
+                "failed_runs": data.get("failed_runs", 0),
+                "total_prices_synced": data.get("total_prices_synced", 0),
+                "last_credits_used": data.get("last_credits_used", 0)
+            }
+            for tier, data in stats.items()
+            if tier not in ("global", "tier_intervals", "scheduler_active", "running_tiers", 
+                           "global_success_rate", "credits_used_last_hour", "data_provider")
+        },
+        "global_stats": {
+            "total_runs": stats.get("global", {}).get("total_runs", 0),
+            "successful_runs": stats.get("global", {}).get("successful_runs", 0),
+            "failed_runs": stats.get("global", {}).get("failed_runs", 0),
+            "total_prices_synced": stats.get("global", {}).get("total_prices_synced", 0),
+            "last_error": stats.get("global", {}).get("last_error"),
+            "success_rate": f"{stats.get('global_success_rate', 0):.1f}%"
+        },
+        "rate_limiting": {
+            "credits_used_last_hour": get_credits_used_last_hour(),
+            "max_credits_per_minute": 55,
+            "credits_remaining_this_minute": 55 - (get_credits_used_last_hour() % 55)
+        },
+        "errors_last_hour": recent_errors,
+        "api_key_configured": bool(os.getenv("TWELVEDATA_API_KEY"))
+    }
+
 
 # ===================== SCHEDULER ENDPOINTS =====================
 
@@ -38,21 +115,23 @@ async def start_price_scheduler(
     custom_intervals: Optional[Dict[str, int]] = None
 ):
     """
-    Start the tiered price scheduler.
+    Start the Twelve Data tiered price scheduler.
     
     Default intervals:
-    - crypto: 2 minutes (most volatile)
-    - forex: 3 minutes (24/5 market)
-    - equity/commodity/index/etf: 5 minutes
+    - crypto: 10 minutes
+    - forex: 10 minutes
+    - stocks/equity: 30 minutes
+    - commodities: 30 minutes
     
-    Pass custom_intervals to override, e.g. {"crypto": 1, "forex": 2}
+    Pass custom_intervals to override, e.g. {"crypto": 5, "forex": 5}
     """
     try:
         start_scheduler(custom_intervals)
         return {
             "status": "started",
             "tier_intervals": get_tier_config(),
-            "message": "Tiered scheduler started successfully"
+            "data_provider": "Twelve Data",
+            "message": "Twelve Data tiered scheduler started successfully"
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to start scheduler: {str(e)}")
@@ -80,22 +159,23 @@ async def get_tier_intervals():
     return {
         "tiers": get_tier_config(),
         "description": {
-            "crypto": "Most volatile - fastest updates",
-            "forex": "24/5 markets - moderate updates",
-            "equity": "Market hours - standard updates",
-            "commodity": "Market hours - standard updates",
-            "index": "Market hours - standard updates",
-            "etf": "Market hours - standard updates"
-        }
+            "crypto": "High frequency - every 10 minutes",
+            "forex": "High frequency - every 10 minutes",
+            "equity": "Standard - every 30 minutes",
+            "stock": "Standard - every 30 minutes (alias for equity)",
+            "commodity": "Standard - every 30 minutes"
+        },
+        "data_provider": "Twelve Data",
+        "rate_limit": "55 API credits per minute"
     }
 
 
 @router.put("/scheduler/tier/{asset_class}")
 async def update_tier(
     asset_class: str,
-    interval_minutes: int = Query(..., ge=1, le=60, description="Interval in minutes")
+    interval_minutes: int = Query(..., ge=5, le=60, description="Interval in minutes (5-60)")
 ):
-    """Update interval for a specific asset class tier (1-60 minutes)"""
+    """Update interval for a specific asset class tier (5-60 minutes)"""
     if update_tier_interval(asset_class, interval_minutes):
         return {
             "status": "updated",
@@ -116,9 +196,11 @@ async def trigger_scheduler_run(
         return {
             "status": "triggered",
             "asset_class": asset_class or "all",
+            "data_provider": "Twelve Data",
             "message": f"Immediate ingestion triggered for {asset_class or 'all tiers'}"
         }
     except Exception as e:
+        _log_error("trigger_scheduler_run", str(e))
         raise HTTPException(500, f"Trigger failed: {str(e)}")
 
 
@@ -131,7 +213,8 @@ async def get_ingestion_status():
         "status": _last_ingestion["status"],
         "started_at": _last_ingestion["started_at"],
         "completed_at": _last_ingestion["completed_at"],
-        "stats": _last_ingestion["stats"]
+        "stats": _last_ingestion["stats"],
+        "data_provider": "Twelve Data"
     }
 
 
@@ -142,7 +225,7 @@ async def trigger_price_ingestion(
     test_mode: bool = Query(False, description="Test with 5 tickers only")
 ):
     """
-    Trigger manual price ingestion from Yahoo Finance to Supabase.
+    Trigger manual price ingestion from Twelve Data to Supabase.
     For automated updates, use /scheduler/start instead.
     """
     global _last_ingestion
@@ -166,12 +249,13 @@ async def trigger_price_ingestion(
     return {
         "status": "started",
         "started_at": _last_ingestion["started_at"],
+        "data_provider": "Twelve Data",
         "message": "Price ingestion started in background"
     }
 
 
 async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = False):
-    """Background task for price ingestion"""
+    """Background task for price ingestion using Twelve Data"""
     global _last_ingestion
     
     async with _ingestion_lock:
@@ -194,9 +278,9 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
                     assets = [a for a in assets if a["ticker"] in test_tickers][:5]
                 
                 total_assets = len(assets)
-                logger.info(f"Processing {total_assets} assets...")
+                logger.info(f"Processing {total_assets} assets via Twelve Data...")
                 
-                prices, fetch_stats = await fetch_all_prices(assets)
+                prices, fetch_stats = await fetch_all_prices_twelvedata(assets)
                 
                 logger.info(f"Fetched {len(prices)} prices, syncing to Supabase...")
                 
@@ -206,12 +290,12 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
                 duration = (end_time - start_time).total_seconds()
                 
                 await sync.log_ingestion(
-                    etl_name="railway-price-ingestion",
+                    etl_name="twelvedata-price-ingestion",
                     status="success" if failed == 0 else "partial",
                     rows_inserted=inserted,
                     rows_skipped=failed,
                     duration_seconds=int(duration),
-                    source_used="yahoo_finance",
+                    source_used="twelvedata",
                     metadata={
                         "total_assets": total_assets,
                         "fetch_stats": fetch_stats,
@@ -233,13 +317,15 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
                     "duration_seconds": duration,
                     "success_rate": inserted / max(total_assets, 1),
                     "fetch_stats": fetch_stats,
-                    "errors": errors[:5] if errors else []
+                    "errors": errors[:5] if errors else [],
+                    "data_provider": "Twelve Data"
                 }
                 
-                logger.info(f"Price ingestion completed: {inserted}/{total_assets} in {duration:.1f}s")
+                logger.info(f"Twelve Data price ingestion completed: {inserted}/{total_assets} in {duration:.1f}s")
                 
         except Exception as e:
             logger.error(f"Price ingestion failed: {str(e)}")
+            _log_error("_run_ingestion", str(e))
             
             _last_ingestion["status"] = "failed"
             _last_ingestion["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -248,10 +334,10 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
             try:
                 async with SupabaseSync() as sync:
                     await sync.log_ingestion(
-                        etl_name="railway-price-ingestion",
+                        etl_name="twelvedata-price-ingestion",
                         status="failure",
                         error_message=str(e),
-                        source_used="yahoo_finance"
+                        source_used="twelvedata"
                     )
             except:
                 pass
@@ -272,7 +358,8 @@ async def sync_price_ingestion(
     
     return {
         "status": _last_ingestion["status"],
-        "stats": _last_ingestion["stats"]
+        "stats": _last_ingestion["stats"],
+        "data_provider": "Twelve Data"
     }
 
 
@@ -280,24 +367,46 @@ async def sync_price_ingestion(
 
 @router.get("/test")
 async def test_price_fetch():
-    """Quick test of Yahoo Finance connectivity."""
+    """Quick test of Twelve Data connectivity."""
+    if not os.getenv("TWELVEDATA_API_KEY"):
+        return {
+            "success": False,
+            "error": "TWELVEDATA_API_KEY not configured",
+            "message": "Please set the TWELVEDATA_API_KEY environment variable"
+        }
+    
     test_assets = [
         {"id": None, "ticker": "AAPL", "asset_class": "stock"},
         {"id": None, "ticker": "MSFT", "asset_class": "stock"},
         {"id": None, "ticker": "BTC", "asset_class": "crypto"},
         {"id": None, "ticker": "ETH", "asset_class": "crypto"},
-        {"id": None, "ticker": "EURUSD", "asset_class": "forex"}
+        {"id": None, "ticker": "EUR/USD", "asset_class": "forex"}
     ]
     
-    async with YahooPriceFetcher() as fetcher:
-        prices, stats = await fetcher.fetch_prices(test_assets)
-    
-    return {
-        "success": len(prices) > 0,
-        "prices_fetched": len(prices),
-        "stats": stats,
-        "prices": prices
-    }
+    try:
+        async with TwelveDataPriceFetcher() as fetcher:
+            prices, stats = await fetcher.fetch_prices_for_class(test_assets[:2], "stock")
+            crypto_prices, _ = await fetcher.fetch_prices_for_class(test_assets[2:4], "crypto")
+            forex_prices, _ = await fetcher.fetch_prices_for_class(test_assets[4:], "forex")
+            
+            all_prices = prices + crypto_prices + forex_prices
+            credits_status = fetcher.get_credits_status()
+        
+        return {
+            "success": len(all_prices) > 0,
+            "prices_fetched": len(all_prices),
+            "data_provider": "Twelve Data",
+            "credits_status": credits_status,
+            "stats": stats,
+            "prices": all_prices
+        }
+    except Exception as e:
+        _log_error("test_price_fetch", str(e))
+        return {
+            "success": False,
+            "error": str(e),
+            "data_provider": "Twelve Data"
+        }
 
 
 @router.get("/coverage")
@@ -341,8 +450,16 @@ async def get_price_coverage():
                 "total_assets": total,
                 "covered": covered,
                 "coverage_percent": (covered / total * 100) if total > 0 else 0,
-                "by_asset_class": by_class
+                "by_asset_class": by_class,
+                "data_provider": "Twelve Data",
+                "refresh_intervals": {
+                    "crypto": "10 minutes",
+                    "forex": "10 minutes",
+                    "stocks": "30 minutes",
+                    "commodities": "30 minutes"
+                }
             }
             
         except Exception as e:
+            _log_error("get_price_coverage", str(e))
             return {"error": str(e)}
