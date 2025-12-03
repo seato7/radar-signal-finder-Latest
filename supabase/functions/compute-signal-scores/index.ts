@@ -280,12 +280,12 @@ function computeCompositeScore(
 
 function classifySignal(score: number, direction: string | null): string {
   if (score >= 75) {
-    return direction === 'up' ? 'strong_bullish' : direction === 'down' ? 'strong_bearish' : 'strong_signal';
+    return direction === 'up' ? 'strong bullish' : direction === 'down' ? 'strong bearish' : 'strong signal';
   } else if (score >= 50) {
-    return direction === 'up' ? 'bullish' : direction === 'down' ? 'bearish' : 'moderate_signal';
+    return direction === 'up' ? 'bullish' : direction === 'down' ? 'bearish' : 'moderate signal';
   } else if (score >= 25) {
-    return 'watchlist';
+    return direction === 'up' ? 'weak bullish' : direction === 'down' ? 'weak bearish' : 'weak signal';
   } else {
-    return 'neutral';
+    return direction === 'up' ? 'noise bullish (ignore)' : direction === 'down' ? 'noise bearish (ignore)' : 'noise (ignore)';
   }
 }
