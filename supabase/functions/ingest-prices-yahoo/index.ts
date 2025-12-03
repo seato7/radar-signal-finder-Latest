@@ -8,6 +8,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Exotic commodities that need Perplexity fallback (no reliable Yahoo data)
+const EXOTIC_TICKERS = new Set([
+  'COBALT', 'LITHIUM', 'NICKEL', 'RHODIUM', 'STEEL', 'TIN', 'URANIUM', 
+  'ZINC', 'LBS', 'MWE', 'ZO', 'ZW', 'COPPER', 'XPTUSD', 'XPDUSD'
+]);
+
 interface PriceData {
   ticker: string;
   asset_id: string;
@@ -33,6 +39,105 @@ async function generateChecksum(data: string): Promise<string> {
   return Array.from(new Uint8Array(buffer))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+// Perplexity fallback for exotic commodities
+async function fetchFromPerplexity(
+  ticker: string,
+  assetName: string,
+  supabaseClient: any
+): Promise<{ success: boolean; data?: PriceData[]; error?: string }> {
+  const apiStartTime = Date.now();
+  const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
+  
+  if (!perplexityKey) {
+    return { success: false, error: 'Perplexity API key not configured' };
+  }
+  
+  try {
+    const prompt = `What is the current spot price of ${assetName} (${ticker}) in USD? 
+    Return ONLY a JSON object with this exact format: {"price": <number>, "date": "<YYYY-MM-DD>"}
+    No explanation, just the JSON.`;
+    
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${perplexityKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-sonar-small-128k-online',
+        messages: [
+          { role: 'system', content: 'You are a financial data assistant. Return only valid JSON with no markdown formatting.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 100,
+      }),
+    });
+    
+    if (!response.ok) {
+      await logAPIUsage(supabaseClient, {
+        api_name: 'Perplexity',
+        endpoint: '/chat/completions',
+        function_name: 'ingest-prices-yahoo',
+        status: 'failure',
+        response_time_ms: Date.now() - apiStartTime,
+        error_message: `HTTP ${response.status}`
+      });
+      return { success: false, error: `Perplexity HTTP ${response.status}` };
+    }
+    
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    
+    // Extract JSON from response
+    const jsonMatch = content.match(/\{[^}]+\}/);
+    if (!jsonMatch) {
+      return { success: false, error: 'Could not parse Perplexity response' };
+    }
+    
+    const parsed = JSON.parse(jsonMatch[0]);
+    const price = parseFloat(parsed.price);
+    const date = parsed.date || new Date().toISOString().split('T')[0];
+    
+    if (isNaN(price) || price <= 0) {
+      return { success: false, error: 'Invalid price from Perplexity' };
+    }
+    
+    const checksum = await generateChecksum(`${ticker}|${date}|${price}`);
+    
+    await logAPIUsage(supabaseClient, {
+      api_name: 'Perplexity',
+      endpoint: '/chat/completions',
+      function_name: 'ingest-prices-yahoo',
+      status: 'success',
+      response_time_ms: Date.now() - apiStartTime
+    });
+    
+    return {
+      success: true,
+      data: [{
+        ticker,
+        asset_id: '',
+        date,
+        close: price,
+        checksum,
+        last_updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]
+    };
+  } catch (error) {
+    await logAPIUsage(supabaseClient, {
+      api_name: 'Perplexity',
+      endpoint: '/chat/completions',
+      function_name: 'ingest-prices-yahoo',
+      status: 'failure',
+      response_time_ms: Date.now() - apiStartTime,
+      error_message: (error as Error).message
+    });
+    return { success: false, error: (error as Error).message };
+  }
 }
 
 async function fetchWithRetry(
@@ -423,18 +528,25 @@ Deno.serve(async (req) => {
       
       console.log(`  📈 Processing ${ticker}...`);
       
-      const yahooResult = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
+      let result = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
+      let sourceUsed = 'Yahoo Finance';
       
-      if (!yahooResult.success || !yahooResult.data || yahooResult.data.length === 0) {
+      // If Yahoo fails and it's an exotic ticker, try Perplexity fallback
+      if ((!result.success || !result.data || result.data.length === 0) && EXOTIC_TICKERS.has(ticker)) {
+        console.log(`  🔄 Yahoo failed for exotic ticker ${ticker}, trying Perplexity...`);
+        result = await fetchFromPerplexity(ticker, asset.name || ticker, supabaseClient);
+        sourceUsed = 'Perplexity';
+      }
+      
+      if (!result.success || !result.data || result.data.length === 0) {
         failedCount++;
-        errorDetails.push(`${ticker}: ${yahooResult.error || 'No data'}`);
-        // Small delay even on failure
+        errorDetails.push(`${ticker}: ${result.error || 'No data'}`);
         await new Promise(resolve => setTimeout(resolve, 200));
         continue;
       }
       
-      const prices = yahooResult.data;
-      prices.forEach(p => p.asset_id = asset.id);
+      const prices: PriceData[] = result.data!;
+      prices.forEach((p: PriceData) => p.asset_id = asset.id);
       
       // Upsert in small chunks
       const upsertResult = await upsertPricesInChunks(supabaseClient, prices, 50);
