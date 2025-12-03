@@ -57,9 +57,10 @@ class Settings(BaseSettings):
     TD_REFRESH_STOCK_MINUTES: int = 30    # Stocks: standard updates
     TD_REFRESH_COMMODITY_MINUTES: int = 30  # Commodities: standard updates
     
-    # Rate limiting (Grow plan: 55 credits/min)
-    TD_MAX_CREDITS_PER_MINUTE: int = 55
-    TD_MAX_SYMBOLS_PER_BATCH: int = 50  # Conservative batch size
+    # STRICT Rate limiting (Grow plan: 55 credits/min)
+    # Using 50 to leave 5-credit buffer for safety
+    TD_MAX_CREDITS_PER_MINUTE: int = 50  # Actual limit is 55, buffer of 5
+    TD_MAX_SYMBOLS_PER_BATCH: int = 20   # STRICT: Max 20 symbols per request
     
     
     class Config:
