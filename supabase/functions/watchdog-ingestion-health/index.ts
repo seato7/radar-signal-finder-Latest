@@ -7,8 +7,8 @@ const corsHeaders = {
 }
 
 // Expected function intervals in minutes
+// NOTE: Price ingestion moved to Railway backend (Twelve Data) - not monitored here
 const FUNCTION_INTERVALS: Record<string, number> = {
-  'ingest-prices-yahoo': 15,
   'ingest-breaking-news': 180,
   'ingest-news-sentiment': 180,
   'ingest-smart-money': 360,

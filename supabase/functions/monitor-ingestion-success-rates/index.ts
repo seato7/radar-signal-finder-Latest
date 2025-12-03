@@ -22,7 +22,8 @@ serve(async (req) => {
 
     console.log('🔍 Checking ingestion success rates (last 24 hours)...');
 
-    // ALL 32 data ingestion functions to monitor
+    // ALL data ingestion functions to monitor (31 functions)
+    // NOTE: ingest-prices-yahoo REMOVED - price ingestion moved to Railway backend (Twelve Data)
     const MONITORED_FUNCTIONS = [
       'ingest-13f-holdings',
       'ingest-advanced-technicals',
@@ -49,7 +50,6 @@ serve(async (req) => {
       'ingest-pattern-recognition',
       'ingest-policy-feeds',
       'ingest-prices-csv',
-      'ingest-prices-yahoo',
       'ingest-reddit-sentiment',
       'ingest-search-trends',
       'ingest-short-interest',
