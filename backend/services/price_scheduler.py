@@ -251,13 +251,20 @@ def get_scheduler_stats() -> dict:
     }
 
 
-def start_scheduler():
+def start_scheduler(custom_intervals: Optional[Dict[str, int]] = None):
     """Start the tiered price scheduler with proper staggering"""
     global _scheduler
     
     if _scheduler and _scheduler.running:
         logger.warning("Scheduler already running")
         return
+    
+    # Apply custom intervals if provided
+    if custom_intervals:
+        for tier, interval in custom_intervals.items():
+            if tier.lower() in TIER_INTERVALS:
+                TIER_INTERVALS[tier.lower()] = interval
+                logger.info(f"Custom interval for {tier}: {interval} minutes")
     
     _scheduler = AsyncIOScheduler()
     
@@ -341,3 +348,24 @@ async def trigger_immediate_run(asset_class: Optional[str] = None):
 def get_tier_config() -> Dict[str, int]:
     """Get current tier configuration"""
     return TIER_INTERVALS.copy()
+
+
+def update_tier_interval(asset_class: str, interval_minutes: int) -> bool:
+    """
+    Update interval for a specific asset class.
+    Note: Requires scheduler restart for changes to take effect.
+    """
+    asset_class = asset_class.lower()
+    if asset_class in TIER_INTERVALS:
+        TIER_INTERVALS[asset_class] = interval_minutes
+        logger.info(f"Updated {asset_class} interval to {interval_minutes} minutes")
+        return True
+    return False
+
+
+def get_credits_used_last_hour() -> int:
+    """Get approximate credits used in last hour based on stats"""
+    credits_guard = get_credits_guard()
+    status = credits_guard.get_status()
+    # Return current minute usage as proxy (actual tracking would need more state)
+    return status.get("credits_used_this_minute", 0)
