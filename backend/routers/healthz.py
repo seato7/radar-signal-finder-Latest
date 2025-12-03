@@ -62,8 +62,9 @@ async def get_ingestion_health():
     from backend.services.supabase_sync import SupabaseSync
     
     stats = get_scheduler_stats()
+    success_rate = stats.get("global_success_rate", 0)
     
-    # Get recent ingestion logs from Supabase
+    # Get recent ingestion logs from Supabase (tiered scheduler uses railway-price-{tier})
     recent_logs = []
     try:
         async with SupabaseSync() as sync:
@@ -72,9 +73,9 @@ async def get_ingestion_health():
                     f"{sync.url}/rest/v1/ingest_logs",
                     params={
                         "select": "etl_name,status,rows_inserted,duration_seconds,created_at,error_message",
-                        "etl_name": "eq.railway-price-scheduler",
+                        "etl_name": "like.railway-price-%",
                         "order": "created_at.desc",
-                        "limit": "10"
+                        "limit": "20"
                     }
                 )
                 if response.status_code == 200:
@@ -83,12 +84,12 @@ async def get_ingestion_health():
         logger.error(f"Failed to fetch ingestion logs: {str(e)}")
     
     return {
-        "status": "healthy" if stats["success_rate"] >= 90 else "degraded",
+        "status": "healthy" if success_rate >= 90 else "degraded",
         "scheduler": stats,
         "recent_runs": recent_logs,
         "thresholds": {
             "target_success_rate": 95,
-            "current_success_rate": stats["success_rate"],
-            "meets_target": stats["success_rate"] >= 95
+            "current_success_rate": success_rate,
+            "meets_target": success_rate >= 95
         }
     }
