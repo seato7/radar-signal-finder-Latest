@@ -6,8 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// ALL 32 data ingestion functions (user-initiated ones will fail gracefully if called without input)
+// ALL 34 data ingestion and signal generation functions
+// NOTE: ingest-prices-yahoo REMOVED - price ingestion moved to Railway backend (Twelve Data)
 const INGESTION_FUNCTIONS = [
+  // Data Ingestion Functions (31)
   'ingest-13f-holdings',
   'ingest-advanced-technicals',
   'ingest-ai-research',
@@ -33,13 +35,16 @@ const INGESTION_FUNCTIONS = [
   'ingest-pattern-recognition',
   'ingest-policy-feeds',
   'ingest-prices-csv',
-  'ingest-prices-yahoo',
   'ingest-reddit-sentiment',
   'ingest-search-trends',
   'ingest-short-interest',
   'ingest-smart-money',
   'ingest-stocktwits',
-  'ingest-supply-chain'
+  'ingest-supply-chain',
+  // Signal & Alert Generation (3)
+  'compute-theme-scores',
+  'compute-signal-scores',
+  'generate-alerts'
 ];
 
 serve(async (req) => {
@@ -48,11 +53,9 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
-
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    
     console.log(`🚀 Triggering ${INGESTION_FUNCTIONS.length} ingestion functions...`);
 
     const results: Array<{
@@ -61,8 +64,8 @@ serve(async (req) => {
       error?: string;
     }> = [];
 
-    // Trigger all functions in parallel (batches of 5 to avoid overwhelming the system)
-    const batchSize = 5;
+    // Trigger all functions in parallel (batches of 4 to avoid overwhelming)
+    const batchSize = 4;
     for (let i = 0; i < INGESTION_FUNCTIONS.length; i += batchSize) {
       const batch = INGESTION_FUNCTIONS.slice(i, i + batchSize);
       
@@ -71,21 +74,27 @@ serve(async (req) => {
           try {
             console.log(`📤 Triggering: ${functionName}`);
             
-            // Invoke the function (fire and forget)
-            const { error } = await supabaseClient.functions.invoke(functionName, {
-              body: { 
+            // Direct HTTP call for reliability
+            const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseKey}`
+              },
+              body: JSON.stringify({ 
                 trigger: 'manual',
                 triggered_by: 'trigger-all-ingestions',
                 timestamp: new Date().toISOString()
-              }
+              })
             });
 
-            if (error) {
-              console.error(`❌ Error triggering ${functionName}:`, error.message);
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unknown error');
+              console.error(`❌ Error triggering ${functionName}: ${response.status} - ${errorText}`);
               return {
                 function: functionName,
                 status: 'error' as const,
-                error: error.message
+                error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`
               };
             }
 
@@ -107,9 +116,9 @@ serve(async (req) => {
 
       results.push(...batchResults);
 
-      // Small delay between batches
+      // Small delay between batches to avoid rate limiting
       if (i + batchSize < INGESTION_FUNCTIONS.length) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
@@ -126,7 +135,7 @@ serve(async (req) => {
         errored,
         results,
         message: `Triggered ${triggered}/${INGESTION_FUNCTIONS.length} ingestion functions`,
-        note: 'Functions are running asynchronously. Check ingest_logs for results in a few minutes.',
+        note: 'Functions are running asynchronously. Check Slack for results.',
         timestamp: new Date().toISOString()
       }),
       { 
