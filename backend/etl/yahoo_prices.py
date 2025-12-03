@@ -52,13 +52,13 @@ class YahooPriceFetcher:
             timeout=REQUEST_TIMEOUT,
             headers=self._get_headers()
         )
-        self.stats["start_time"] = datetime.now(timezone.utc)
+        self.stats["start_time"] = datetime.now(timezone.utc).isoformat()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.aclose()
-        self.stats["end_time"] = datetime.now(timezone.utc)
+        self.stats["end_time"] = datetime.now(timezone.utc).isoformat()
     
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with random user agent"""
@@ -358,29 +358,25 @@ class YahooPriceFetcher:
             if i + BATCH_SIZE < len(yahoo_tickers):
                 await asyncio.sleep(BATCH_DELAY_SECONDS)
         
-        # Convert to price records
+        # Convert to price records matching the actual prices table schema
         price_records = []
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        
         for yahoo_ticker, price_data in all_prices.items():
             asset = ticker_map.get(yahoo_ticker)
             if not asset:
                 continue
             
             # Generate checksum for deduplication
-            checksum_data = f"{asset['ticker']}|{price_data['price']}|{price_data['timestamp'][:10]}"
+            checksum_data = f"{asset['ticker']}|{price_data['price']}|{today}"
             checksum = hashlib.sha256(checksum_data.encode()).hexdigest()
             
+            # Only include columns that exist in the prices table
             price_records.append({
                 "asset_id": asset.get("id"),
                 "ticker": asset["ticker"],
-                "price": price_data["price"],
-                "change_24h": price_data.get("change"),
-                "change_percent_24h": price_data.get("change_percent"),
-                "volume_24h": price_data.get("volume"),
-                "market_cap": price_data.get("market_cap"),
-                "high_52w": price_data.get("high_52w"),
-                "low_52w": price_data.get("low_52w"),
-                "source": "yahoo_finance",
-                "fetched_at": price_data["timestamp"],
+                "date": today,
+                "close": price_data["price"],
                 "checksum": checksum
             })
         
