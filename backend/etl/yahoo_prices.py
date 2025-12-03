@@ -1,6 +1,7 @@
 """Yahoo Finance Price ETL - Robust price fetching with batching and retries"""
 import asyncio
 import hashlib
+import random
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple
 import httpx
@@ -8,9 +9,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Yahoo Finance API endpoints
-YAHOO_QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote"
-YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+# Yahoo Finance API endpoint - use v8/finance/chart (more reliable)
+YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart"
 
 # Rate limiting config
 BATCH_SIZE = 50
@@ -18,6 +18,13 @@ BATCH_DELAY_SECONDS = 1.0
 REQUEST_TIMEOUT = 15.0
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0
+
+# User agents for rotation
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+]
 
 
 class YahooPriceFetcher:
@@ -36,9 +43,7 @@ class YahooPriceFetcher:
     async def __aenter__(self):
         self.session = httpx.AsyncClient(
             timeout=REQUEST_TIMEOUT,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
+            headers=self._get_headers()
         )
         self.stats["start_time"] = datetime.now(timezone.utc)
         return self
@@ -47,6 +52,16 @@ class YahooPriceFetcher:
         if self.session:
             await self.session.aclose()
         self.stats["end_time"] = datetime.now(timezone.utc)
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers with random user agent"""
+        return {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://finance.yahoo.com",
+            "Origin": "https://finance.yahoo.com"
+        }
     
     # Comprehensive ticker mappings for Yahoo Finance
     TICKER_MAPPINGS = {
@@ -194,64 +209,83 @@ class YahooPriceFetcher:
         
         return ticker
     
-    async def _fetch_batch(self, tickers: List[str]) -> Dict[str, Dict]:
-        """Fetch prices for a batch of tickers"""
-        if not tickers:
-            return {}
-        
-        symbols = ",".join(tickers)
-        results = {}
+    async def _fetch_single_ticker(self, yahoo_ticker: str) -> Optional[Dict]:
+        """Fetch price for a single ticker using chart endpoint"""
+        url = f"{YAHOO_CHART_URL}/{yahoo_ticker}"
         
         for attempt in range(MAX_RETRIES):
             try:
+                # Rotate headers for each request
+                self.session.headers.update(self._get_headers())
+                
                 response = await self.session.get(
-                    YAHOO_QUOTE_URL,
-                    params={
-                        "symbols": symbols,
-                        "fields": "regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketTime,regularMarketVolume,marketCap,fiftyTwoWeekHigh,fiftyTwoWeekLow"
-                    }
+                    url,
+                    params={"range": "1d", "interval": "1d"}
                 )
                 
                 if response.status_code == 200:
                     data = response.json()
-                    quotes = data.get("quoteResponse", {}).get("result", [])
+                    result = data.get("chart", {}).get("result", [])
                     
-                    for quote in quotes:
-                        symbol = quote.get("symbol", "")
-                        price = quote.get("regularMarketPrice")
+                    if result and len(result) > 0:
+                        meta = result[0].get("meta", {})
+                        indicators = result[0].get("indicators", {})
+                        quote = indicators.get("quote", [{}])[0] if indicators.get("quote") else {}
                         
-                        if symbol and price is not None:
-                            results[symbol] = {
+                        # Get the latest close price
+                        close_prices = quote.get("close", [])
+                        price = meta.get("regularMarketPrice") or (close_prices[-1] if close_prices else None)
+                        
+                        if price is not None:
+                            return {
                                 "price": float(price),
-                                "change": quote.get("regularMarketChange", 0),
-                                "change_percent": quote.get("regularMarketChangePercent", 0),
-                                "volume": quote.get("regularMarketVolume"),
-                                "market_cap": quote.get("marketCap"),
-                                "high_52w": quote.get("fiftyTwoWeekHigh"),
-                                "low_52w": quote.get("fiftyTwoWeekLow"),
+                                "change": meta.get("regularMarketChange", 0),
+                                "change_percent": meta.get("regularMarketChangePercent", 0),
+                                "volume": meta.get("regularMarketVolume"),
+                                "market_cap": meta.get("marketCap"),
+                                "high_52w": meta.get("fiftyTwoWeekHigh"),
+                                "low_52w": meta.get("fiftyTwoWeekLow"),
                                 "timestamp": datetime.now(timezone.utc).isoformat()
                             }
-                    
-                    self.stats["fetched"] += len(results)
-                    return results
+                    return None
                 
                 elif response.status_code == 429:
                     # Rate limited - wait and retry
                     self.stats["retries"] += 1
                     await asyncio.sleep(RETRY_DELAY * (attempt + 1))
                     continue
+                elif response.status_code == 404:
+                    # Ticker not found - don't retry
+                    logger.debug(f"Ticker {yahoo_ticker} not found on Yahoo")
+                    return None
                 else:
-                    logger.warning(f"Yahoo API returned {response.status_code} for batch")
+                    logger.warning(f"Yahoo API returned {response.status_code} for {yahoo_ticker}")
                     
             except httpx.TimeoutException:
                 self.stats["retries"] += 1
-                logger.warning(f"Timeout fetching batch (attempt {attempt + 1})")
+                logger.warning(f"Timeout fetching {yahoo_ticker} (attempt {attempt + 1})")
                 await asyncio.sleep(RETRY_DELAY)
             except Exception as e:
-                logger.error(f"Error fetching batch: {str(e)}")
+                logger.error(f"Error fetching {yahoo_ticker}: {str(e)}")
                 break
         
-        self.stats["failed"] += len(tickers)
+        return None
+    
+    async def _fetch_batch(self, tickers: List[str]) -> Dict[str, Dict]:
+        """Fetch prices for a batch of tickers sequentially"""
+        results = {}
+        
+        for ticker in tickers:
+            price_data = await self._fetch_single_ticker(ticker)
+            if price_data:
+                results[ticker] = price_data
+                self.stats["fetched"] += 1
+            else:
+                self.stats["failed"] += 1
+            
+            # Small delay between individual requests
+            await asyncio.sleep(0.1)
+        
         return results
     
     async def fetch_prices(
@@ -285,7 +319,9 @@ class YahooPriceFetcher:
         # Process in batches
         for i in range(0, len(yahoo_tickers), BATCH_SIZE):
             batch = yahoo_tickers[i:i + BATCH_SIZE]
-            logger.info(f"Fetching batch {i // BATCH_SIZE + 1}/{(len(yahoo_tickers) + BATCH_SIZE - 1) // BATCH_SIZE}")
+            batch_num = i // BATCH_SIZE + 1
+            total_batches = (len(yahoo_tickers) + BATCH_SIZE - 1) // BATCH_SIZE
+            logger.info(f"Fetching batch {batch_num}/{total_batches}")
             
             batch_results = await self._fetch_batch(batch)
             all_prices.update(batch_results)

@@ -531,9 +531,12 @@ Deno.serve(async (req) => {
       let result = await fetchFromYahoo(ticker, asset.asset_class || 'stock', supabaseClient);
       let sourceUsed = 'Yahoo Finance';
       
-      // If Yahoo fails and it's an exotic ticker, try Perplexity fallback
-      if ((!result.success || !result.data || result.data.length === 0) && EXOTIC_TICKERS.has(ticker)) {
-        console.log(`  🔄 Yahoo failed for exotic ticker ${ticker}, trying Perplexity...`);
+      // If Yahoo fails, try Perplexity fallback for exotic commodities OR crypto that failed
+      const shouldTryPerplexity = !result.success || !result.data || result.data.length === 0;
+      const isExoticOrCrypto = EXOTIC_TICKERS.has(ticker) || asset.asset_class === 'crypto' || asset.asset_class === 'commodity';
+      
+      if (shouldTryPerplexity && isExoticOrCrypto) {
+        console.log(`  🔄 Yahoo failed for ${ticker}, trying Perplexity fallback...`);
         result = await fetchFromPerplexity(ticker, asset.name || ticker, supabaseClient);
         sourceUsed = 'Perplexity';
       }
