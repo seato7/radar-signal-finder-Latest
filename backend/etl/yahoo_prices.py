@@ -376,8 +376,9 @@ class YahooPriceFetcher:
                 logger.debug(f"Skipping invalid price for {asset['ticker']}: {price}")
                 continue
             
-            # Generate checksum for deduplication
-            checksum_data = f"{asset['ticker']}|{price}|{today}"
+            # Generate checksum based on ticker+date only (not price)
+            # This ensures we update existing rows when price changes
+            checksum_data = f"{asset['ticker']}|{today}"
             checksum = hashlib.sha256(checksum_data.encode()).hexdigest()
             
             # Only include columns that exist in the prices table
