@@ -12,16 +12,16 @@ from backend.services.supabase_sync import SupabaseSync
 logger = logging.getLogger(__name__)
 
 # Tiered intervals by asset class (in minutes)
-# Crypto: Most volatile, needs fastest updates
-# Forex: 24/5 market, moderate volatility
-# Stocks: Less volatile during market hours
+# Increased to account for Yahoo rate limiting and large asset counts
+# Crypto: 171 assets, ~3min per batch with rate limits
+# Forex: 87 assets, ~2min per batch with rate limits
 TIER_INTERVALS = {
-    "crypto": 2,      # Every 2 minutes
-    "forex": 3,       # Every 3 minutes
-    "equity": 5,      # Every 5 minutes
-    "commodity": 5,   # Every 5 minutes
-    "index": 5,       # Every 5 minutes
-    "etf": 5,         # Every 5 minutes
+    "crypto": 5,      # Every 5 minutes (was 2, too fast with 171 assets)
+    "forex": 5,       # Every 5 minutes (was 3, too fast with 87 assets)
+    "equity": 10,     # Every 10 minutes
+    "commodity": 10,  # Every 10 minutes
+    "index": 10,      # Every 10 minutes
+    "etf": 10,        # Every 10 minutes
 }
 
 DEFAULT_INTERVAL_MINUTES = 5

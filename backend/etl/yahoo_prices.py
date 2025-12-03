@@ -13,11 +13,18 @@ logger = logging.getLogger(__name__)
 YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart"
 
 # Rate limiting config
-BATCH_SIZE = 50
-BATCH_DELAY_SECONDS = 1.0
+BATCH_SIZE = 30  # Reduced batch size to avoid rate limits
+BATCH_DELAY_SECONDS = 2.0  # Increased delay between batches
 REQUEST_TIMEOUT = 15.0
-MAX_RETRIES = 3
-RETRY_DELAY = 2.0
+MAX_RETRIES = 2  # Reduced retries to fail faster
+RETRY_DELAY = 1.5
+
+# Cross-pair patterns that don't exist on Yahoo - skip these
+INVALID_CROSS_PAIRS = {
+    'BTC/EUR', 'ETH/EUR', 'XRP/EUR', 'ETH/BTC', 'SOL/BTC', 'SOL/ETH',
+    'LINK/ETH', 'UNI/ETH', 'AAVE/ETH', 'MATIC/ETH', 'SOL/ETH', 'AVAX/ETH',
+    'DOT/BTC', 'ADA/BTC', 'XRP/BTC', 'LTC/BTC', 'LINK/BTC',
+}
 
 # User agents for rotation
 USER_AGENTS = [
@@ -178,9 +185,13 @@ class YahooPriceFetcher:
         'STRK/USDT': 'STRK-USD',
     }
     
-    def _normalize_ticker(self, ticker: str, asset_class: str) -> str:
-        """Convert ticker to Yahoo Finance format"""
+    def _normalize_ticker(self, ticker: str, asset_class: str) -> Optional[str]:
+        """Convert ticker to Yahoo Finance format. Returns None for invalid tickers."""
         ticker = ticker.upper().strip()
+        
+        # Skip invalid cross-pairs that don't exist on Yahoo
+        if ticker in INVALID_CROSS_PAIRS:
+            return None
         
         # Check direct mapping first
         if ticker in self.TICKER_MAPPINGS:
@@ -188,6 +199,15 @@ class YahooPriceFetcher:
         
         # Crypto: Convert USDT to USD or add -USD suffix
         if asset_class == "crypto":
+            # Skip cross-pairs like BTC/EUR, ETH/BTC (non-USD pairs)
+            if '/' in ticker:
+                parts = ticker.split('/')
+                if len(parts) == 2:
+                    base, quote = parts
+                    # Only USD and USDT pairs are valid on Yahoo
+                    if quote not in ('USD', 'USDT'):
+                        return None  # Skip invalid cross-pair
+                    return f"{base}-USD"
             if '/USDT' in ticker:
                 return ticker.replace('/USDT', '-USD')
             if '/USD' in ticker:
@@ -304,14 +324,22 @@ class YahooPriceFetcher:
         if not assets:
             return [], self.stats
         
-        # Build ticker mapping
+        # Build ticker mapping, skipping invalid tickers
         ticker_map = {}  # yahoo_ticker -> original asset
+        skipped_count = 0
         for asset in assets:
             yahoo_ticker = self._normalize_ticker(
                 asset["ticker"], 
                 asset.get("asset_class", "stock")
             )
+            if yahoo_ticker is None:
+                skipped_count += 1
+                logger.debug(f"Skipping invalid ticker: {asset['ticker']}")
+                continue
             ticker_map[yahoo_ticker] = asset
+        
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} invalid cross-pair tickers")
         
         yahoo_tickers = list(ticker_map.keys())
         all_prices = {}
