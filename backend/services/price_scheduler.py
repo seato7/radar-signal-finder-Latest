@@ -67,8 +67,16 @@ _scheduler_stats: Dict[str, dict] = {
 # Track running state per tier - prevents overlap
 _running_tiers: Dict[str, bool] = {}
 
-# Tier execution lock - only one tier can run at a time
-_tier_execution_lock = asyncio.Lock()
+# Tier execution lock - only one tier can run at a time (created lazily)
+_tier_execution_lock: Optional[asyncio.Lock] = None
+
+
+def _get_tier_lock() -> asyncio.Lock:
+    """Get or create the tier execution lock (must be called after event loop starts)"""
+    global _tier_execution_lock
+    if _tier_execution_lock is None:
+        _tier_execution_lock = asyncio.Lock()
+    return _tier_execution_lock
 
 
 async def _run_tier_ingestion(asset_class: str, fetch_func):
@@ -83,7 +91,7 @@ async def _run_tier_ingestion(asset_class: str, fetch_func):
         return
     
     # Acquire execution lock - only one tier at a time
-    async with _tier_execution_lock:
+    async with _get_tier_lock():
         _running_tiers[tier_key] = True
         start_time = datetime.now(timezone.utc)
         
