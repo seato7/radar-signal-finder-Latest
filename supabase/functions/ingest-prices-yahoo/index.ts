@@ -65,19 +65,149 @@ async function fetchWithRetry(
   throw lastError || new Error('Fetch failed after retries');
 }
 
+// Comprehensive ticker mappings for Yahoo Finance
+const TICKER_MAPPINGS: Record<string, string> = {
+  // Commodities - Yahoo uses futures symbols
+  'CRUDE': 'CL=F',
+  'BRENT': 'BZ=F',
+  'NATGAS': 'NG=F',
+  'XAUUSD': 'GC=F',
+  'XAGUSD': 'SI=F',
+  'XPTUSD': 'PL=F',
+  'XPDUSD': 'PA=F',
+  'COPPER': 'HG=F',
+  'LITHIUM': 'ALB',  // Use Albemarle as proxy
+  'COBALT': 'SBSW',  // Use Sibanye as proxy
+  'NICKEL': 'VALE',  // Use Vale as proxy
+  'URANIUM': 'CCJ',  // Use Cameco as proxy
+  'STEEL': 'X',      // US Steel as proxy
+  'ZINC': 'ZINC.L',  // London zinc ETF
+  'TIN': 'TIN.L',    // London tin
+  'RHODIUM': 'SBSW', // Proxy
+  'VIX': '^VIX',
+  'LBS': 'LBS=F',    // Lumber
+  'MWE': 'MWE=F',    // Spring Wheat
+  'ZO': 'ZO=F',      // Oats
+  'ZW': 'ZW=F',      // Wheat
+  
+  // Crypto - Convert USDT pairs to USD pairs
+  'BTC/USDT': 'BTC-USD',
+  'ETH/USDT': 'ETH-USD',
+  'SOL/USDT': 'SOL-USD',
+  'XRP/USDT': 'XRP-USD',
+  'ADA/USDT': 'ADA-USD',
+  'DOGE/USDT': 'DOGE-USD',
+  'DOT/USDT': 'DOT-USD',
+  'AVAX/USDT': 'AVAX-USD',
+  'MATIC/USDT': 'MATIC-USD',
+  'LINK/USDT': 'LINK-USD',
+  'LTC/USDT': 'LTC-USD',
+  'UNI/USDT': 'UNI-USD',
+  'ATOM/USDT': 'ATOM-USD',
+  'XLM/USDT': 'XLM-USD',
+  'ALGO/USDT': 'ALGO-USD',
+  'NEAR/USDT': 'NEAR-USD',
+  'FIL/USDT': 'FIL-USD',
+  'AAVE/USDT': 'AAVE-USD',
+  'MANA/USDT': 'MANA-USD',
+  'SAND/USDT': 'SAND-USD',
+  'AXS/USDT': 'AXS-USD',
+  'THETA/USDT': 'THETA-USD',
+  'VET/USDT': 'VET-USD',
+  'FTM/USDT': 'FTM-USD',
+  'HBAR/USDT': 'HBAR-USD',
+  'ICP/USDT': 'ICP-USD',
+  'GRT/USDT': 'GRT-USD',
+  'GRT/USD': 'GRT-USD',
+  'CRV/USDT': 'CRV-USD',
+  'MKR/USDT': 'MKR-USD',
+  'SNX/USDT': 'SNX-USD',
+  'COMP/USDT': 'COMP-USD',
+  'COMP/USD': 'COMP-USD',
+  'YFI/USDT': 'YFI-USD',
+  'YFI/USD': 'YFI-USD',
+  'SUSHI/USDT': 'SUSHI-USD',
+  'ENJ/USDT': 'ENJ-USD',
+  'BAT/USDT': 'BAT-USD',
+  'ZRX/USDT': 'ZRX-USD',
+  'ZRX/USD': 'ZRX-USD',
+  'ZEC/USDT': 'ZEC-USD',
+  'ZEC/USD': 'ZEC-USD',
+  'DASH/USDT': 'DASH-USD',
+  'XMR/USDT': 'XMR-USD',
+  'XMR/USD': 'XMR-USD',
+  'WAVES/USDT': 'WAVES-USD',
+  'ZIL/USDT': 'ZIL-USD',
+  'ZIL/USD': 'ZIL-USD',
+  'ONE/USDT': 'ONE-USD',
+  'KAVA/USDT': 'KAVA-USD',
+  'CELO/USDT': 'CELO-USD',
+  'ANKR/USDT': 'ANKR-USD',
+  'STORJ/USDT': 'STORJ-USD',
+  'SKL/USDT': 'SKL-USD',
+  'REN/USDT': 'REN-USD',
+  'BAND/USDT': 'BAND-USD',
+  'BAL/USDT': 'BAL-USD',
+  'APE/USDT': 'APE-USD',
+  'OP/USDT': 'OP-USD',
+  'ARB/USDT': 'ARB-USD',
+  'IMX/USDT': 'IMX-USD',
+  'IMX/USD': 'IMX-USD',
+  'LDO/USDT': 'LDO-USD',
+  'APT/USDT': 'APT-USD',
+  'SHIB/USDT': 'SHIB-USD',
+  'PEPE/USDT': 'PEPE-USD',
+  'PEPE/USD': 'PEPE-USD',
+  'FLOKI/USDT': 'FLOKI-USD',
+  'BNB/USDT': 'BNB-USD',
+  'TRX/USDT': 'TRX-USD',
+  'EGLD/USDT': 'EGLD-USD',
+  'FLOW/USDT': 'FLOW-USD',
+  'MINA/USDT': 'MINA-USD',
+  'OCEAN/USDT': 'OCEAN-USD',
+  'FET/USDT': 'FET-USD',
+  'AGIX/USDT': 'AGIX-USD',
+  'RUNE/USDT': 'RUNE-USD',
+  'GALA/USDT': 'GALA-USD',
+  'ROSE/USDT': 'ROSE-USD',
+  'CKB/USDT': 'CKB-USD',
+  'ICX/USDT': 'ICX-USD',
+  'DCR/USDT': 'DCR-USD',
+  '1INCH/USDT': '1INCH-USD',
+  'STRK/USDT': 'STRK-USD',
+  'XRP/BTC': 'XRP-USD',
+  'XRP/EUR': 'XRP-EUR',
+  'UNI/ETH': 'UNI-USD',
+};
+
 function normalizeTickerForYahoo(ticker: string, assetClass?: string): string {
-  if (assetClass === 'crypto' || ticker.includes('/USD') || ticker.includes('/EUR') || ticker.includes('/USDT')) {
-    return ticker.replace(/\//g, '-');
+  // Check for direct mapping first
+  if (TICKER_MAPPINGS[ticker]) {
+    return TICKER_MAPPINGS[ticker];
   }
   
+  // Crypto - convert USDT to USD
+  if (assetClass === 'crypto' || ticker.includes('/USDT')) {
+    const converted = ticker.replace('/USDT', '-USD').replace(/\//g, '-');
+    return converted;
+  }
+  
+  // Crypto USD pairs
+  if (ticker.includes('/USD') && !ticker.includes('/USDT')) {
+    return ticker.replace('/', '-');
+  }
+  
+  // Forex pairs
   if (assetClass === 'forex' || /^[A-Z]{3}\/[A-Z]{3}$/.test(ticker)) {
     return ticker.replace('/', '') + '=X';
   }
   
+  // Commodities - add futures suffix
   if (assetClass === 'commodity' && !ticker.endsWith('=F') && !ticker.includes('=') && ticker.length <= 6) {
     return ticker + '=F';
   }
   
+  // Default - replace dots with dashes
   return ticker.replace(/\./g, '-');
 }
 

@@ -48,12 +48,135 @@ class YahooPriceFetcher:
             await self.session.aclose()
         self.stats["end_time"] = datetime.now(timezone.utc)
     
+    # Comprehensive ticker mappings for Yahoo Finance
+    TICKER_MAPPINGS = {
+        # Commodities - Yahoo uses futures symbols
+        'CRUDE': 'CL=F',
+        'BRENT': 'BZ=F',
+        'NATGAS': 'NG=F',
+        'XAUUSD': 'GC=F',
+        'XAGUSD': 'SI=F',
+        'XPTUSD': 'PL=F',
+        'XPDUSD': 'PA=F',
+        'COPPER': 'HG=F',
+        'GOLD': 'GC=F',
+        'SILVER': 'SI=F',
+        'OIL': 'CL=F',
+        'WTI': 'CL=F',
+        'PLATINUM': 'PL=F',
+        'PALLADIUM': 'PA=F',
+        'LITHIUM': 'ALB',
+        'COBALT': 'SBSW',
+        'NICKEL': 'VALE',
+        'URANIUM': 'CCJ',
+        'STEEL': 'X',
+        'ZINC': 'ZINC.L',
+        'TIN': 'TIN.L',
+        'RHODIUM': 'SBSW',
+        'VIX': '^VIX',
+        'LBS': 'LBS=F',
+        'MWE': 'MWE=F',
+        'ZO': 'ZO=F',
+        'ZW': 'ZW=F',
+        'WHEAT': 'ZW=F',
+        'CORN': 'ZC=F',
+        'SOYBEANS': 'ZS=F',
+        'COFFEE': 'KC=F',
+        'SUGAR': 'SB=F',
+        'COTTON': 'CT=F',
+        
+        # Crypto USDT -> USD mappings
+        'BTC/USDT': 'BTC-USD',
+        'ETH/USDT': 'ETH-USD',
+        'SOL/USDT': 'SOL-USD',
+        'XRP/USDT': 'XRP-USD',
+        'ADA/USDT': 'ADA-USD',
+        'DOGE/USDT': 'DOGE-USD',
+        'DOT/USDT': 'DOT-USD',
+        'AVAX/USDT': 'AVAX-USD',
+        'MATIC/USDT': 'MATIC-USD',
+        'LINK/USDT': 'LINK-USD',
+        'LTC/USDT': 'LTC-USD',
+        'UNI/USDT': 'UNI-USD',
+        'ATOM/USDT': 'ATOM-USD',
+        'XLM/USDT': 'XLM-USD',
+        'ALGO/USDT': 'ALGO-USD',
+        'NEAR/USDT': 'NEAR-USD',
+        'FIL/USDT': 'FIL-USD',
+        'AAVE/USDT': 'AAVE-USD',
+        'MANA/USDT': 'MANA-USD',
+        'SAND/USDT': 'SAND-USD',
+        'AXS/USDT': 'AXS-USD',
+        'THETA/USDT': 'THETA-USD',
+        'VET/USDT': 'VET-USD',
+        'FTM/USDT': 'FTM-USD',
+        'HBAR/USDT': 'HBAR-USD',
+        'ICP/USDT': 'ICP-USD',
+        'GRT/USDT': 'GRT-USD',
+        'CRV/USDT': 'CRV-USD',
+        'MKR/USDT': 'MKR-USD',
+        'SNX/USDT': 'SNX-USD',
+        'COMP/USDT': 'COMP-USD',
+        'YFI/USDT': 'YFI-USD',
+        'SUSHI/USDT': 'SUSHI-USD',
+        'ENJ/USDT': 'ENJ-USD',
+        'BAT/USDT': 'BAT-USD',
+        'ZRX/USDT': 'ZRX-USD',
+        'ZEC/USDT': 'ZEC-USD',
+        'DASH/USDT': 'DASH-USD',
+        'XMR/USDT': 'XMR-USD',
+        'WAVES/USDT': 'WAVES-USD',
+        'ZIL/USDT': 'ZIL-USD',
+        'ONE/USDT': 'ONE-USD',
+        'KAVA/USDT': 'KAVA-USD',
+        'CELO/USDT': 'CELO-USD',
+        'ANKR/USDT': 'ANKR-USD',
+        'STORJ/USDT': 'STORJ-USD',
+        'SKL/USDT': 'SKL-USD',
+        'REN/USDT': 'REN-USD',
+        'BAND/USDT': 'BAND-USD',
+        'BAL/USDT': 'BAL-USD',
+        'APE/USDT': 'APE-USD',
+        'OP/USDT': 'OP-USD',
+        'ARB/USDT': 'ARB-USD',
+        'IMX/USDT': 'IMX-USD',
+        'LDO/USDT': 'LDO-USD',
+        'APT/USDT': 'APT-USD',
+        'SHIB/USDT': 'SHIB-USD',
+        'PEPE/USDT': 'PEPE-USD',
+        'FLOKI/USDT': 'FLOKI-USD',
+        'BNB/USDT': 'BNB-USD',
+        'TRX/USDT': 'TRX-USD',
+        'EGLD/USDT': 'EGLD-USD',
+        'FLOW/USDT': 'FLOW-USD',
+        'MINA/USDT': 'MINA-USD',
+        'OCEAN/USDT': 'OCEAN-USD',
+        'FET/USDT': 'FET-USD',
+        'AGIX/USDT': 'AGIX-USD',
+        'RUNE/USDT': 'RUNE-USD',
+        'GALA/USDT': 'GALA-USD',
+        'ROSE/USDT': 'ROSE-USD',
+        'CKB/USDT': 'CKB-USD',
+        'ICX/USDT': 'ICX-USD',
+        'DCR/USDT': 'DCR-USD',
+        '1INCH/USDT': '1INCH-USD',
+        'STRK/USDT': 'STRK-USD',
+    }
+    
     def _normalize_ticker(self, ticker: str, asset_class: str) -> str:
         """Convert ticker to Yahoo Finance format"""
         ticker = ticker.upper().strip()
         
-        # Crypto: BTC -> BTC-USD
+        # Check direct mapping first
+        if ticker in self.TICKER_MAPPINGS:
+            return self.TICKER_MAPPINGS[ticker]
+        
+        # Crypto: Convert USDT to USD or add -USD suffix
         if asset_class == "crypto":
+            if '/USDT' in ticker:
+                return ticker.replace('/USDT', '-USD')
+            if '/USD' in ticker:
+                return ticker.replace('/USD', '-USD')
             if not ticker.endswith("-USD"):
                 return f"{ticker}-USD"
             return ticker
@@ -65,27 +188,9 @@ class YahooPriceFetcher:
                 return f"{ticker}=X"
             return ticker
         
-        # Commodities mapping
-        commodity_map = {
-            "GOLD": "GC=F",
-            "SILVER": "SI=F",
-            "OIL": "CL=F",
-            "CRUDE": "CL=F",
-            "WTI": "CL=F",
-            "BRENT": "BZ=F",
-            "NATGAS": "NG=F",
-            "COPPER": "HG=F",
-            "PLATINUM": "PL=F",
-            "PALLADIUM": "PA=F",
-            "WHEAT": "ZW=F",
-            "CORN": "ZC=F",
-            "SOYBEANS": "ZS=F",
-            "COFFEE": "KC=F",
-            "SUGAR": "SB=F",
-            "COTTON": "CT=F",
-        }
-        if asset_class == "commodity" and ticker in commodity_map:
-            return commodity_map[ticker]
+        # Commodities - add futures suffix if short ticker
+        if asset_class == "commodity" and len(ticker) <= 6 and not ticker.endswith('=F'):
+            return f"{ticker}=F"
         
         return ticker
     
