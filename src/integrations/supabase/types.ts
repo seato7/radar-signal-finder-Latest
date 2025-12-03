@@ -2592,16 +2592,6 @@ export type Database = {
           sell_percentage: number
         }[]
       }
-      check_yahoo_reliability: {
-        Args: never
-        Returns: {
-          failed_calls: number
-          reliability_pct: number
-          should_enable_fallback: boolean
-          successful_calls: number
-          total_calls: number
-        }[]
-      }
       get_api_usage_summary: {
         Args: { hours_back?: number }
         Returns: {
