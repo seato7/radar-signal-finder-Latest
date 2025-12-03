@@ -9,6 +9,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrokerKeyRotationModal } from "@/components/BrokerKeyRotationModal";
+import { initGlobalPriceSubscription } from "@/hooks/useRealtimePrices";
 import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
 import Radar from "./pages/Radar";
@@ -34,6 +35,9 @@ import PipelineTests from "./pages/PipelineTests";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+// Initialize global real-time price subscription
+initGlobalPriceSubscription();
 
 const App = () => (
   <ErrorBoundary>
