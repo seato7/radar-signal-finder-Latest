@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 # Yahoo Finance API endpoint - use v8/finance/chart (more reliable)
 YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart"
 
-# Rate limiting config
-BATCH_SIZE = 30  # Reduced batch size to avoid rate limits
-BATCH_DELAY_SECONDS = 2.0  # Increased delay between batches
+# Rate limiting config - AGGRESSIVE to avoid 429s
+BATCH_SIZE = 20  # Smaller batches
+BATCH_DELAY_SECONDS = 5.0  # Longer delay between batches
 REQUEST_TIMEOUT = 15.0
-MAX_RETRIES = 2  # Reduced retries to fail faster
-RETRY_DELAY = 1.5
+MAX_RETRIES = 3
+RETRY_DELAY = 3.0  # Longer retry delay
+REQUEST_DELAY = 0.8  # Delay between individual requests
 
 # Cross-pair patterns that don't exist on Yahoo - skip these
 INVALID_CROSS_PAIRS = {
@@ -270,9 +271,11 @@ class YahooPriceFetcher:
                     return None
                 
                 elif response.status_code == 429:
-                    # Rate limited - wait and retry
+                    # Rate limited - wait longer with exponential backoff
                     self.stats["retries"] += 1
-                    await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                    wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential: 3s, 6s, 12s
+                    logger.warning(f"Rate limited for {yahoo_ticker}, waiting {wait_time}s")
+                    await asyncio.sleep(wait_time)
                     continue
                 elif response.status_code == 404:
                     # Ticker not found - don't retry
@@ -292,10 +295,10 @@ class YahooPriceFetcher:
         return None
     
     async def _fetch_batch(self, tickers: List[str]) -> Dict[str, Dict]:
-        """Fetch prices for a batch of tickers sequentially"""
+        """Fetch prices for a batch of tickers sequentially with proper delays"""
         results = {}
         
-        for ticker in tickers:
+        for idx, ticker in enumerate(tickers):
             price_data = await self._fetch_single_ticker(ticker)
             if price_data:
                 results[ticker] = price_data
@@ -303,8 +306,9 @@ class YahooPriceFetcher:
             else:
                 self.stats["failed"] += 1
             
-            # Small delay between individual requests
-            await asyncio.sleep(0.1)
+            # Delay between individual requests to avoid rate limits
+            if idx < len(tickers) - 1:  # Don't delay after last ticker
+                await asyncio.sleep(REQUEST_DELAY)
         
         return results
     
