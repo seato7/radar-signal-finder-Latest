@@ -1,23 +1,22 @@
 """Twelve Data Price ETL - Professional price fetching with rate limiting and batching"""
 import asyncio
 import hashlib
-import os
 import time
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple
 import httpx
 import logging
 
+from backend.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Twelve Data API configuration
 TWELVEDATA_BASE_URL = "https://api.twelvedata.com"
-TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
 
-# Rate limiting: 55 API credits per minute on Grow plan
-# Each symbol = 1 credit, so we track credits per minute
-MAX_CREDITS_PER_MINUTE = 55
-BATCH_SIZE = 50  # Symbols per request (conservative, max is ~120)
+# Rate limiting from env vars (Grow plan: 55 credits/min)
+MAX_CREDITS_PER_MINUTE = settings.TD_MAX_CREDITS_PER_MINUTE
+BATCH_SIZE = settings.TD_MAX_SYMBOLS_PER_BATCH
 REQUEST_TIMEOUT = 30.0
 MAX_RETRIES = 3
 RETRY_DELAY = 2.0
@@ -57,15 +56,15 @@ TICKER_MAPPINGS = {
     'NZD/USD': 'NZD/USD',
 }
 
-# Asset class to refresh interval mapping (in minutes)
+# Asset class to refresh interval mapping (read from settings)
 REFRESH_INTERVALS = {
-    'crypto': 10,
-    'forex': 10,
-    'stock': 30,
-    'equity': 30,
-    'commodity': 30,
-    'index': 30,
-    'etf': 30,
+    'crypto': settings.TD_REFRESH_CRYPTO_MINUTES,
+    'forex': settings.TD_REFRESH_FOREX_MINUTES,
+    'stock': settings.TD_REFRESH_STOCK_MINUTES,
+    'equity': settings.TD_REFRESH_STOCK_MINUTES,
+    'commodity': settings.TD_REFRESH_COMMODITY_MINUTES,
+    'index': settings.TD_REFRESH_STOCK_MINUTES,
+    'etf': settings.TD_REFRESH_STOCK_MINUTES,
 }
 
 
@@ -119,7 +118,7 @@ class TwelveDataPriceFetcher:
     
     def __init__(self):
         self.session: Optional[httpx.AsyncClient] = None
-        self.api_key = TWELVEDATA_API_KEY
+        self.api_key = settings.TWELVEDATA_API_KEY
         self.credits_tracker = TwelveDataCreditsTracker()
         self.stats = {
             "fetched": 0,
@@ -198,12 +197,6 @@ class TwelveDataPriceFetcher:
         # Build request
         symbol_str = ",".join(symbols)
         
-        # Choose endpoint based on asset class
-        if asset_class in ("crypto", "forex"):
-            endpoint = "/price"
-        else:
-            endpoint = "/price"
-        
         params = {
             "symbol": symbol_str,
             "apikey": self.api_key
@@ -214,7 +207,7 @@ class TwelveDataPriceFetcher:
         for attempt in range(MAX_RETRIES):
             try:
                 response = await self.session.get(
-                    f"{TWELVEDATA_BASE_URL}{endpoint}",
+                    f"{TWELVEDATA_BASE_URL}/price",
                     params=params
                 )
                 
@@ -300,11 +293,12 @@ class TwelveDataPriceFetcher:
         symbols = list(ticker_map.keys())
         all_prices = {}
         
-        # Process in batches
-        for i in range(0, len(symbols), BATCH_SIZE):
-            batch = symbols[i:i + BATCH_SIZE]
-            batch_num = (i // BATCH_SIZE) + 1
-            total_batches = (len(symbols) + BATCH_SIZE - 1) // BATCH_SIZE
+        # Process in batches (using env var batch size)
+        batch_size = BATCH_SIZE
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (len(symbols) + batch_size - 1) // batch_size
             
             logger.info(f"Fetching {asset_class} batch {batch_num}/{total_batches} ({len(batch)} symbols)")
             
@@ -312,7 +306,7 @@ class TwelveDataPriceFetcher:
             all_prices.update(batch_results)
             
             # Small delay between batches to spread load
-            if i + BATCH_SIZE < len(symbols):
+            if i + batch_size < len(symbols):
                 await asyncio.sleep(0.5)
         
         # Convert to price records
