@@ -46,12 +46,27 @@ class Settings(BaseSettings):
     ALPACA_SECRET_KEY: Optional[str] = None
     ALPACA_PAPER_MODE: bool = True  # Safety: default to paper trading
     
-    # Price scheduler configuration
-    PRICE_SCHEDULER_ENABLED: bool = True
-    PRICE_SCHEDULER_INTERVAL_MINUTES: int = 5
-    
-    # Twelve Data API configuration
+    # ============================================================
+    # TWELVE DATA CONFIGURATION (NEW - replaces Yahoo scheduler)
+    # ============================================================
     TWELVEDATA_API_KEY: Optional[str] = None
+    
+    # Per-asset-class refresh intervals (in minutes)
+    TD_REFRESH_CRYPTO_MINUTES: int = 10   # Crypto: high volatility
+    TD_REFRESH_FOREX_MINUTES: int = 10    # Forex: 24/5 markets
+    TD_REFRESH_STOCK_MINUTES: int = 30    # Stocks: standard updates
+    TD_REFRESH_COMMODITY_MINUTES: int = 30  # Commodities: standard updates
+    
+    # Rate limiting (Grow plan: 55 credits/min)
+    TD_MAX_CREDITS_PER_MINUTE: int = 55
+    TD_MAX_SYMBOLS_PER_BATCH: int = 50  # Conservative batch size
+    
+    # ============================================================
+    # DEPRECATED: Old Yahoo scheduler config (will be removed)
+    # These are no longer used - kept only for backwards compatibility
+    # ============================================================
+    PRICE_SCHEDULER_ENABLED: bool = True  # DEPRECATED: Remove from Railway
+    PRICE_SCHEDULER_INTERVAL_MINUTES: int = 5  # DEPRECATED: Remove from Railway
     
     class Config:
         env_file = ".env"

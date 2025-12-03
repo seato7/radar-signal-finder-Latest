@@ -7,6 +7,7 @@ from typing import Optional, Dict, List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from backend.config import settings
 from backend.etl.twelvedata_prices import (
     fetch_crypto_prices,
     fetch_forex_prices,
@@ -18,20 +19,19 @@ from backend.services.supabase_sync import SupabaseSync
 
 logger = logging.getLogger(__name__)
 
-# Tiered intervals by asset class (in minutes)
-# Based on user spec:
-# - Crypto: 171 assets, refresh every 10 minutes
-# - Forex: 87 assets, refresh every 10 minutes  
-# - Stocks: 731 assets, refresh every 30 minutes
-# - Commodities: 54 assets, refresh every 30 minutes
+# Read intervals from env vars (with defaults matching spec)
+# Crypto: 171 assets @ 10 min = ~17 credits per run
+# Forex: 87 assets @ 10 min = ~9 credits per run
+# Stocks: 731 assets @ 30 min = ~24 credits per run (distributed)
+# Commodities: 54 assets @ 30 min = ~2 credits per run
 TIER_INTERVALS = {
-    "crypto": 10,     # ~17 credits per run
-    "forex": 10,      # ~9 credits per run
-    "equity": 30,     # ~73 credits per run (distributed over 30 min)
-    "stock": 30,      # Alias for equity
-    "commodity": 30,  # ~5 credits per run
-    "index": 30,      # Included with stocks
-    "etf": 30,        # Included with stocks
+    "crypto": settings.TD_REFRESH_CRYPTO_MINUTES,     # Default: 10 min
+    "forex": settings.TD_REFRESH_FOREX_MINUTES,       # Default: 10 min
+    "equity": settings.TD_REFRESH_STOCK_MINUTES,      # Default: 30 min
+    "stock": settings.TD_REFRESH_STOCK_MINUTES,       # Alias for equity
+    "commodity": settings.TD_REFRESH_COMMODITY_MINUTES,  # Default: 30 min
+    "index": settings.TD_REFRESH_STOCK_MINUTES,       # Same as stocks
+    "etf": settings.TD_REFRESH_STOCK_MINUTES,         # Same as stocks
 }
 
 DEFAULT_INTERVAL_MINUTES = 30
@@ -245,7 +245,16 @@ def get_scheduler_stats() -> dict:
             if _scheduler_stats["global"]["total_runs"] > 0 else 0
         ),
         "credits_used_last_hour": get_credits_used_last_hour(),
-        "data_provider": "Twelve Data"
+        "max_credits_per_minute": settings.TD_MAX_CREDITS_PER_MINUTE,
+        "data_provider": "Twelve Data",
+        "config": {
+            "TD_REFRESH_CRYPTO_MINUTES": settings.TD_REFRESH_CRYPTO_MINUTES,
+            "TD_REFRESH_FOREX_MINUTES": settings.TD_REFRESH_FOREX_MINUTES,
+            "TD_REFRESH_STOCK_MINUTES": settings.TD_REFRESH_STOCK_MINUTES,
+            "TD_REFRESH_COMMODITY_MINUTES": settings.TD_REFRESH_COMMODITY_MINUTES,
+            "TD_MAX_CREDITS_PER_MINUTE": settings.TD_MAX_CREDITS_PER_MINUTE,
+            "TD_MAX_SYMBOLS_PER_BATCH": settings.TD_MAX_SYMBOLS_PER_BATCH,
+        }
     }
 
 
@@ -257,7 +266,7 @@ def start_scheduler(custom_intervals: Optional[Dict[str, int]] = None):
         logger.warning("Scheduler already running")
         return
     
-    # Apply custom intervals if provided
+    # Apply custom intervals if provided (overrides env vars)
     if custom_intervals:
         TIER_INTERVALS.update(custom_intervals)
     
