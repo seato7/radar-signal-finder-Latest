@@ -389,7 +389,19 @@ SELECT cron.schedule(
   $$
 );
 
--- Theme scores computation (every 6 hours)
+-- SIGNAL SCORES - Computes buy/sell ratings per asset (every 6 hours)
+SELECT cron.schedule(
+  '6h-signal-scores',
+  '45 */6 * * *',
+  $$
+  SELECT net.http_post(
+    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/compute-signal-scores',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
+  ) as request_id;
+  $$
+);
+
+-- Theme scores computation (every 6 hours, after signal scores)
 SELECT cron.schedule(
   '6h-theme-scores',
   '50 */6 * * *',

@@ -87,12 +87,26 @@ serve(async (req) => {
       };
     });
 
-    // Batch update signals
-    const { error: updateError } = await supabase
-      .from('signals')
-      .upsert(updates, { onConflict: 'id' });
+    // Batch update signals (update only, not upsert)
+    let updateCount = 0;
+    for (const update of updates) {
+      const { error: updateError } = await supabase
+        .from('signals')
+        .update({
+          composite_score: update.composite_score,
+          score_factors: update.score_factors,
+          signal_classification: update.signal_classification,
+        })
+        .eq('id', update.id);
 
-    if (updateError) throw updateError;
+      if (updateError) {
+        console.error(`Failed to update signal ${update.id}:`, updateError);
+      } else {
+        updateCount++;
+      }
+    }
+
+    console.log(`Updated ${updateCount}/${updates.length} signals`);
 
     // PHASE 4: Check for signal distribution skew after scoring
     const { data: skewCheck, error: skewError } = await supabase
