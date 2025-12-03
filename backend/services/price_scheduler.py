@@ -237,14 +237,14 @@ def stop_scheduler():
 
 
 async def trigger_immediate_run(asset_class: Optional[str] = None):
-    """Trigger an immediate ingestion run for specific tier or all"""
+    """Trigger an immediate ingestion run for specific tier or all (sequentially to avoid rate limits)"""
     if asset_class:
         await run_tiered_ingestion(asset_class)
     else:
-        # Run all tiers concurrently
-        await asyncio.gather(*[
-            run_tiered_ingestion(ac) for ac in TIER_INTERVALS.keys()
-        ])
+        # Run tiers sequentially with delay to avoid Yahoo rate limits
+        for ac in TIER_INTERVALS.keys():
+            await run_tiered_ingestion(ac)
+            await asyncio.sleep(60)  # 1 min delay between tiers
 
 
 def get_tier_config() -> Dict[str, int]:
