@@ -2414,39 +2414,6 @@ export type Database = {
         }
         Relationships: []
       }
-      yahoo_finance_health: {
-        Row: {
-          created_at: string
-          failed_calls: number
-          id: string
-          reliability_pct: number
-          successful_calls: number
-          total_calls: number
-          window_end: string
-          window_start: string
-        }
-        Insert: {
-          created_at?: string
-          failed_calls?: number
-          id?: string
-          reliability_pct?: number
-          successful_calls?: number
-          total_calls?: number
-          window_end: string
-          window_start: string
-        }
-        Update: {
-          created_at?: string
-          failed_calls?: number
-          id?: string
-          reliability_pct?: number
-          successful_calls?: number
-          total_calls?: number
-          window_end?: string
-          window_start?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       asset_signal_summary: {
