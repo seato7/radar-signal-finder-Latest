@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Filter, ArrowUpRight } from "lucide-react";
+import { Search, Filter, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,27 +16,22 @@ interface AssetWithScore {
   exchange: string;
   asset_class: string | null;
   score: number;
-  signal_description: string;
-  themes: string[];
-  components: string[];
-  updated_at: string;
+  sentiment: string;
 }
 
-const SIGNAL_DESCRIPTIONS = [
-  "Strong bullish divergence",
-  "Positive sentiment surge",
-  "Unusual volume activity",
-  "Breakout pattern forming",
-  "Momentum building",
-  "Technical support holding",
-  "Accumulation detected",
-  "Trend reversal signal",
-  "High conviction setup",
-  "Smart money inflow"
-];
+// Generate deterministic score based on ticker for consistency
+const getAssetScore = (ticker: string): number => {
+  const hash = ticker.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
+  return Math.round((hash % 100) * 10) / 10;
+};
 
-const THEME_OPTIONS = ["Momentum", "Volume", "Sentiment", "Technical", "DeFi", "Layer2", "AI", "Energy", "Healthcare"];
-const COMPONENT_OPTIONS = ["PolicyMomentum", "FlowPressure", "InsiderActivity", "TechnicalStrength", "SentimentScore"];
+const getSentiment = (score: number): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } => {
+  if (score >= 80) return { label: "Strong Bullish", variant: "default" };
+  if (score >= 60) return { label: "Bullish", variant: "secondary" };
+  if (score >= 40) return { label: "Neutral", variant: "outline" };
+  if (score >= 20) return { label: "Bearish", variant: "destructive" };
+  return { label: "Strong Bearish", variant: "destructive" };
+};
 
 const AssetRadar = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -56,21 +51,14 @@ const AssetRadar = () => {
           query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
         }
 
-        const { data, error, count } = await query.limit(50);
+        const { data, error, count } = await query.order('ticker').limit(50);
 
         if (error) throw error;
 
-        // Enhance assets with computed scores and signals
-        const enhancedAssets: AssetWithScore[] = (data || []).map((asset, index) => {
-          // Generate a deterministic but varied score based on ticker
-          const tickerHash = asset.ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-          const score = Math.round((70 + (tickerHash % 25) + Math.random() * 5) * 10) / 10;
-          
-          // Assign themes and components based on asset class and ticker
-          const numThemes = 2 + (tickerHash % 3);
-          const themes = THEME_OPTIONS.slice(tickerHash % 5, (tickerHash % 5) + numThemes);
-          const numComponents = 2 + (tickerHash % 2);
-          const components = COMPONENT_OPTIONS.slice(tickerHash % 3, (tickerHash % 3) + numComponents);
+        // Enhance assets with computed scores
+        const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
+          const score = getAssetScore(asset.ticker);
+          const sentiment = getSentiment(score);
           
           return {
             id: asset.id,
@@ -79,10 +67,7 @@ const AssetRadar = () => {
             exchange: asset.exchange,
             asset_class: asset.asset_class,
             score,
-            signal_description: SIGNAL_DESCRIPTIONS[tickerHash % SIGNAL_DESCRIPTIONS.length],
-            themes,
-            components,
-            updated_at: new Date(Date.now() - (index * 2 + tickerHash % 30) * 60000).toISOString()
+            sentiment: sentiment.label
           };
         });
 
@@ -102,20 +87,11 @@ const AssetRadar = () => {
     return () => clearTimeout(debounce);
   }, [searchTerm]);
 
-  const formatTimeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
         title="Asset Radar"
-        description={`Live scanning ${total.toLocaleString()} assets for high-probability signals`}
+        description={`Browse all ${total.toLocaleString()} stocks and cryptocurrencies`}
       />
 
       <Card className="shadow-data">
@@ -137,21 +113,12 @@ const AssetRadar = () => {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4, 5].map((i) => (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="p-4 rounded-lg border border-border">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="space-y-2">
-                      <Skeleton className="h-6 w-32" />
-                      <Skeleton className="h-4 w-48" />
-                    </div>
-                    <Skeleton className="h-5 w-5" />
-                  </div>
-                  <div className="flex gap-2">
-                    <Skeleton className="h-5 w-16" />
-                    <Skeleton className="h-5 w-20" />
-                    <Skeleton className="h-5 w-24" />
-                  </div>
+                  <Skeleton className="h-6 w-20 mb-2" />
+                  <Skeleton className="h-4 w-32 mb-3" />
+                  <Skeleton className="h-5 w-16" />
                 </div>
               ))}
             </div>
@@ -160,42 +127,22 @@ const AssetRadar = () => {
               {searchTerm ? `No assets found matching "${searchTerm}"` : "No assets available"}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {assets.map((asset) => (
                 <Link
                   key={asset.id}
                   to={`/asset/${asset.ticker}`}
                   className="block"
                 >
-                  <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="font-bold text-lg text-foreground">{asset.ticker}</h3>
-                          <Badge variant="outline" className="bg-gradient-chrome text-primary-foreground border-0">
-                            Score: {asset.score}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{asset.signal_description}</p>
-                        <p className="text-xs text-muted-foreground/70 mt-1">{asset.name} • {asset.exchange}</p>
-                      </div>
-                      <ArrowUpRight className="h-5 w-5 text-primary" />
+                  <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
+                    <div className="flex items-start justify-between mb-1">
+                      <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex gap-2 flex-wrap">
-                        {asset.themes.map((theme) => (
-                          <Badge key={theme} variant="secondary" className="text-xs">
-                            {theme}
-                          </Badge>
-                        ))}
-                        {asset.components.slice(0, 2).map((component) => (
-                          <Badge key={component} variant="outline" className="text-xs border-primary/30 text-primary">
-                            {component}
-                          </Badge>
-                        ))}
-                      </div>
-                      <span className="text-xs text-muted-foreground">{formatTimeAgo(asset.updated_at)}</span>
-                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">{asset.name}</p>
+                    <Badge className="bg-primary text-primary-foreground">
+                      {asset.exchange}
+                    </Badge>
                   </div>
                 </Link>
               ))}

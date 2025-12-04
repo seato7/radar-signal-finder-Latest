@@ -59,6 +59,20 @@ const COMPONENT_LABELS = [
   "InstitutionalFlow"
 ];
 
+// Generate deterministic score based on ticker for consistency
+const getAssetScore = (ticker: string): number => {
+  const hash = ticker.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
+  return Math.round((hash % 100) * 10) / 10;
+};
+
+const getSentiment = (score: number): { label: string; color: string } => {
+  if (score >= 80) return { label: "Strong Bullish", color: "text-success" };
+  if (score >= 60) return { label: "Bullish", color: "text-success" };
+  if (score >= 40) return { label: "Neutral", color: "text-muted-foreground" };
+  if (score >= 20) return { label: "Bearish", color: "text-destructive" };
+  return { label: "Strong Bearish", color: "text-destructive" };
+};
+
 const AssetDetail = () => {
   const { ticker } = useParams<{ ticker: string }>();
   const [asset, setAsset] = useState<AssetData | null>(null);
@@ -71,6 +85,7 @@ const AssetDetail = () => {
   const [scoreChange, setScoreChange] = useState<number>(0);
   const [signalStrength, setSignalStrength] = useState<number>(0);
   const [components, setComponents] = useState<string[]>([]);
+  const [sentiment, setSentiment] = useState<{ label: string; color: string }>({ label: "Neutral", color: "text-muted-foreground" });
   const { toast } = useToast();
 
   useEffect(() => {
@@ -93,6 +108,37 @@ const AssetDetail = () => {
         }
         
         setAsset(assetData);
+
+        // Calculate score (0-100) based on ticker
+        const calculatedScore = getAssetScore(ticker);
+        setScore(calculatedScore);
+        setSentiment(getSentiment(calculatedScore));
+        
+        // Score change (deterministic based on ticker)
+        const changeHash = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const change = Math.round(((changeHash % 10) - 5) * 10) / 10;
+        setScoreChange(change);
+        
+        // Signal strength based on score
+        setSignalStrength(Math.round(calculatedScore));
+
+        // Fetch all assets to calculate proper ranking
+        const { data: allAssets, count } = await supabase
+          .from('assets')
+          .select('ticker', { count: 'exact' });
+        
+        setTotalAssets(count || 0);
+        
+        // Calculate ranking by comparing scores
+        if (allAssets) {
+          const allScores = allAssets.map(a => ({
+            ticker: a.ticker,
+            score: getAssetScore(a.ticker)
+          }));
+          allScores.sort((a, b) => b.score - a.score);
+          const rank = allScores.findIndex(a => a.ticker === ticker) + 1;
+          setRanking(rank || 1);
+        }
 
         // Fetch signals for this asset (last 30 days)
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -126,25 +172,8 @@ const AssetDetail = () => {
           }
         }
 
-        // Calculate score based on signals and other factors
-        const tickerHash = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const baseScore = 70 + (tickerHash % 25);
-        const signalBonus = Math.min(fetchedSignals.length * 2, 15);
-        const calculatedScore = Math.round((baseScore + signalBonus + Math.random() * 5) * 10) / 10;
-        setScore(calculatedScore);
-        setScoreChange(Math.round((Math.random() * 6 - 2) * 10) / 10);
-        setSignalStrength(Math.min(50 + fetchedSignals.length * 5 + tickerHash % 30, 100));
-
-        // Calculate ranking
-        const { count } = await supabase
-          .from('assets')
-          .select('*', { count: 'exact', head: true });
-        
-        setTotalAssets(count || 500);
-        const rankPosition = Math.ceil((100 - calculatedScore) / 100 * (count || 500));
-        setRanking(Math.max(1, rankPosition));
-
         // Assign components based on ticker characteristics
+        const tickerHash = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         const numComponents = 3 + (tickerHash % 3);
         const assignedComponents = COMPONENT_LABELS.slice(tickerHash % 4, (tickerHash % 4) + numComponents);
         setComponents(assignedComponents);
@@ -205,12 +234,17 @@ const AssetDetail = () => {
         <Card className="shadow-data">
           <CardContent className="pt-6">
             <div className="text-center">
-              <div className="text-sm text-muted-foreground mb-2">Current Score</div>
+              <div className="text-sm text-muted-foreground mb-2">Current Score (0-100)</div>
               <div className="text-4xl font-bold text-primary mb-2">{score}</div>
-              <Badge variant="outline" className={scoreChange >= 0 ? "border-success text-success" : "border-destructive text-destructive"}>
-                {scoreChange >= 0 ? <TrendingUp className="mr-1 h-3 w-3" /> : <TrendingDown className="mr-1 h-3 w-3" />}
-                {scoreChange >= 0 ? "+" : ""}{scoreChange} (24h)
-              </Badge>
+              <div className="flex items-center justify-center gap-2">
+                <Badge variant="outline" className={scoreChange >= 0 ? "border-success text-success" : "border-destructive text-destructive"}>
+                  {scoreChange >= 0 ? <TrendingUp className="mr-1 h-3 w-3" /> : <TrendingDown className="mr-1 h-3 w-3" />}
+                  {scoreChange >= 0 ? "+" : ""}{scoreChange} (24h)
+                </Badge>
+              </div>
+              <div className={`text-sm font-medium mt-2 ${sentiment.color}`}>
+                {sentiment.label}
+              </div>
             </div>
           </CardContent>
         </Card>
