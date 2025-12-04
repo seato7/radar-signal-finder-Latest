@@ -17,9 +17,10 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const url = new URL(req.url);
-    const limit = parseInt(url.searchParams.get('limit') || '100');
-    const theme = url.searchParams.get('theme');
+    const body = await req.json().catch(() => ({}));
+    const limit = body.limit || 100;
+    const search = body.search;
+    const theme = body.theme;
 
     if (theme) {
       // Get signals for theme, then unique tickers
@@ -33,7 +34,7 @@ serve(async (req) => {
       
       if (assetIds.length === 0) {
         return new Response(
-          JSON.stringify([]),
+          JSON.stringify({ assets: [], total: 0 }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -46,27 +47,30 @@ serve(async (req) => {
       if (error) throw error;
 
       return new Response(
-        JSON.stringify(assets || []),
+        JSON.stringify({ assets: assets || [], total: assets?.length || 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get all assets
-    const { data, error } = await supabaseClient
-      .from('assets')
-      .select('*')
-      .limit(limit);
+    // Build query for search
+    let query = supabaseClient.from('assets').select('*', { count: 'exact' });
+    
+    if (search) {
+      query = query.or(`ticker.ilike.%${search}%,name.ilike.%${search}%,exchange.ilike.%${search}%`);
+    }
+    
+    const { data, error, count } = await query.limit(limit);
 
     if (error) throw error;
 
     return new Response(
-      JSON.stringify(data || []),
+      JSON.stringify({ assets: data || [], total: count || 0 }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('Error in get-assets:', error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error', assets: [], total: 0 }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
