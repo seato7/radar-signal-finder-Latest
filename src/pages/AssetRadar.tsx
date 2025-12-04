@@ -19,6 +19,18 @@ interface AssetWithScore {
   sentiment: string;
 }
 
+// Helper to format strings: replace underscores with spaces and title case
+const formatLabel = (str: string): string => {
+  return str
+    .replace(/_/g, ' ')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 // Generate deterministic score based on ticker for consistency
 const getAssetScore = (ticker: string): number => {
   const hash = ticker.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
