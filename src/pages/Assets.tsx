@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, TrendingUp, ExternalLink } from "lucide-react";
+import { Search, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,16 +25,21 @@ const Assets = () => {
   const fetchAssets = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.functions.invoke('get-assets', {
-        body: { 
-          limit: 500,
-          search: searchTerm || undefined
-        }
-      });
+      
+      // Query assets directly from Supabase
+      let query = supabase
+        .from('assets')
+        .select('id, ticker, exchange, name', { count: 'exact' });
+      
+      if (searchTerm) {
+        query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
+      }
+      
+      const { data, error, count } = await query.limit(500);
       
       if (error) throw error;
-      setAssets(data.assets || []);
-      setTotal(data.total || 0);
+      setAssets(data || []);
+      setTotal(count || 0);
     } catch (error) {
       console.error("Failed to fetch assets:", error);
     } finally {
@@ -59,7 +64,6 @@ const Assets = () => {
   };
 
   useEffect(() => {
-
     const debounce = setTimeout(() => {
       fetchAssets();
     }, 300);
