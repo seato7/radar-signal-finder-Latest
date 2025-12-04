@@ -9,6 +9,7 @@ const corsHeaders = {
 
 // TwelveData API for forex technicals
 const TWELVEDATA_API_KEY = Deno.env.get('TWELVEDATA_API_KEY') || '';
+const MAX_CREDITS_PER_MINUTE = 50; // Shared limit with backend
 
 interface TechnicalIndicators {
   rsi_14?: number;
@@ -26,6 +27,51 @@ interface TechnicalIndicators {
   bollinger_lower?: number;
 }
 
+interface CreditAcquireResult {
+  acquired: boolean;
+  current_credits: number;
+  wait_seconds: number;
+}
+
+// Acquire credits from shared counter (waits if needed)
+async function acquireCredits(
+  supabaseClient: any,
+  creditsNeeded: number
+): Promise<boolean> {
+  const maxAttempts = 5;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabaseClient.rpc('acquire_twelvedata_credits', {
+      credits_needed: creditsNeeded,
+      max_credits: MAX_CREDITS_PER_MINUTE
+    }) as { data: CreditAcquireResult[] | null; error: any };
+    
+    if (error) {
+      console.error('❌ Error acquiring credits:', error);
+      return false;
+    }
+    
+    const result = data?.[0];
+    
+    if (!result) {
+      console.error('❌ No result from acquire_twelvedata_credits');
+      return false;
+    }
+    
+    if (result.acquired) {
+      console.log(`✅ Acquired ${creditsNeeded} credits. Total this minute: ${result.current_credits}/${MAX_CREDITS_PER_MINUTE}`);
+      return true;
+    }
+    
+    // Need to wait
+    console.log(`⏳ Credit limit reached (${result.current_credits}/${MAX_CREDITS_PER_MINUTE}). Waiting ${result.wait_seconds}s...`);
+    await new Promise(resolve => setTimeout(resolve, result.wait_seconds * 1000));
+  }
+  
+  console.error('❌ Failed to acquire credits after max attempts');
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -39,7 +85,7 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('📊 Starting forex technical indicators ingestion via TwelveData...');
+    console.log('📊 Starting forex technical indicators ingestion via TwelveData (with shared rate limiting)...');
 
     if (!TWELVEDATA_API_KEY) {
       console.error('❌ TWELVEDATA_API_KEY not configured');
@@ -76,17 +122,16 @@ serve(async (req) => {
     let successCount = 0;
     let errorCount = 0;
 
-    // Process limited number of pairs to prevent timeout (TwelveData has 8 calls/min on free tier)
+    // Process limited number of pairs to prevent timeout
     const pairsToProcess = forexPairs.slice(0, 5);
-    console.log(`Processing ${pairsToProcess.length} pairs to prevent timeout`);
+    console.log(`Processing ${pairsToProcess.length} pairs with shared rate limiting`);
 
     for (const pair of pairsToProcess) {
       try {
-        // TwelveData uses format: EUR/USD
         const ticker = pair.ticker;
         
-        // Fetch technical indicators from TwelveData
-        const indicators = await fetchTechnicalIndicatorsFromTwelveData(ticker);
+        // Fetch technical indicators from TwelveData using shared rate limiter
+        const indicators = await fetchTechnicalIndicatorsFromTwelveData(ticker, supabaseClient);
         
         if (!indicators) {
           console.log(`⚠️ No data for ${ticker}`);
@@ -159,9 +204,6 @@ serve(async (req) => {
         successCount++;
         console.log(`✅ Processed ${pair.ticker}`);
         
-        // Rate limiting - TwelveData free tier: 8 API calls per minute
-        await new Promise(resolve => setTimeout(resolve, 8000));
-        
       } catch (error) {
         console.error(`❌ Error processing ${pair.ticker}:`, error);
         errorCount++;
@@ -181,7 +223,7 @@ serve(async (req) => {
       duration_ms: duration,
       source_used: 'TwelveData',
       error_message: null,
-      metadata: { pairs_processed: pairsToProcess.length }
+      metadata: { pairs_processed: pairsToProcess.length, shared_rate_limiting: true }
     });
     
     // Send Slack success alert
@@ -202,7 +244,7 @@ serve(async (req) => {
         successful: successCount,
         errors: errorCount,
         source: 'TwelveData',
-        message: `Ingested technical indicators for ${successCount} forex pairs`
+        message: `Ingested technical indicators for ${successCount} forex pairs (shared rate limiting)`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -244,10 +286,20 @@ serve(async (req) => {
   }
 });
 
-async function fetchTechnicalIndicatorsFromTwelveData(ticker: string): Promise<TechnicalIndicators | null> {
+async function fetchTechnicalIndicatorsFromTwelveData(
+  ticker: string,
+  supabaseClient: any
+): Promise<TechnicalIndicators | null> {
   try {
-    // TwelveData expects format like "EUR/USD"
-    const symbol = ticker.replace('/', '');  // API may need EURUSD format
+    // Each API call = 1 credit. We need 5 credits for full technical analysis.
+    // Acquire all 5 credits upfront using shared counter
+    const creditsNeeded = 5;
+    const acquired = await acquireCredits(supabaseClient, creditsNeeded);
+    
+    if (!acquired) {
+      console.error(`❌ Could not acquire ${creditsNeeded} credits for ${ticker}`);
+      return null;
+    }
     
     // Fetch RSI
     const rsiUrl = `https://api.twelvedata.com/rsi?symbol=${ticker}&interval=1day&time_period=14&apikey=${TWELVEDATA_API_KEY}`;
@@ -262,8 +314,8 @@ async function fetchTechnicalIndicatorsFromTwelveData(ticker: string): Promise<T
     
     const rsi_14 = rsiData.values?.[0]?.rsi ? parseFloat(rsiData.values[0].rsi) : undefined;
     
-    // Rate limit delay between calls
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Small delay between calls to avoid burst issues
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     // Fetch SMA 50
     const sma50Url = `https://api.twelvedata.com/sma?symbol=${ticker}&interval=1day&time_period=50&apikey=${TWELVEDATA_API_KEY}`;
@@ -271,7 +323,7 @@ async function fetchTechnicalIndicatorsFromTwelveData(ticker: string): Promise<T
     const sma50Data = await sma50Resp.json();
     const sma_50 = sma50Data.values?.[0]?.sma ? parseFloat(sma50Data.values[0].sma) : undefined;
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     // Fetch SMA 200
     const sma200Url = `https://api.twelvedata.com/sma?symbol=${ticker}&interval=1day&time_period=200&apikey=${TWELVEDATA_API_KEY}`;
@@ -279,7 +331,7 @@ async function fetchTechnicalIndicatorsFromTwelveData(ticker: string): Promise<T
     const sma200Data = await sma200Resp.json();
     const sma_200 = sma200Data.values?.[0]?.sma ? parseFloat(sma200Data.values[0].sma) : undefined;
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     // Fetch MACD
     const macdUrl = `https://api.twelvedata.com/macd?symbol=${ticker}&interval=1day&apikey=${TWELVEDATA_API_KEY}`;
@@ -290,7 +342,7 @@ async function fetchTechnicalIndicatorsFromTwelveData(ticker: string): Promise<T
     const macd_signal = macdData.values?.[0]?.macd_signal ? parseFloat(macdData.values[0].macd_signal) : undefined;
     const macd_histogram = macdData.values?.[0]?.macd_hist ? parseFloat(macdData.values[0].macd_hist) : undefined;
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     // Fetch current price
     const priceUrl = `https://api.twelvedata.com/price?symbol=${ticker}&apikey=${TWELVEDATA_API_KEY}`;

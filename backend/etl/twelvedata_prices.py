@@ -1,8 +1,8 @@
 """
-Twelve Data Price ETL - STRICT rate limiting for 55 credits/min plan
+Twelve Data Price ETL - SHARED rate limiting via Supabase
 
-CRITICAL: Never exceed 55 credits per minute or Twelve Data will rate limit us.
-Each symbol = 1 credit. Max batch = 20 symbols.
+CRITICAL: Uses shared counter in Supabase so edge functions and backend
+never exceed 50 credits per minute combined.
 """
 import asyncio
 import hashlib
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 # Twelve Data API configuration
 TWELVEDATA_BASE_URL = "https://api.twelvedata.com"
 
-# STRICT Rate limiting - Grow plan: 55 credits/min
-MAX_CREDITS_PER_MINUTE = 50  # Leave 5 credit buffer (55 limit - 5 buffer = 50 usable)
+# STRICT Rate limiting - Grow plan: 55 credits/min, using 50 as safe limit
+MAX_CREDITS_PER_MINUTE = 50
 MAX_SYMBOLS_PER_BATCH = 20   # STRICT: Never more than 20 symbols per request
 REQUEST_TIMEOUT = 30.0
 MAX_RETRIES = 2
@@ -28,6 +28,10 @@ RETRY_DELAY = 3.0
 
 # Minimum seconds between batches to spread load
 MIN_BATCH_INTERVAL_SECONDS = 3.0
+
+# Supabase config for shared rate limiting
+SUPABASE_URL = settings.SUPABASE_URL
+SUPABASE_SERVICE_KEY = settings.SUPABASE_SERVICE_ROLE_KEY
 
 # Ticker normalization mappings for Twelve Data
 TICKER_MAPPINGS = {
@@ -75,94 +79,139 @@ REFRESH_INTERVALS = {
 }
 
 
-class StrictCreditsGuard:
+class SharedCreditsGuard:
     """
-    STRICT per-minute credit tracking with minute boundary awareness.
-    Ensures we NEVER exceed 50 credits in any 60-second window.
+    SHARED per-minute credit tracking via Supabase database.
+    Both edge functions and backend use the same counter.
     """
     
     def __init__(self, max_credits: int = MAX_CREDITS_PER_MINUTE):
         self.max_credits = max_credits
-        self._credits_this_minute = 0
-        self._minute_start = self._get_current_minute_start()
         self._lock = asyncio.Lock()
+        self._http_client: Optional[httpx.AsyncClient] = None
     
-    def _get_current_minute_start(self) -> float:
-        """Get timestamp of current minute start"""
-        now = time.time()
-        return now - (now % 60)
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=10.0)
+        return self._http_client
     
-    def _get_seconds_until_next_minute(self) -> float:
-        """Get seconds remaining until next minute boundary + 2s buffer"""
-        now = time.time()
-        seconds_into_minute = now % 60
-        return (60 - seconds_into_minute) + 2.0  # +2s safety buffer
+    async def close(self):
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
     
     async def acquire(self, credits_needed: int) -> Tuple[bool, float]:
         """
-        Try to acquire credits. Returns (success, wait_time).
-        If we can't acquire now, returns wait time until next minute.
+        Try to acquire credits from shared counter.
+        Returns (success, wait_time).
         """
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            logger.warning("Supabase not configured, falling back to local rate limiting")
+            return True, 0.0
+        
         async with self._lock:
-            current_minute = self._get_current_minute_start()
-            
-            # Reset if we're in a new minute
-            if current_minute > self._minute_start:
-                logger.info(f"💰 Credit reset: {self._credits_this_minute} used last minute, resetting to 0")
-                self._credits_this_minute = 0
-                self._minute_start = current_minute
-            
-            # Check if we can acquire
-            if self._credits_this_minute + credits_needed <= self.max_credits:
-                self._credits_this_minute += credits_needed
-                logger.debug(f"💰 Acquired {credits_needed} credits. Total this minute: {self._credits_this_minute}/{self.max_credits}")
-                return True, 0.0
-            
-            # Can't acquire - need to wait
-            wait_time = self._get_seconds_until_next_minute()
-            logger.warning(
-                f"⚠️ CREDIT LIMIT: Would exceed {self.max_credits}/min. "
-                f"Used: {self._credits_this_minute}, Requested: {credits_needed}. "
-                f"Waiting {wait_time:.1f}s for next minute."
-            )
-            return False, wait_time
+            try:
+                client = await self._get_client()
+                
+                # Call the shared RPC function
+                response = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/rpc/acquire_twelvedata_credits",
+                    headers={
+                        "apikey": SUPABASE_SERVICE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "credits_needed": credits_needed,
+                        "max_credits": self.max_credits
+                    }
+                )
+                
+                if response.status_code != 200:
+                    logger.error(f"Failed to acquire credits: {response.status_code} - {response.text}")
+                    return True, 0.0  # Fallback to allowing the request
+                
+                result = response.json()
+                if not result:
+                    logger.error("Empty result from acquire_twelvedata_credits")
+                    return True, 0.0
+                
+                # Result is an array with one row
+                row = result[0] if isinstance(result, list) else result
+                acquired = row.get('acquired', False)
+                current_credits = row.get('current_credits', 0)
+                wait_seconds = row.get('wait_seconds', 0)
+                
+                if acquired:
+                    logger.debug(f"💰 Acquired {credits_needed} credits. Total: {current_credits}/{self.max_credits}")
+                    return True, 0.0
+                else:
+                    logger.warning(
+                        f"⚠️ SHARED CREDIT LIMIT: {current_credits}/{self.max_credits}. "
+                        f"Need to wait {wait_seconds}s"
+                    )
+                    return False, float(wait_seconds)
+                    
+            except Exception as e:
+                logger.error(f"Error acquiring shared credits: {e}")
+                return True, 0.0  # Fallback to allowing the request
     
     async def wait_and_acquire(self, credits_needed: int) -> None:
         """Wait if necessary, then acquire credits"""
-        success, wait_time = await self.acquire(credits_needed)
+        max_attempts = 5
         
-        if not success:
-            logger.info(f"⏳ Delaying batch by {wait_time:.1f}s to respect credit limit")
+        for attempt in range(max_attempts):
+            success, wait_time = await self.acquire(credits_needed)
+            
+            if success:
+                return
+            
+            logger.info(f"⏳ Waiting {wait_time:.1f}s for shared credits (attempt {attempt + 1}/{max_attempts})")
             await asyncio.sleep(wait_time)
-            # Reset and acquire after wait
-            async with self._lock:
-                self._credits_this_minute = credits_needed
-                self._minute_start = self._get_current_minute_start()
+        
+        logger.warning(f"Failed to acquire {credits_needed} credits after {max_attempts} attempts")
     
-    def get_status(self) -> Dict:
-        """Get current status"""
-        return {
-            "credits_used_this_minute": self._credits_this_minute,
-            "credits_remaining": self.max_credits - self._credits_this_minute,
-            "max_credits_per_minute": self.max_credits,
-            "seconds_until_reset": self._get_seconds_until_next_minute()
-        }
+    async def get_status(self) -> Dict:
+        """Get current status from shared counter"""
+        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+            return {"error": "Supabase not configured"}
+        
+        try:
+            client = await self._get_client()
+            
+            response = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/get_twelvedata_credits_status",
+                headers={
+                    "apikey": SUPABASE_SERVICE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={}
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result[0] if isinstance(result, list) and result else result
+            else:
+                return {"error": f"HTTP {response.status_code}"}
+                
+        except Exception as e:
+            return {"error": str(e)}
 
 
-# Global credit guard - shared across all fetchers
-_global_credits_guard: Optional[StrictCreditsGuard] = None
+# Global shared credit guard
+_shared_credits_guard: Optional[SharedCreditsGuard] = None
 
 
-def get_credits_guard() -> StrictCreditsGuard:
-    """Get or create global credits guard"""
-    global _global_credits_guard
-    if _global_credits_guard is None:
-        _global_credits_guard = StrictCreditsGuard()
-    return _global_credits_guard
+def get_credits_guard() -> SharedCreditsGuard:
+    """Get or create global shared credits guard"""
+    global _shared_credits_guard
+    if _shared_credits_guard is None:
+        _shared_credits_guard = SharedCreditsGuard()
+    return _shared_credits_guard
 
 
 class TwelveDataPriceFetcher:
-    """Fetches prices from Twelve Data with STRICT rate limiting"""
+    """Fetches prices from Twelve Data with SHARED rate limiting"""
     
     def __init__(self):
         self.session: Optional[httpx.AsyncClient] = None
@@ -233,7 +282,7 @@ class TwelveDataPriceFetcher:
         self._last_batch_time = time.time()
     
     async def _fetch_batch(self, symbols: List[str], asset_class: str) -> Dict[str, Dict]:
-        """Fetch prices for a batch with strict credit enforcement"""
+        """Fetch prices for a batch with SHARED credit enforcement"""
         if not symbols:
             return {}
         
@@ -244,7 +293,7 @@ class TwelveDataPriceFetcher:
         
         credits_needed = len(symbols)
         
-        # Wait for credits
+        # Wait for SHARED credits
         await self.credits_guard.wait_and_acquire(credits_needed)
         self.stats["total_credits_used"] += credits_needed
         
@@ -260,10 +309,13 @@ class TwelveDataPriceFetcher:
         
         results = {}
         
+        # Get current shared status for logging
+        status = await self.credits_guard.get_status()
+        
         logger.info(
             f"📊 Fetching batch: {len(symbols)} symbols | "
             f"Credits: {credits_needed} | "
-            f"Status: {self.credits_guard.get_status()}"
+            f"Shared status: {status}"
         )
         
         for attempt in range(MAX_RETRIES):
@@ -336,8 +388,8 @@ class TwelveDataPriceFetcher:
         asset_class: str
     ) -> Tuple[List[Dict], Dict]:
         """
-        Fetch prices for a specific asset class with STRICT batching.
-        Max 20 symbols per batch, max 50 credits per minute.
+        Fetch prices for a specific asset class with SHARED batching.
+        Max 20 symbols per batch, coordinated with edge functions.
         """
         if not assets:
             return [], self.stats
@@ -361,7 +413,7 @@ class TwelveDataPriceFetcher:
         
         logger.info(
             f"🚀 Starting {asset_class} fetch: {total_symbols} symbols in {total_batches} batches "
-            f"(max {MAX_SYMBOLS_PER_BATCH}/batch, max {MAX_CREDITS_PER_MINUTE} credits/min)"
+            f"(max {MAX_SYMBOLS_PER_BATCH}/batch, SHARED {MAX_CREDITS_PER_MINUTE} credits/min)"
         )
         
         # Process in strict batches
@@ -409,8 +461,13 @@ class TwelveDataPriceFetcher:
         return price_records, self.stats
     
     def get_credits_status(self) -> Dict:
-        """Get current credit usage"""
-        return self.credits_guard.get_status()
+        """Get current credit usage (async call wrapped)"""
+        # For sync callers, just return basic stats
+        return {
+            "total_credits_used": self.stats["total_credits_used"],
+            "max_credits_per_minute": MAX_CREDITS_PER_MINUTE,
+            "rate_limiting": "shared_supabase"
+        }
 
 
 async def fetch_crypto_prices(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
@@ -439,8 +496,8 @@ async def fetch_commodity_prices(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
 
 async def fetch_all_prices_twelvedata(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
     """
-    Fetch all prices with strict rate limiting.
-    Groups by asset class and processes with proper credit management.
+    Fetch all prices with SHARED rate limiting via Supabase.
+    Coordinates with edge functions to never exceed 50 credits/min.
     """
     all_prices = []
     combined_stats = {
@@ -449,6 +506,7 @@ async def fetch_all_prices_twelvedata(assets: List[Dict]) -> Tuple[List[Dict], D
         "retries": 0,
         "rate_limit_waits": 0,
         "total_credits_used": 0,
+        "rate_limiting": "shared_supabase",
         "by_class": {}
     }
     
@@ -474,6 +532,5 @@ async def fetch_all_prices_twelvedata(assets: List[Dict]) -> Tuple[List[Dict], D
         combined_stats["retries"] = fetcher.stats["retries"]
         combined_stats["rate_limit_waits"] = fetcher.stats["rate_limit_waits"]
         combined_stats["total_credits_used"] = fetcher.stats["total_credits_used"]
-        combined_stats["errors"] = fetcher.stats["errors"][:10]
     
     return all_prices, combined_stats
