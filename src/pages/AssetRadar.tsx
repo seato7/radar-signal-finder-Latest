@@ -128,24 +128,37 @@ const AssetRadar = () => {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {assets.map((asset) => (
-                <Link
-                  key={asset.id}
-                  to={`/asset/${asset.ticker}`}
-                  className="block"
-                >
-                  <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
-                    <div className="flex items-start justify-between mb-1">
-                      <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
-                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
+              {assets.map((asset) => {
+                const sentiment = getSentiment(asset.score);
+                return (
+                  <Link
+                    key={asset.id}
+                    to={`/asset/${encodeURIComponent(asset.ticker)}`}
+                    className="block"
+                  >
+                    <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
+                      <div className="flex items-start justify-between mb-1">
+                        <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={sentiment.variant} className="text-xs">
+                            {asset.score}
+                          </Badge>
+                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">{asset.name}</p>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-primary text-primary-foreground">
+                          {asset.exchange}
+                        </Badge>
+                        <span className={`text-xs ${sentiment.variant === 'default' ? 'text-primary' : sentiment.variant === 'destructive' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                          {asset.sentiment}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-3">{asset.name}</p>
-                    <Badge className="bg-primary text-primary-foreground">
-                      {asset.exchange}
-                    </Badge>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </CardContent>

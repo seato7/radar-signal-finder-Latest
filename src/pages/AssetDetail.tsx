@@ -91,14 +91,14 @@ const AssetDetail = () => {
   useEffect(() => {
     const fetchAssetData = async () => {
       if (!ticker) return;
-      
+      const decodedTicker = decodeURIComponent(ticker);
       setLoading(true);
       try {
         // Fetch asset
         const { data: assetData, error: assetError } = await supabase
           .from('assets')
           .select('*')
-          .ilike('ticker', ticker)
+          .ilike('ticker', decodedTicker)
           .maybeSingle();
         
         if (assetError) throw assetError;
@@ -110,12 +110,12 @@ const AssetDetail = () => {
         setAsset(assetData);
 
         // Calculate score (0-100) based on ticker
-        const calculatedScore = getAssetScore(ticker);
+        const calculatedScore = getAssetScore(decodedTicker);
         setScore(calculatedScore);
         setSentiment(getSentiment(calculatedScore));
         
         // Score change (deterministic based on ticker)
-        const changeHash = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const changeHash = decodedTicker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         const change = Math.round(((changeHash % 10) - 5) * 10) / 10;
         setScoreChange(change);
         
@@ -136,7 +136,7 @@ const AssetDetail = () => {
             score: getAssetScore(a.ticker)
           }));
           allScores.sort((a, b) => b.score - a.score);
-          const rank = allScores.findIndex(a => a.ticker === ticker) + 1;
+          const rank = allScores.findIndex(a => a.ticker === decodedTicker) + 1;
           setRanking(rank || 1);
         }
 
@@ -173,7 +173,7 @@ const AssetDetail = () => {
         }
 
         // Assign components based on ticker characteristics
-        const tickerHash = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const tickerHash = decodedTicker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         const numComponents = 3 + (tickerHash % 3);
         const assignedComponents = COMPONENT_LABELS.slice(tickerHash % 4, (tickerHash % 4) + numComponents);
         setComponents(assignedComponents);
