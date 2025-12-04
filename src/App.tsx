@@ -12,10 +12,9 @@ import { BrokerKeyRotationModal } from "@/components/BrokerKeyRotationModal";
 import { initGlobalPriceSubscription } from "@/hooks/useRealtimePrices";
 import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
-import Radar from "./pages/Radar";
+import AssetRadar from "./pages/AssetRadar";
 import Watchlist from "./pages/Watchlist";
 import Backtest from "./pages/Backtest";
-import Assets from "./pages/Assets";
 import AssetDetail from "./pages/AssetDetail";
 import Themes from "./pages/Themes";
 import ThemeDiscovery from "./pages/ThemeDiscovery";
@@ -65,10 +64,9 @@ const App = () => (
                           <Routes>
                             <Route path="/" element={<Home />} />
                             <Route path="/alerts" element={<Alerts />} />
-                            <Route path="/radar" element={<Radar />} />
+                            <Route path="/asset-radar" element={<AssetRadar />} />
                             <Route path="/watchlist" element={<Watchlist />} />
                             <Route path="/backtest" element={<Backtest />} />
-                            <Route path="/assets" element={<Assets />} />
                             <Route path="/asset/:ticker" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
                             <Route path="/theme-discovery" element={<ThemeDiscovery />} />

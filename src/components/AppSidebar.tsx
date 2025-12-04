@@ -1,4 +1,4 @@
-import { Home, Bell, TrendingUp, Briefcase, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Target, Download, Activity, DollarSign } from "lucide-react";
+import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Target, Download, Activity, DollarSign } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -21,14 +21,13 @@ const navigationItems = [
   { title: "Dashboard", url: "/", icon: Home },
   { title: "AI Assistant", url: "/assistant", icon: Sparkles },
   { title: "Alerts", url: "/alerts", icon: Bell },
-  { title: "Radar", url: "/radar", icon: Radar },
+  { title: "Asset Radar", url: "/asset-radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },
   { title: "Backtest", url: "/backtest", icon: TrendingUp },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
   { title: "Theme Discovery", url: "/theme-discovery", icon: Target },
   { title: "Data Sources", url: "/data-sources", icon: Database },
-  { title: "Asset View", url: "/assets", icon: Briefcase },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
