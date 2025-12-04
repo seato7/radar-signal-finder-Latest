@@ -166,8 +166,7 @@ serve(async (req) => {
           ticker: asset.ticker,
           date: today,
           close: price,
-          provider: 'twelvedata',
-          updated_at: new Date().toISOString()
+          last_updated_at: new Date().toISOString()
         });
       }
     }
