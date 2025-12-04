@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -19,7 +23,6 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-DARKPOOL] Starting dark pool signal generation...');
 
-    // Get dark pool activity from last 30 days
     const { data: activities, error: activitiesError } = await supabaseClient
       .from('dark_pool_activity')
       .select('*')
@@ -31,12 +34,20 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-DARKPOOL] Found ${activities?.length || 0} dark pool activities`);
 
     if (!activities || activities.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-darkpool',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No activities to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Get asset IDs for tickers
     const tickers = [...new Set(activities.map(a => a.ticker))];
     const { data: assets } = await supabaseClient
       .from('assets')
@@ -45,17 +56,14 @@ serve(async (req) => {
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
-    // Create signals from dark pool activity
     const signals = [];
     for (const activity of activities) {
       const assetId = tickerToAssetId.get(activity.ticker);
       if (!assetId) continue;
 
-      // High dark pool percentage suggests institutional accumulation
       const dpPct = activity.dark_pool_percentage || 0;
-      const direction = dpPct > 40 ? 'up' : 'neutral'; // >40% dark pool is bullish
+      const direction = dpPct > 40 ? 'up' : 'neutral';
       
-      // Magnitude based on dark pool percentage and volume
       const magnitude = Math.min(1.0, dpPct / 100);
 
       const signalData = {
@@ -86,7 +94,6 @@ serve(async (req) => {
       });
     }
 
-    // Insert signals (using insert with duplicate checking)
     const { error: insertError } = await supabaseClient
       .from('signals')
       .insert(signals);
@@ -98,6 +105,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-DARKPOOL] ✅ Created ${signals.length} dark pool signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-darkpool',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       activities_processed: activities.length,
@@ -108,6 +124,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-DARKPOOL] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-darkpool',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   try {
     const supabaseClient = createClient(
@@ -30,6 +34,15 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-OPTIONS] Found ${optionsFlow?.length || 0} options flow records`);
 
     if (!optionsFlow || optionsFlow.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-options',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No options flow to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -54,7 +67,7 @@ serve(async (req) => {
       
       const direction = isBullish ? 'up' : 'down';
       const premium = option.premium || 0;
-      const magnitude = Math.min(1.0, premium / 10000000); // Normalize to $10M premium
+      const magnitude = Math.min(1.0, premium / 10000000);
 
       const signalData = {
         ticker: option.ticker,
@@ -99,6 +112,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-OPTIONS] ✅ Created ${signals.length} unusual options signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-options',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       options_processed: optionsFlow.length,
@@ -109,6 +131,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-OPTIONS] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-options',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

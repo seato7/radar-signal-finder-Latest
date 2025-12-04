@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const SLACK_WEBHOOK_URL = Deno.env.get('SLACK_WEBHOOK_URL');
 
@@ -11,6 +12,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   try {
     const { reminderType } = await req.json();
@@ -99,6 +103,16 @@ serve(async (req) => {
 
     if (!SLACK_WEBHOOK_URL) {
       console.log('Reminder (no Slack webhook):', message);
+      
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'remind-manual-ingestion',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(
         JSON.stringify({ success: true, message: 'Logged (no Slack webhook configured)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -142,6 +156,15 @@ serve(async (req) => {
 
     console.log(`✅ Sent ${reminderType} reminder to Slack`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'remind-manual-ingestion',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: 1,
+    });
+
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -157,6 +180,13 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error sending reminder:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'remind-manual-ingestion',
+      message: errorMessage,
+    });
+    
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { 
