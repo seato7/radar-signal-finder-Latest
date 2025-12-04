@@ -132,13 +132,24 @@ serve(async (req) => {
       console.log(`Inserted ${supplyChainSignals.length} real supply chain signal records`);
     }
 
+    const durationMs = Date.now() - startTime;
     await logHeartbeat(supabase, {
       function_name: 'ingest-supply-chain',
       status: 'success',
       rows_inserted: supplyChainSignals.length,
       rows_skipped: 0,
-      duration_ms: Date.now() - startTime,
+      duration_ms: durationMs,
       source_used: 'Perplexity Supply Chain',
+    });
+
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-supply-chain',
+      status: 'success',
+      duration: durationMs,
+      rowsInserted: supplyChainSignals.length,
+      rowsSkipped: 0,
+      sourceUsed: 'Perplexity Supply Chain',
     });
 
     return new Response(

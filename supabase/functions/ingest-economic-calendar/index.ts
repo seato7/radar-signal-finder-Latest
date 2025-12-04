@@ -163,13 +163,24 @@ serve(async (req) => {
       }
     }
 
+    const durationMs = Date.now() - startTime;
     await logHeartbeat(supabaseClient, {
       function_name: 'ingest-economic-calendar',
       status: 'success',
       rows_inserted: successCount,
       rows_skipped: indicators.length - successCount,
-      duration_ms: Date.now() - startTime,
+      duration_ms: durationMs,
       source_used: 'Economic Calendar',
+    });
+
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-economic-calendar',
+      status: 'success',
+      duration: durationMs,
+      rowsInserted: successCount,
+      rowsSkipped: indicators.length - successCount,
+      sourceUsed: 'Economic Calendar',
     });
 
     return new Response(
