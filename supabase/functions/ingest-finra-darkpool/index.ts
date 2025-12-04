@@ -151,12 +151,25 @@ Deno.serve(async (req) => {
       }
     }
     
+    const durationMs = Date.now() - startTime;
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-finra-darkpool',
+      status: 'success',
+      duration: durationMs,
+      rowsInserted: inserted,
+      rowsSkipped: skipped,
+      sourceUsed: 'FINRA_ATS_estimated',
+    });
+    
     return new Response(JSON.stringify({
       success: true,
       source: 'FINRA_ATS_estimated',
       processed: assets.length,
       inserted,
       skipped,
+      durationMs,
       note: 'Using estimated patterns - integrate FINRA ATS Weekly scraper or Unusual Whales API for production'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

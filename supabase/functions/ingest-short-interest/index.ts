@@ -121,13 +121,24 @@ serve(async (req) => {
       console.log(`Inserted ${shortData.length} real short interest records`);
     }
 
+    const durationMs = Date.now() - startTime;
     await logHeartbeat(supabase, {
       function_name: 'ingest-short-interest',
       status: 'success',
       rows_inserted: shortData.length,
       rows_skipped: 0,
-      duration_ms: Date.now() - startTime,
+      duration_ms: durationMs,
       source_used: 'Perplexity FINRA',
+    });
+
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-short-interest',
+      status: 'success',
+      duration: durationMs,
+      rowsInserted: shortData.length,
+      rowsSkipped: 0,
+      sourceUsed: 'Perplexity FINRA',
     });
 
     return new Response(

@@ -247,6 +247,16 @@ Deno.serve(async (req) => {
         commodities_mapped: Object.keys(commodityMap).length
       }
     });
+
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'ingest-cot-cftc',
+      status: 'success',
+      duration: durationMs,
+      rowsInserted: inserted,
+      rowsSkipped: skipped,
+      sourceUsed: fallbackUsed ? 'Perplexity AI' : 'CFTC API',
+    });
     
     console.log(`✅ COT ingestion complete: ${inserted} inserted, ${skipped} skipped, ${durationMs}ms`);
     
