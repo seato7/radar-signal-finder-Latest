@@ -67,7 +67,7 @@ const App = () => (
                             <Route path="/asset-radar" element={<AssetRadar />} />
                             <Route path="/watchlist" element={<Watchlist />} />
                             <Route path="/backtest" element={<Backtest />} />
-                            <Route path="/asset/:ticker" element={<AssetDetail />} />
+                            <Route path="/asset/*" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
                             <Route path="/theme-discovery" element={<ThemeDiscovery />} />
                             <Route path="/data-sources" element={<DataSources />} />
