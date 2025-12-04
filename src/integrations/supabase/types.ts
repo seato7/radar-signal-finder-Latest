@@ -2330,6 +2330,27 @@ export type Database = {
         }
         Relationships: []
       }
+      twelvedata_rate_limits: {
+        Row: {
+          credits_used: number
+          id: string
+          last_updated_at: string
+          minute_key: string
+        }
+        Insert: {
+          credits_used?: number
+          id?: string
+          last_updated_at?: string
+          minute_key: string
+        }
+        Update: {
+          credits_used?: number
+          id?: string
+          last_updated_at?: string
+          minute_key?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           granted_at: string | null
@@ -2554,6 +2575,14 @@ export type Database = {
       }
     }
     Functions: {
+      acquire_twelvedata_credits: {
+        Args: { credits_needed: number; max_credits?: number }
+        Returns: {
+          acquired: boolean
+          current_credits: number
+          wait_seconds: number
+        }[]
+      }
       check_ai_fallback_usage: {
         Args: never
         Returns: {
@@ -2633,6 +2662,15 @@ export type Database = {
           seconds_stale: number
           table_name: string
           ticker: string
+        }[]
+      }
+      get_twelvedata_credits_status: {
+        Args: never
+        Returns: {
+          credits_remaining: number
+          credits_used: number
+          minute_key: string
+          seconds_until_reset: number
         }[]
       }
       get_user_role: {
