@@ -31,7 +31,7 @@ MIN_BATCH_INTERVAL_SECONDS = 3.0
 
 # Supabase config for shared rate limiting
 SUPABASE_URL = settings.SUPABASE_URL
-SUPABASE_SERVICE_KEY = settings.SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_SERVICE_KEY = settings.SUPABASE_SERVICE_KEY
 
 # Ticker normalization mappings for Twelve Data
 TICKER_MAPPINGS = {
