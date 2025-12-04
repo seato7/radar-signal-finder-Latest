@@ -29,11 +29,11 @@ async def lifespan(app: FastAPI):
     db = get_db()
     await auto_populate_assets(db)
     
-    # Start tiered Twelve Data price scheduler
-    # Note: Uses TD_REFRESH_* env vars for intervals
-    from backend.services.price_scheduler import start_scheduler, get_tier_config
+    # Start serial price scheduler (40 symbols/min, ~26 min cycle)
+    from backend.services.price_scheduler import start_scheduler, get_scheduler_stats
     start_scheduler()
-    logger.info(f"Twelve Data price scheduler started: {get_tier_config()}")
+    stats = get_scheduler_stats()
+    logger.info(f"Price scheduler started: {stats['config']}")
     
     metrics.increment("app_starts")
     yield

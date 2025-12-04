@@ -1,43 +1,15 @@
-"""Tests for Twelve Data Price Ingestion Service"""
+"""Tests for Twelve Data Price Ingestion Service (Serial Queue)"""
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime, timezone
 
 from backend.etl.twelvedata_prices import (
     TwelveDataPriceFetcher,
-    TwelveDataCreditsTracker,
     fetch_crypto_prices,
     fetch_forex_prices,
     fetch_stock_prices,
     fetch_commodity_prices,
 )
-
-
-class TestTwelveDataCreditsTracker:
-    """Test credit tracking for rate limiting"""
-    
-    def test_initial_state(self):
-        """Credits tracker starts with 0 used"""
-        tracker = TwelveDataCreditsTracker(max_credits_per_minute=55)
-        status = tracker.get_status()
-        assert status["credits_used_this_minute"] == 0
-        assert status["credits_remaining"] == 55
-    
-    @pytest.mark.asyncio
-    async def test_acquire_credits_within_limit(self):
-        """Should return 0 wait time when within limits"""
-        tracker = TwelveDataCreditsTracker(max_credits_per_minute=55)
-        wait_time = await tracker.acquire_credits(20)
-        assert wait_time == 0
-        assert tracker.get_status()["credits_used_this_minute"] == 20
-    
-    @pytest.mark.asyncio
-    async def test_acquire_credits_exceeds_limit(self):
-        """Should return positive wait time when exceeding limits"""
-        tracker = TwelveDataCreditsTracker(max_credits_per_minute=55)
-        await tracker.acquire_credits(50)
-        wait_time = await tracker.acquire_credits(10)  # Would exceed 55
-        assert wait_time > 0
 
 
 class TestTwelveDataPriceFetcher:
@@ -71,8 +43,8 @@ class TestTwelveDataPriceFetcher:
         assert fetcher._normalize_ticker("SILVER", "commodity") == "XAG/USD"
     
     @pytest.mark.asyncio
-    async def test_fetch_batch_success(self):
-        """Test successful batch fetch"""
+    async def test_fetch_single_batch_success(self):
+        """Test successful single batch fetch"""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -85,15 +57,15 @@ class TestTwelveDataPriceFetcher:
             fetcher.session = AsyncMock()
             fetcher.session.get = AsyncMock(return_value=mock_response)
             
-            results = await fetcher._fetch_batch(["AAPL", "MSFT"], "stock")
+            results = await fetcher._fetch_single_batch(["AAPL", "MSFT"])
             
             assert "AAPL" in results
             assert "MSFT" in results
-            assert results["AAPL"]["price"] == 150.25
-            assert results["MSFT"]["price"] == 380.50
+            assert results["AAPL"] == 150.25
+            assert results["MSFT"] == 380.50
     
     @pytest.mark.asyncio
-    async def test_fetch_prices_integration(self):
+    async def test_fetch_prices_batch_integration(self):
         """Test full price fetch flow"""
         test_assets = [
             {"id": "1", "ticker": "AAPL", "asset_class": "stock"},
@@ -117,7 +89,7 @@ class TestTwelveDataPriceFetcher:
                 async with TwelveDataPriceFetcher() as fetcher:
                     fetcher.session = mock_instance
                     
-                    prices, stats = await fetcher.fetch_prices_for_class(test_assets, "stock")
+                    prices, stats = await fetcher.fetch_prices_batch(test_assets)
                     
                     assert len(prices) == 2
                     assert stats["fetched"] == 2
@@ -165,8 +137,8 @@ class TestPriceRouter:
         assert "data_provider" in result
         assert result["data_provider"] == "Twelve Data"
         assert "scheduler_active" in result
-        assert "tier_intervals" in result
-        assert "rate_limiting" in result
+        assert "mode" in result
+        assert result["mode"] == "serial_queue"
         assert "api_key_configured" in result
     
     @pytest.mark.asyncio
@@ -179,3 +151,19 @@ class TestPriceRouter:
             
             assert result["success"] == False
             assert "TWELVEDATA_API_KEY" in result["error"]
+
+
+class TestSchedulerStats:
+    """Test scheduler statistics"""
+    
+    def test_get_scheduler_stats(self):
+        """Test scheduler stats structure"""
+        from backend.services.price_scheduler import get_scheduler_stats
+        
+        stats = get_scheduler_stats()
+        
+        assert "scheduler_active" in stats
+        assert "config" in stats
+        assert "mode" in stats
+        assert stats["mode"] == "serial_queue"
+        assert stats["data_provider"] == "Twelve Data"

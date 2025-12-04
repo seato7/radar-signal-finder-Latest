@@ -1,12 +1,11 @@
 """
-Twelve Data Price ETL - SHARED rate limiting via Supabase
+Twelve Data Price ETL - SIMPLIFIED serial batch processing
 
-CRITICAL: Uses shared counter in Supabase so edge functions and backend
-never exceed 50 credits per minute combined.
+No complex rate limiting - just simple sequential batches.
+The scheduler controls the rate (40 symbols/min).
 """
 import asyncio
 import hashlib
-import time
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple
 import httpx
@@ -19,19 +18,11 @@ logger = logging.getLogger(__name__)
 # Twelve Data API configuration
 TWELVEDATA_BASE_URL = "https://api.twelvedata.com"
 
-# STRICT Rate limiting - Grow plan: 55 credits/min, using 50 as safe limit
-MAX_CREDITS_PER_MINUTE = 50
-MAX_SYMBOLS_PER_BATCH = 20   # STRICT: Never more than 20 symbols per request
+# Simple configuration
+MAX_SYMBOLS_PER_BATCH = 20   # Max symbols per API call
 REQUEST_TIMEOUT = 30.0
 MAX_RETRIES = 2
 RETRY_DELAY = 3.0
-
-# Minimum seconds between batches to spread load
-MIN_BATCH_INTERVAL_SECONDS = 3.0
-
-# Supabase config for shared rate limiting
-SUPABASE_URL = settings.SUPABASE_URL
-SUPABASE_SERVICE_KEY = settings.SUPABASE_SERVICE_KEY
 
 # Ticker normalization mappings for Twelve Data
 TICKER_MAPPINGS = {
@@ -57,7 +48,7 @@ TICKER_MAPPINGS = {
     'SUGAR': 'SB1',
     'COTTON': 'CT1',
     'VIX': 'VIX',
-    # Forex
+    # Forex (keep as-is mostly)
     'EUR/USD': 'EUR/USD',
     'GBP/USD': 'GBP/USD',
     'USD/JPY': 'USD/JPY',
@@ -67,168 +58,22 @@ TICKER_MAPPINGS = {
     'NZD/USD': 'NZD/USD',
 }
 
-# Asset class refresh intervals (from settings)
-REFRESH_INTERVALS = {
-    'crypto': 10,
-    'forex': 10,
-    'stock': 30,
-    'equity': 30,
-    'commodity': 30,
-    'index': 30,
-    'etf': 30,
-}
-
-
-class SharedCreditsGuard:
-    """
-    SHARED per-minute credit tracking via Supabase database.
-    Both edge functions and backend use the same counter.
-    """
-    
-    def __init__(self, max_credits: int = MAX_CREDITS_PER_MINUTE):
-        self.max_credits = max_credits
-        self._lock = asyncio.Lock()
-        self._http_client: Optional[httpx.AsyncClient] = None
-    
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.AsyncClient(timeout=10.0)
-        return self._http_client
-    
-    async def close(self):
-        if self._http_client and not self._http_client.is_closed:
-            await self._http_client.aclose()
-    
-    async def acquire(self, credits_needed: int) -> Tuple[bool, float]:
-        """
-        Try to acquire credits from shared counter.
-        Returns (success, wait_time).
-        """
-        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-            logger.warning("Supabase not configured, falling back to local rate limiting")
-            return True, 0.0
-        
-        async with self._lock:
-            try:
-                client = await self._get_client()
-                
-                # Call the shared RPC function
-                response = await client.post(
-                    f"{SUPABASE_URL}/rest/v1/rpc/acquire_twelvedata_credits",
-                    headers={
-                        "apikey": SUPABASE_SERVICE_KEY,
-                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "credits_needed": credits_needed,
-                        "max_credits": self.max_credits
-                    }
-                )
-                
-                if response.status_code != 200:
-                    logger.error(f"Failed to acquire credits: {response.status_code} - {response.text}")
-                    return True, 0.0  # Fallback to allowing the request
-                
-                result = response.json()
-                if not result:
-                    logger.error("Empty result from acquire_twelvedata_credits")
-                    return True, 0.0
-                
-                # Result is an array with one row
-                row = result[0] if isinstance(result, list) else result
-                acquired = row.get('acquired', False)
-                current_credits = row.get('current_credits', 0)
-                wait_seconds = row.get('wait_seconds', 0)
-                
-                if acquired:
-                    logger.debug(f"💰 Acquired {credits_needed} credits. Total: {current_credits}/{self.max_credits}")
-                    return True, 0.0
-                else:
-                    logger.warning(
-                        f"⚠️ SHARED CREDIT LIMIT: {current_credits}/{self.max_credits}. "
-                        f"Need to wait {wait_seconds}s"
-                    )
-                    return False, float(wait_seconds)
-                    
-            except Exception as e:
-                logger.error(f"Error acquiring shared credits: {e}")
-                return True, 0.0  # Fallback to allowing the request
-    
-    async def wait_and_acquire(self, credits_needed: int) -> None:
-        """Wait if necessary, then acquire credits"""
-        max_attempts = 5
-        
-        for attempt in range(max_attempts):
-            success, wait_time = await self.acquire(credits_needed)
-            
-            if success:
-                return
-            
-            logger.info(f"⏳ Waiting {wait_time:.1f}s for shared credits (attempt {attempt + 1}/{max_attempts})")
-            await asyncio.sleep(wait_time)
-        
-        logger.warning(f"Failed to acquire {credits_needed} credits after {max_attempts} attempts")
-    
-    async def get_status(self) -> Dict:
-        """Get current status from shared counter"""
-        if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-            return {"error": "Supabase not configured"}
-        
-        try:
-            client = await self._get_client()
-            
-            response = await client.post(
-                f"{SUPABASE_URL}/rest/v1/rpc/get_twelvedata_credits_status",
-                headers={
-                    "apikey": SUPABASE_SERVICE_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={}
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result[0] if isinstance(result, list) and result else result
-            else:
-                return {"error": f"HTTP {response.status_code}"}
-                
-        except Exception as e:
-            return {"error": str(e)}
-
-
-# Global shared credit guard
-_shared_credits_guard: Optional[SharedCreditsGuard] = None
-
-
-def get_credits_guard() -> SharedCreditsGuard:
-    """Get or create global shared credits guard"""
-    global _shared_credits_guard
-    if _shared_credits_guard is None:
-        _shared_credits_guard = SharedCreditsGuard()
-    return _shared_credits_guard
-
 
 class TwelveDataPriceFetcher:
-    """Fetches prices from Twelve Data with SHARED rate limiting"""
+    """Simple price fetcher - no rate limiting logic, just fetch"""
     
     def __init__(self):
         self.session: Optional[httpx.AsyncClient] = None
         self.api_key = settings.TWELVEDATA_API_KEY
-        self.credits_guard = get_credits_guard()
         self.stats = {
             "fetched": 0,
             "failed": 0,
             "retries": 0,
-            "rate_limit_waits": 0,
             "batches_processed": 0,
-            "total_credits_used": 0,
             "start_time": None,
             "end_time": None,
             "errors": []
         }
-        self._last_batch_time = 0.0
     
     async def __aenter__(self):
         if not self.api_key:
@@ -269,38 +114,11 @@ class TwelveDataPriceFetcher:
         
         return ticker
     
-    async def _enforce_batch_interval(self):
-        """Ensure minimum time between batches"""
-        now = time.time()
-        elapsed = now - self._last_batch_time
-        
-        if elapsed < MIN_BATCH_INTERVAL_SECONDS:
-            wait = MIN_BATCH_INTERVAL_SECONDS - elapsed
-            logger.debug(f"⏱️ Batch interval: waiting {wait:.1f}s")
-            await asyncio.sleep(wait)
-        
-        self._last_batch_time = time.time()
-    
-    async def _fetch_batch(self, symbols: List[str], asset_class: str) -> Dict[str, Dict]:
-        """Fetch prices for a batch with SHARED credit enforcement"""
+    async def _fetch_single_batch(self, symbols: List[str]) -> Dict[str, float]:
+        """Fetch prices for a single batch of symbols"""
         if not symbols:
             return {}
         
-        # Enforce batch size limit
-        if len(symbols) > MAX_SYMBOLS_PER_BATCH:
-            logger.error(f"❌ BATCH TOO LARGE: {len(symbols)} > {MAX_SYMBOLS_PER_BATCH}. Truncating!")
-            symbols = symbols[:MAX_SYMBOLS_PER_BATCH]
-        
-        credits_needed = len(symbols)
-        
-        # Wait for SHARED credits
-        await self.credits_guard.wait_and_acquire(credits_needed)
-        self.stats["total_credits_used"] += credits_needed
-        
-        # Enforce minimum batch interval
-        await self._enforce_batch_interval()
-        
-        # Build request
         symbol_str = ",".join(symbols)
         params = {
             "symbol": symbol_str,
@@ -308,15 +126,6 @@ class TwelveDataPriceFetcher:
         }
         
         results = {}
-        
-        # Get current shared status for logging
-        status = await self.credits_guard.get_status()
-        
-        logger.info(
-            f"📊 Fetching batch: {len(symbols)} symbols | "
-            f"Credits: {credits_needed} | "
-            f"Shared status: {status}"
-        )
         
         for attempt in range(MAX_RETRIES):
             try:
@@ -330,24 +139,26 @@ class TwelveDataPriceFetcher:
                     
                     if len(symbols) == 1:
                         if "price" in data:
-                            results[symbols[0]] = {
-                                "price": float(data["price"]),
-                                "timestamp": datetime.now(timezone.utc).isoformat()
-                            }
-                            self.stats["fetched"] += 1
+                            price = float(data["price"])
+                            if price > 0:
+                                results[symbols[0]] = price
+                                self.stats["fetched"] += 1
+                            else:
+                                self.stats["failed"] += 1
                         else:
                             self.stats["failed"] += 1
-                            if "message" in data:
+                            if "message" in data and len(self.stats["errors"]) < 10:
                                 self.stats["errors"].append(f"{symbols[0]}: {data['message']}")
                     else:
                         for symbol, price_data in data.items():
                             if isinstance(price_data, dict):
                                 if "price" in price_data:
-                                    results[symbol] = {
-                                        "price": float(price_data["price"]),
-                                        "timestamp": datetime.now(timezone.utc).isoformat()
-                                    }
-                                    self.stats["fetched"] += 1
+                                    price = float(price_data["price"])
+                                    if price > 0:
+                                        results[symbol] = price
+                                        self.stats["fetched"] += 1
+                                    else:
+                                        self.stats["failed"] += 1
                                 elif "message" in price_data:
                                     self.stats["failed"] += 1
                                     if len(self.stats["errors"]) < 10:
@@ -360,43 +171,42 @@ class TwelveDataPriceFetcher:
                 
                 elif response.status_code == 429:
                     self.stats["retries"] += 1
-                    self.stats["rate_limit_waits"] += 1
-                    wait = RETRY_DELAY * (2 ** attempt) + 5  # Longer wait on rate limit
-                    logger.warning(f"⚠️ RATE LIMITED by Twelve Data! Waiting {wait}s (attempt {attempt + 1})")
+                    wait = RETRY_DELAY * (2 ** attempt) + 5
+                    logger.warning(f"⚠️ Rate limited! Waiting {wait}s (attempt {attempt + 1})")
                     await asyncio.sleep(wait)
                     continue
                 
                 else:
-                    logger.error(f"Twelve Data API error: {response.status_code} - {response.text[:200]}")
+                    logger.error(f"API error: {response.status_code} - {response.text[:200]}")
                     self.stats["failed"] += len(symbols)
                     break
                     
             except httpx.TimeoutException:
                 self.stats["retries"] += 1
-                logger.warning(f"Timeout fetching batch (attempt {attempt + 1})")
+                logger.warning(f"Timeout (attempt {attempt + 1})")
                 await asyncio.sleep(RETRY_DELAY)
             except Exception as e:
-                logger.error(f"Error fetching batch: {str(e)}")
+                logger.error(f"Error: {str(e)}")
                 self.stats["failed"] += len(symbols)
                 break
         
         return results
     
-    async def fetch_prices_for_class(
+    async def fetch_prices_batch(
         self,
-        assets: List[Dict[str, str]],
-        asset_class: str
+        assets: List[Dict[str, str]]
     ) -> Tuple[List[Dict], Dict]:
         """
-        Fetch prices for a specific asset class with SHARED batching.
-        Max 20 symbols per batch, coordinated with edge functions.
+        Fetch prices for a batch of assets.
+        Splits into sub-batches of 20 symbols max.
         """
         if not assets:
             return [], self.stats
         
-        # Normalize tickers
-        ticker_map = {}
+        # Build ticker mapping (original ticker -> TD symbol)
+        ticker_map = {}  # TD symbol -> original asset
         for asset in assets:
+            asset_class = asset.get("asset_class", "stock").lower()
             td_symbol = self._normalize_ticker(asset["ticker"], asset_class)
             if td_symbol:
                 ticker_map[td_symbol] = asset
@@ -407,40 +217,32 @@ class TwelveDataPriceFetcher:
         symbols = list(ticker_map.keys())
         all_prices = {}
         
-        # Calculate batching
-        total_symbols = len(symbols)
-        total_batches = (total_symbols + MAX_SYMBOLS_PER_BATCH - 1) // MAX_SYMBOLS_PER_BATCH
-        
-        logger.info(
-            f"🚀 Starting {asset_class} fetch: {total_symbols} symbols in {total_batches} batches "
-            f"(max {MAX_SYMBOLS_PER_BATCH}/batch, SHARED {MAX_CREDITS_PER_MINUTE} credits/min)"
-        )
-        
-        # Process in strict batches
+        # Process in batches of 20
         for i in range(0, len(symbols), MAX_SYMBOLS_PER_BATCH):
             batch = symbols[i:i + MAX_SYMBOLS_PER_BATCH]
             batch_num = (i // MAX_SYMBOLS_PER_BATCH) + 1
+            total_batches = (len(symbols) + MAX_SYMBOLS_PER_BATCH - 1) // MAX_SYMBOLS_PER_BATCH
             
             logger.info(f"📦 Batch {batch_num}/{total_batches}: {len(batch)} symbols")
             
-            batch_results = await self._fetch_batch(batch, asset_class)
+            batch_results = await self._fetch_single_batch(batch)
             all_prices.update(batch_results)
+            
+            # Small delay between batches (within same minute run)
+            if i + MAX_SYMBOLS_PER_BATCH < len(symbols):
+                await asyncio.sleep(1.5)
         
         # Convert to price records
         price_records = []
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         
-        for td_symbol, price_data in all_prices.items():
+        for td_symbol, price in all_prices.items():
             asset = ticker_map.get(td_symbol)
-            if not asset:
+            if not asset or price <= 0:
                 continue
             
-            price = price_data.get("price")
-            if price is None or price <= 0:
-                continue
-            
-            checksum_data = f"{asset['ticker']}|{today}"
-            checksum = hashlib.sha256(checksum_data.encode()).hexdigest()
+            checksum_data = f"{asset['ticker']}|{today}|{price}"
+            checksum = hashlib.sha256(checksum_data.encode()).hexdigest()[:32]
             
             price_records.append({
                 "asset_id": asset.get("id"),
@@ -448,89 +250,48 @@ class TwelveDataPriceFetcher:
                 "date": today,
                 "close": float(price),
                 "checksum": checksum,
-                "provider": "twelvedata",
-                "refresh_interval_minutes": REFRESH_INTERVALS.get(asset_class, 30)
             })
         
         logger.info(
-            f"✅ {asset_class} complete: {len(price_records)}/{total_symbols} prices | "
-            f"Credits used: {self.stats['total_credits_used']} | "
-            f"Rate limit waits: {self.stats['rate_limit_waits']}"
+            f"✅ Fetch complete: {len(price_records)}/{len(assets)} prices"
         )
         
         return price_records, self.stats
-    
-    def get_credits_status(self) -> Dict:
-        """Get current credit usage (async call wrapped)"""
-        # For sync callers, just return basic stats
-        return {
-            "total_credits_used": self.stats["total_credits_used"],
-            "max_credits_per_minute": MAX_CREDITS_PER_MINUTE,
-            "rate_limiting": "shared_supabase"
-        }
 
 
+# Convenience functions for backward compatibility
 async def fetch_crypto_prices(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Fetch crypto prices from Twelve Data"""
+    """Fetch crypto prices"""
+    crypto_assets = [a for a in assets if a.get("asset_class", "").lower() == "crypto"]
     async with TwelveDataPriceFetcher() as fetcher:
-        return await fetcher.fetch_prices_for_class(assets, "crypto")
+        return await fetcher.fetch_prices_batch(crypto_assets)
 
 
 async def fetch_forex_prices(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Fetch forex prices from Twelve Data"""
+    """Fetch forex prices"""
+    forex_assets = [a for a in assets if a.get("asset_class", "").lower() == "forex"]
     async with TwelveDataPriceFetcher() as fetcher:
-        return await fetcher.fetch_prices_for_class(assets, "forex")
+        return await fetcher.fetch_prices_batch(forex_assets)
 
 
 async def fetch_stock_prices(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Fetch stock prices from Twelve Data"""
+    """Fetch stock prices"""
+    stock_assets = [a for a in assets if a.get("asset_class", "").lower() in ("stock", "equity", "etf", "index")]
     async with TwelveDataPriceFetcher() as fetcher:
-        return await fetcher.fetch_prices_for_class(assets, "stock")
+        return await fetcher.fetch_prices_batch(stock_assets)
 
 
 async def fetch_commodity_prices(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Fetch commodity prices from Twelve Data"""
+    """Fetch commodity prices"""
+    commodity_assets = [a for a in assets if a.get("asset_class", "").lower() == "commodity"]
     async with TwelveDataPriceFetcher() as fetcher:
-        return await fetcher.fetch_prices_for_class(assets, "commodity")
+        return await fetcher.fetch_prices_batch(commodity_assets)
 
 
-async def fetch_all_prices_twelvedata(assets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """
-    Fetch all prices with SHARED rate limiting via Supabase.
-    Coordinates with edge functions to never exceed 50 credits/min.
-    """
-    all_prices = []
-    combined_stats = {
-        "fetched": 0,
-        "failed": 0,
-        "retries": 0,
-        "rate_limit_waits": 0,
-        "total_credits_used": 0,
-        "rate_limiting": "shared_supabase",
-        "by_class": {}
-    }
-    
-    by_class = {}
-    for asset in assets:
-        ac = asset.get("asset_class", "stock").lower()
-        if ac not in by_class:
-            by_class[ac] = []
-        by_class[ac].append(asset)
-    
-    async with TwelveDataPriceFetcher() as fetcher:
-        for asset_class, class_assets in by_class.items():
-            prices, stats = await fetcher.fetch_prices_for_class(class_assets, asset_class)
-            all_prices.extend(prices)
-            combined_stats["by_class"][asset_class] = {
-                "total": len(class_assets),
-                "fetched": len(prices),
-                "failed": len(class_assets) - len(prices)
-            }
-        
-        combined_stats["fetched"] = fetcher.stats["fetched"]
-        combined_stats["failed"] = fetcher.stats["failed"]
-        combined_stats["retries"] = fetcher.stats["retries"]
-        combined_stats["rate_limit_waits"] = fetcher.stats["rate_limit_waits"]
-        combined_stats["total_credits_used"] = fetcher.stats["total_credits_used"]
-    
-    return all_prices, combined_stats
+# Legacy function for compatibility
+def get_credits_guard():
+    """Deprecated - no longer using shared credits guard"""
+    class DummyGuard:
+        def get_status(self):
+            return {"mode": "serial_queue", "note": "Rate limiting handled by scheduler"}
+    return DummyGuard()
