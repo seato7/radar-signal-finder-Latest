@@ -29,26 +29,20 @@ async def lifespan(app: FastAPI):
     db = get_db()
     await auto_populate_assets(db)
     
-    # DISABLED: Python backend price scheduler
-    # Price ingestion is now handled by the unified edge function (ingest-prices-twelvedata)
-    # which runs via cron every minute and processes 50 symbols per invocation.
-    # The edge function handles ALL asset classes (stocks, crypto, forex, commodities).
-    # Keeping both systems running causes credit conflicts (both compete for 50 credits/min).
-    # 
-    # To re-enable the backend scheduler, uncomment the following lines:
-    # from backend.services.price_scheduler import start_scheduler, get_tier_config
-    # start_scheduler()
-    # logger.info(f"Twelve Data price scheduler started: {get_tier_config()}")
-    logger.info("⚠️ Backend price scheduler DISABLED - using edge function for all price ingestion")
+    # Start tiered Twelve Data price scheduler
+    # Note: Uses TD_REFRESH_* env vars for intervals
+    from backend.services.price_scheduler import start_scheduler, get_tier_config
+    start_scheduler()
+    logger.info(f"Twelve Data price scheduler started: {get_tier_config()}")
     
     metrics.increment("app_starts")
     yield
     # Shutdown
     logger.info("Shutting down Opportunity Radar API")
     
-    # Scheduler not started, so no need to stop
-    # from backend.services.price_scheduler import stop_scheduler
-    # stop_scheduler()
+    # Stop Twelve Data scheduler
+    from backend.services.price_scheduler import stop_scheduler
+    stop_scheduler()
     
     await close_db()
 
