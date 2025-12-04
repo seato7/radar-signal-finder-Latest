@@ -42,12 +42,26 @@ const AssetDetail = () => {
   useEffect(() => {
     const fetchAsset = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('get-assets', {
-          body: { ticker }
-        });
+        // Fetch asset from database directly
+        const { data: assetData, error } = await supabase
+          .from('assets')
+          .select('*')
+          .ilike('ticker', ticker || '')
+          .maybeSingle();
         
         if (error) throw error;
-        setAsset(data);
+        
+        if (assetData) {
+          // Create asset object with defaults for missing properties
+          setAsset({
+            ticker: assetData.ticker,
+            exchange: assetData.exchange || 'UNKNOWN',
+            name: assetData.name || assetData.ticker,
+            where_to_buy: [],
+            signals: [],
+            themes: []
+          });
+        }
       } catch (error) {
         console.error("Failed to fetch asset:", error);
       } finally {
@@ -200,19 +214,23 @@ const AssetDetail = () => {
               <CardDescription>AU-friendly brokers and exchanges</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {asset.where_to_buy.map((broker, idx) => (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  className="w-full justify-between"
-                  asChild
-                >
-                  <a href={broker.url} target="_blank" rel="noopener noreferrer">
-                    {broker.name}
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </Button>
-              ))}
+              {asset.where_to_buy && asset.where_to_buy.length > 0 ? (
+                asset.where_to_buy.map((broker, idx) => (
+                  <Button
+                    key={idx}
+                    variant="outline"
+                    className="w-full justify-between"
+                    asChild
+                  >
+                    <a href={broker.url} target="_blank" rel="noopener noreferrer">
+                      {broker.name}
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No broker info available</p>
+              )}
             </CardContent>
           </Card>
         </div>
