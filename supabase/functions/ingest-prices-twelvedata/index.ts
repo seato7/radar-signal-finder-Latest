@@ -8,6 +8,7 @@ const corsHeaders = {
 
 /**
  * Unified Twelve Data Price Ingestion - SINGLE BATCH PER CALL
+ * Version: 2025-12-04-v3 (with checksum fix)
  * 
  * STRICT RATE LIMIT: Exactly 50 symbols per invocation
  * Called once per minute via cron, processes next batch of 50 assets
@@ -161,11 +162,14 @@ serve(async (req) => {
     for (const [tdTicker, price] of prices) {
       const asset = tickerToAsset.get(tdTicker);
       if (asset && price > 0) {
+        // Generate checksum as hash of ticker+date+price
+        const checksum = `${asset.ticker}-${today}-${price}`;
         priceRecords.push({
           asset_id: asset.id,
           ticker: asset.ticker,
           date: today,
           close: price,
+          checksum: checksum,
           last_updated_at: new Date().toISOString()
         });
       }
@@ -177,7 +181,7 @@ serve(async (req) => {
       const { error: upsertError } = await supabase
         .from('prices')
         .upsert(priceRecords, { 
-          onConflict: 'asset_id,date',
+          onConflict: 'ticker,date',
           ignoreDuplicates: false 
         });
       
