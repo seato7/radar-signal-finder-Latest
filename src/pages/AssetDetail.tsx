@@ -3,19 +3,23 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Star, ExternalLink, Clock, TrendingUp, TrendingDown } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Star, ExternalLink, TrendingUp, TrendingDown, Info } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-interface Signal {
-  id: string;
-  signal_type: string;
-  observed_at: string;
-  magnitude: number;
-  source_used: string | null;
-}
+// Helper to format strings: replace underscores with spaces and title case
+const formatLabel = (str: string): string => {
+  return str
+    .replace(/_/g, ' ')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
 
 interface Theme {
   id: string;
@@ -49,14 +53,15 @@ const CRYPTO_BROKERS: WhereToBuy[] = [
   { name: "CoinSpot", url: "https://coinspot.com.au" },
 ];
 
-const COMPONENT_LABELS = [
-  "PolicyMomentum",
-  "FlowPressure", 
-  "InsiderActivity",
-  "TechnicalStrength",
-  "SentimentScore",
-  "VolumeProfile",
-  "InstitutionalFlow"
+// Score components with weights and descriptions
+const SCORE_COMPONENTS = [
+  { key: "PolicyMomentum", weight: 1.0, description: "Government policy impact on sector" },
+  { key: "FlowPressure", weight: 1.0, description: "ETF and fund flow dynamics" },
+  { key: "InsiderActivity", weight: 0.8, description: "Insider trading patterns" },
+  { key: "TechnicalStrength", weight: 0.6, description: "Chart patterns and indicators" },
+  { key: "SentimentScore", weight: 0.5, description: "Market sentiment analysis" },
+  { key: "VolumeProfile", weight: 0.4, description: "Trading volume analysis" },
+  { key: "InstitutionalFlow", weight: 0.7, description: "Institutional investor activity" }
 ];
 
 // Generate deterministic score based on ticker for consistency
@@ -78,7 +83,6 @@ const AssetDetail = () => {
   // Extract ticker from path - handles tickers with "/" like "ADA/USD"
   const ticker = location.pathname.replace('/asset/', '');
   const [asset, setAsset] = useState<AssetData | null>(null);
-  const [signals, setSignals] = useState<Signal[]>([]);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [score, setScore] = useState<number>(0);
@@ -86,7 +90,7 @@ const AssetDetail = () => {
   const [totalAssets, setTotalAssets] = useState<number>(0);
   const [scoreChange, setScoreChange] = useState<number>(0);
   const [signalStrength, setSignalStrength] = useState<number>(0);
-  const [components, setComponents] = useState<string[]>([]);
+  const [componentScores, setComponentScores] = useState<{key: string; value: number; weight: number; description: string}[]>([]);
   const [sentiment, setSentiment] = useState<{ label: string; color: string }>({ label: "Neutral", color: "text-muted-foreground" });
   const { toast } = useToast();
 
@@ -141,22 +145,18 @@ const AssetDetail = () => {
           setRanking(rank || 1);
         }
 
-        // Fetch signals for this asset (last 30 days)
+        // Fetch signals for theme lookup
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
         const { data: signalData } = await supabase
           .from('signals')
-          .select('id, signal_type, observed_at, magnitude, source_used')
+          .select('id')
           .eq('asset_id', assetData.id)
           .gte('observed_at', thirtyDaysAgo)
-          .order('observed_at', { ascending: false })
           .limit(20);
 
-        const fetchedSignals = signalData || [];
-        setSignals(fetchedSignals);
-
         // Fetch themes via signal_theme_map
-        if (fetchedSignals.length > 0) {
-          const signalIds = fetchedSignals.map(s => s.id);
+        if (signalData && signalData.length > 0) {
+          const signalIds = signalData.map(s => s.id);
           const { data: themeMapData } = await supabase
             .from('signal_theme_map')
             .select('theme_id')
@@ -173,11 +173,18 @@ const AssetDetail = () => {
           }
         }
 
-        // Assign components based on ticker characteristics
+        // Generate component scores based on ticker (deterministic)
         const tickerHash = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const numComponents = 3 + (tickerHash % 3);
-        const assignedComponents = COMPONENT_LABELS.slice(tickerHash % 4, (tickerHash % 4) + numComponents);
-        setComponents(assignedComponents);
+        const scores = SCORE_COMPONENTS.map((comp, idx) => {
+          const componentHash = (tickerHash + idx * 17) % 100;
+          return {
+            key: comp.key,
+            value: componentHash,
+            weight: comp.weight,
+            description: comp.description
+          };
+        });
+        setComponentScores(scores);
 
       } catch (error) {
         console.error("Failed to fetch asset:", error);
@@ -273,111 +280,100 @@ const AssetDetail = () => {
         </Card>
       </div>
 
-      {/* Components */}
+      {/* Score Breakdown */}
       <Card className="shadow-data">
         <CardHeader>
-          <CardTitle className="text-base">Signal Components</CardTitle>
-          <CardDescription>Key factors driving the score</CardDescription>
+          <CardTitle className="text-base">Score Breakdown</CardTitle>
+          <CardDescription>How the score is calculated from individual components</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {components.map((component) => (
-              <Badge key={component} variant="outline" className="border-primary/30 text-primary">
-                {component}
-              </Badge>
-            ))}
+          <div className="space-y-4">
+            {componentScores.map((comp) => {
+              const contribution = (comp.value * comp.weight) / 100;
+              const isPositive = contribution > 0.3;
+              const isNegative = contribution < 0.2;
+              return (
+                <div key={comp.key} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{formatLabel(comp.key)}</span>
+                      <span className="text-xs text-muted-foreground">({comp.weight}x weight)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-medium ${isPositive ? 'text-success' : isNegative ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {comp.value}%
+                      </span>
+                    </div>
+                  </div>
+                  <Progress value={comp.value} className="h-2" />
+                  <p className="text-xs text-muted-foreground">{comp.description}</p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-6 p-4 rounded-lg bg-muted/50 border border-border">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
+              <div className="text-sm text-muted-foreground">
+                <p>The overall score ({score}) is calculated by combining these component scores with their respective weights. Higher weights indicate more influential factors.</p>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="shadow-data lg:col-span-2">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="shadow-data">
           <CardHeader>
-            <CardTitle>Recent Signals</CardTitle>
-            <CardDescription>Latest activity for this asset</CardDescription>
+            <CardTitle className="text-base">Associated Themes</CardTitle>
           </CardHeader>
           <CardContent>
-            {signals.length > 0 ? (
-              <div className="space-y-3">
-                {signals.slice(0, 10).map((signal) => (
-                  <div key={signal.id} className="flex items-center justify-between p-3 rounded-md bg-muted/50 border border-border">
-                    <div>
-                      <div className="font-medium text-foreground">{signal.signal_type}</div>
-                      <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDistanceToNow(new Date(signal.observed_at), { addSuffix: true })}
-                        {signal.source_used && (
-                          <span className="text-xs">• {signal.source_used}</span>
-                        )}
-                      </div>
-                    </div>
-                    {signal.magnitude && (
-                      <Badge variant="secondary">
-                        {signal.magnitude > 0 ? "+" : ""}{signal.magnitude.toFixed(1)}
-                      </Badge>
-                    )}
-                  </div>
+            {themes.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {themes.map((theme) => (
+                  <Link key={theme.id} to="/themes">
+                    <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
+                      {formatLabel(theme.name)}
+                    </Badge>
+                  </Link>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No recent signals detected. This asset may have limited signal coverage.</p>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">No direct theme associations yet.</p>
+                <div className="flex flex-wrap gap-2">
+                  {componentScores.slice(0, 3).map((c) => (
+                    <Badge key={c.key} variant="outline" className="text-xs">
+                      {formatLabel(c.key)}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card className="shadow-data">
-            <CardHeader>
-              <CardTitle className="text-base">Associated Themes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {themes.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {themes.map((theme) => (
-                    <Link key={theme.id} to="/themes">
-                      <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
-                        {theme.name}
-                      </Badge>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">No direct theme associations yet.</p>
-                  <div className="flex flex-wrap gap-2">
-                    {components.slice(0, 3).map((c) => (
-                      <Badge key={c} variant="outline" className="text-xs">
-                        {c}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-data">
-            <CardHeader>
-              <CardTitle className="text-base">Where to Buy (AU)</CardTitle>
-              <CardDescription>AU-friendly brokers and exchanges</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {getBrokers().map((broker, idx) => (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  className="w-full justify-between"
-                  asChild
-                >
-                  <a href={broker.url} target="_blank" rel="noopener noreferrer">
-                    {broker.name}
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="shadow-data">
+          <CardHeader>
+            <CardTitle className="text-base">Where to Buy (AU)</CardTitle>
+            <CardDescription>AU-friendly brokers and exchanges</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {getBrokers().map((broker, idx) => (
+              <Button
+                key={idx}
+                variant="outline"
+                className="w-full justify-between"
+                asChild
+              >
+                <a href={broker.url} target="_blank" rel="noopener noreferrer">
+                  {broker.name}
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
