@@ -78,7 +78,7 @@ serve(async (req) => {
       stats.total++;
       if (log.status === 'success') {
         stats.success++;
-      } else if (log.status === 'failed') {
+      } else if (log.status === 'failure' || log.status === 'failed') {
         stats.failed++;
       }
     });
