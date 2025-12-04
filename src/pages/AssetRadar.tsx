@@ -33,59 +33,85 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
   return { label: "Strong Bearish", variant: "destructive" };
 };
 
+const PAGE_SIZE = 50;
+
 const AssetRadar = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [assets, setAssets] = useState<AssetWithScore[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+
+  const fetchAssets = async (pageNum: number, append: boolean = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+    
+    try {
+      let query = supabase
+        .from('assets')
+        .select('*', { count: 'exact' });
+
+      if (searchTerm) {
+        query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
+      }
+
+      const { data, error, count } = await query
+        .order('ticker')
+        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      // Enhance assets with computed scores
+      const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
+        const score = getAssetScore(asset.ticker);
+        const sentiment = getSentiment(score);
+        
+        return {
+          id: asset.id,
+          ticker: asset.ticker,
+          name: asset.name,
+          exchange: asset.exchange,
+          asset_class: asset.asset_class,
+          score,
+          sentiment: sentiment.label
+        };
+      });
+
+      // Sort by score descending
+      enhancedAssets.sort((a, b) => b.score - a.score);
+      
+      if (append) {
+        setAssets(prev => [...prev, ...enhancedAssets]);
+      } else {
+        setAssets(enhancedAssets);
+      }
+      
+      setTotal(count || 0);
+      setHasMore((pageNum + 1) * PAGE_SIZE < (count || 0));
+    } catch (error) {
+      console.error("Failed to fetch assets:", error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchAssets = async () => {
-      setLoading(true);
-      try {
-        let query = supabase
-          .from('assets')
-          .select('*', { count: 'exact' });
-
-        if (searchTerm) {
-          query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
-        }
-
-        const { data, error, count } = await query.order('ticker').limit(50);
-
-        if (error) throw error;
-
-        // Enhance assets with computed scores
-        const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
-          const score = getAssetScore(asset.ticker);
-          const sentiment = getSentiment(score);
-          
-          return {
-            id: asset.id,
-            ticker: asset.ticker,
-            name: asset.name,
-            exchange: asset.exchange,
-            asset_class: asset.asset_class,
-            score,
-            sentiment: sentiment.label
-          };
-        });
-
-        // Sort by score descending
-        enhancedAssets.sort((a, b) => b.score - a.score);
-        
-        setAssets(enhancedAssets);
-        setTotal(count || 0);
-      } catch (error) {
-        console.error("Failed to fetch assets:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const debounce = setTimeout(fetchAssets, 300);
+    setPage(0);
+    const debounce = setTimeout(() => fetchAssets(0, false), 300);
     return () => clearTimeout(debounce);
   }, [searchTerm]);
+
+  const loadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchAssets(nextPage, true);
+  };
 
   return (
     <div className="space-y-6">
@@ -127,39 +153,52 @@ const AssetRadar = () => {
               {searchTerm ? `No assets found matching "${searchTerm}"` : "No assets available"}
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {assets.map((asset) => {
-                const sentiment = getSentiment(asset.score);
-                return (
-                  <Link
-                    key={asset.id}
-                    to={`/asset/${encodeURIComponent(asset.ticker)}`}
-                    className="block"
-                  >
-                    <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
-                      <div className="flex items-start justify-between mb-1">
-                        <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+            <>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {assets.map((asset) => {
+                  const sentiment = getSentiment(asset.score);
+                  return (
+                    <Link
+                      key={asset.id}
+                      to={`/asset/${encodeURIComponent(asset.ticker)}`}
+                      className="block"
+                    >
+                      <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
+                        <div className="flex items-start justify-between mb-1">
+                          <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={sentiment.variant} className="text-xs">
+                              {asset.score}
+                            </Badge>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">{asset.name}</p>
                         <div className="flex items-center gap-2">
-                          <Badge variant={sentiment.variant} className="text-xs">
-                            {asset.score}
+                          <Badge className="bg-primary text-primary-foreground">
+                            {asset.exchange}
                           </Badge>
-                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                          <span className={`text-xs ${sentiment.variant === 'default' ? 'text-primary' : sentiment.variant === 'destructive' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                            {asset.sentiment}
+                          </span>
                         </div>
                       </div>
-                      <p className="text-sm text-muted-foreground mb-2">{asset.name}</p>
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-primary text-primary-foreground">
-                          {asset.exchange}
-                        </Badge>
-                        <span className={`text-xs ${sentiment.variant === 'default' ? 'text-primary' : sentiment.variant === 'destructive' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                          {asset.sentiment}
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+                    </Link>
+                  );
+                })}
+              </div>
+              {hasMore && (
+                <div className="flex justify-center mt-6">
+                  <Button 
+                    onClick={loadMore} 
+                    disabled={loadingMore}
+                    variant="outline"
+                  >
+                    {loadingMore ? "Loading..." : `Load More (${assets.length} of ${total})`}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
