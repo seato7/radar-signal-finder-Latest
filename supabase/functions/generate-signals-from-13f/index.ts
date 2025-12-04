@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   try {
     const supabaseClient = createClient(
@@ -30,6 +34,15 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-13F] Found ${holdings?.length || 0} 13F holdings`);
 
     if (!holdings || holdings.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-13f',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No 13F holdings to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -50,7 +63,7 @@ serve(async (req) => {
 
       const sharesChange = holding.shares_change || 0;
       const direction = sharesChange > 0 ? 'up' : sharesChange < 0 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(sharesChange) / 10000000); // Normalize to 10M shares
+      const magnitude = Math.min(1.0, Math.abs(sharesChange) / 10000000);
 
       const signalData = {
         ticker: holding.ticker,
@@ -91,6 +104,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-13F] ✅ Created ${signals.length} institutional 13F signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-13f',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       holdings_processed: holdings.length,
@@ -101,6 +123,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-13F] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-13f',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

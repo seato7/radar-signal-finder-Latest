@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +10,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -33,6 +37,16 @@ Deno.serve(async (req) => {
     
     if (!orphanedLogs || orphanedLogs.length === 0) {
       console.log('✅ No orphaned logs found');
+      
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'cleanup-orphaned-logs',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ 
         success: true, 
         cleaned: 0,
@@ -46,13 +60,13 @@ Deno.serve(async (req) => {
     
     // Calculate duration for each orphaned log
     const updates = orphanedLogs.map(log => {
-      const startTime = new Date(log.started_at).getTime();
+      const startTimeLog = new Date(log.started_at).getTime();
       const now = Date.now();
-      const durationSeconds = Math.round((now - startTime) / 1000);
+      const durationSeconds = Math.round((now - startTimeLog) / 1000);
       
       return {
         id: log.id,
-        status: 'failure',  // Valid status per check constraint
+        status: 'failure',
         completed_at: new Date().toISOString(),
         duration_seconds: durationSeconds,
         error_message: `Process orphaned after 2+ hours - marked as failure by cleanup job`,
@@ -84,26 +98,30 @@ Deno.serve(async (req) => {
     
     // Send Slack notification if significant cleanup performed
     if (orphanedLogs.length >= 5) {
-      const slackWebhook = Deno.env.get('SLACK_WEBHOOK_URL');
-      if (slackWebhook) {
-        const etlSummary = orphanedLogs.reduce((acc: Record<string, number>, log) => {
-          acc[log.etl_name] = (acc[log.etl_name] || 0) + 1;
-          return acc;
-        }, {});
-        
-        const summaryText = Object.entries(etlSummary)
-          .map(([etl, count]) => `• ${etl}: ${count} orphaned logs`)
-          .join('\n');
-        
-        await fetch(slackWebhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: `🧹 *Log Cleanup Alert*\n\nCleaned up ${orphanedLogs.length} orphaned ingest logs (stuck >2h):\n\n${summaryText}\n\n*Status:* Marked as 'failure' (requires manual review)\n*Recommendation:* Review functions for missing completion handlers.`
-          })
-        });
-      }
+      const etlSummary = orphanedLogs.reduce((acc: Record<string, number>, log) => {
+        acc[log.etl_name] = (acc[log.etl_name] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const summaryText = Object.entries(etlSummary)
+        .map(([etl, count]) => `• ${etl}: ${count} orphaned logs`)
+        .join('\n');
+      
+      await slackAlerter.sendCriticalAlert({
+        type: 'orphaned_logs',
+        etlName: 'cleanup-orphaned-logs',
+        message: `Cleaned up ${orphanedLogs.length} orphaned ingest logs (stuck >2h):\n${summaryText}`,
+      });
     }
+    
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'cleanup-orphaned-logs',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: orphanedLogs.length,
+    });
     
     console.log(`✅ Cleaned up ${orphanedLogs.length} orphaned logs`);
     
@@ -118,6 +136,13 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error('Error in cleanup-orphaned-logs:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'cleanup-orphaned-logs',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error' 

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -19,7 +23,6 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-CONGRESSIONAL] Starting congressional trades signal generation...');
 
-    // Get congressional trades from last 30 days that haven't been converted to signals
     const { data: trades, error: tradesError } = await supabaseClient
       .from('congressional_trades')
       .select('*')
@@ -31,12 +34,20 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-CONGRESSIONAL] Found ${trades?.length || 0} congressional trades`);
 
     if (!trades || trades.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-congressional',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No trades to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Get asset IDs for tickers
     const tickers = [...new Set(trades.map(t => t.ticker))];
     const { data: assets } = await supabaseClient
       .from('assets')
@@ -45,21 +56,18 @@ serve(async (req) => {
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
-    // Create signals from trades
     const signals = [];
     for (const trade of trades) {
       const assetId = tickerToAssetId.get(trade.ticker);
       if (!assetId) continue;
 
-      // Determine signal type and direction
       const isBuy = trade.transaction_type?.toLowerCase().includes('purchase') || 
                     trade.transaction_type?.toLowerCase().includes('buy');
       const signalType = isBuy ? 'politician_buy' : 'politician_sell';
       const direction = isBuy ? 'up' : 'down';
 
-      // Calculate magnitude based on transaction size
       const avgAmount = ((trade.amount_min || 0) + (trade.amount_max || 0)) / 2;
-      const magnitude = Math.min(1.0, avgAmount / 100000); // Normalize to 0-1 scale
+      const magnitude = Math.min(1.0, avgAmount / 100000);
 
       const signalData = {
         ticker: trade.ticker,
@@ -90,7 +98,6 @@ serve(async (req) => {
       });
     }
 
-    // Insert signals (using insert with duplicate checking)
     const { error: insertError } = await supabaseClient
       .from('signals')
       .insert(signals);
@@ -102,6 +109,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-CONGRESSIONAL] ✅ Created ${signals.length} politician trading signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-congressional',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       trades_processed: trades.length,
@@ -112,6 +128,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-CONGRESSIONAL] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-congressional',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

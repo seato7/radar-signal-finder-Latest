@@ -1,34 +1,31 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SEMANTIC_THRESHOLD = 0.01; // Very low threshold for maximum coverage
+const SEMANTIC_THRESHOLD = 0.01;
 
 function computeTfidfSimilarity(text: string, keywords: string[]): number {
   if (!text || !keywords || keywords.length === 0) return 0.0;
   
   const textLower = text.toLowerCase();
   
-  // Check for exact phrase matches first (highest score)
   let phraseMatchScore = 0;
   for (const keyword of keywords) {
     const kwLower = keyword.toLowerCase();
     if (textLower.includes(kwLower)) {
-      // Weight longer phrases more heavily
       phraseMatchScore += kwLower.split(/\s+/).length * 2;
     }
   }
   
-  // If we have strong phrase matches, return high score
   if (phraseMatchScore > 5) {
-    return 0.9 + (phraseMatchScore * 0.01); // Cap at 1.0
+    return 0.9 + (phraseMatchScore * 0.01);
   }
   
-  // Otherwise do token-based matching
   const textTokens = textLower.split(/\s+/);
   
   const textTf: Record<string, number> = {};
@@ -36,7 +33,6 @@ function computeTfidfSimilarity(text: string, keywords: string[]): number {
     textTf[token] = (textTf[token] || 0) + 1;
   }
   
-  // Tokenize keywords (split multi-word keywords)
   const keywordTokens: string[] = [];
   for (const kw of keywords) {
     keywordTokens.push(...kw.toLowerCase().split(/\s+/));
@@ -66,7 +62,6 @@ function computeTfidfSimilarity(text: string, keywords: string[]): number {
   
   const cosineSim = dotProduct / (Math.sqrt(textMagnitude) * Math.sqrt(keywordMagnitude));
   
-  // Boost score if we have phrase matches
   return Math.min(1.0, cosineSim + (phraseMatchScore * 0.05));
 }
 
@@ -82,7 +77,6 @@ async function mapSignalToTheme(
   let mapperRoute = 'none';
   let mapperScore = 0.0;
 
-  // === STEP 1: Check ticker-based mapping (HIGHEST PRIORITY) ===
   for (const theme of themes) {
     const themeTickers = theme.metadata?.tickers || [];
     if (themeTickers.includes(ticker)) {
@@ -93,20 +87,17 @@ async function mapSignalToTheme(
     }
   }
 
-  // === STEP 2: Try keyword matching (includes signal_type + value_text) ===
   if (!bestThemeId) {
-    // Combine signal_type and value_text for matching (case-insensitive)
     const searchText = `${signalType} ${valueText || ''}`.toLowerCase();
     let maxMatches = 0;
 
     for (const theme of themes) {
       const keywords = theme.keywords.map((kw: string) => kw.toLowerCase());
       
-      // Count both exact keyword matches and partial phrase matches
       let matches = 0;
       for (const kw of keywords) {
         if (searchText.includes(kw)) {
-          matches += kw.split(/\s+/).length; // Weight multi-word matches higher
+          matches += kw.split(/\s+/).length;
         }
       }
 
@@ -118,7 +109,6 @@ async function mapSignalToTheme(
       }
     }
 
-    // === STEP 3: If no keyword match, try semantic fallback ===
     if (!bestThemeId && searchText.trim()) {
       let bestSemanticScore = 0.0;
       let bestSemanticTheme: string | null = null;
@@ -140,7 +130,6 @@ async function mapSignalToTheme(
     }
   }
 
-  // === Update signal with theme_id if found ===
   if (bestThemeId) {
     const { error: updateError } = await supabaseClient
       .from('signals')
@@ -167,6 +156,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+
   try {
     const { signal_id, value_text, batch_mode } = await req.json();
 
@@ -175,21 +167,18 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // === BATCH MODE: Map all unmapped signals ===
     if (batch_mode) {
       console.log('🔄 Running batch signal-to-theme mapping...');
       
-      // Get all signals without theme_id (excluding those with null asset_id)
       const { data: unmappedSignals, error: signalsError } = await supabaseClient
         .from('signals')
         .select('id, asset_id, signal_type, value_text')
         .is('theme_id', null)
         .not('asset_id', 'is', null)
-        .limit(2000); // Process 2000 at a time to avoid timeout
+        .limit(2000);
 
       if (signalsError) throw signalsError;
 
-      // Get asset tickers
       const assetIds = [...new Set(unmappedSignals?.map(s => s.asset_id) || [])];
       const { data: assets, error: assetsError } = await supabaseClient
         .from('assets')
@@ -200,7 +189,6 @@ serve(async (req) => {
 
       const assetMap = new Map(assets?.map(a => [a.id, a.ticker]) || []);
 
-      // Get all themes
       const { data: themes, error: themesError } = await supabaseClient
         .from('themes')
         .select('*');
@@ -213,7 +201,6 @@ serve(async (req) => {
       for (const signal of unmappedSignals || []) {
         const ticker = assetMap.get(signal.asset_id);
         
-        // Skip signals where we can't find the asset
         if (!ticker) {
           skippedCount++;
           continue;
@@ -237,6 +224,16 @@ serve(async (req) => {
 
       console.log(`✅ Batch mapping complete: ${mappedCount} mapped, ${skippedCount} skipped`);
 
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'map-signal-to-theme',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: mappedCount,
+        rowsSkipped: skippedCount,
+      });
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -248,12 +245,10 @@ serve(async (req) => {
       );
     }
 
-    // === SINGLE SIGNAL MODE ===
     if (!signal_id || !value_text) {
       throw new Error('signal_id and value_text are required');
     }
 
-    // Get signal's ticker and signal_type
     const { data: signal, error: signalError } = await supabaseClient
       .from('signals')
       .select('asset_id, signal_type')
@@ -270,7 +265,6 @@ serve(async (req) => {
 
     if (assetError) throw assetError;
 
-    // Get all themes
     const { data: themes, error: themesError } = await supabaseClient
       .from('themes')
       .select('*');
@@ -285,6 +279,15 @@ serve(async (req) => {
       value_text,
       themes || []
     );
+
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'map-signal-to-theme',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: themeId ? 1 : 0,
+    });
 
     if (themeId) {
       return new Response(
@@ -305,6 +308,13 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('Error in map-signal-to-theme:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'map-signal-to-theme',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

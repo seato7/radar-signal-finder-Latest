@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -19,7 +23,6 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-SOCIAL] Starting social sentiment signal generation...');
 
-    // Get both Reddit and StockTwits data
     const [redditResult, stocktwitsResult] = await Promise.all([
       supabaseClient
         .from('reddit_sentiment')
@@ -42,12 +45,20 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-SOCIAL] Found ${reddit.length} Reddit + ${stocktwits.length} StockTwits records`);
 
     if (reddit.length === 0 && stocktwits.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-social',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No social data to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Combine all tickers
     const allTickers = [...new Set([...reddit.map(r => r.ticker), ...stocktwits.map(s => s.ticker)])];
     const { data: assets } = await supabaseClient
       .from('assets')
@@ -58,7 +69,6 @@ serve(async (req) => {
 
     const signals = [];
 
-    // Process Reddit sentiment
     for (const item of reddit) {
       const assetId = tickerToAssetId.get(item.ticker);
       if (!assetId) continue;
@@ -94,7 +104,6 @@ serve(async (req) => {
       });
     }
 
-    // Process StockTwits sentiment
     for (const item of stocktwits) {
       const assetId = tickerToAssetId.get(item.ticker);
       if (!assetId) continue;
@@ -132,6 +141,15 @@ serve(async (req) => {
     }
 
     if (signals.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-social',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No signals created from social data', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -148,6 +166,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-SOCIAL] ✅ Created ${signals.length} social sentiment signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-social',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       reddit_processed: reddit.length,
@@ -159,6 +186,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-SOCIAL] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-social',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

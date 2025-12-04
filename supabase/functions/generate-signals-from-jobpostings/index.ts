@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -19,7 +23,6 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-JOBS] Starting job postings signal generation...');
 
-    // Get job postings from last 90 days
     const { data: jobs, error: jobsError } = await supabaseClient
       .from('job_postings')
       .select('*')
@@ -31,12 +34,20 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-JOBS] Found ${jobs?.length || 0} job postings`);
 
     if (!jobs || jobs.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-jobpostings',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No job postings to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Get asset IDs for tickers
     const tickers = [...new Set(jobs.map(j => j.ticker))];
     const { data: assets } = await supabaseClient
       .from('assets')
@@ -45,7 +56,6 @@ serve(async (req) => {
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
-    // Aggregate job postings by ticker and date to detect hiring momentum
     const jobsByTicker = new Map<string, any[]>();
     for (const job of jobs) {
       if (!jobsByTicker.has(job.ticker)) {
@@ -54,31 +64,26 @@ serve(async (req) => {
       jobsByTicker.get(job.ticker)!.push(job);
     }
 
-    // Create signals from job posting patterns
     const signals = [];
     for (const [ticker, tickerJobs] of jobsByTicker.entries()) {
       const assetId = tickerToAssetId.get(ticker);
       if (!assetId) continue;
 
-      // Group by posted_date to detect momentum
       const jobsByDate = new Map<string, number>();
       for (const job of tickerJobs) {
         const date = job.posted_date;
         jobsByDate.set(date, (jobsByDate.get(date) || 0) + (job.posting_count || 1));
       }
 
-      // Sort dates and calculate trend
       const sortedDates = Array.from(jobsByDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
       
       for (let i = 0; i < sortedDates.length; i++) {
         const [date, count] = sortedDates[i];
         
-        // Calculate magnitude based on job count and growth indicator
         const avgGrowth = tickerJobs
           .filter(j => j.posted_date === date && j.growth_indicator)
           .reduce((sum, j) => sum + (j.growth_indicator || 0), 0) / tickerJobs.filter(j => j.posted_date === date).length;
         
-        // Higher count = stronger expansion signal
         const magnitude = Math.min(1.0, (count / 50) + (avgGrowth || 0) / 2);
         const direction = avgGrowth > 0.1 ? 'up' : 'neutral';
         
@@ -110,7 +115,6 @@ serve(async (req) => {
       }
     }
 
-    // Insert signals
     const { error: insertError } = await supabaseClient
       .from('signals')
       .insert(signals);
@@ -122,6 +126,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-JOBS] ✅ Created ${signals.length} capex/hiring momentum signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-jobpostings',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       jobs_processed: jobs.length,
@@ -132,6 +145,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-JOBS] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-jobpostings',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

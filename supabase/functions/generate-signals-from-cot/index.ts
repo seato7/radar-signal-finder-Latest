@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,9 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -19,7 +23,6 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-COT] Starting COT report signal generation...');
 
-    // Get COT reports from last 90 days
     const { data: reports, error: reportsError } = await supabaseClient
       .from('cot_reports')
       .select('*')
@@ -31,12 +34,20 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-COT] Found ${reports?.length || 0} COT reports`);
 
     if (!reports || reports.length === 0) {
+      const duration = Date.now() - startTime;
+      await slackAlerter.sendLiveAlert({
+        etlName: 'generate-signals-from-cot',
+        status: 'success',
+        duration,
+        latencyMs: duration,
+        rowsInserted: 0,
+      });
+      
       return new Response(JSON.stringify({ message: 'No reports to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Get asset IDs for tickers
     const tickers = [...new Set(reports.map(r => r.ticker))];
     const { data: assets } = await supabaseClient
       .from('assets')
@@ -45,17 +56,14 @@ serve(async (req) => {
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
-    // Create signals from COT reports
     const signals = [];
     for (const report of reports) {
       const assetId = tickerToAssetId.get(report.ticker);
       if (!assetId) continue;
 
-      // Determine direction based on net position change
       const netChange = report.net_position_change || 0;
       const direction = netChange > 0 ? 'up' : netChange < 0 ? 'down' : 'neutral';
       
-      // Magnitude based on position size relative to total
       const totalPositions = Math.abs(report.noncommercial_net || 0) + 
                             Math.abs(report.commercial_net || 0);
       const magnitude = Math.min(1.0, Math.abs(netChange) / (totalPositions || 1));
@@ -87,7 +95,6 @@ serve(async (req) => {
       });
     }
 
-    // Insert signals (using insert with duplicate checking)
     const { error: insertError } = await supabaseClient
       .from('signals')
       .insert(signals);
@@ -99,6 +106,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-COT] ✅ Created ${signals.length} COT positioning signals`);
 
+    const duration = Date.now() - startTime;
+    await slackAlerter.sendLiveAlert({
+      etlName: 'generate-signals-from-cot',
+      status: 'success',
+      duration,
+      latencyMs: duration,
+      rowsInserted: signals.length,
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       reports_processed: reports.length,
@@ -109,6 +125,13 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-COT] ❌ Error:', error);
+    
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'generate-signals-from-cot',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {
