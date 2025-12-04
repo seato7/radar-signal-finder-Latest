@@ -1,6 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +13,9 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
+  const slackAlerter = new SlackAlerter();
 
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -251,6 +256,25 @@ Requirements:
       }
     }
 
+    const duration = Date.now() - startTime;
+    
+    // Log heartbeat
+    await logHeartbeat(supabase, {
+      function_name: 'mine-and-discover-themes',
+      status: 'success',
+      duration_ms: duration,
+      rows_inserted: createdThemes.length,
+    });
+    
+    // Send Slack success alert
+    await slackAlerter.sendLiveAlert({
+      etlName: 'mine-and-discover-themes',
+      status: 'success',
+      latencyMs: duration,
+      duration: duration,
+      rowsInserted: createdThemes.length,
+    });
+
     return new Response(
       JSON.stringify({ 
         discovered: createdThemes,
@@ -261,7 +285,16 @@ Requirements:
     );
 
   } catch (error) {
+    const duration = Date.now() - startTime;
     console.error('Error in mine-and-discover-themes:', error);
+    
+    // Send Slack failure alert
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'mine-and-discover-themes',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
