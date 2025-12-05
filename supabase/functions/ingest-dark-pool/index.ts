@@ -21,17 +21,32 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
   
   try {
-    console.log('Dark pool activity ingestion started with FINRA estimation (FREE) v2...');
+    console.log('Dark pool activity ingestion started with FINRA estimation (FREE) v3 - PAGINATED...');
 
-    // Process ALL stocks in batches for 8201 asset scaling - FIXED RANGE
-    const { data: stocks, error: stocksError } = await supabase
-      .from('assets')
-      .select('id, ticker')
-      .eq('asset_class', 'stock')
-      .order('ticker')
-      .limit(10000);
+    // Fetch ALL stocks using pagination (Supabase default limit is 1000)
+    const allStocks: Array<{ id: string; ticker: string }> = [];
+    let offset = 0;
+    const pageSize = 1000;
+    
+    while (true) {
+      const { data: batch, error: batchError } = await supabase
+        .from('assets')
+        .select('id, ticker')
+        .eq('asset_class', 'stock')
+        .order('ticker')
+        .range(offset, offset + pageSize - 1);
+      
+      if (batchError) throw batchError;
+      if (!batch || batch.length === 0) break;
+      
+      allStocks.push(...batch);
+      console.log(`Fetched batch ${Math.floor(offset / pageSize) + 1}: ${batch.length} stocks (total: ${allStocks.length})`);
+      
+      if (batch.length < pageSize) break;
+      offset += pageSize;
+    }
 
-    if (stocksError) throw stocksError;
+    const stocks = allStocks;
     if (!stocks || stocks.length === 0) {
       return new Response(
         JSON.stringify({ success: true, processed: 0, message: 'No stocks found' }),
@@ -43,25 +58,32 @@ serve(async (req) => {
     const today = new Date().toISOString().split('T')[0];
     let successCount = 0;
     let skipCount = 0;
-    const batchSize = 100;
+    const batchSize = 500; // Increased for speed
 
     // Process in batches
     for (let i = 0; i < stocks.length; i += batchSize) {
       const batch = stocks.slice(i, i + batchSize);
+      const tickers = batch.map(s => s.ticker);
+      
+      // Batch fetch all prices for this batch at once
+      const { data: allPrices } = await supabase
+        .from('prices')
+        .select('ticker, close')
+        .in('ticker', tickers)
+        .order('date', { ascending: false });
+      
+      // Create lookup map
+      const priceMap = new Map<string, number>();
+      for (const p of allPrices || []) {
+        if (!priceMap.has(p.ticker)) priceMap.set(p.ticker, p.close);
+      }
+      
       const darkPoolData = [];
 
       for (const stock of batch) {
         try {
-          // Fetch recent price data for volume estimation
-          const { data: priceData } = await supabase
-            .from('prices')
-            .select('close, volume')
-            .eq('ticker', stock.ticker)
-            .order('date', { ascending: false })
-            .limit(1);
-
-          const currentPrice = priceData?.[0]?.close || 0;
-          const avgVolume = priceData?.[0]?.volume || 1000000;
+          const currentPrice = priceMap.get(stock.ticker) || 0;
+          const avgVolume = 1000000; // Default volume estimate
 
           // FINRA-based estimation model (free)
           // Dark pool typically 30-40% of total volume for liquid stocks
