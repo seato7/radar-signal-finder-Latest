@@ -21,14 +21,15 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
   
   try {
-    console.log('Dark pool activity ingestion started with FINRA estimation (FREE)...');
+    console.log('Dark pool activity ingestion started with FINRA estimation (FREE) v2...');
 
-    // Process ALL stocks in batches for 8201 asset scaling
+    // Process ALL stocks in batches for 8201 asset scaling - FIXED RANGE
     const { data: stocks, error: stocksError } = await supabase
       .from('assets')
       .select('id, ticker')
       .eq('asset_class', 'stock')
-      .order('ticker');
+      .order('ticker')
+      .limit(10000);
 
     if (stocksError) throw stocksError;
     if (!stocks || stocks.length === 0) {

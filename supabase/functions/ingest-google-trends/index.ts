@@ -24,14 +24,15 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting search trends estimation based on market momentum (FREE)...');
+    console.log('Starting search trends estimation based on market momentum (FREE) v2...');
 
-    // Process ALL assets for 8201 asset scaling
+    // Process ALL assets for 8201 asset scaling - FIXED LIMIT
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('id, ticker, name')
       .in('asset_class', ['stock', 'crypto'])
-      .order('ticker');
+      .order('ticker')
+      .limit(10000);
     
     if (assetsError) throw assetsError;
     if (!assets || assets.length === 0) {
