@@ -7,7 +7,7 @@ The scheduler controls the rate (40 symbols/min).
 import asyncio
 import hashlib
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 import httpx
 import logging
 
@@ -26,29 +26,75 @@ RETRY_DELAY = 3.0
 
 # Ticker normalization mappings for Twelve Data
 TICKER_MAPPINGS = {
-    # Commodities
-    'CRUDE': 'CL1',
-    'BRENT': 'BRN1', 
-    'NATGAS': 'NG1',
+    # === COMMODITIES - Precious Metals ===
     'XAUUSD': 'XAU/USD',
     'XAGUSD': 'XAG/USD',
     'XPTUSD': 'XPT/USD',
     'XPDUSD': 'XPD/USD',
-    'COPPER': 'HG1',
     'GOLD': 'XAU/USD',
     'SILVER': 'XAG/USD',
-    'OIL': 'CL1',
-    'WTI': 'CL1',
     'PLATINUM': 'XPT/USD',
     'PALLADIUM': 'XPD/USD',
+    'GC': 'GC1',       # Gold futures
+    'SI': 'SI1',       # Silver futures
+    'PL': 'PL1',       # Platinum futures
+    'PA': 'PA1',       # Palladium futures
+    
+    # === COMMODITIES - Energy ===
+    'CRUDE': 'CL1',
+    'BRENT': 'BRN1',
+    'NATGAS': 'NG1',
+    'OIL': 'CL1',
+    'WTI': 'CL1',
+    'CL': 'CL1',       # Crude Oil
+    'BZ': 'BZ1',       # Brent Crude
+    'NG': 'NG1',       # Natural Gas
+    'HO': 'HO1',       # Heating Oil
+    'RB': 'RB1',       # RBOB Gasoline
+    'NG1': 'NG1',
+    'CL1': 'CL1',
+    'BRN1': 'BRN1',
+    
+    # === COMMODITIES - Industrial Metals ===
+    'COPPER': 'HG1',
+    'HG': 'HG1',       # Copper
+    'HG1': 'HG1',
+    'ALI': 'ALI',      # Aluminum (may not be supported)
+    
+    # === COMMODITIES - Agricultural ===
     'WHEAT': 'ZW1',
     'CORN': 'ZC1',
     'SOYBEANS': 'ZS1',
     'COFFEE': 'KC1',
     'SUGAR': 'SB1',
     'COTTON': 'CT1',
-    'VIX': 'VIX',
-    # Forex (keep as-is mostly)
+    'ZW': 'ZW1',       # Wheat
+    'ZC': 'ZC1',       # Corn
+    'ZS': 'ZS1',       # Soybeans
+    'ZL': 'ZL1',       # Soybean Oil
+    'ZM': 'ZM1',       # Soybean Meal
+    'ZO': 'ZO1',       # Oats
+    'ZR': 'ZR1',       # Rice
+    'KC': 'KC1',       # Coffee
+    'SB': 'SB1',       # Sugar
+    'CT': 'CT1',       # Cotton
+    'CC': 'CC1',       # Cocoa
+    'OJ': 'OJ1',       # Orange Juice
+    'LBS': 'LBS1',     # Lumber
+    
+    # === COMMODITIES - Livestock ===
+    'LE': 'LE1',       # Live Cattle
+    'HE': 'HE1',       # Lean Hogs
+    'GF': 'GF1',       # Feeder Cattle
+    
+    # === INDEX FUTURES ===
+    'ES': 'ES1',       # S&P 500 E-mini
+    'NQ': 'NQ1',       # NASDAQ E-mini
+    'YM': 'YM1',       # Dow E-mini
+    'RTY': 'RTY1',     # Russell 2000 E-mini
+    'VIX': 'VIX',      # Volatility Index
+    
+    # === FOREX - Major Pairs ===
     'EUR/USD': 'EUR/USD',
     'GBP/USD': 'GBP/USD',
     'USD/JPY': 'USD/JPY',
@@ -56,6 +102,24 @@ TICKER_MAPPINGS = {
     'AUD/USD': 'AUD/USD',
     'USD/CAD': 'USD/CAD',
     'NZD/USD': 'NZD/USD',
+}
+
+# Crypto cross-pairs that TwelveData does NOT support (skip these)
+UNSUPPORTED_CRYPTO_CROSS_PAIRS: Set[str] = {
+    'AAVE/ETH', 'AAVEETH', 'AVAX/ETH', 'AVAXETH',
+    'BTC/EUR', 'BTCEUR', 'DOT/BTC', 'DOTBTC',
+    'ETH/BTC', 'ETHBTC', 'ETH/EUR', 'ETHEUR',
+    'LINK/ETH', 'LINKETH', 'LTC/BTC', 'LTCBTC',
+    'MATIC/ETH', 'MATICETH', 'SOL/ETH', 'SOLETH',
+    'UNI/ETH', 'UNIETH', 'XRP/BTC', 'XRPBTC',
+    'XRP/EUR', 'XRPEUR', 'ADA/BTC', 'ADABTC',
+}
+
+# Commodities that TwelveData likely doesn't support (exotic/rare)
+UNSUPPORTED_COMMODITIES: Set[str] = {
+    'COBALT', 'LITHIUM', 'RHODIUM', 'URANIUM', 'STEEL',
+    'IRON', 'LEAD', 'NICKEL', 'TIN', 'ZINC',
+    'MWE', 'QA', 'DC',  # Exotic futures
 }
 
 
@@ -68,11 +132,14 @@ class TwelveDataPriceFetcher:
         self.stats = {
             "fetched": 0,
             "failed": 0,
+            "skipped_unsupported": 0,
             "retries": 0,
             "batches_processed": 0,
             "start_time": None,
             "end_time": None,
-            "errors": []
+            "errors": [],
+            "failed_tickers": [],      # Detailed list of failed tickers
+            "skipped_tickers": [],     # Tickers skipped as unsupported
         }
     
     async def __aenter__(self):
@@ -90,31 +157,80 @@ class TwelveDataPriceFetcher:
         if self.session:
             await self.session.aclose()
         self.stats["end_time"] = datetime.now(timezone.utc).isoformat()
+        
+        # Log summary of failures
+        if self.stats["failed_tickers"]:
+            logger.warning(
+                f"❌ Failed tickers ({len(self.stats['failed_tickers'])}): "
+                f"{self.stats['failed_tickers'][:20]}..."  # Log first 20
+            )
+        if self.stats["skipped_tickers"]:
+            logger.info(
+                f"⏭️ Skipped unsupported ({len(self.stats['skipped_tickers'])}): "
+                f"{self.stats['skipped_tickers'][:10]}..."
+            )
     
     def _normalize_ticker(self, ticker: str, asset_class: str) -> Optional[str]:
-        """Convert ticker to Twelve Data format"""
-        ticker = ticker.upper().strip()
+        """
+        Convert ticker to Twelve Data format.
+        Returns None if ticker is known to be unsupported.
+        """
+        ticker_upper = ticker.upper().strip()
+        original_ticker = ticker_upper
         
-        if ticker in TICKER_MAPPINGS:
-            return TICKER_MAPPINGS[ticker]
+        # Check if explicitly mapped
+        if ticker_upper in TICKER_MAPPINGS:
+            return TICKER_MAPPINGS[ticker_upper]
         
+        # Handle CRYPTO
         if asset_class == "crypto":
-            if '/USDT' in ticker:
-                return ticker.replace('/USDT', '/USD')
-            if '/USD' not in ticker and '-USD' not in ticker:
-                base = ticker.replace('-', '').replace('/', '')
+            # Skip known unsupported cross-pairs
+            clean_ticker = ticker_upper.replace('/', '').replace('-', '')
+            if ticker_upper in UNSUPPORTED_CRYPTO_CROSS_PAIRS or clean_ticker in UNSUPPORTED_CRYPTO_CROSS_PAIRS:
+                self.stats["skipped_unsupported"] += 1
+                self.stats["skipped_tickers"].append(f"{original_ticker} (cross-pair)")
+                return None
+            
+            # Check for cross-pairs (ETH, BTC, EUR base) - skip them
+            if any(cross in ticker_upper for cross in ['/ETH', '/BTC', '/EUR', 'ETH/', 'BTC/']):
+                if '/USD' not in ticker_upper:
+                    self.stats["skipped_unsupported"] += 1
+                    self.stats["skipped_tickers"].append(f"{original_ticker} (cross-pair)")
+                    return None
+            
+            # Convert USDT pairs to USD
+            if '/USDT' in ticker_upper:
+                return ticker_upper.replace('/USDT', '/USD')
+            
+            # Add /USD if not present
+            if '/USD' not in ticker_upper and '-USD' not in ticker_upper:
+                base = ticker_upper.replace('-', '').replace('/', '')
                 return f"{base}/USD"
-            return ticker.replace('-', '/')
+            
+            return ticker_upper.replace('-', '/')
         
+        # Handle FOREX
         if asset_class == "forex":
-            ticker = ticker.replace("=X", "")
-            if '/' not in ticker and len(ticker) == 6:
-                return f"{ticker[:3]}/{ticker[3:]}"
-            return ticker
+            ticker_upper = ticker_upper.replace("=X", "")
+            if '/' not in ticker_upper and len(ticker_upper) == 6:
+                return f"{ticker_upper[:3]}/{ticker_upper[3:]}"
+            return ticker_upper
         
-        return ticker
+        # Handle COMMODITY
+        if asset_class == "commodity":
+            # Skip known unsupported commodities
+            if ticker_upper in UNSUPPORTED_COMMODITIES:
+                self.stats["skipped_unsupported"] += 1
+                self.stats["skipped_tickers"].append(f"{original_ticker} (unsupported commodity)")
+                return None
+            
+            # Return as-is for stocks/commodities not in mapping
+            return ticker_upper
+        
+        # STOCK - return as-is
+        return ticker_upper
     
-    async def _fetch_single_batch(self, symbols: List[str]) -> Dict[str, float]:
+    async def _fetch_single_batch(self, symbols: List[str], ticker_map: Dict) -> Dict[str, float]:
         """Fetch prices for a single batch of symbols"""
         if not symbols:
             return {}
@@ -144,11 +260,10 @@ class TwelveDataPriceFetcher:
                                 results[symbols[0]] = price
                                 self.stats["fetched"] += 1
                             else:
-                                self.stats["failed"] += 1
+                                self._record_failure(symbols[0], ticker_map, "zero price")
                         else:
-                            self.stats["failed"] += 1
-                            if "message" in data and len(self.stats["errors"]) < 10:
-                                self.stats["errors"].append(f"{symbols[0]}: {data['message']}")
+                            error_msg = data.get("message", "unknown error")
+                            self._record_failure(symbols[0], ticker_map, error_msg)
                     else:
                         for symbol, price_data in data.items():
                             if isinstance(price_data, dict):
@@ -158,13 +273,11 @@ class TwelveDataPriceFetcher:
                                         results[symbol] = price
                                         self.stats["fetched"] += 1
                                     else:
-                                        self.stats["failed"] += 1
+                                        self._record_failure(symbol, ticker_map, "zero price")
                                 elif "message" in price_data:
-                                    self.stats["failed"] += 1
-                                    if len(self.stats["errors"]) < 10:
-                                        self.stats["errors"].append(f"{symbol}: {price_data['message']}")
+                                    self._record_failure(symbol, ticker_map, price_data["message"])
                                 else:
-                                    self.stats["failed"] += 1
+                                    self._record_failure(symbol, ticker_map, "no price data")
                     
                     self.stats["batches_processed"] += 1
                     break
@@ -178,7 +291,8 @@ class TwelveDataPriceFetcher:
                 
                 else:
                     logger.error(f"API error: {response.status_code} - {response.text[:200]}")
-                    self.stats["failed"] += len(symbols)
+                    for sym in symbols:
+                        self._record_failure(sym, ticker_map, f"HTTP {response.status_code}")
                     break
                     
             except httpx.TimeoutException:
@@ -187,10 +301,29 @@ class TwelveDataPriceFetcher:
                 await asyncio.sleep(RETRY_DELAY)
             except Exception as e:
                 logger.error(f"Error: {str(e)}")
-                self.stats["failed"] += len(symbols)
+                for sym in symbols:
+                    self._record_failure(sym, ticker_map, str(e))
                 break
         
         return results
+    
+    def _record_failure(self, td_symbol: str, ticker_map: Dict, error_msg: str):
+        """Record a failed ticker with details"""
+        self.stats["failed"] += 1
+        
+        # Get original ticker name
+        asset = ticker_map.get(td_symbol, {})
+        original_ticker = asset.get("ticker", td_symbol) if asset else td_symbol
+        asset_class = asset.get("asset_class", "unknown") if asset else "unknown"
+        
+        # Store detailed failure info
+        failure_info = f"{original_ticker}({asset_class}): {error_msg[:50]}"
+        
+        if len(self.stats["failed_tickers"]) < 100:  # Limit storage
+            self.stats["failed_tickers"].append(failure_info)
+        
+        if len(self.stats["errors"]) < 20:
+            self.stats["errors"].append(f"{td_symbol}: {error_msg}")
     
     async def fetch_prices_batch(
         self,
@@ -203,7 +336,7 @@ class TwelveDataPriceFetcher:
         if not assets:
             return [], self.stats
         
-        # Build ticker mapping (original ticker -> TD symbol)
+        # Build ticker mapping (TD symbol -> original asset)
         ticker_map = {}  # TD symbol -> original asset
         for asset in assets:
             asset_class = asset.get("asset_class", "stock").lower()
@@ -225,7 +358,7 @@ class TwelveDataPriceFetcher:
             
             logger.info(f"📦 Batch {batch_num}/{total_batches}: {len(batch)} symbols")
             
-            batch_results = await self._fetch_single_batch(batch)
+            batch_results = await self._fetch_single_batch(batch, ticker_map)
             all_prices.update(batch_results)
             
             # Small delay between batches (within same minute run)
@@ -252,8 +385,16 @@ class TwelveDataPriceFetcher:
                 "checksum": checksum,
             })
         
+        # Log comprehensive summary
+        total_input = len(assets)
+        skipped = self.stats["skipped_unsupported"]
+        attempted = total_input - skipped
+        succeeded = len(price_records)
+        failed = self.stats["failed"]
+        
         logger.info(
-            f"✅ Fetch complete: {len(price_records)}/{len(assets)} prices"
+            f"✅ Fetch complete: {succeeded}/{total_input} prices "
+            f"(skipped {skipped} unsupported, {failed} failed)"
         )
         
         return price_records, self.stats
