@@ -79,11 +79,11 @@ class SupabaseSync:
                 })
             
             try:
-                # Use upsert with on_conflict on checksum (unique constraint)
+                # Use upsert with on_conflict on ticker,date (the actual unique constraint)
                 response = await self.session.post(
                     f"{self.url}/rest/v1/prices",
                     json=records,
-                    params={"on_conflict": "checksum"},
+                    params={"on_conflict": "ticker,date"},
                     headers={"Prefer": "resolution=merge-duplicates,return=minimal"}
                 )
                 
