@@ -176,21 +176,41 @@ class SupabaseSync:
             return False
     
     async def get_assets(self) -> List[Dict]:
-        """Fetch all assets from Supabase"""
+        """Fetch all assets from Supabase (handles pagination for >1000 assets)"""
         if not self.is_configured:
             return []
         
         try:
-            response = await self.session.get(
-                f"{self.url}/rest/v1/assets",
-                params={"select": "id,ticker,asset_class,exchange,name"}
-            )
+            all_assets = []
+            offset = 0
+            limit = 1000
             
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Failed to fetch assets: {response.status_code}")
-                return []
+            while True:
+                response = await self.session.get(
+                    f"{self.url}/rest/v1/assets",
+                    params={
+                        "select": "id,ticker,asset_class,exchange,name",
+                        "limit": limit,
+                        "offset": offset,
+                        "order": "asset_class,ticker"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    batch = response.json()
+                    all_assets.extend(batch)
+                    
+                    # If we got less than limit, we've reached the end
+                    if len(batch) < limit:
+                        break
+                    
+                    offset += limit
+                else:
+                    logger.error(f"Failed to fetch assets: {response.status_code}")
+                    break
+            
+            logger.info(f"📊 Fetched {len(all_assets)} total assets")
+            return all_assets
         except Exception as e:
             logger.error(f"Error fetching assets: {str(e)}")
             return []
