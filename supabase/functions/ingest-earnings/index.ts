@@ -24,14 +24,15 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting earnings sentiment estimation (FREE - no API calls)...');
+    console.log('Starting earnings sentiment estimation (FREE - no API calls) v2...');
 
-    // Process ALL stocks for 8201 asset scaling
+    // Process ALL stocks for 8201 asset scaling - FIXED LIMIT
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('id, ticker, name')
       .eq('asset_class', 'stock')
-      .order('ticker');
+      .order('ticker')
+      .limit(10000);
     
     if (assetsError) throw assetsError;
     if (!assets || assets.length === 0) {
