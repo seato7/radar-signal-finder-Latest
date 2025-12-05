@@ -1,6 +1,58 @@
 /**
- * Comprehensive Slack alerting system for ingestion pipeline monitoring
+ * Streamlined Slack alerting system for ingestion pipeline monitoring
+ * Focused on clear cron completion notifications for all 31 functions
  */
+
+// 19 functions that process ALL 8201 assets
+const FULL_SCOPE_FUNCTIONS = [
+  'ingest-google-trends',
+  'ingest-news-sentiment', 
+  'ingest-options-flow',
+  'ingest-dark-pool',
+  'ingest-finra-darkpool',
+  'ingest-pattern-recognition',
+  'ingest-advanced-technicals',
+  'ingest-job-postings',
+  'ingest-reddit-sentiment',
+  'ingest-short-interest',
+  'ingest-smart-money',
+  'ingest-stocktwits',
+  'ingest-supply-chain',
+  'ingest-forex-technicals',
+  'ingest-forex-sentiment',
+  'ingest-crypto-onchain',
+  'ingest-cot-reports',
+  'ingest-etf-flows',
+  'ingest-search-trends'
+];
+
+// 12 event-based/feed-based functions
+const EVENT_BASED_FUNCTIONS = [
+  'ingest-13f-holdings',
+  'ingest-form4',
+  'ingest-breaking-news',
+  'ingest-ai-research',
+  'ingest-congressional-trades',
+  'ingest-policy-feeds',
+  'ingest-economic-calendar',
+  'ingest-fred-economics',
+  'ingest-cot-cftc',
+  'ingest-prices-csv',
+  'ingest-prices-twelvedata',
+  'ingest-earnings'
+];
+
+interface CronCompletionAlert {
+  functionName: string;
+  status: 'success' | 'partial' | 'failed';
+  assetsProcessed?: number;
+  totalAssets?: number;
+  rowsInserted: number;
+  rowsSkipped: number;
+  durationMs: number;
+  sourceUsed?: string;
+  errorMessage?: string;
+}
 
 interface SlackAlert {
   etlName: string;
@@ -26,278 +78,156 @@ interface CriticalAlert {
 export class SlackAlerter {
   private webhookUrl: string | undefined;
   private enabled: boolean;
-  private redisCache: any;
-  private runId: string;
-  private supabaseClient: any;
   private supabaseClientPromise: Promise<any>;
+  private runId: string;
 
   constructor() {
     this.webhookUrl = Deno.env.get('SLACK_WEBHOOK_URL');
     this.enabled = !!this.webhookUrl;
     this.runId = crypto.randomUUID();
     
-    // Initialize Supabase client for alert_history logging (async)
+    // Initialize Supabase client for alert_history logging
     this.supabaseClientPromise = (async () => {
       try {
         const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-        this.supabaseClient = createClient(
+        return createClient(
           Deno.env.get('SUPABASE_URL') ?? '',
           Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
-        return this.supabaseClient;
       } catch (e) {
         console.error('⚠️ Failed to initialize Supabase client for alert logging:', e);
         return null;
       }
     })();
     
-    // Dynamically import Redis cache for deduplication
-    import('../_shared/redis-cache.ts').then(module => {
-      this.redisCache = module.redisCache;
-    }).catch(() => {
-      console.log('⚠️ Redis cache not available for alert deduplication');
-    });
-    
     if (!this.enabled) {
       console.log('⚠️ SLACK_WEBHOOK_URL not configured - alerts disabled');
     }
   }
-  
-  /**
-   * Log alert to persistent alert_history table with 10-minute deduplication
-   */
-  private async logToDatabase(
-    alertType: string,
-    functionName: string,
-    severity: 'critical' | 'warning' | 'info',
-    message: string,
-    metadata?: Record<string, any>
-  ): Promise<void> {
-    // Wait for Supabase client to be ready
-    const client = await this.supabaseClientPromise;
-    if (!client) return;
-    
-    try {
-      // Check if same alert exists in last 10 minutes
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { data: recentAlert } = await client
-        .from('alert_history')
-        .select('id')
-        .eq('alert_type', alertType)
-        .eq('function_name', functionName)
-        .gte('created_at', tenMinutesAgo)
-        .maybeSingle();
-      
-      if (recentAlert) {
-        console.log(`🔕 Database alert deduplication: ${alertType} for ${functionName} (found within 10min)`);
-        return;
-      }
-      
-      // Insert new alert
-      const { error } = await client
-        .from('alert_history')
-        .insert({
-          alert_type: alertType,
-          function_name: functionName,
-          severity,
-          message,
-          metadata: metadata || {},
-        });
-      
-      if (error) {
-        console.error('❌ Failed to log alert to database:', error);
-      } else {
-        console.log(`💾 Alert logged to database: ${alertType} for ${functionName}`);
-      }
-    } catch (e) {
-      console.error('❌ Alert database logging failed:', e);
-    }
-  }
-  
-  /**
-   * Check if this alert was recently sent (within 60s) to prevent duplicates
-   */
-  private async isDuplicateAlert(alertKey: string): Promise<boolean> {
-    if (!this.redisCache) return false;
-    
-    try {
-      const cacheKey = `slack_alert:${alertKey}`;
-      const cached = await this.redisCache.get(cacheKey);
-      
-      if (cached.hit) {
-        console.log(`🔕 Duplicate alert suppressed: ${alertKey}`);
-        return true;
-      }
-      
-      // Mark this alert as sent for 60 seconds
-      await this.redisCache.set(cacheKey, { sent_at: new Date().toISOString(), run_id: this.runId }, 'alert_dedup');
-      return false;
-    } catch (e) {
-      console.error('Alert dedup check failed:', e);
-      return false;
-    }
-  }
 
   /**
-   * Send live ingestion status update
+   * Send cron completion notification - the main alert type
+   * Shows clear status for each of the 31 functions
    */
-  async sendLiveAlert(alert: SlackAlert, options?: { suppressDuplicates?: boolean }): Promise<void> {
-    // Log to database first
-    const severity = alert.status === 'failed' || alert.status === 'halted' ? 'critical' : 
-                     alert.status === 'partial' ? 'warning' : 'info';
-    await this.logToDatabase(
-      `live_${alert.status}`,
-      alert.etlName,
-      severity,
-      `Live alert: ${alert.etlName} ${alert.status}`,
-      alert.metadata
-    );
+  async sendCronCompletion(alert: CronCompletionAlert): Promise<void> {
+    const isFullScope = FULL_SCOPE_FUNCTIONS.includes(alert.functionName);
+    const isEventBased = EVENT_BASED_FUNCTIONS.includes(alert.functionName);
+    
+    // Log to database
+    await this.logToDatabase(alert);
     
     if (!this.enabled) return;
+
+    const emoji = alert.status === 'success' ? '✅' : alert.status === 'partial' ? '⚠️' : '❌';
+    const durationSec = (alert.durationMs / 1000).toFixed(1);
     
-    // Check for duplicate alerts
-    const alertKey = `${alert.etlName}:${alert.status}:${Date.now()}`;
-    if (options?.suppressDuplicates !== false) {
-      const isDupe = await this.isDuplicateAlert(alertKey);
-      if (isDupe) return;
+    let coverageText: string;
+    if (isFullScope && alert.assetsProcessed !== undefined && alert.totalAssets !== undefined) {
+      const pct = ((alert.assetsProcessed / alert.totalAssets) * 100).toFixed(0);
+      coverageText = `${alert.assetsProcessed.toLocaleString()}/${alert.totalAssets.toLocaleString()} assets (${pct}%)`;
+    } else if (isEventBased) {
+      coverageText = `Applied to ${alert.rowsInserted} relevant assets`;
+    } else {
+      coverageText = `${alert.rowsInserted} rows`;
     }
 
-    const emoji = this.getStatusEmoji(alert.status);
-    const color = this.getStatusColor(alert.status);
-    
-    let text = `${emoji} *${alert.etlName}* - ${alert.status.toUpperCase()}`;
-    
-    if (alert.ticker) {
-      text += ` (${alert.ticker})`;
-    }
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `${emoji} *${alert.functionName}* completed`
+        }
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Coverage:*\n${coverageText}` },
+          { type: 'mrkdwn', text: `*Duration:*\n${durationSec}s` },
+          { type: 'mrkdwn', text: `*Inserted:*\n${alert.rowsInserted.toLocaleString()}` },
+          { type: 'mrkdwn', text: `*Skipped:*\n${alert.rowsSkipped.toLocaleString()}` }
+        ]
+      }
+    ];
 
-    const fields: any[] = [];
-    
     if (alert.sourceUsed) {
-      fields.push({
-        title: 'Source',
-        value: alert.sourceUsed,
-        short: true
-      });
-    }
-    
-    if (alert.latencyMs !== undefined) {
-      fields.push({
-        title: 'Latency',
-        value: `${alert.latencyMs}ms`,
-        short: true
-      });
-    }
-    
-    if (alert.fallbackRatio !== undefined) {
-      fields.push({
-        title: 'Fallback Ratio',
-        value: `${(alert.fallbackRatio * 100).toFixed(1)}%`,
-        short: true
-      });
-    }
-    
-    if (alert.duration !== undefined) {
-      fields.push({
-        title: 'Duration',
-        value: `${alert.duration}s`,
-        short: true
-      });
-    }
-
-    if (alert.rowsInserted !== undefined) {
-      fields.push({
-        title: 'Rows Inserted',
-        value: alert.rowsInserted.toString(),
-        short: true
-      });
-    }
-
-    if (alert.rowsSkipped !== undefined) {
-      fields.push({
-        title: 'Rows Skipped',
-        value: alert.rowsSkipped.toString(),
-        short: true
-      });
+      blocks.push({
+        type: 'context',
+        elements: [{ type: 'mrkdwn', text: `Source: ${alert.sourceUsed}` }]
+      } as any);
     }
 
     if (alert.errorMessage) {
-      fields.push({
-        title: 'Error',
-        value: alert.errorMessage.substring(0, 200),
-        short: false
-      });
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Error:* ${alert.errorMessage.substring(0, 200)}` }
+      } as any);
     }
 
-    await this.send({
-      text,
-      attachments: [{
-        color,
-        fields,
-        footer: `Run ID: ${this.runId} | Ingestion Pipeline Monitor`,
-        ts: Math.floor(Date.now() / 1000)
-      }]
-    });
+    await this.send({ blocks });
   }
 
   /**
-   * Send critical alert (100% fallback, auth errors, etc.)
+   * Send critical alert for failures that need immediate attention
    */
   async sendCriticalAlert(alert: CriticalAlert, options?: { suppressDuplicates?: boolean }): Promise<void> {
     if (!this.enabled) return;
-    
-    // Check for duplicate critical alerts
-    const alertKey = `critical:${alert.etlName}:${alert.type}`;
-    if (options?.suppressDuplicates !== false) {
-      const isDupe = await this.isDuplicateAlert(alertKey);
-      if (isDupe) return;
-    }
 
-    const emoji = this.getCriticalEmoji(alert.type);
-    let text = `${emoji} *CRITICAL ALERT: ${alert.type.toUpperCase().replace(/_/g, ' ')}*`;
-    
-    if (alert.etlName) {
-      text += `\n*Function:* ${alert.etlName}`;
-    }
-    
-    text += `\n${alert.message}`;
-
-    const fields: any[] = [];
-    
-    if (alert.details) {
-      for (const [key, value] of Object.entries(alert.details)) {
-        fields.push({
-          title: key,
-          value: String(value),
-          short: true
-        });
-      }
-    }
+    const emoji = '🚨';
+    const text = `${emoji} *CRITICAL: ${alert.type.toUpperCase().replace(/_/g, ' ')}*` +
+      (alert.etlName ? `\n*Function:* ${alert.etlName}` : '') +
+      `\n${alert.message}`;
 
     await this.send({
       text,
       attachments: [{
         color: '#ff0000',
-        fields,
-        footer: `Run ID: ${this.runId} | CRITICAL`,
+        fields: alert.details ? Object.entries(alert.details).map(([k, v]) => ({
+          title: k,
+          value: String(v),
+          short: true
+        })) : [],
+        footer: 'Critical Alert',
         ts: Math.floor(Date.now() / 1000)
       }]
     });
   }
 
   /**
-   * Send daily digest report
+   * Send live ingestion status update - backward compatible method
+   */
+  async sendLiveAlert(alert: SlackAlert, options?: { suppressDuplicates?: boolean }): Promise<void> {
+    // Only send completion alerts, not started alerts
+    if (alert.status === 'started') return;
+    
+    await this.sendCronCompletion({
+      functionName: alert.etlName,
+      status: alert.status === 'success' ? 'success' : alert.status === 'partial' ? 'partial' : 'failed',
+      rowsInserted: alert.rowsInserted ?? 0,
+      rowsSkipped: alert.rowsSkipped ?? 0,
+      durationMs: alert.latencyMs ?? (alert.duration ? alert.duration * 1000 : 0),
+      sourceUsed: alert.sourceUsed,
+      errorMessage: alert.errorMessage,
+      assetsProcessed: alert.metadata?.assetsProcessed,
+      totalAssets: alert.metadata?.totalAssets
+    });
+  }
+
+  /**
+   * Send daily digest summary - backward compatible
    */
   async sendDailyDigest(report: {
     totalRuns: number;
     succeeded: number;
     partial: number;
     failed: number;
-    halted: number;
-    topErrors: Array<{ etl_name: string; error_type: string; count: number; example: string }>;
-    duplicateKeyErrors: Array<{ etl_name: string; count: number }>;
-    haltedFunctions: string[];
-    staleTickers: Array<{ ticker: string; hours_stale: number }>;
+    halted?: number;
+    topErrors?: Array<{ etl_name: string; error_type: string; count: number; example: string }>;
+    duplicateKeyErrors?: Array<{ etl_name: string; count: number }>;
+    haltedFunctions?: string[];
+    staleTickers?: Array<{ ticker: string; hours_stale: number }>;
+    fullScopeFunctions?: { name: string; lastRun: string; coverage: string }[];
+    eventBasedFunctions?: { name: string; lastRun: string; recordsApplied: number }[];
   }): Promise<void> {
     if (!this.enabled) return;
 
@@ -305,84 +235,75 @@ export class SlackAlerter {
       ? ((report.succeeded / report.totalRuns) * 100).toFixed(1) 
       : '0.0';
 
-    let text = `📊 *Daily Ingestion Report* - ${new Date().toLocaleDateString('en-AU', { timeZone: 'Australia/Sydney' })}\n\n`;
-    text += `*Overall:* ${report.totalRuns} runs | ${successRate}% success rate\n`;
-    text += `✅ Succeeded: ${report.succeeded}\n`;
-    text += `⚠️ Partial: ${report.partial}\n`;
-    text += `❌ Failed: ${report.failed}\n`;
-    text += `🛑 Halted: ${report.halted}\n\n`;
+    let text = `📊 *Daily Ingestion Summary* - ${new Date().toISOString().split('T')[0]}\n\n`;
+    text += `*Total Runs:* ${report.totalRuns} | *Success Rate:* ${successRate}%\n`;
+    text += `✅ ${report.succeeded} | ⚠️ ${report.partial} | ❌ ${report.failed}`;
+    if (report.halted !== undefined) {
+      text += ` | 🛑 ${report.halted}`;
+    }
+    text += `\n\n`;
 
-    if (report.topErrors.length > 0) {
-      text += `*Top 3 Errors:*\n`;
+    if (report.fullScopeFunctions && report.fullScopeFunctions.length > 0) {
+      text += `*Full-Scope Functions (8201 assets):*\n`;
+      for (const fn of report.fullScopeFunctions.slice(0, 5)) {
+        text += `• ${fn.name}: ${fn.coverage} (${fn.lastRun})\n`;
+      }
+      if (report.fullScopeFunctions.length > 5) {
+        text += `  _...and ${report.fullScopeFunctions.length - 5} more_\n`;
+      }
+      text += '\n';
+    }
+
+    if (report.eventBasedFunctions && report.eventBasedFunctions.length > 0) {
+      text += `*Event-Based Functions:*\n`;
+      for (const fn of report.eventBasedFunctions.slice(0, 5)) {
+        text += `• ${fn.name}: ${fn.recordsApplied} records (${fn.lastRun})\n`;
+      }
+      if (report.eventBasedFunctions.length > 5) {
+        text += `  _...and ${report.eventBasedFunctions.length - 5} more_\n`;
+      }
+      text += '\n';
+    }
+
+    if (report.topErrors && report.topErrors.length > 0) {
+      text += `*Top Errors:*\n`;
       report.topErrors.forEach((err, i) => {
         text += `${i + 1}. ${err.etl_name} - ${err.error_type} (${err.count}x)\n`;
-        text += `   _"${err.example.substring(0, 100)}"_\n`;
       });
       text += '\n';
     }
 
-    if (report.duplicateKeyErrors.length > 0) {
-      text += `*Duplicate Key Errors:*\n`;
-      report.duplicateKeyErrors.forEach(err => {
-        text += `• ${err.etl_name}: ${err.count} errors\n`;
-      });
-      text += '\n';
-    }
-
-    if (report.haltedFunctions.length > 0) {
-      text += `🛑 *Halted Functions (require manual reset):*\n`;
+    if (report.haltedFunctions && report.haltedFunctions.length > 0) {
+      text += `🛑 *Halted Functions:*\n`;
       report.haltedFunctions.forEach(fn => {
         text += `• ${fn}\n`;
       });
-      text += '\n';
     }
 
-    if (report.staleTickers.length > 0) {
-      text += `⏰ *Stale Data Alerts:*\n`;
-      report.staleTickers.forEach(ticker => {
-        text += `• ${ticker.ticker}: ${ticker.hours_stale.toFixed(1)}h old\n`;
+    await this.send({ text });
+  }
+
+  private async logToDatabase(alert: CronCompletionAlert): Promise<void> {
+    const client = await this.supabaseClientPromise;
+    if (!client) return;
+    
+    try {
+      await client.from('alert_history').insert({
+        alert_type: `cron_${alert.status}`,
+        function_name: alert.functionName,
+        severity: alert.status === 'failed' ? 'critical' : alert.status === 'partial' ? 'warning' : 'info',
+        message: `${alert.functionName} completed: ${alert.rowsInserted} inserted, ${alert.rowsSkipped} skipped`,
+        metadata: {
+          assetsProcessed: alert.assetsProcessed,
+          totalAssets: alert.totalAssets,
+          rowsInserted: alert.rowsInserted,
+          rowsSkipped: alert.rowsSkipped,
+          durationMs: alert.durationMs,
+          sourceUsed: alert.sourceUsed
+        }
       });
-    }
-
-    await this.send({
-      text,
-      username: 'Ingestion Health Monitor',
-      icon_emoji: ':bar_chart:'
-    });
-  }
-
-  private getStatusEmoji(status: string): string {
-    switch (status) {
-      case 'started': return '▶️';
-      case 'success': return '✅';
-      case 'partial': return '⚠️';
-      case 'failed': return '❌';
-      case 'halted': return '🛑';
-      default: return '❓';
-    }
-  }
-
-  private getStatusColor(status: string): string {
-    switch (status) {
-      case 'success': return '#00ff00';
-      case 'partial': return '#ffaa00';
-      case 'failed': return '#ff0000';
-      case 'halted': return '#990000';
-      default: return '#cccccc';
-    }
-  }
-
-  private getCriticalEmoji(type: string): string {
-    switch (type) {
-      case 'fallback_exceeded': return '🔄';
-      case 'auth_error': return '🔐';
-      case 'orphaned_logs': return '👻';
-      case 'duplicate_keys': return '🔑';
-      case 'sla_breach': return '⏰';
-      case 'halted': return '🛑';
-      case 'missing_source': return '❓';
-      case 'empty_table': return '📭';
-      default: return '🚨';
+    } catch (e) {
+      console.error('❌ Failed to log alert:', e);
     }
   }
 
