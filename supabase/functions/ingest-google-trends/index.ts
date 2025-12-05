@@ -114,8 +114,8 @@ serve(async (req) => {
           const trendChange = priceChange * 0.8;
 
           trends.push({
-            ticker: asset.ticker,
-            keyword: asset.name || asset.ticker,
+            ticker: asset.ticker.substring(0, 10),
+            keyword: (asset.name || asset.ticker).substring(0, 100),
             period_start: periodStart.toISOString().split('T')[0],
             period_end: periodEnd.toISOString().split('T')[0],
             search_volume: searchVolume * 100,
