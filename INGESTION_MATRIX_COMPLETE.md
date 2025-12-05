@@ -1,5 +1,23 @@
 # Complete Ingestion Function Matrix
 
+**Last Updated:** 2025-12-05  
+**Asset Coverage:** 8,201 assets  
+**Monthly Cost:** ~$32/month
+
+## Cost Optimization Summary (2025-12-05)
+
+| Change | Before | After | Savings |
+|--------|--------|-------|---------|
+| ingest-dark-pool | Perplexity | FINRA Estimation | $1.35/mo |
+| ingest-short-interest | Perplexity | FINRA Estimation | $1.35/mo |
+| ingest-earnings | Perplexity | Alpha Vantage Free | $2.25/mo |
+| ingest-google-trends | Perplexity | Momentum Estimation | $2.70/mo |
+| **TOTAL SAVINGS** | | | **$7.65/mo** |
+
+## Perplexity Functions (KEPT - Real-time Required)
+- `ingest-breaking-news` - Real-time news headlines
+- `ingest-crypto-onchain` - Real-time blockchain metrics
+
 ## Executive Summary
 
 | Metric | Value |
