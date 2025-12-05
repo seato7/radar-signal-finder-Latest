@@ -38,7 +38,7 @@ export const COMMODITIES = [
   { ticker: 'ZW', name: 'Wheat Futures', exchange: 'COMMODITY' },
   { ticker: 'ZL', name: 'Soybean Oil Futures', exchange: 'COMMODITY' },
   { ticker: 'ZM', name: 'Soybean Meal Futures', exchange: 'COMMODITY' },
-  { ticker: 'ZO', name: 'Oat Futures', exchange: 'COMMODITY' },
+  // ZO (Oat Futures) removed - not supported by Twelve Data
   { ticker: 'ZR', name: 'Rough Rice Futures', exchange: 'COMMODITY' },
   { ticker: 'KE', name: 'KC HRW Wheat Futures', exchange: 'COMMODITY' },
   { ticker: 'MWE', name: 'Spring Wheat Futures', exchange: 'COMMODITY' },

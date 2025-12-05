@@ -53,8 +53,7 @@ export const CRYPTO_ASSETS = [
   { ticker: 'LDO/USDT', name: 'Lido DAO / Tether', exchange: 'CRYPTO' },
   { ticker: 'SNX/USD', name: 'Synthetix / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'SNX/USDT', name: 'Synthetix / Tether', exchange: 'CRYPTO' },
-  { ticker: 'COMP/USD', name: 'Compound / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'COMP/USDT', name: 'Compound / Tether', exchange: 'CRYPTO' },
+  // COMP/USD removed - not supported by Twelve Data
   { ticker: 'SUSHI/USD', name: 'SushiSwap / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'SUSHI/USDT', name: 'SushiSwap / Tether', exchange: 'CRYPTO' },
   { ticker: 'YFI/USD', name: 'yearn.finance / US Dollar', exchange: 'CRYPTO' },
@@ -119,8 +118,7 @@ export const CRYPTO_ASSETS = [
   { ticker: 'ZIL/USDT', name: 'Zilliqa / Tether', exchange: 'CRYPTO' },
   { ticker: 'ICX/USD', name: 'ICON / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'ICX/USDT', name: 'ICON / Tether', exchange: 'CRYPTO' },
-  { ticker: 'WAVES/USD', name: 'Waves / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'WAVES/USDT', name: 'Waves / Tether', exchange: 'CRYPTO' },
+  // WAVES removed - not supported by Twelve Data
   { ticker: 'KAVA/USD', name: 'Kava / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'KAVA/USDT', name: 'Kava / Tether', exchange: 'CRYPTO' },
   { ticker: 'CELO/USD', name: 'Celo / US Dollar', exchange: 'CRYPTO' },
@@ -137,8 +135,7 @@ export const CRYPTO_ASSETS = [
   { ticker: 'ICP/USDT', name: 'Internet Computer / Tether', exchange: 'CRYPTO' },
   { ticker: 'MINA/USD', name: 'Mina Protocol / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'MINA/USDT', name: 'Mina Protocol / Tether', exchange: 'CRYPTO' },
-  { ticker: 'GRT/USD', name: 'The Graph / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'GRT/USDT', name: 'The Graph / Tether', exchange: 'CRYPTO' },
+  // GRT removed - not supported by Twelve Data
   { ticker: 'FET/USD', name: 'Fetch.ai / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'FET/USDT', name: 'Fetch.ai / Tether', exchange: 'CRYPTO' },
   { ticker: 'AGIX/USD', name: 'SingularityNET / US Dollar', exchange: 'CRYPTO' },
@@ -158,13 +155,7 @@ export const CRYPTO_ASSETS = [
   { ticker: 'CKB/USD', name: 'Nervos Network / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'CKB/USDT', name: 'Nervos Network / Tether', exchange: 'CRYPTO' },
   
-  // Privacy coins & Others (150-180)
-  { ticker: 'XMR/USD', name: 'Monero / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'XMR/USDT', name: 'Monero / Tether', exchange: 'CRYPTO' },
-  { ticker: 'ZEC/USD', name: 'Zcash / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'ZEC/USDT', name: 'Zcash / Tether', exchange: 'CRYPTO' },
-  { ticker: 'DASH/USD', name: 'Dash / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'DASH/USDT', name: 'Dash / Tether', exchange: 'CRYPTO' },
+  // Privacy coins - XMR, ZEC, DASH removed (not supported by Twelve Data)
   { ticker: 'DCR/USD', name: 'Decred / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'DCR/USDT', name: 'Decred / Tether', exchange: 'CRYPTO' },
   

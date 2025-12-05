@@ -103,7 +103,7 @@ COMPREHENSIVE_ASSETS = [
     {"ticker": "COST", "name": "Costco Wholesale Corporation", "exchange": "NASDAQ"},
     {"ticker": "NKE", "name": "Nike Inc", "exchange": "NYSE"},
     {"ticker": "MCD", "name": "McDonald's Corporation", "exchange": "NYSE"},
-    {"ticker": "SBUX", "name": "Starbucks Corporation", "exchange": "NASDAQ"},
+    # SBUX removed - no price data from Twelve Data
     {"ticker": "DIS", "name": "Walt Disney Company", "exchange": "NYSE"},
     
     # Auto
@@ -161,7 +161,7 @@ COMPREHENSIVE_ASSETS = [
     {"ticker": "FIL", "name": "Filecoin", "exchange": "CRYPTO"},
     {"ticker": "AAVE", "name": "Aave", "exchange": "CRYPTO"},
     {"ticker": "MKR", "name": "Maker", "exchange": "CRYPTO"},
-    {"ticker": "COMP", "name": "Compound", "exchange": "CRYPTO"},
+    # COMP removed - not supported by Twelve Data
     {"ticker": "SUSHI", "name": "SushiSwap", "exchange": "CRYPTO"},
     {"ticker": "CRV", "name": "Curve DAO Token", "exchange": "CRYPTO"},
     {"ticker": "APE", "name": "ApeCoin", "exchange": "CRYPTO"},
