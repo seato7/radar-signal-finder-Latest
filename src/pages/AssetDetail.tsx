@@ -4,11 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Star, ExternalLink, TrendingUp, TrendingDown, Info, Activity, BarChart3, Database } from "lucide-react";
+import { Star, ExternalLink, TrendingUp, TrendingDown, Info, Activity, BarChart3, Database, Clock } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssetScore } from "@/hooks/useAssetScore";
+import { formatDistanceToNow } from "date-fns";
 
 const formatLabel = (str: string): string => {
   return str
@@ -24,6 +25,7 @@ const formatLabel = (str: string): string => {
 interface Theme { id: string; name: string; }
 interface WhereToBuy { name: string; url: string; }
 interface AssetData { id: string; ticker: string; exchange: string; name: string; asset_class: string | null; }
+interface PriceData { close: number; last_updated_at: string | null; updated_at: string | null; }
 
 const AU_BROKERS: WhereToBuy[] = [
   { name: "Stake", url: "https://stake.com.au" },
@@ -51,6 +53,7 @@ const AssetDetail = () => {
   const location = useLocation();
   const ticker = location.pathname.replace('/asset/', '');
   const [asset, setAsset] = useState<AssetData | null>(null);
+  const [priceData, setPriceData] = useState<PriceData | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [ranking, setRanking] = useState<number>(0);
@@ -75,6 +78,19 @@ const AssetDetail = () => {
         
         if (!assetData) { setLoading(false); return; }
         setAsset(assetData);
+        
+        // Fetch latest price data for "last updated" display
+        const { data: latestPrice } = await supabase
+          .from('prices')
+          .select('close, last_updated_at, updated_at')
+          .eq('ticker', assetData.ticker)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (latestPrice) {
+          setPriceData(latestPrice);
+        }
         
         const { count } = await supabase.from('assets').select('id', { count: 'exact', head: true });
         setTotalAssets(count || 0);
@@ -146,6 +162,16 @@ const AssetDetail = () => {
               {scoreResult.scoreChange >= 0 ? '+' : ''}{scoreResult.scoreChange} (24h)
             </div>
             <Badge className={`mt-2 ${sentiment.color}`}>{sentiment.label}</Badge>
+            
+            {/* Last Updated Display */}
+            {priceData && (priceData.last_updated_at || priceData.updated_at) && (
+              <div className="flex items-center gap-1 mt-3 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>
+                  Price updated {formatDistanceToNow(new Date(priceData.last_updated_at || priceData.updated_at!), { addSuffix: true })}
+                </span>
+              </div>
+            )}
           </CardContent>
         </Card>
 
