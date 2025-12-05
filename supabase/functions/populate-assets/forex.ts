@@ -1,4 +1,4 @@
-// Comprehensive Forex pairs - Major, Minor, Exotic
+// Forex pairs supported by Twelve Data - Major and Minor crosses only
 export const FOREX_PAIRS = [
   // Major pairs (USD-based)
   { ticker: 'EUR/USD', name: 'Euro / US Dollar', exchange: 'FOREX' },
@@ -68,44 +68,4 @@ export const FOREX_PAIRS = [
   { ticker: 'SEK/NOK', name: 'Swedish Krona / Norwegian Krone', exchange: 'FOREX' },
   { ticker: 'DKK/SEK', name: 'Danish Krone / Swedish Krona', exchange: 'FOREX' },
   { ticker: 'DKK/NOK', name: 'Danish Krone / Norwegian Krone', exchange: 'FOREX' },
-  
-  // Emerging market pairs (USD-based)
-  { ticker: 'USD/CNY', name: 'US Dollar / Chinese Yuan', exchange: 'FOREX' },
-  { ticker: 'USD/HKD', name: 'US Dollar / Hong Kong Dollar', exchange: 'FOREX' },
-  { ticker: 'USD/SGD', name: 'US Dollar / Singapore Dollar', exchange: 'FOREX' },
-  { ticker: 'USD/KRW', name: 'US Dollar / South Korean Won', exchange: 'FOREX' },
-  { ticker: 'USD/THB', name: 'US Dollar / Thai Baht', exchange: 'FOREX' },
-  { ticker: 'USD/INR', name: 'US Dollar / Indian Rupee', exchange: 'FOREX' },
-  { ticker: 'USD/IDR', name: 'US Dollar / Indonesian Rupiah', exchange: 'FOREX' },
-  { ticker: 'USD/PHP', name: 'US Dollar / Philippine Peso', exchange: 'FOREX' },
-  { ticker: 'USD/MYR', name: 'US Dollar / Malaysian Ringgit', exchange: 'FOREX' },
-  { ticker: 'USD/TWD', name: 'US Dollar / Taiwan Dollar', exchange: 'FOREX' },
-  { ticker: 'USD/VND', name: 'US Dollar / Vietnamese Dong', exchange: 'FOREX' },
-  { ticker: 'USD/ZAR', name: 'US Dollar / South African Rand', exchange: 'FOREX' },
-  { ticker: 'USD/MXN', name: 'US Dollar / Mexican Peso', exchange: 'FOREX' },
-  { ticker: 'USD/BRL', name: 'US Dollar / Brazilian Real', exchange: 'FOREX' },
-  { ticker: 'USD/ARS', name: 'US Dollar / Argentine Peso', exchange: 'FOREX' },
-  { ticker: 'USD/CLP', name: 'US Dollar / Chilean Peso', exchange: 'FOREX' },
-  { ticker: 'USD/COP', name: 'US Dollar / Colombian Peso', exchange: 'FOREX' },
-  { ticker: 'USD/PEN', name: 'US Dollar / Peruvian Sol', exchange: 'FOREX' },
-  { ticker: 'USD/TRY', name: 'US Dollar / Turkish Lira', exchange: 'FOREX' },
-  { ticker: 'USD/RUB', name: 'US Dollar / Russian Ruble', exchange: 'FOREX' },
-  { ticker: 'USD/PLN', name: 'US Dollar / Polish Zloty', exchange: 'FOREX' },
-  { ticker: 'USD/CZK', name: 'US Dollar / Czech Koruna', exchange: 'FOREX' },
-  { ticker: 'USD/HUF', name: 'US Dollar / Hungarian Forint', exchange: 'FOREX' },
-  { ticker: 'USD/RON', name: 'US Dollar / Romanian Leu', exchange: 'FOREX' },
-  { ticker: 'USD/ILS', name: 'US Dollar / Israeli Shekel', exchange: 'FOREX' },
-  { ticker: 'USD/SAR', name: 'US Dollar / Saudi Riyal', exchange: 'FOREX' },
-  { ticker: 'USD/AED', name: 'US Dollar / UAE Dirham', exchange: 'FOREX' },
-  { ticker: 'USD/KWD', name: 'US Dollar / Kuwaiti Dinar', exchange: 'FOREX' },
-  { ticker: 'USD/QAR', name: 'US Dollar / Qatari Riyal', exchange: 'FOREX' },
-  { ticker: 'USD/EGP', name: 'US Dollar / Egyptian Pound', exchange: 'FOREX' },
-  { ticker: 'USD/NGN', name: 'US Dollar / Nigerian Naira', exchange: 'FOREX' },
-  { ticker: 'USD/KES', name: 'US Dollar / Kenyan Shilling', exchange: 'FOREX' },
-  
-  // Scandinavian USD pairs
-  { ticker: 'USD/SEK', name: 'US Dollar / Swedish Krona', exchange: 'FOREX' },
-  { ticker: 'USD/NOK', name: 'US Dollar / Norwegian Krone', exchange: 'FOREX' },
-  { ticker: 'USD/DKK', name: 'US Dollar / Danish Krone', exchange: 'FOREX' },
-  { ticker: 'USD/ISK', name: 'US Dollar / Icelandic Krona', exchange: 'FOREX' },
 ];
