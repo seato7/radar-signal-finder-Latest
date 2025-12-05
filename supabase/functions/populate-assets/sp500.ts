@@ -123,7 +123,7 @@ export const SP500_STOCKS = [
   { ticker: 'DGX', name: 'Quest Diagnostics Incorporated', exchange: 'NYSE' },
   { ticker: 'LH', name: 'Laboratory Corporation of America Holdings', exchange: 'NYSE' },
   { ticker: 'VTRS', name: 'Viatris Inc.', exchange: 'NASDAQ' },
-  { ticker: 'CTLT', name: 'Catalent Inc.', exchange: 'NYSE' },
+  // CTLT removed - being acquired
   { ticker: 'DVA', name: 'DaVita Inc.', exchange: 'NYSE' },
   { ticker: 'HOLX', name: 'Hologic Inc.', exchange: 'NASDAQ' },
   { ticker: 'COO', name: 'The Cooper Companies Inc.', exchange: 'NYSE' },
@@ -232,7 +232,7 @@ export const SP500_STOCKS = [
   { ticker: 'PSX', name: 'Phillips 66', exchange: 'NYSE' },
   { ticker: 'VLO', name: 'Valero Energy Corporation', exchange: 'NYSE' },
   { ticker: 'OXY', name: 'Occidental Petroleum Corporation', exchange: 'NYSE' },
-  { ticker: 'HES', name: 'Hess Corporation', exchange: 'NYSE' },
+  // HES removed - being acquired by Chevron
   { ticker: 'HAL', name: 'Halliburton Company', exchange: 'NYSE' },
   { ticker: 'BKR', name: 'Baker Hughes Company', exchange: 'NASDAQ' },
   { ticker: 'WMB', name: 'The Williams Companies Inc.', exchange: 'NYSE' },
@@ -409,7 +409,7 @@ export const SP500_STOCKS = [
   { ticker: 'TWLO', name: 'Twilio Inc.', exchange: 'NYSE' },
   { ticker: 'DOCU', name: 'DocuSign Inc.', exchange: 'NASDAQ' },
   { ticker: 'OKTA', name: 'Okta Inc.', exchange: 'NASDAQ' },
-  { ticker: 'SPLK', name: 'Splunk Inc.', exchange: 'NASDAQ' },
+  // SPLK removed - acquired by Cisco
   
   // Major ETFs for benchmarking
   { ticker: 'SPY', name: 'SPDR S&P 500 ETF Trust', exchange: 'NYSE' },

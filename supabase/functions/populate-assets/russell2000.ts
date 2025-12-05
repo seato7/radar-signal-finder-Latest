@@ -43,12 +43,12 @@ export const RUSSELL_2000 = [
   { ticker: 'LILM', name: 'Lilium N.V.', exchange: 'NASDAQ' },
   { ticker: 'EVTL', name: 'Vertical Aerospace Ltd.', exchange: 'NYSE' },
   { ticker: 'BLDE', name: 'Blade Air Mobility Inc.', exchange: 'NASDAQ' },
-  { ticker: 'BOWX', name: 'BowX Acquisition Corp.', exchange: 'NASDAQ' },
+  // BOWX removed - delisted/merged
   { ticker: 'SPCE', name: 'Virgin Galactic Holdings Inc.', exchange: 'NYSE' },
   { ticker: 'RKLB', name: 'Rocket Lab USA Inc.', exchange: 'NASDAQ' },
   { ticker: 'ASTS', name: 'AST SpaceMobile Inc.', exchange: 'NASDAQ' },
   { ticker: 'LUNR', name: 'Intuitive Machines Inc.', exchange: 'NASDAQ' },
-  { ticker: 'VORB', name: 'Virgin Orbit Holdings Inc.', exchange: 'NASDAQ' },
+  // VORB removed - bankrupt
   { ticker: 'SATS', name: 'EchoStar Corporation', exchange: 'NASDAQ' },
   { ticker: 'GILT', name: 'Gilat Satellite Networks Ltd.', exchange: 'NASDAQ' },
   { ticker: 'VSAT', name: 'Viasat Inc.', exchange: 'NASDAQ' },
@@ -72,7 +72,7 @@ export const RUSSELL_2000 = [
   { ticker: 'SES', name: 'SES AI Corporation', exchange: 'NYSE' },
   { ticker: 'SLDP', name: 'Solid Power Inc.', exchange: 'NASDAQ' },
   { ticker: 'ENVX', name: 'Enovix Corporation', exchange: 'NASDAQ' },
-  { ticker: 'FREYR', name: 'FREYR Battery', exchange: 'NYSE' },
+  // FREYR removed - not supported by Twelve Data
   { ticker: 'CBAT', name: 'CBAK Energy Technology Inc.', exchange: 'NASDAQ' },
   { ticker: 'LAC', name: 'Lithium Americas Corp.', exchange: 'NYSE' },
   { ticker: 'LTHM', name: 'Livent Corporation', exchange: 'NYSE' },
@@ -113,11 +113,11 @@ export const RUSSELL_2000 = [
   { ticker: 'CRWD', name: 'CrowdStrike Holdings Inc.', exchange: 'NASDAQ' },
   { ticker: 'ZS', name: 'Zscaler Inc.', exchange: 'NASDAQ' },
   { ticker: 'OKTA', name: 'Okta Inc.', exchange: 'NASDAQ' },
-  { ticker: 'COUP', name: 'Coupa Software Incorporated', exchange: 'NASDAQ' },
+  // COUP removed - acquired by Thoma Bravo
   { ticker: 'VEEV', name: 'Veeva Systems Inc.', exchange: 'NYSE' },
   { ticker: 'WDAY', name: 'Workday Inc.', exchange: 'NASDAQ' },
   { ticker: 'ZI', name: 'ZoomInfo Technologies Inc.', exchange: 'NASDAQ' },
-  { ticker: 'HCP', name: 'HashiCorp Inc.', exchange: 'NASDAQ' },
+  // HCP removed - acquired by IBM
   { ticker: 'MDB', name: 'MongoDB Inc.', exchange: 'NASDAQ' },
   { ticker: 'CFLT', name: 'Confluent Inc.', exchange: 'NASDAQ' },
   { ticker: 'PCOR', name: 'Procore Technologies Inc.', exchange: 'NYSE' },
@@ -135,7 +135,7 @@ export const RUSSELL_2000 = [
   { ticker: 'DOCN', name: 'DigitalOcean Holdings Inc.', exchange: 'NYSE' },
   { ticker: 'APPN', name: 'Appian Corporation', exchange: 'NASDAQ' },
   { ticker: 'PLTR', name: 'Palantir Technologies Inc.', exchange: 'NYSE' },
-  { ticker: 'RDFN', name: 'Redfin Corporation', exchange: 'NASDAQ' },
+  // RDFN removed - not supported by Twelve Data
   { ticker: 'OPEN', name: 'Opendoor Technologies Inc.', exchange: 'NASDAQ' },
   { ticker: 'RKT', name: 'Rocket Companies Inc.', exchange: 'NYSE' },
   { ticker: 'COMP', name: 'Compass Inc.', exchange: 'NYSE' },
@@ -175,6 +175,6 @@ export const RUSSELL_2000 = [
   { ticker: 'ETSY', name: 'Etsy Inc.', exchange: 'NASDAQ' },
   { ticker: 'CHWY', name: 'Chewy Inc.', exchange: 'NYSE' },
   { ticker: 'W', name: 'Wayfair Inc.', exchange: 'NYSE' },
-  { ticker: 'FTCH', name: 'Farfetch Limited', exchange: 'NYSE' },
+  // FTCH removed - delisted/bankrupt
   { ticker: 'REAL', name: 'The RealReal Inc.', exchange: 'NASDAQ' },
 ];

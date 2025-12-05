@@ -19,7 +19,7 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'MOMO', name: 'Hello Group Inc.', exchange: 'NASDAQ' },
   { ticker: 'ATHM', name: 'Autohome Inc.', exchange: 'NYSE' },
   { ticker: 'SOHU', name: 'Sohu.com Limited', exchange: 'NASDAQ' },
-  { ticker: 'SINA', name: 'SINA Corporation', exchange: 'NASDAQ' },
+  // SINA removed - went private
   { ticker: 'ZTO', name: 'ZTO Express (Cayman) Inc.', exchange: 'NYSE' },
   
   // European Tech & Luxury
@@ -43,7 +43,7 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'KB', name: 'KB Financial Group Inc.', exchange: 'NYSE' },
   { ticker: 'FUJHY', name: 'Fujifilm Holdings Corporation', exchange: 'OTC' },
   { ticker: 'NSANY', name: 'Nissan Motor Co. Ltd.', exchange: 'OTC' },
-  { ticker: 'PCRFY', name: 'Panasonic Corporation', exchange: 'OTC' },
+  // PCRFY removed - not supported by Twelve Data
   { ticker: 'SNEJF', name: 'Sony Group Corporation', exchange: 'OTC' },
   { ticker: 'TKPHF', name: 'Takeda Pharmaceutical Company Limited', exchange: 'OTC' },
   { ticker: 'DNZOY', name: 'Denso Corporation', exchange: 'OTC' },
@@ -79,9 +79,7 @@ export const INTERNATIONAL_STOCKS = [
   // Australian
   { ticker: 'BHP', name: 'BHP Group Limited', exchange: 'NYSE' },
   { ticker: 'RIO', name: 'Rio Tinto Group', exchange: 'NYSE' },
-  { ticker: 'AAUK', name: 'Angico Eagle Mines Limited', exchange: 'NYSE' },
-  { ticker: 'NCM', name: 'Newcrest Mining Limited', exchange: 'OTC' },
-  { ticker: 'WPL', name: 'Woodside Energy Group Ltd.', exchange: 'OTC' },
+  // AAUK, NCM, WPL removed - not supported by Twelve Data
   
   // Israeli
   { ticker: 'TEVA', name: 'Teva Pharmaceutical Industries Limited', exchange: 'NYSE' },
@@ -126,9 +124,9 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'BBVA', name: 'Banco Bilbao Vizcaya Argentaria S.A.', exchange: 'NYSE' },
   { ticker: 'SAN', name: 'Banco Santander S.A.', exchange: 'NYSE' },
   { ticker: 'VOD', name: 'Vodafone Group Public Limited Company', exchange: 'NASDAQ' },
-  { ticker: 'BT', name: 'BT Group plc', exchange: 'NYSE' },
+  // BT removed - not supported by Twelve Data
   { ticker: 'TEF', name: 'Telefónica S.A.', exchange: 'NYSE' },
-  { ticker: 'ORAN', name: 'Orange S.A.', exchange: 'NYSE' },
+  // ORAN removed - not supported by Twelve Data
   { ticker: 'DT', name: 'Deutsche Telekom AG', exchange: 'NYSE' },
   { ticker: 'ERIC', name: 'Telefonaktiebolaget LM Ericsson', exchange: 'NASDAQ' },
   { ticker: 'NOK', name: 'Nokia Corporation', exchange: 'NYSE' },
@@ -140,16 +138,14 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'STM', name: 'STMicroelectronics N.V.', exchange: 'NYSE' },
   { ticker: 'NGLOY', name: 'Anglo American plc', exchange: 'OTC' },
   { ticker: 'DEO', name: 'Diageo plc', exchange: 'NYSE' },
-  { ticker: 'UNLY', name: 'Unilever PLC', exchange: 'NYSE' },
+  // UNLY removed - not supported by Twelve Data (use UL instead)
   { ticker: 'BAYRY', name: 'Bayer Aktiengesellschaft', exchange: 'OTC' },
   { ticker: 'BASFY', name: 'BASF SE', exchange: 'OTC' },
   { ticker: 'RHHBY', name: 'Roche Holding AG', exchange: 'OTC' },
   { ticker: 'NSRGY', name: 'Nestlé S.A.', exchange: 'OTC' },
   { ticker: 'LVMUY', name: 'LVMH Moët Hennessy Louis Vuitton SE', exchange: 'OTC' },
   { ticker: 'AIRYY', name: 'Airbus SE', exchange: 'OTC' },
-  { ticker: 'BMWYY', name: 'Bayerische Motoren Werke AG', exchange: 'OTC' },
-  { ticker: 'VLKAF', name: 'Volkswagen AG', exchange: 'OTC' },
-  { ticker: 'DDAIF', name: 'Daimler AG', exchange: 'OTC' },
+  // BMWYY, DDAIF removed - not supported by Twelve Data (OTC)
   { ticker: 'HESAY', name: 'Henkel AG & Co. KGaA', exchange: 'OTC' },
   
   // Indian
@@ -159,7 +155,7 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'IBN', name: 'ICICI Bank Limited', exchange: 'NYSE' },
   { ticker: 'VEDL', name: 'Vedanta Limited', exchange: 'NYSE' },
   { ticker: 'SIFY', name: 'Sify Technologies Limited', exchange: 'NASDAQ' },
-  { ticker: 'TTM', name: 'Tata Motors Limited', exchange: 'NYSE' },
+  // TTM removed - not supported by Twelve Data
   { ticker: 'RDY', name: 'Dr. Reddy\'s Laboratories Limited', exchange: 'NYSE' },
   { ticker: 'MHNC', name: 'Mahindra & Mahindra Limited', exchange: 'OTC' },
   
@@ -177,7 +173,7 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'AMX', name: 'América Móvil S.A.B. de C.V.', exchange: 'NYSE' },
   { ticker: 'TV', name: 'Grupo Televisa S.A.B.', exchange: 'NYSE' },
   { ticker: 'FMX', name: 'Fomento Económico Mexicano S.A.B. de C.V.', exchange: 'NYSE' },
-  { ticker: 'TLEVF', name: 'Grupo Televisa S.A.B.', exchange: 'OTC' },
+  // TLEVF removed - not supported by Twelve Data (OTC)
   
   // African & Middle Eastern
   { ticker: 'GOLD', name: 'Barrick Gold Corporation', exchange: 'NYSE' },
@@ -204,7 +200,7 @@ export const INTERNATIONAL_STOCKS = [
   { ticker: 'ABEV', name: 'Ambev S.A.', exchange: 'NYSE' },
   { ticker: 'CIG', name: 'Companhia Energética de Minas Gerais', exchange: 'NYSE' },
   { ticker: 'EBR', name: 'Centrais Elétricas Brasileiras S.A. - Eletrobrás', exchange: 'NYSE' },
-  { ticker: 'CBD', name: 'Companhia Brasileira de Distribuição', exchange: 'NYSE' },
+  // CBD removed - not supported by Twelve Data
   { ticker: 'TIMB', name: 'TIM S.A.', exchange: 'NYSE' },
   { ticker: 'VIV', name: 'Telefônica Brasil S.A.', exchange: 'NYSE' },
   { ticker: 'SBS', name: 'Companhia de Saneamento Básico do Estado de São Paulo', exchange: 'NYSE' },
