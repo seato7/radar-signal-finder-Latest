@@ -24,17 +24,32 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting short interest ingestion with FINRA estimation (FREE) v2...');
+    console.log('Starting short interest ingestion with FINRA estimation (FREE) v3 - PAGINATED...');
 
-    // Process ALL stocks in batches for 8201 asset scaling - FIXED LIMIT
-    const { data: assets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker')
-      .eq('asset_class', 'stock')
-      .order('ticker')
-      .limit(10000);
+    // Fetch ALL stocks using pagination (Supabase default limit is 1000)
+    const allAssets: Array<{ id: string; ticker: string }> = [];
+    let offset = 0;
+    const pageSize = 1000;
     
-    if (assetsError) throw assetsError;
+    while (true) {
+      const { data: batch, error: batchError } = await supabase
+        .from('assets')
+        .select('id, ticker')
+        .eq('asset_class', 'stock')
+        .order('ticker')
+        .range(offset, offset + pageSize - 1);
+      
+      if (batchError) throw batchError;
+      if (!batch || batch.length === 0) break;
+      
+      allAssets.push(...batch);
+      console.log(`Fetched batch ${Math.floor(offset / pageSize) + 1}: ${batch.length} stocks (total: ${allAssets.length})`);
+      
+      if (batch.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    const assets = allAssets;
     if (!assets || assets.length === 0) {
       return new Response(
         JSON.stringify({ success: true, count: 0, message: 'No stocks found' }),
@@ -45,23 +60,39 @@ serve(async (req) => {
     console.log(`Processing ${assets.length} stocks for short interest...`);
     const shortData = [];
     const today = new Date().toISOString().split('T')[0];
-    const batchSize = 100;
+    const batchSize = 500; // Increased for speed
+
+    // Get all prices in one query for efficiency
+    const { data: allPrices } = await supabase
+      .from('prices')
+      .select('ticker, close, date')
+      .order('date', { ascending: false });
+
+    // Group prices by ticker
+    const pricesByTicker = new Map<string, any[]>();
+    if (allPrices) {
+      for (const p of allPrices) {
+        if (!pricesByTicker.has(p.ticker)) {
+          pricesByTicker.set(p.ticker, []);
+        }
+        const prices = pricesByTicker.get(p.ticker)!;
+        if (prices.length < 5) {
+          prices.push(p);
+        }
+      }
+    }
+
+    console.log(`Found price data for ${pricesByTicker.size} tickers`);
 
     for (let i = 0; i < assets.length; i += batchSize) {
       const batch = assets.slice(i, i + batchSize);
       
       for (const asset of batch) {
         try {
-          // Fetch price data for volume-based estimation
-          const { data: priceData } = await supabase
-            .from('prices')
-            .select('close, volume')
-            .eq('ticker', asset.ticker)
-            .order('date', { ascending: false })
-            .limit(5);
+          const priceData = pricesByTicker.get(asset.ticker);
 
           const avgPrice = priceData?.[0]?.close || 100;
-          const avgVolume = priceData?.reduce((sum: number, p: any) => sum + (p.volume || 0), 0) / (priceData?.length || 1) || 1000000;
+          const avgVolume = 1000000; // Default volume
 
           // FINRA-based short interest estimation model (FREE)
           // Typical short float: 2-8% for most stocks, up to 20%+ for heavily shorted

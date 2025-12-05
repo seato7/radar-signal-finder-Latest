@@ -24,17 +24,32 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting search trends estimation based on market momentum (FREE) v2...');
+    console.log('Starting search trends estimation based on market momentum (FREE) v3 - PAGINATED...');
 
-    // Process ALL assets for 8201 asset scaling - FIXED LIMIT
-    const { data: assets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker, name')
-      .in('asset_class', ['stock', 'crypto'])
-      .order('ticker')
-      .limit(10000);
+    // Fetch ALL assets using pagination (Supabase default limit is 1000)
+    const allAssets: Array<{ id: string; ticker: string; name: string }> = [];
+    let offset = 0;
+    const pageSize = 1000;
     
-    if (assetsError) throw assetsError;
+    while (true) {
+      const { data: batch, error: batchError } = await supabase
+        .from('assets')
+        .select('id, ticker, name')
+        .in('asset_class', ['stock', 'crypto'])
+        .order('ticker')
+        .range(offset, offset + pageSize - 1);
+      
+      if (batchError) throw batchError;
+      if (!batch || batch.length === 0) break;
+      
+      allAssets.push(...batch);
+      console.log(`Fetched batch ${Math.floor(offset / pageSize) + 1}: ${batch.length} assets (total: ${allAssets.length})`);
+      
+      if (batch.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    const assets = allAssets;
     if (!assets || assets.length === 0) {
       return new Response(
         JSON.stringify({ success: true, count: 0, message: 'No assets found' }),
