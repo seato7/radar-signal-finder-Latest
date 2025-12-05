@@ -35,7 +35,6 @@ serve(async (req) => {
       const { data: batch, error: batchError } = await supabase
         .from('assets')
         .select('id, ticker, name')
-        .in('asset_class', ['stock', 'crypto'])
         .order('ticker')
         .range(offset, offset + pageSize - 1);
       
