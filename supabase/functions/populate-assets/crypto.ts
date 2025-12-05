@@ -56,8 +56,7 @@ export const CRYPTO_ASSETS = [
   // COMP/USD removed - not supported by Twelve Data
   { ticker: 'SUSHI/USD', name: 'SushiSwap / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'SUSHI/USDT', name: 'SushiSwap / Tether', exchange: 'CRYPTO' },
-  { ticker: 'YFI/USD', name: 'yearn.finance / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'YFI/USDT', name: 'yearn.finance / Tether', exchange: 'CRYPTO' },
+  // YFI removed - not supported by Twelve Data
   { ticker: '1INCH/USD', name: '1inch / US Dollar', exchange: 'CRYPTO' },
   { ticker: '1INCH/USDT', name: '1inch / Tether', exchange: 'CRYPTO' },
   { ticker: 'BAL/USD', name: 'Balancer / US Dollar', exchange: 'CRYPTO' },
@@ -98,24 +97,21 @@ export const CRYPTO_ASSETS = [
   // Meme coins & Community (90-110)
   { ticker: 'SHIB/USD', name: 'Shiba Inu / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'SHIB/USDT', name: 'Shiba Inu / Tether', exchange: 'CRYPTO' },
-  { ticker: 'PEPE/USD', name: 'Pepe / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'PEPE/USDT', name: 'Pepe / Tether', exchange: 'CRYPTO' },
+  // PEPE removed - not supported by Twelve Data
   { ticker: 'FLOKI/USD', name: 'Floki Inu / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'FLOKI/USDT', name: 'Floki Inu / Tether', exchange: 'CRYPTO' },
   
   // Utility & Platform tokens (110-150)
   { ticker: 'BAT/USD', name: 'Basic Attention Token / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'BAT/USDT', name: 'Basic Attention Token / Tether', exchange: 'CRYPTO' },
-  { ticker: 'ZRX/USD', name: '0x / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'ZRX/USDT', name: '0x / Tether', exchange: 'CRYPTO' },
+  // ZRX removed - not supported by Twelve Data
   { ticker: 'RUNE/USD', name: 'THORChain / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'RUNE/USDT', name: 'THORChain / Tether', exchange: 'CRYPTO' },
   { ticker: 'FTM/USD', name: 'Fantom / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'FTM/USDT', name: 'Fantom / Tether', exchange: 'CRYPTO' },
   { ticker: 'ONE/USD', name: 'Harmony / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'ONE/USDT', name: 'Harmony / Tether', exchange: 'CRYPTO' },
-  { ticker: 'ZIL/USD', name: 'Zilliqa / US Dollar', exchange: 'CRYPTO' },
-  { ticker: 'ZIL/USDT', name: 'Zilliqa / Tether', exchange: 'CRYPTO' },
+  // ZIL removed - not supported by Twelve Data
   { ticker: 'ICX/USD', name: 'ICON / US Dollar', exchange: 'CRYPTO' },
   { ticker: 'ICX/USDT', name: 'ICON / Tether', exchange: 'CRYPTO' },
   // WAVES removed - not supported by Twelve Data
