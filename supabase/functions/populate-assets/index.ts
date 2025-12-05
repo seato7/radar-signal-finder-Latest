@@ -1,140 +1,53 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-import { logHeartbeat } from "../_shared/heartbeat.ts";
-import { SP500_STOCKS } from "./sp500.ts";
-import { CRYPTO_ASSETS } from "./crypto.ts";
-import { FOREX_PAIRS } from "./forex.ts";
-import { COMMODITIES } from "./commodities.ts";
-import { RUSSELL_2000 } from "./russell2000.ts";
-import { INTERNATIONAL_STOCKS } from "./international.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// This function is deprecated - use sync-twelvedata-assets instead
+// Kept for backward compatibility but now just redirects to the new function
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const startTime = Date.now();
-  
+  console.log('⚠️ populate-assets is deprecated. Please use sync-twelvedata-assets instead.');
+  console.log('🔄 Redirecting to sync-twelvedata-assets...');
+
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[POPULATE-ASSETS] Starting comprehensive asset population with 1,241+ assets...');
+    // Call the new function
+    const { data, error } = await supabase.functions.invoke('sync-twelvedata-assets');
 
-    // Combine all asset sources - Total: ~1,241+ assets
-    const allAssets = [
-      ...SP500_STOCKS.map(a => ({ ...a, asset_class: 'stock' })),        // 500 stocks (complete S&P 500)
-      ...RUSSELL_2000.map(a => ({ ...a, asset_class: 'stock' })),        // 185 stocks (small-cap growth)
-      ...INTERNATIONAL_STOCKS.map(a => ({ ...a, asset_class: 'stock' })), // 202 stocks (global leaders)
-      ...CRYPTO_ASSETS.map(a => ({ ...a, asset_class: 'crypto' })),      // 191 crypto pairs (majors + alts)
-      ...FOREX_PAIRS.map(a => ({ ...a, asset_class: 'forex' })),         // 91 forex pairs (all majors + exotics)
-      ...COMMODITIES.map(a => ({ ...a, asset_class: 'commodity' })),     // 72 commodities (metals + energy + ag)
-    ];
-    
-    console.log(`[POPULATE-ASSETS] Total assets to process: ${allAssets.length} (${SP500_STOCKS.length} S&P500 + ${RUSSELL_2000.length} Russell2000 + ${INTERNATIONAL_STOCKS.length} International + ${CRYPTO_ASSETS.length} Crypto + ${FOREX_PAIRS.length} Forex + ${COMMODITIES.length} Commodities)`);
-    
-    let inserted = 0;
-    let skipped = 0;
-    let errors = 0;
-
-    // Remove duplicates from source data first
-    const uniqueAssets = Array.from(
-      new Map(allAssets.map(a => [`${a.ticker}|${a.exchange}`, a])).values()
-    );
-    
-    console.log(`[POPULATE-ASSETS] After deduplication: ${uniqueAssets.length} unique assets (removed ${allAssets.length - uniqueAssets.length} duplicates)`);
-
-    // Batch insert for efficiency
-    const batchSize = 100;
-    for (let i = 0; i < uniqueAssets.length; i += batchSize) {
-      const batch = uniqueAssets.slice(i, i + batchSize);
-      
-      const { data: existing } = await supabaseClient
-        .from('assets')
-        .select('ticker, exchange')
-        .in('ticker', batch.map(a => a.ticker));
-      
-      const existingKeys = new Set(existing?.map(e => `${e.ticker}|${e.exchange}`) || []);
-      const newAssets = batch.filter(a => !existingKeys.has(`${a.ticker}|${a.exchange}`));
-      
-      if (newAssets.length > 0) {
-        const { error } = await supabaseClient
-          .from('assets')
-          .insert(newAssets.map(a => ({
-            ticker: a.ticker,
-            name: a.name,
-            exchange: a.exchange,
-            asset_class: a.asset_class,
-            metadata: {}
-          })));
-
-        if (error) {
-          console.error(`Batch insert error:`, error);
-          errors += newAssets.length;
-        } else {
-          inserted += newAssets.length;
-        }
-      }
-      
-      skipped += batch.length - newAssets.length;
-      
-      if ((i + batchSize) % 500 === 0) {
-        console.log(`[POPULATE-ASSETS] Progress: ${i + batchSize}/${allAssets.length}`);
-      }
+    if (error) {
+      console.error('Error calling sync-twelvedata-assets:', error);
+      return new Response(
+        JSON.stringify({ success: false, error: error.message }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    console.log(`[POPULATE-ASSETS] Complete. Inserted: ${inserted}, Skipped: ${skipped}, Errors: ${errors}`);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: 'Redirected to sync-twelvedata-assets',
+        result: data
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
 
-    const duration = Date.now() - startTime;
-    
-    await logHeartbeat(supabaseClient, {
-      function_name: 'populate-assets',
-      status: 'success',
-      rows_inserted: inserted,
-      rows_skipped: skipped,
-      duration_ms: duration,
-      source_used: 'comprehensive_universe',
-      metadata: { 
-        total_assets: allAssets.length,
-        stocks: SP500_STOCKS.length + RUSSELL_2000.length + INTERNATIONAL_STOCKS.length,
-        crypto: CRYPTO_ASSETS.length,
-        forex: FOREX_PAIRS.length,
-        commodities: COMMODITIES.length,
-        errors
-      }
-    });
-
-    return new Response(JSON.stringify({
-      success: true,
-      message: `Populated ${inserted} new assets from comprehensive universe`,
-      inserted,
-      skipped,
-      errors,
-      total: allAssets.length,
-      breakdown: {
-        sp500: SP500_STOCKS.length,
-        russell2000: RUSSELL_2000.length,
-        international: INTERNATIONAL_STOCKS.length,
-        crypto: CRYPTO_ASSETS.length,
-        forex: FOREX_PAIRS.length,
-        commodities: COMMODITIES.length
-      }
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error) {
-    console.error('[POPULATE-ASSETS] Error:', error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  } catch (err) {
+    const error = err as Error;
+    console.error('❌ Error:', error.message);
+    return new Response(
+      JSON.stringify({ success: false, error: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 });

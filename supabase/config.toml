@@ -170,3 +170,6 @@ verify_jwt = false
 
 [functions.ingest-prices-twelvedata]
 verify_jwt = false
+
+[functions.sync-twelvedata-assets]
+verify_jwt = false
