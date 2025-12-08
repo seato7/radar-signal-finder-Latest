@@ -13,7 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
-type SortOption = "score-desc" | "score-asc" | "alpha-asc" | "alpha-desc" | "freshest" | "stalest";
+type SortOption = "score-desc" | "score-asc" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
 
 interface AssetWithScore {
   id: string;
@@ -24,6 +24,7 @@ interface AssetWithScore {
   score: number;
   sentiment: string;
   lastUpdated: string | null;
+  priceChange: number | null;
 }
 
 // Helper to format strings: replace underscores with spaces and title case
@@ -66,10 +67,10 @@ const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.React
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "score-desc", label: "Highest Score" },
   { value: "score-asc", label: "Lowest Score" },
+  { value: "gainers", label: "Biggest Gainers" },
+  { value: "losers", label: "Biggest Losers" },
   { value: "alpha-asc", label: "A → Z" },
   { value: "alpha-desc", label: "Z → A" },
-  { value: "freshest", label: "Recently Updated" },
-  { value: "stalest", label: "Needs Update" },
 ];
 
 const AssetRadar = () => {
@@ -111,26 +112,48 @@ const AssetRadar = () => {
 
       if (error) throw error;
 
-      // Fetch latest price timestamps for these assets
+      // Fetch latest prices for these assets (get last 2 prices per ticker to calculate change)
       const tickers = (data || []).map(a => a.ticker);
       const { data: priceData } = await supabase
         .from('prices')
-        .select('ticker, last_updated_at')
+        .select('ticker, close, date, last_updated_at')
         .in('ticker', tickers)
-        .order('last_updated_at', { ascending: false });
+        .order('date', { ascending: false });
 
-      // Create a map of ticker -> latest update time
-      const priceMap = new Map<string, string>();
+      // Create maps for ticker -> latest update time and price change
+      const priceMap = new Map<string, { lastUpdated: string; priceChange: number | null }>();
+      const tickerPrices = new Map<string, number[]>();
+      
       priceData?.forEach(p => {
+        const prices = tickerPrices.get(p.ticker) || [];
+        if (prices.length < 2) {
+          prices.push(p.close);
+          tickerPrices.set(p.ticker, prices);
+        }
         if (!priceMap.has(p.ticker)) {
-          priceMap.set(p.ticker, p.last_updated_at || '');
+          priceMap.set(p.ticker, { 
+            lastUpdated: p.last_updated_at || '', 
+            priceChange: null 
+          });
         }
       });
 
-      // Enhance assets with computed scores and last updated
+      // Calculate price change percentage
+      tickerPrices.forEach((prices, ticker) => {
+        if (prices.length >= 2 && prices[1] !== 0) {
+          const change = ((prices[0] - prices[1]) / prices[1]) * 100;
+          const existing = priceMap.get(ticker);
+          if (existing) {
+            existing.priceChange = Math.round(change * 100) / 100;
+          }
+        }
+      });
+
+      // Enhance assets with computed scores, last updated, and price change
       const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
         const score = getAssetScore(asset.ticker);
         const sentiment = getSentiment(score);
+        const priceInfo = priceMap.get(asset.ticker);
         
         return {
           id: asset.id,
@@ -140,7 +163,8 @@ const AssetRadar = () => {
           asset_class: asset.asset_class,
           score,
           sentiment: sentiment.label,
-          lastUpdated: priceMap.get(asset.ticker) || null
+          lastUpdated: priceInfo?.lastUpdated || null,
+          priceChange: priceInfo?.priceChange ?? null
         };
       });
 
@@ -172,19 +196,19 @@ const AssetRadar = () => {
         return sorted.sort((a, b) => a.ticker.localeCompare(b.ticker));
       case "alpha-desc":
         return sorted.sort((a, b) => b.ticker.localeCompare(a.ticker));
-      case "freshest":
+      case "gainers":
         return sorted.sort((a, b) => {
-          if (!a.lastUpdated && !b.lastUpdated) return 0;
-          if (!a.lastUpdated) return 1;
-          if (!b.lastUpdated) return -1;
-          return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
+          if (a.priceChange === null && b.priceChange === null) return 0;
+          if (a.priceChange === null) return 1;
+          if (b.priceChange === null) return -1;
+          return b.priceChange - a.priceChange;
         });
-      case "stalest":
+      case "losers":
         return sorted.sort((a, b) => {
-          if (!a.lastUpdated && !b.lastUpdated) return 0;
-          if (!a.lastUpdated) return -1;
-          if (!b.lastUpdated) return 1;
-          return new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime();
+          if (a.priceChange === null && b.priceChange === null) return 0;
+          if (a.priceChange === null) return 1;
+          if (b.priceChange === null) return -1;
+          return a.priceChange - b.priceChange;
         });
       default:
         return sorted;
@@ -300,9 +324,11 @@ const AssetRadar = () => {
                             <Badge className="bg-primary text-primary-foreground">
                               {asset.exchange}
                             </Badge>
-                            <span className={`text-xs ${sentiment.variant === 'default' ? 'text-primary' : sentiment.variant === 'destructive' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                              {asset.sentiment}
-                            </span>
+                            {asset.priceChange !== null && (
+                              <span className={`text-xs font-medium ${asset.priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="h-3 w-3" />
