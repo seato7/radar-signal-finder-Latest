@@ -80,15 +80,28 @@ serve(async (req) => {
       stats.stocks.fetched = stocks.length;
       console.log(`📊 Found ${stocks.length} US stocks`);
 
-      // Filter for major exchanges only (NYSE, NASDAQ)
-      const majorStocks = stocks.filter(s => 
-        ['NYSE', 'NASDAQ'].includes(s.exchange) && 
-        s.currency === 'USD'
-      );
-      console.log(`📊 Filtered to ${majorStocks.length} stocks on major exchanges`);
+      // Include ALL USD stocks (not just NYSE/NASDAQ) for comprehensive coverage
+      const usdStocks = stocks.filter(s => s.currency === 'USD');
+      console.log(`📊 Filtered to ${usdStocks.length} USD stocks`);
+      
+      // Log exchange distribution for debugging
+      const stockExchanges = new Map<string, number>();
+      usdStocks.forEach(s => stockExchanges.set(s.exchange, (stockExchanges.get(s.exchange) || 0) + 1));
+      console.log('📊 Stock exchanges:', Object.fromEntries(stockExchanges));
+
+      // Deduplicate by symbol - same stock can appear on multiple exchanges
+      const seenStockSymbols = new Set<string>();
+      const uniqueStocks = usdStocks.filter(s => {
+        if (seenStockSymbols.has(s.symbol)) {
+          return false;
+        }
+        seenStockSymbols.add(s.symbol);
+        return true;
+      });
+      console.log(`📊 Deduplicated to ${uniqueStocks.length} unique stocks`);
 
       // Batch insert stocks
-      const stockAssets = majorStocks.map(s => ({
+      const stockAssets = uniqueStocks.map(s => ({
         ticker: s.symbol,
         name: s.name,
         exchange: s.exchange,
