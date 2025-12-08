@@ -1,17 +1,22 @@
 """
-Price Scheduler - TIERED REFRESH for different asset priorities
+Price Scheduler - CREDIT-BUDGETED TIERED REFRESH
 
-Tiers:
-- Priority (~500): S&P 500 + major crypto/forex - every 10 min
-- Standard (~2000): Popular stocks/ETFs - every 30 min  
-- Background (~5700): Everything else - every 2 hours
+Budget: 55 credits/min = 79,200 credits/day
 
-Target: ~50 API credits/min to stay under 55 limit
+Tier allocations:
+- Hot (100 assets): Every 5 min = 28,800 credits/day
+- Active (500 assets): Every 30 min = 24,000 credits/day  
+- Standard (26,400 assets): Daily = 26,400 credits/day
+- Total: 79,200 credits/day ✓
+
+Hot = curated list of globally important assets
+Active = secondary priority list (next most important)
+Standard = everything else (daily refresh)
 """
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Set
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -21,55 +26,129 @@ from backend.services.supabase_sync import SupabaseSync
 
 logger = logging.getLogger(__name__)
 
-# Configuration - stay under 55 credits/min
-BATCH_SIZE = 25          # Symbols per API call
-BATCHES_PER_MINUTE = 2   # 2 batches = 50 credits/min
-CYCLE_INTERVAL_SECONDS = 60
+# =============================================================================
+# CONFIGURATION - Stay under 55 credits/min
+# =============================================================================
+BATCH_SIZE = 50              # Symbols per cycle (under 55 limit)
+CYCLE_INTERVAL_SECONDS = 60  # Run every minute
 
-# Tier definitions
-TIERS = {
-    "priority": {
-        "refresh_minutes": 10,
-        "description": "Major indices, top crypto, forex majors"
+# Tier refresh intervals (in minutes)
+TIER_CONFIG = {
+    "hot": {
+        "refresh_minutes": 5,
+        "description": "Major indices, top stocks, crypto, forex (100 assets)",
+        "credits_per_day": 28800,  # 100 * 288 (5-min intervals)
+    },
+    "active": {
+        "refresh_minutes": 30,
+        "description": "Secondary priorities, popular assets (500 assets)",
+        "credits_per_day": 24000,  # 500 * 48 (30-min intervals)
     },
     "standard": {
-        "refresh_minutes": 30,
-        "description": "Popular stocks and ETFs"
+        "refresh_minutes": 1440,  # 24 hours
+        "description": "Full coverage, daily refresh (26,400 assets)",
+        "credits_per_day": 26400,  # 26400 * 1 (daily)
     },
-    "background": {
-        "refresh_minutes": 120,
-        "description": "Full coverage"
-    }
 }
 
-# Priority tickers - S&P 500 top 100 + major crypto + forex majors
-PRIORITY_TICKERS = {
-    # Top 50 S&P 500 by market cap
+# =============================================================================
+# HOT TIER - 100 most important global assets
+# =============================================================================
+HOT_TICKERS: Set[str] = {
+    # === MAJOR INDICES / ETFs (10) ===
+    "SPY", "QQQ", "DIA", "IWM", "VTI", "VOO", "VEA", "VWO", "EEM", "XLF",
+    
+    # === TOP 40 STOCKS BY MARKET CAP ===
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "UNH",
     "XOM", "JNJ", "JPM", "V", "PG", "MA", "HD", "CVX", "MRK", "ABBV",
     "LLY", "PEP", "KO", "COST", "AVGO", "MCD", "WMT", "CSCO", "TMO", "ACN",
     "ABT", "DHR", "NEE", "LIN", "NKE", "TXN", "PM", "VZ", "UNP", "ORCL",
-    "CRM", "AMD", "INTC", "QCOM", "LOW", "MS", "SPGI", "HON", "IBM", "BA",
-    # Major crypto
+    
+    # === TOP 25 CRYPTO ===
     "BTC/USD", "ETH/USD", "BNB/USD", "XRP/USD", "SOL/USD", "ADA/USD", "DOGE/USD",
     "DOT/USD", "MATIC/USD", "AVAX/USD", "LINK/USD", "UNI/USD", "LTC/USD", "ATOM/USD",
-    # Forex majors
+    "XLM/USD", "NEAR/USD", "ALGO/USD", "VET/USD", "FIL/USD", "ICP/USD",
+    "AAVE/USD", "APE/USD", "SAND/USD", "MANA/USD", "AXS/USD",
+    
+    # === FOREX MAJORS (15) ===
     "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD",
-    "EUR/GBP", "EUR/JPY", "GBP/JPY",
-    # Major ETFs
-    "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "VEA", "VWO", "GLD", "SLV",
-    # Major indices proxies
-    "XAU/USD", "XAG/USD",
+    "EUR/GBP", "EUR/JPY", "GBP/JPY", "EUR/CHF", "AUD/JPY", "CAD/JPY", "CHF/JPY", "NZD/JPY",
+    
+    # === KEY COMMODITIES (10) ===
+    "XAU/USD", "XAG/USD", "GLD", "SLV", "USO", "UNG", "DBA", "DBC", "PDBC", "GSG",
 }
 
-# Standard tickers - next ~2000 most popular
-STANDARD_EXCHANGES = {"NYSE", "NASDAQ", "AMEX"}
-STANDARD_ASSET_CLASSES = {"stock", "etf", "crypto"}
+# =============================================================================
+# ACTIVE TIER - 500 secondary priority assets
+# =============================================================================
+ACTIVE_TICKERS: Set[str] = {
+    # === NEXT 150 STOCKS (S&P 500 components, high volume) ===
+    "CRM", "AMD", "INTC", "QCOM", "LOW", "MS", "SPGI", "HON", "IBM", "BA",
+    "GE", "CAT", "DE", "MMM", "RTX", "LMT", "NOC", "GD", "TDG", "ITW",
+    "EMR", "ROK", "PH", "ETN", "CMI", "PCAR", "OTIS", "FAST", "URI", "PWR",
+    "PYPL", "SQ", "SHOP", "ADBE", "CRM", "NOW", "SNOW", "DDOG", "ZS", "CRWD",
+    "NET", "MDB", "TEAM", "OKTA", "TWLO", "DOCU", "ZM", "ROKU", "U", "RBLX",
+    "DIS", "NFLX", "CMCSA", "T", "TMUS", "VZ", "CHTR", "DISH", "WBD", "PARA",
+    "WFC", "BAC", "C", "GS", "BLK", "SCHW", "AXP", "COF", "DFS", "SYF",
+    "PFE", "BMY", "AMGN", "GILD", "REGN", "VRTX", "BIIB", "MRNA", "ZTS", "ISRG",
+    "MDT", "SYK", "BSX", "EW", "DXCM", "ALGN", "HOLX", "IDXX", "IQV", "MTD",
+    "F", "GM", "TM", "HMC", "RIVN", "LCID", "NIO", "XPEV", "LI", "FSR",
+    "UBER", "LYFT", "ABNB", "BKNG", "EXPE", "MAR", "HLT", "H", "WH", "CHH",
+    "SBUX", "CMG", "DPZ", "YUM", "QSR", "DNUT", "WING", "TXRH", "CAKE", "EAT",
+    "TGT", "COST", "DLTR", "DG", "FIVE", "OLLI", "BJ", "PSMT", "RH", "WSM",
+    "NKE", "LULU", "UAA", "VFC", "PVH", "RL", "TPR", "CPRI", "SKX", "DECK",
+    "AMZN", "BABA", "JD", "PDD", "MELI", "SE", "CPNG", "GLBE", "ETSY", "W",
+    
+    # === NEXT 100 CRYPTO ===
+    "SHIB/USD", "CRO/USD", "TRX/USD", "ETC/USD", "LEO/USD", "OKB/USD", "TON/USD",
+    "DAI/USD", "USDC/USD", "BUSD/USD", "TUSD/USD", "XMR/USD", "BCH/USD", "XTZ/USD",
+    "EOS/USD", "THETA/USD", "IOTA/USD", "NEO/USD", "WAVES/USD", "DASH/USD",
+    "ZEC/USD", "QTUM/USD", "OMG/USD", "ZRX/USD", "BAT/USD", "ENJ/USD", "CHZ/USD",
+    "SUSHI/USD", "1INCH/USD", "COMP/USD", "MKR/USD", "YFI/USD", "SNX/USD", "CRV/USD",
+    "LDO/USD", "RPL/USD", "ANKR/USD", "LRC/USD", "IMX/USD", "GMT/USD", "FLOW/USD",
+    "KAVA/USD", "AR/USD", "ROSE/USD", "ONE/USD", "ZIL/USD", "CELO/USD", "HBAR/USD",
+    "STX/USD", "KSM/USD", "EGLD/USD", "HNT/USD", "GRT/USD", "FTM/USD", "RUNE/USD",
+    "CAKE/USD", "RNDR/USD", "INJ/USD", "FET/USD", "AGIX/USD", "OCEAN/USD", "JASMY/USD",
+    "BLUR/USD", "ARB/USD", "OP/USD", "APT/USD", "SUI/USD", "SEI/USD", "TIA/USD",
+    "PEPE/USD", "FLOKI/USD", "BONK/USD", "WIF/USD", "BOME/USD", "MEW/USD", "POPCAT/USD",
+    "WLD/USD", "PYTH/USD", "JTO/USD", "JUP/USD", "ONDO/USD", "ENA/USD", "ETHFI/USD",
+    "PENDLE/USD", "AEVO/USD", "DYM/USD", "ALT/USD", "STRK/USD", "MANTA/USD", "PIXEL/USD",
+    "PORTAL/USD", "MYRO/USD", "SLERF/USD", "TNSR/USD", "W/USD", "SAGA/USD", "OMNI/USD",
+    "REZ/USD", "BB/USD",
+    
+    # === ALL REMAINING FOREX PAIRS (30) ===
+    "EUR/AUD", "EUR/CAD", "EUR/NZD", "GBP/AUD", "GBP/CAD", "GBP/CHF", "GBP/NZD",
+    "AUD/CAD", "AUD/CHF", "AUD/NZD", "NZD/CAD", "NZD/CHF", "CAD/CHF", "SGD/JPY",
+    "USD/SGD", "USD/HKD", "USD/CNH", "USD/MXN", "USD/ZAR", "USD/TRY", "USD/PLN",
+    "USD/SEK", "USD/NOK", "USD/DKK", "USD/CZK", "USD/HUF", "USD/RUB", "USD/THB",
+    "USD/INR", "USD/KRW",
+    
+    # === SECTOR ETFS (50) ===
+    "XLK", "XLV", "XLE", "XLI", "XLY", "XLP", "XLB", "XLU", "XLRE", "XLC",
+    "SMH", "SOXX", "IGV", "SKYY", "BOTZ", "ROBO", "ARKK", "ARKG", "ARKF", "ARKW",
+    "IBB", "XBI", "VHT", "IHI", "IHF", "LABU", "LABD", "XOP", "OIH", "VDE",
+    "ICLN", "TAN", "QCLN", "PBW", "FAN", "LIT", "REMX", "URA", "URNM", "NLR",
+    "IYR", "VNQ", "SCHH", "RWR", "REM", "MORT", "REZ", "HOMZ", "ITB", "XHB",
+    
+    # === BOND & TREASURY ETFS (20) ===
+    "TLT", "IEF", "SHY", "BND", "AGG", "LQD", "HYG", "JNK", "TIP", "GOVT",
+    "VCIT", "VCSH", "MUB", "SUB", "VTEB", "EMB", "PCY", "IGIB", "SCHO", "SCHZ",
+    
+    # === INTERNATIONAL ETFS (50) ===
+    "EFA", "IEFA", "VEU", "VXUS", "IXUS", "ACWX", "ACWI", "VT", "URTH", "IEMG",
+    "FXI", "MCHI", "KWEB", "CQQQ", "ASHR", "GXC", "EWJ", "DXJ", "HEWJ", "BBJP",
+    "EWZ", "EWW", "EWC", "EWA", "EWU", "EWG", "EWQ", "EWI", "EWP", "EWL",
+    "EWH", "EWT", "EWY", "EWS", "EWM", "THD", "INDA", "SMIN", "PIN", "INDY",
+    "VGK", "IEV", "HEDJ", "DBEU", "EZU", "FEZ", "EUFN", "BBEU", "IEUR", "HEWG",
+}
 
-# Global scheduler instance
+# =============================================================================
+# GLOBAL STATE
+# =============================================================================
 _scheduler: Optional[AsyncIOScheduler] = None
+_is_running = False
+_execution_lock: Optional[asyncio.Lock] = None
 
-# Stats tracking
 _scheduler_stats: Dict = {
     "total_runs": 0,
     "successful_runs": 0,
@@ -78,17 +157,15 @@ _scheduler_stats: Dict = {
     "last_success_at": None,
     "last_error": None,
     "total_prices_synced": 0,
+    "credits_used_today": 0,
+    "day_started": None,
     "tier_stats": {
-        "priority": {"assets": 0, "last_refresh": None, "offset": 0},
-        "standard": {"assets": 0, "last_refresh": None, "offset": 0},
-        "background": {"assets": 0, "last_refresh": None, "offset": 0},
+        "hot": {"assets": 0, "last_refresh": None, "offset": 0, "cycle_complete": False},
+        "active": {"assets": 0, "last_refresh": None, "offset": 0, "cycle_complete": False},
+        "standard": {"assets": 0, "last_refresh": None, "offset": 0, "cycle_complete": False},
     },
-    "current_tier": "priority",
-    "credits_used_this_minute": 0,
+    "current_tier": None,
 }
-
-_is_running = False
-_execution_lock: Optional[asyncio.Lock] = None
 
 
 def _get_lock() -> asyncio.Lock:
@@ -99,51 +176,55 @@ def _get_lock() -> asyncio.Lock:
 
 
 def _classify_asset(asset: dict) -> str:
-    """Classify asset into a tier based on ticker, exchange, class"""
-    ticker = asset.get("ticker", "")
+    """Classify asset into Hot, Active, or Standard tier"""
+    ticker = asset.get("ticker", "").upper()
     
-    # Priority tier
-    if ticker in PRIORITY_TICKERS:
-        return "priority"
+    # Hot tier - curated priority list
+    if ticker in HOT_TICKERS:
+        return "hot"
     
-    # Standard tier - major exchanges, stocks/ETFs/crypto
-    exchange = asset.get("exchange", "")
-    asset_class = asset.get("asset_class", "")
+    # Active tier - secondary priority list
+    if ticker in ACTIVE_TICKERS:
+        return "active"
     
-    if exchange in STANDARD_EXCHANGES or asset_class in STANDARD_ASSET_CLASSES:
-        return "standard"
-    
-    # Everything else is background
-    return "background"
+    # Everything else is Standard
+    return "standard"
 
 
-def _should_refresh_tier(tier: str, tier_stats: dict) -> bool:
+def _tier_needs_refresh(tier: str, tier_stat: dict) -> bool:
     """Check if a tier needs refreshing based on its schedule"""
-    last_refresh = tier_stats.get("last_refresh")
+    last_refresh = tier_stat.get("last_refresh")
+    
     if last_refresh is None:
         return True
     
-    # Parse last refresh time
     if isinstance(last_refresh, str):
         last_refresh = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
     
-    refresh_interval = timedelta(minutes=TIERS[tier]["refresh_minutes"])
-    return datetime.now(timezone.utc) - last_refresh >= refresh_interval
+    refresh_minutes = TIER_CONFIG[tier]["refresh_minutes"]
+    elapsed = datetime.now(timezone.utc) - last_refresh
+    
+    return elapsed >= timedelta(minutes=refresh_minutes)
 
 
-def _get_next_tier_to_process(tier_assets: dict, tier_stats: dict) -> Optional[str]:
-    """Determine which tier should be processed next"""
-    # Priority: always check priority first
-    for tier in ["priority", "standard", "background"]:
+def _get_next_tier_to_process(tier_assets: Dict[str, List], tier_stats: Dict) -> Optional[str]:
+    """
+    Determine which tier to process next.
+    Priority: Hot > Active > Standard
+    Also considers pending assets in incomplete cycles.
+    """
+    for tier in ["hot", "active", "standard"]:
         if not tier_assets.get(tier):
             continue
-            
-        # Check if tier needs refresh
-        if _should_refresh_tier(tier, tier_stats.get(tier, {})):
+        
+        tier_stat = tier_stats.get(tier, {})
+        
+        # Check if tier needs refresh (timer expired)
+        if _tier_needs_refresh(tier, tier_stat):
             return tier
         
-        # Check if tier has pending assets (not completed cycle)
-        offset = tier_stats.get(tier, {}).get("offset", 0)
+        # Check if tier has pending assets in current cycle
+        offset = tier_stat.get("offset", 0)
         if offset > 0 and offset < len(tier_assets.get(tier, [])):
             return tier
     
@@ -152,13 +233,13 @@ def _get_next_tier_to_process(tier_assets: dict, tier_stats: dict) -> Optional[s
 
 async def _run_tiered_price_batch():
     """
-    Process prices using tiered refresh strategy.
-    Priority assets refresh every 10 min, standard every 30 min, background every 2 hours.
+    Main scheduler job - processes prices using tiered strategy.
+    Runs every minute, processing up to BATCH_SIZE symbols.
     """
     global _scheduler_stats, _is_running
     
     if _is_running:
-        logger.warning("⏭️ Previous batch still running, skipping")
+        logger.debug("⏭️ Previous batch still running, skipping")
         return
     
     async with _get_lock():
@@ -167,12 +248,18 @@ async def _run_tiered_price_batch():
         _scheduler_stats["total_runs"] += 1
         _scheduler_stats["last_run_at"] = start_time.isoformat()
         
+        # Reset daily counter if new day
+        today = start_time.strftime("%Y-%m-%d")
+        if _scheduler_stats.get("day_started") != today:
+            _scheduler_stats["day_started"] = today
+            _scheduler_stats["credits_used_today"] = 0
+        
         try:
             async with SupabaseSync() as sync:
                 if not sync.is_configured:
                     raise Exception("Supabase not configured")
                 
-                # Get ALL assets
+                # Get all assets
                 all_assets = await sync.get_assets()
                 
                 if not all_assets:
@@ -181,24 +268,24 @@ async def _run_tiered_price_batch():
                     return
                 
                 # Classify assets into tiers
-                tier_assets = {"priority": [], "standard": [], "background": []}
+                tier_assets = {"hot": [], "active": [], "standard": []}
                 for asset in all_assets:
                     tier = _classify_asset(asset)
                     tier_assets[tier].append(asset)
                 
-                # Update tier asset counts
+                # Update asset counts
                 for tier in tier_assets:
                     _scheduler_stats["tier_stats"][tier]["assets"] = len(tier_assets[tier])
                 
                 logger.info(
-                    f"📊 Asset tiers: Priority={len(tier_assets['priority'])}, "
-                    f"Standard={len(tier_assets['standard'])}, "
-                    f"Background={len(tier_assets['background'])}"
+                    f"📊 Tiers: Hot={len(tier_assets['hot'])}, "
+                    f"Active={len(tier_assets['active'])}, "
+                    f"Standard={len(tier_assets['standard'])}"
                 )
                 
                 # Determine which tier to process
                 current_tier = _get_next_tier_to_process(
-                    tier_assets, 
+                    tier_assets,
                     _scheduler_stats["tier_stats"]
                 )
                 
@@ -208,36 +295,32 @@ async def _run_tiered_price_batch():
                     return
                 
                 _scheduler_stats["current_tier"] = current_tier
-                tier_config = TIERS[current_tier]
                 tier_stat = _scheduler_stats["tier_stats"][current_tier]
                 assets_for_tier = tier_assets[current_tier]
                 
-                # Get current offset for this tier
+                # Get current offset
                 current_offset = tier_stat.get("offset", 0)
                 
                 # Reset offset if starting new cycle
                 if current_offset >= len(assets_for_tier):
                     current_offset = 0
                     tier_stat["offset"] = 0
-                    tier_stat["last_refresh"] = start_time.isoformat()
-                    logger.info(f"🔄 Starting new {current_tier} tier cycle")
+                    tier_stat["cycle_complete"] = False
+                    logger.info(f"🔄 Starting new {current_tier.upper()} tier cycle")
                 
                 # Calculate batch
-                symbols_this_run = min(
-                    BATCH_SIZE * BATCHES_PER_MINUTE, 
-                    len(assets_for_tier) - current_offset
-                )
+                symbols_this_run = min(BATCH_SIZE, len(assets_for_tier) - current_offset)
                 end_offset = current_offset + symbols_this_run
                 batch_assets = assets_for_tier[current_offset:end_offset]
-                
-                logger.info(
-                    f"🚀 [{current_tier.upper()}] Processing {current_offset}-{end_offset} "
-                    f"of {len(assets_for_tier)} ({tier_config['description']})"
-                )
                 
                 if not batch_assets:
                     _is_running = False
                     return
+                
+                logger.info(
+                    f"🚀 [{current_tier.upper()}] Processing {current_offset+1}-{end_offset} "
+                    f"of {len(assets_for_tier)}"
+                )
                 
                 # Fetch prices
                 async with TwelveDataPriceFetcher() as fetcher:
@@ -253,17 +336,17 @@ async def _run_tiered_price_batch():
                 if end_offset >= len(assets_for_tier):
                     tier_stat["last_refresh"] = datetime.now(timezone.utc).isoformat()
                     tier_stat["offset"] = 0
+                    tier_stat["cycle_complete"] = True
                     logger.info(f"✅ {current_tier.upper()} tier cycle complete!")
                 
-                # Calculate duration
+                # Update stats
                 end_time = datetime.now(timezone.utc)
                 duration = (end_time - start_time).total_seconds()
                 
-                # Update stats
                 _scheduler_stats["successful_runs"] += 1
                 _scheduler_stats["last_success_at"] = end_time.isoformat()
                 _scheduler_stats["total_prices_synced"] += inserted
-                _scheduler_stats["credits_used_this_minute"] = symbols_this_run
+                _scheduler_stats["credits_used_today"] += symbols_this_run
                 
                 # Log to Supabase
                 await sync.log_ingestion(
@@ -283,8 +366,8 @@ async def _run_tiered_price_batch():
                 )
                 
                 logger.info(
-                    f"✅ [{current_tier.upper()}] Batch complete: {inserted}/{len(batch_assets)} prices | "
-                    f"Duration: {duration:.1f}s"
+                    f"✅ [{current_tier.upper()}] {inserted}/{len(batch_assets)} prices | "
+                    f"{duration:.1f}s | Credits today: {_scheduler_stats['credits_used_today']}"
                 )
                 
         except Exception as e:
@@ -314,15 +397,21 @@ def get_scheduler_stats() -> dict:
         **_scheduler_stats,
         "scheduler_active": _scheduler is not None and _scheduler.running if _scheduler else False,
         "is_running": _is_running,
+        "mode": "credit_budgeted_tiered",
         "config": {
             "batch_size": BATCH_SIZE,
-            "batches_per_minute": BATCHES_PER_MINUTE,
-            "symbols_per_minute": BATCH_SIZE * BATCHES_PER_MINUTE,
             "cycle_interval_seconds": CYCLE_INTERVAL_SECONDS,
-            "tiers": TIERS,
+            "tiers": TIER_CONFIG,
+            "hot_tickers_count": len(HOT_TICKERS),
+            "active_tickers_count": len(ACTIVE_TICKERS),
+        },
+        "budget": {
+            "credits_per_minute": 55,
+            "credits_per_day": 79200,
+            "credits_used_today": _scheduler_stats.get("credits_used_today", 0),
+            "budget_remaining": 79200 - _scheduler_stats.get("credits_used_today", 0),
         },
         "data_provider": "Twelve Data",
-        "mode": "tiered_refresh",
     }
 
 
@@ -332,7 +421,7 @@ def start_scheduler():
     
     if _scheduler and _scheduler.running:
         logger.warning("Scheduler already running")
-        return
+        return get_scheduler_stats()
     
     _scheduler = AsyncIOScheduler()
     
@@ -340,7 +429,7 @@ def start_scheduler():
         _run_tiered_price_batch,
         trigger=IntervalTrigger(seconds=CYCLE_INTERVAL_SECONDS),
         id="twelvedata_price_tiered",
-        name=f"TwelveData Tiered Refresh ({BATCH_SIZE * BATCHES_PER_MINUTE} symbols/min)",
+        name=f"TwelveData Tiered Refresh (Hot=5min, Active=30min, Standard=daily)",
         replace_existing=True,
         max_instances=1,
         coalesce=True
@@ -349,18 +438,12 @@ def start_scheduler():
     _scheduler.start()
     
     logger.info(
-        f"✅ Price scheduler started: TIERED REFRESH mode | "
-        f"{BATCH_SIZE * BATCHES_PER_MINUTE} symbols/min | "
-        f"Priority=10min, Standard=30min, Background=2hr"
+        f"✅ Price scheduler started: CREDIT-BUDGETED TIERED mode | "
+        f"Hot(100)=5min, Active(500)=30min, Standard=daily | "
+        f"Budget: 79,200 credits/day"
     )
     
-    # Return config for logging
-    return {
-        "batch_size": BATCH_SIZE,
-        "batches_per_minute": BATCHES_PER_MINUTE,
-        "symbols_per_minute": BATCH_SIZE * BATCHES_PER_MINUTE,
-        "cycle_interval_seconds": CYCLE_INTERVAL_SECONDS,
-    }
+    return get_scheduler_stats()
 
 
 def stop_scheduler():
@@ -385,4 +468,6 @@ def reset_cycle():
     for tier in _scheduler_stats["tier_stats"]:
         _scheduler_stats["tier_stats"][tier]["offset"] = 0
         _scheduler_stats["tier_stats"][tier]["last_refresh"] = None
+        _scheduler_stats["tier_stats"][tier]["cycle_complete"] = False
+    _scheduler_stats["credits_used_today"] = 0
     logger.info("🔄 All tier cycles reset")
