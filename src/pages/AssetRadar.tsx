@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3 } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { formatDistanceToNow } from "date-fns";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 
@@ -20,6 +21,7 @@ interface AssetWithScore {
   asset_class: string | null;
   score: number;
   sentiment: string;
+  lastUpdated: string | null;
 }
 
 // Helper to format strings: replace underscores with spaces and title case
@@ -97,7 +99,23 @@ const AssetRadar = () => {
 
       if (error) throw error;
 
-      // Enhance assets with computed scores
+      // Fetch latest price timestamps for these assets
+      const tickers = (data || []).map(a => a.ticker);
+      const { data: priceData } = await supabase
+        .from('prices')
+        .select('ticker, last_updated_at')
+        .in('ticker', tickers)
+        .order('last_updated_at', { ascending: false });
+
+      // Create a map of ticker -> latest update time
+      const priceMap = new Map<string, string>();
+      priceData?.forEach(p => {
+        if (!priceMap.has(p.ticker)) {
+          priceMap.set(p.ticker, p.last_updated_at || '');
+        }
+      });
+
+      // Enhance assets with computed scores and last updated
       const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
         const score = getAssetScore(asset.ticker);
         const sentiment = getSentiment(score);
@@ -109,7 +127,8 @@ const AssetRadar = () => {
           exchange: asset.exchange,
           asset_class: asset.asset_class,
           score,
-          sentiment: sentiment.label
+          sentiment: sentiment.label,
+          lastUpdated: priceMap.get(asset.ticker) || null
         };
       });
 
@@ -223,13 +242,23 @@ const AssetRadar = () => {
                           </div>
                         </div>
                         <p className="text-sm text-muted-foreground mb-2">{asset.name}</p>
-                        <div className="flex items-center gap-2">
-                          <Badge className="bg-primary text-primary-foreground">
-                            {asset.exchange}
-                          </Badge>
-                          <span className={`text-xs ${sentiment.variant === 'default' ? 'text-primary' : sentiment.variant === 'destructive' ? 'text-destructive' : 'text-muted-foreground'}`}>
-                            {asset.sentiment}
-                          </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-primary text-primary-foreground">
+                              {asset.exchange}
+                            </Badge>
+                            <span className={`text-xs ${sentiment.variant === 'default' ? 'text-primary' : sentiment.variant === 'destructive' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                              {asset.sentiment}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {asset.lastUpdated ? (
+                              <span>{formatDistanceToNow(new Date(asset.lastUpdated), { addSuffix: true })}</span>
+                            ) : (
+                              <span className="text-destructive/70">No data</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </Link>
