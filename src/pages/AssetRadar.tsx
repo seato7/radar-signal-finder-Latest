@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity";
+type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 
 interface AssetWithScore {
   id: string;
@@ -53,6 +53,7 @@ const PAGE_SIZE = 50;
 const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.ReactNode; filter: string | null }[] = [
   { value: "all", label: "All Assets", icon: <Filter className="h-4 w-4" />, filter: null },
   { value: "stock", label: "Stocks", icon: <TrendingUp className="h-4 w-4" />, filter: "stock" },
+  { value: "etf", label: "ETFs", icon: <BarChart3 className="h-4 w-4" />, filter: "etf" },
   { value: "forex", label: "Forex", icon: <DollarSign className="h-4 w-4" />, filter: "forex" },
   { value: "crypto", label: "Crypto", icon: <Bitcoin className="h-4 w-4" />, filter: "crypto" },
   { value: "commodity", label: "Commodities", icon: <Wheat className="h-4 w-4" />, filter: "commodity" },
