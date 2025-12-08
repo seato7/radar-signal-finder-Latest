@@ -129,13 +129,30 @@ serve(async (req) => {
       stats.forex.fetched = forexPairs.length;
       console.log(`📊 Found ${forexPairs.length} forex pairs`);
 
-      // Filter for USD pairs only (majors and crosses)
-      const usdPairs = forexPairs.filter(f => 
-        f.currency_quote === 'US Dollar' || f.currency_base === 'US Dollar'
+      // Define major currencies to include all majors and crosses
+      const majorCurrencies = [
+        'US Dollar', 'Euro', 'British Pound', 'Japanese Yen', 'Swiss Franc',
+        'Australian Dollar', 'Canadian Dollar', 'New Zealand Dollar'
+      ];
+      
+      // Filter for pairs involving major currencies (not just USD)
+      const majorPairs = forexPairs.filter(f => 
+        majorCurrencies.includes(f.currency_quote) || majorCurrencies.includes(f.currency_base)
       );
-      console.log(`📊 Filtered to ${usdPairs.length} USD forex pairs`);
+      console.log(`📊 Filtered to ${majorPairs.length} major forex pairs`);
 
-      const forexAssets = usdPairs.map(f => ({
+      // Deduplicate by symbol
+      const seenForexSymbols = new Set<string>();
+      const uniqueForex = majorPairs.filter(f => {
+        if (seenForexSymbols.has(f.symbol)) {
+          return false;
+        }
+        seenForexSymbols.add(f.symbol);
+        return true;
+      });
+      console.log(`📊 Deduplicated to ${uniqueForex.length} unique forex pairs`);
+
+      const forexAssets = uniqueForex.map(f => ({
         ticker: f.symbol,
         name: `${f.currency_base}/${f.currency_quote}`,
         exchange: 'Forex',
