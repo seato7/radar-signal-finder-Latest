@@ -4,14 +4,16 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
+type SortOption = "score-desc" | "score-asc" | "alpha-asc" | "alpha-desc" | "freshest" | "stalest";
 
 interface AssetWithScore {
   id: string;
@@ -61,9 +63,19 @@ const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.React
   { value: "commodity", label: "Commodities", icon: <Wheat className="h-4 w-4" />, filter: "commodity" },
 ];
 
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "score-desc", label: "Highest Score" },
+  { value: "score-asc", label: "Lowest Score" },
+  { value: "alpha-asc", label: "A → Z" },
+  { value: "alpha-desc", label: "Z → A" },
+  { value: "freshest", label: "Recently Updated" },
+  { value: "stalest", label: "Needs Update" },
+];
+
 const AssetRadar = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<AssetClassTab>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("score-desc");
   const [assets, setAssets] = useState<AssetWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -132,9 +144,6 @@ const AssetRadar = () => {
         };
       });
 
-      // Sort by score descending
-      enhancedAssets.sort((a, b) => b.score - a.score);
-      
       if (append) {
         setAssets(prev => [...prev, ...enhancedAssets]);
       } else {
@@ -150,6 +159,37 @@ const AssetRadar = () => {
       setLoadingMore(false);
     }
   };
+
+  // Sort assets based on selected option
+  const sortedAssets = useMemo(() => {
+    const sorted = [...assets];
+    switch (sortBy) {
+      case "score-desc":
+        return sorted.sort((a, b) => b.score - a.score);
+      case "score-asc":
+        return sorted.sort((a, b) => a.score - b.score);
+      case "alpha-asc":
+        return sorted.sort((a, b) => a.ticker.localeCompare(b.ticker));
+      case "alpha-desc":
+        return sorted.sort((a, b) => b.ticker.localeCompare(a.ticker));
+      case "freshest":
+        return sorted.sort((a, b) => {
+          if (!a.lastUpdated && !b.lastUpdated) return 0;
+          if (!a.lastUpdated) return 1;
+          if (!b.lastUpdated) return -1;
+          return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
+        });
+      case "stalest":
+        return sorted.sort((a, b) => {
+          if (!a.lastUpdated && !b.lastUpdated) return 0;
+          if (!a.lastUpdated) return -1;
+          if (!b.lastUpdated) return 1;
+          return new Date(a.lastUpdated).getTime() - new Date(b.lastUpdated).getTime();
+        });
+      default:
+        return sorted;
+    }
+  }, [assets, sortBy]);
 
   useEffect(() => {
     setPage(0);
@@ -193,7 +233,7 @@ const AssetRadar = () => {
 
         <Card className="shadow-data">
           <CardHeader>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -203,6 +243,19 @@ const AssetRadar = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <ArrowUpDown className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Sort by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {SORT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
         <CardContent>
@@ -223,7 +276,7 @@ const AssetRadar = () => {
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {assets.map((asset) => {
+                {sortedAssets.map((asset) => {
                   const sentiment = getSentiment(asset.score);
                   return (
                     <Link
