@@ -273,14 +273,31 @@ serve(async (req) => {
       stats.etfs.fetched = etfs.length;
       console.log(`📊 Found ${etfs.length} US ETFs`);
 
-      // Filter for USD ETFs on major exchanges
-      const majorEtfs = etfs.filter(e => 
-        e.currency === 'USD' && 
-        ['NYSE', 'NASDAQ', 'NYSE ARCA', 'BATS'].includes(e.exchange)
-      );
+      // Filter for USD ETFs on major exchanges (case-insensitive, handle variations)
+      const majorEtfs = etfs.filter(e => {
+        if (e.currency !== 'USD') return false;
+        const ex = e.exchange?.toLowerCase() || '';
+        return ex.includes('nyse') || ex.includes('nasdaq') || ex.includes('arca') || ex.includes('bats');
+      });
       console.log(`📊 Filtered to ${majorEtfs.length} ETFs on major exchanges`);
+      
+      // Log exchange distribution for debugging
+      const etfExchanges = new Map<string, number>();
+      majorEtfs.forEach(e => etfExchanges.set(e.exchange, (etfExchanges.get(e.exchange) || 0) + 1));
+      console.log('📊 ETF exchanges:', Object.fromEntries(etfExchanges));
 
-      const etfAssets = majorEtfs.map(e => ({
+      // Deduplicate by symbol - TwelveData returns same ETF from multiple exchanges
+      const seenEtfSymbols = new Set<string>();
+      const uniqueEtfs = majorEtfs.filter(e => {
+        if (seenEtfSymbols.has(e.symbol)) {
+          return false;
+        }
+        seenEtfSymbols.add(e.symbol);
+        return true;
+      });
+      console.log(`📊 Deduplicated to ${uniqueEtfs.length} unique ETFs`);
+
+      const etfAssets = uniqueEtfs.map(e => ({
         ticker: e.symbol,
         name: e.name,
         exchange: e.exchange,
