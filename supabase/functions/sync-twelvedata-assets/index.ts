@@ -172,11 +172,32 @@ serve(async (req) => {
       stats.crypto.fetched = cryptoPairs.length;
       console.log(`📊 Found ${cryptoPairs.length} crypto pairs`);
 
-      // Filter for USD-quoted pairs only
-      const usdCrypto = cryptoPairs.filter(c => c.currency_quote === 'US Dollar');
+      // Filter for USD-quoted pairs only (handle both "US Dollar" and "USD" formats)
+      const usdCrypto = cryptoPairs.filter(c => 
+        c.currency_quote === 'US Dollar' || 
+        c.currency_quote === 'USD' ||
+        c.symbol.endsWith('/USD') ||
+        c.symbol.endsWith('/USDT')
+      );
       console.log(`📊 Filtered to ${usdCrypto.length} USD crypto pairs`);
+      
+      // Log if major pairs are present for debugging
+      const hasBTC = usdCrypto.some(c => c.symbol === 'BTC/USD');
+      const hasETH = usdCrypto.some(c => c.symbol === 'ETH/USD');
+      console.log(`🔍 Major pairs check - BTC/USD: ${hasBTC}, ETH/USD: ${hasETH}`);
 
-      const cryptoAssets = usdCrypto.map(c => ({
+      // Deduplicate by symbol - keep the first occurrence (preferring major exchanges)
+      const seenSymbols = new Set<string>();
+      const uniqueCrypto = usdCrypto.filter(c => {
+        if (seenSymbols.has(c.symbol)) {
+          return false;
+        }
+        seenSymbols.add(c.symbol);
+        return true;
+      });
+      console.log(`📊 Deduplicated to ${uniqueCrypto.length} unique crypto pairs`);
+
+      const cryptoAssets = uniqueCrypto.map(c => ({
         ticker: c.symbol,
         name: `${c.currency_base}`,
         exchange: c.available_exchanges?.[0] || 'Crypto',
