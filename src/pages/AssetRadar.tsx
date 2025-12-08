@@ -163,9 +163,9 @@ const AssetRadar = () => {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-5 mb-4">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 mb-4">
           {ASSET_CLASS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-2">
+            <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-1 px-2 text-xs sm:text-sm">
               {tab.icon}
               <span className="hidden sm:inline">{tab.label}</span>
             </TabsTrigger>
