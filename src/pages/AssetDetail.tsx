@@ -51,7 +51,7 @@ const getSentiment = (score: number) => {
 
 const AssetDetail = () => {
   const location = useLocation();
-  const ticker = location.pathname.replace('/asset/', '');
+  const ticker = decodeURIComponent(location.pathname.replace('/asset/', ''));
   const [asset, setAsset] = useState<AssetData | null>(null);
   const [priceData, setPriceData] = useState<PriceData | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
