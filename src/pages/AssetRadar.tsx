@@ -324,7 +324,7 @@ const AssetRadar = () => {
                             <Badge className="bg-primary text-primary-foreground">
                               {asset.exchange}
                             </Badge>
-                            {asset.priceChange !== null && (
+                            {asset.priceChange !== null && typeof asset.priceChange === 'number' && (
                               <span className={`text-xs font-medium ${asset.priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                 {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
                               </span>
