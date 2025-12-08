@@ -4,10 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Filter, ExternalLink } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+
+type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity";
 
 interface AssetWithScore {
   id: string;
@@ -47,8 +50,17 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
 
 const PAGE_SIZE = 50;
 
+const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.ReactNode; filter: string | null }[] = [
+  { value: "all", label: "All Assets", icon: <Filter className="h-4 w-4" />, filter: null },
+  { value: "stock", label: "Stocks", icon: <TrendingUp className="h-4 w-4" />, filter: "stock" },
+  { value: "forex", label: "Forex", icon: <DollarSign className="h-4 w-4" />, filter: "forex" },
+  { value: "crypto", label: "Crypto", icon: <Bitcoin className="h-4 w-4" />, filter: "crypto" },
+  { value: "commodity", label: "Commodities", icon: <Wheat className="h-4 w-4" />, filter: "commodity" },
+];
+
 const AssetRadar = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState<AssetClassTab>("all");
   const [assets, setAssets] = useState<AssetWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -56,7 +68,7 @@ const AssetRadar = () => {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchAssets = async (pageNum: number, append: boolean = false) => {
+  const fetchAssets = async (pageNum: number, append: boolean = false, assetClass: AssetClassTab = activeTab) => {
     if (append) {
       setLoadingMore(true);
     } else {
@@ -67,6 +79,12 @@ const AssetRadar = () => {
       let query = supabase
         .from('assets')
         .select('*', { count: 'exact' });
+
+      // Filter by asset class if not "all"
+      const tabConfig = ASSET_CLASS_TABS.find(t => t.value === assetClass);
+      if (tabConfig?.filter) {
+        query = query.eq('asset_class', tabConfig.filter);
+      }
 
       if (searchTerm) {
         query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
@@ -115,9 +133,15 @@ const AssetRadar = () => {
 
   useEffect(() => {
     setPage(0);
-    const debounce = setTimeout(() => fetchAssets(0, false), 300);
+    const debounce = setTimeout(() => fetchAssets(0, false, activeTab), 300);
     return () => clearTimeout(debounce);
-  }, [searchTerm]);
+  }, [searchTerm, activeTab]);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as AssetClassTab);
+    setPage(0);
+    setAssets([]);
+  };
 
   const loadMore = () => {
     const nextPage = page + 1;
@@ -125,30 +149,42 @@ const AssetRadar = () => {
     fetchAssets(nextPage, true);
   };
 
+  const getTabDescription = () => {
+    const tabLabel = ASSET_CLASS_TABS.find(t => t.value === activeTab)?.label || "assets";
+    return `Browse ${total.toLocaleString()} ${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Asset Radar"
-        description={`Browse all ${total.toLocaleString()} stocks and cryptocurrencies`}
+        description={getTabDescription()}
       />
 
-      <Card className="shadow-data">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by ticker, name, or exchange..."
-                className="pl-10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <TabsList className="grid w-full grid-cols-5 mb-4">
+          {ASSET_CLASS_TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-2">
+              {tab.icon}
+              <span className="hidden sm:inline">{tab.label}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <Card className="shadow-data">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by ticker, name, or exchange..."
+                  className="pl-10"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
             </div>
-            <Button variant="outline" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardHeader>
+          </CardHeader>
         <CardContent>
           {loading ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -214,6 +250,7 @@ const AssetRadar = () => {
           )}
         </CardContent>
       </Card>
+      </Tabs>
     </div>
   );
 };
