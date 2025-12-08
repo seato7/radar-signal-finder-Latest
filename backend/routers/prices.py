@@ -50,6 +50,7 @@ def _log_error(source: str, error: str):
 async def get_price_ingestion_debug_status():
     """
     Debug endpoint showing complete price ingestion health.
+    Shows tiered refresh status: Hot (5min), Active (30min), Standard (daily).
     """
     stats = get_scheduler_stats()
     
@@ -59,18 +60,39 @@ async def get_price_ingestion_debug_status():
         if datetime.fromisoformat(e["timestamp"].replace("Z", "+00:00")) > cutoff
     ]
     
+    tier_stats = stats.get("tier_stats", {})
+    
     return {
         "data_provider": "Twelve Data",
-        "mode": stats.get("mode", "serial_queue"),
+        "mode": stats.get("mode", "credit_budgeted_tiered"),
         "scheduler_active": stats.get("scheduler_active", False),
         "is_running": stats.get("is_running", False),
+        "current_tier": stats.get("current_tier"),
         "config": stats.get("config", {}),
-        "cycle_status": {
-            "current_offset": stats.get("current_offset", 0),
-            "total_assets": stats.get("total_assets", 0),
-            "cycle_progress_pct": stats.get("cycle_progress_pct", 0),
-            "estimated_cycle_minutes": stats.get("estimated_cycle_minutes", 0),
+        "tier_status": {
+            "hot": {
+                "assets": tier_stats.get("hot", {}).get("assets", 0),
+                "refresh_interval": "5 minutes",
+                "last_refresh": tier_stats.get("hot", {}).get("last_refresh"),
+                "cycle_complete": tier_stats.get("hot", {}).get("cycle_complete", False),
+                "offset": tier_stats.get("hot", {}).get("offset", 0),
+            },
+            "active": {
+                "assets": tier_stats.get("active", {}).get("assets", 0),
+                "refresh_interval": "30 minutes",
+                "last_refresh": tier_stats.get("active", {}).get("last_refresh"),
+                "cycle_complete": tier_stats.get("active", {}).get("cycle_complete", False),
+                "offset": tier_stats.get("active", {}).get("offset", 0),
+            },
+            "standard": {
+                "assets": tier_stats.get("standard", {}).get("assets", 0),
+                "refresh_interval": "24 hours",
+                "last_refresh": tier_stats.get("standard", {}).get("last_refresh"),
+                "cycle_complete": tier_stats.get("standard", {}).get("cycle_complete", False),
+                "offset": tier_stats.get("standard", {}).get("offset", 0),
+            },
         },
+        "budget": stats.get("budget", {}),
         "global_stats": {
             "total_runs": stats.get("total_runs", 0),
             "successful_runs": stats.get("successful_runs", 0),
@@ -90,8 +112,11 @@ async def get_price_ingestion_debug_status():
 @router.post("/scheduler/start")
 async def start_price_scheduler():
     """
-    Start the serial queue price scheduler.
-    Processes 40 symbols/min, ~26 min full cycle for 1043 assets.
+    Start the credit-budgeted tiered price scheduler.
+    Hot (100 assets): 5 min refresh
+    Active (500 assets): 30 min refresh
+    Standard (26,400 assets): daily refresh
+    Budget: 79,200 credits/day
     """
     try:
         start_scheduler()
@@ -99,8 +124,9 @@ async def start_price_scheduler():
         return {
             "status": "started",
             "config": stats.get("config", {}),
+            "budget": stats.get("budget", {}),
             "data_provider": "Twelve Data",
-            "message": "Serial queue scheduler started"
+            "message": "Tiered scheduler started: Hot=5min, Active=30min, Standard=daily"
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to start scheduler: {str(e)}")
