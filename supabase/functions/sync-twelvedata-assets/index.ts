@@ -89,9 +89,21 @@ serve(async (req) => {
       usdStocks.forEach(s => stockExchanges.set(s.exchange, (stockExchanges.get(s.exchange) || 0) + 1));
       console.log('📊 Stock exchanges:', Object.fromEntries(stockExchanges));
 
+      // Filter out malformed tickers (containing special prefixes like !otc/)
+      const cleanStocks = usdStocks.filter(s => {
+        const ticker = s.symbol;
+        // Skip tickers with special prefixes or invalid characters
+        if (ticker.startsWith('!') || ticker.includes('!') || ticker.includes(':')) {
+          console.log(`⚠️ Skipping malformed ticker: ${ticker}`);
+          return false;
+        }
+        return true;
+      });
+      console.log(`📊 Filtered out malformed tickers: ${usdStocks.length - cleanStocks.length}`);
+
       // Deduplicate by symbol - same stock can appear on multiple exchanges
       const seenStockSymbols = new Set<string>();
-      const uniqueStocks = usdStocks.filter(s => {
+      const uniqueStocks = cleanStocks.filter(s => {
         if (seenStockSymbols.has(s.symbol)) {
           return false;
         }
