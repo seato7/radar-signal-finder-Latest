@@ -311,12 +311,15 @@ const AssetRadar = () => {
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {sortedAssets.map((asset) => {
+                {sortedAssets.map((asset, index) => {
                   const sentiment = getSentiment(asset.score);
+                  // Calculate rank within current sorted view (1-indexed)
+                  const displayRank = index + 1;
                   return (
                     <Link
                       key={asset.id}
                       to={`/asset/${encodeURIComponent(asset.ticker)}`}
+                      state={{ rank: displayRank, score: asset.score, totalLoaded: sortedAssets.length }}
                       className="block"
                     >
                       <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">

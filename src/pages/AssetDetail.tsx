@@ -52,13 +52,18 @@ const getSentiment = (score: number) => {
 const AssetDetail = () => {
   const location = useLocation();
   const ticker = decodeURIComponent(location.pathname.replace('/asset/', ''));
+  
+  // Get rank passed from radar page if available
+  const navState = location.state as { rank?: number; score?: number; totalLoaded?: number } | null;
+  
   const [asset, setAsset] = useState<AssetData | null>(null);
   const [priceData, setPriceData] = useState<PriceData | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ranking, setRanking] = useState<number>(0);
-  const [totalAssets, setTotalAssets] = useState<number>(0);
-  const [batchScore, setBatchScore] = useState<number | null>(null);
+  const [ranking, setRanking] = useState<number>(navState?.rank || 0);
+  const [totalAssets, setTotalAssets] = useState<number>(navState?.totalLoaded || 0);
+  const [batchScore, setBatchScore] = useState<number | null>(navState?.score || null);
+  const [rankContext, setRankContext] = useState<string>(navState?.rank ? "in current view" : "");
   const { toast } = useToast();
 
   // Comprehensive scoring from ALL 22 data sources (for breakdown display)
@@ -125,10 +130,22 @@ const AssetDetail = () => {
     fetchAssetData();
   }, [ticker]);
 
-  // Calculate score and ranking for this asset
+  // Calculate score and ranking if not passed from navigation
   useEffect(() => {
     const calculateScoreAndRanking = async () => {
       if (!asset) return;
+      
+      // If we already have nav state, just compute the score to ensure consistency
+      if (navState?.rank && navState?.score) {
+        // Score already set from nav state, just ensure we have total count
+        if (!totalAssets) {
+          const { count } = await supabase
+            .from('assets')
+            .select('id', { count: 'exact', head: true });
+          // Don't override the "in current view" context
+        }
+        return;
+      }
       
       try {
         // Import the batch scoring function to compute scores consistently
@@ -140,6 +157,7 @@ const AssetDetail = () => {
           .select('id', { count: 'exact', head: true });
         
         setTotalAssets(totalCount || 0);
+        setRankContext("estimated");
         
         // Compute score for just this asset
         const scoreMap = await computeAssetScoresBatch([{
@@ -152,10 +170,7 @@ const AssetDetail = () => {
         setBatchScore(thisAssetScore);
         
         // Estimate ranking based on score percentile
-        // Score of 100 = rank 1, Score of 0 = rank = totalAssets
-        // This is an approximation since we can't efficiently compute all scores
         if (totalCount && totalCount > 0) {
-          // Linear interpolation: higher score = lower rank number
           const percentile = thisAssetScore / 100;
           const estimatedRank = Math.max(1, Math.round((1 - percentile) * totalCount + 1));
           setRanking(estimatedRank);
@@ -166,7 +181,7 @@ const AssetDetail = () => {
     };
     
     calculateScoreAndRanking();
-  }, [asset]);
+  }, [asset, navState]);
 
   const handleAddToWatchlist = () => {
     toast({ title: "Added to Watchlist", description: `${ticker} has been added to your watchlist` });
@@ -219,10 +234,15 @@ const AssetDetail = () => {
 
         {/* Ranking */}
         <Card>
-          <CardHeader><CardTitle>Ranking</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Ranking {rankContext && <span className="text-sm font-normal text-muted-foreground">({rankContext})</span>}</CardTitle></CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">#{ranking}</div>
-            <p className="text-muted-foreground">Out of {totalAssets} assets</p>
+            <p className="text-muted-foreground">
+              {rankContext === "in current view" 
+                ? `Out of ${totalAssets} assets loaded`
+                : `Out of ${totalAssets.toLocaleString()} total assets`
+              }
+            </p>
           </CardContent>
         </Card>
 
