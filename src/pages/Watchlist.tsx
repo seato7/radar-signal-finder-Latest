@@ -1,11 +1,12 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Star, Trash2, Eye } from "lucide-react";
-import { useState } from "react";
+import { Star, Trash2, Eye, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Dialog,
   DialogContent,
@@ -18,38 +19,61 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const watchlistItems = [
-  {
-    id: "1",
-    asset: "BTC/USD",
-    addedAt: "2024-01-15",
-    currentScore: 94.2,
-    notes: "Strong momentum play",
-  },
-  {
-    id: "2",
-    asset: "ETH/USD",
-    addedAt: "2024-01-14",
-    currentScore: 89.7,
-    notes: "Layer 2 expansion thesis",
-  },
-  {
-    id: "3",
-    asset: "SOL/USD",
-    addedAt: "2024-01-10",
-    currentScore: 87.4,
-    notes: "DeFi recovery narrative",
-  },
-];
+interface WatchlistData {
+  id: string;
+  user_id: string;
+  tickers: string[];
+  created_at: string;
+  updated_at: string;
+}
 
 const Watchlist = () => {
-  const [items, setItems] = useState(watchlistItems);
+  const [tickers, setTickers] = useState<string[]>([]);
+  const [watchlistId, setWatchlistId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newTicker, setNewTicker] = useState("");
-  const [newNotes, setNewNotes] = useState("");
+  const [adding, setAdding] = useState(false);
   const { toast } = useToast();
+  const { user, isAuthenticated } = useAuth();
 
-  const handleAdd = () => {
+  // Fetch watchlist from database
+  useEffect(() => {
+    const fetchWatchlist = async () => {
+      if (!isAuthenticated || !user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('watchlist')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        
+        if (data) {
+          setWatchlistId(data.id);
+          setTickers(data.tickers || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch watchlist:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load watchlist",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWatchlist();
+  }, [isAuthenticated, user]);
+
+  const handleAdd = async () => {
     if (!newTicker.trim()) {
       toast({
         title: "Error",
@@ -59,32 +83,117 @@ const Watchlist = () => {
       return;
     }
 
-    const newItem = {
-      id: String(items.length + 1),
-      asset: newTicker.toUpperCase(),
-      addedAt: new Date().toISOString().split('T')[0],
-      currentScore: 0,
-      notes: newNotes || "No notes"
-    };
+    if (!isAuthenticated || !user) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to add items to your watchlist",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    setItems([...items, newItem]);
-    setNewTicker("");
-    setNewNotes("");
-    setDialogOpen(false);
+    const tickerToAdd = newTicker.toUpperCase().trim();
     
-    toast({
-      title: "Added to Watchlist",
-      description: `${newItem.asset} has been added to your watchlist`
-    });
+    if (tickers.includes(tickerToAdd)) {
+      toast({
+        title: "Already added",
+        description: `${tickerToAdd} is already in your watchlist`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setAdding(true);
+    try {
+      const newTickers = [...tickers, tickerToAdd];
+      
+      if (watchlistId) {
+        // Update existing watchlist
+        const { error } = await supabase
+          .from('watchlist')
+          .update({ tickers: newTickers, updated_at: new Date().toISOString() })
+          .eq('id', watchlistId);
+
+        if (error) throw error;
+      } else {
+        // Create new watchlist
+        const { data, error } = await supabase
+          .from('watchlist')
+          .insert({
+            user_id: user.id,
+            tickers: newTickers
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        setWatchlistId(data.id);
+      }
+
+      setTickers(newTickers);
+      setNewTicker("");
+      setDialogOpen(false);
+      
+      toast({
+        title: "Added to Watchlist",
+        description: `${tickerToAdd} has been added to your watchlist`
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add to watchlist",
+        variant: "destructive"
+      });
+    } finally {
+      setAdding(false);
+    }
   };
 
-  const handleRemove = (id: string, asset: string) => {
-    setItems(items.filter(item => item.id !== id));
-    toast({
-      title: "Removed",
-      description: `${asset} has been removed from your watchlist`
-    });
+  const handleRemove = async (tickerToRemove: string) => {
+    if (!watchlistId) return;
+    
+    try {
+      const newTickers = tickers.filter(t => t !== tickerToRemove);
+      
+      const { error } = await supabase
+        .from('watchlist')
+        .update({ tickers: newTickers, updated_at: new Date().toISOString() })
+        .eq('id', watchlistId);
+
+      if (error) throw error;
+
+      setTickers(newTickers);
+      toast({
+        title: "Removed",
+        description: `${tickerToRemove} has been removed from your watchlist`
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to remove from watchlist",
+        variant: "destructive"
+      });
+    }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Watchlist"
+          description="Track your selected opportunities"
+        />
+        <Card className="shadow-data">
+          <CardContent className="p-8 text-center">
+            <p className="text-muted-foreground">Please log in to view and manage your watchlist.</p>
+            <Button asChild className="mt-4">
+              <Link to="/auth">Log In</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -103,7 +212,7 @@ const Watchlist = () => {
               <DialogHeader>
                 <DialogTitle>Add Asset to Watchlist</DialogTitle>
                 <DialogDescription>
-                  Enter the ticker symbol and optional notes
+                  Enter the ticker symbol to track
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -111,23 +220,20 @@ const Watchlist = () => {
                   <Label htmlFor="ticker">Ticker Symbol</Label>
                   <Input
                     id="ticker"
-                    placeholder="BTC, ETH, SOL..."
+                    placeholder="BTC, ETH, AAPL..."
                     value={newTicker}
                     onChange={(e) => setNewTicker(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notes (Optional)</Label>
-                  <Input
-                    id="notes"
-                    placeholder="Your notes..."
-                    value={newNotes}
-                    onChange={(e) => setNewNotes(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                   />
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAdd} className="bg-gradient-chrome text-primary-foreground">
+                <Button 
+                  onClick={handleAdd} 
+                  disabled={adding}
+                  className="bg-gradient-chrome text-primary-foreground"
+                >
+                  {adding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                   Add to Watchlist
                 </Button>
               </DialogFooter>
@@ -137,32 +243,28 @@ const Watchlist = () => {
       />
 
       <div className="space-y-3">
-        {items.length === 0 ? (
+        {loading ? (
+          <Card className="shadow-data">
+            <CardContent className="p-8 text-center">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+              <p className="text-muted-foreground mt-2">Loading watchlist...</p>
+            </CardContent>
+          </Card>
+        ) : tickers.length === 0 ? (
           <Card className="shadow-data">
             <CardContent className="p-8 text-center">
               <p className="text-muted-foreground">Your watchlist is empty. Add assets to start tracking them.</p>
             </CardContent>
           </Card>
         ) : (
-          items.map((item) => (
-            <Card key={item.id} className="shadow-data">
+          tickers.map((ticker) => (
+            <Card key={ticker} className="shadow-data">
               <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-bold text-foreground">{item.asset}</h3>
-                      <Badge variant="outline" className="border-primary text-primary">
-                        Score: {item.currentScore}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">{item.notes}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Added: {new Date(item.addedAt).toLocaleDateString()}
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-foreground">{ticker}</h3>
                   <div className="flex gap-2">
                     <Button variant="ghost" size="icon" asChild>
-                      <Link to={`/asset/${item.asset.split('/')[0]}`}>
+                      <Link to={`/asset/${ticker}`}>
                         <Eye className="h-4 w-4" />
                       </Link>
                     </Button>
@@ -170,7 +272,7 @@ const Watchlist = () => {
                       variant="ghost" 
                       size="icon" 
                       className="text-destructive hover:text-destructive"
-                      onClick={() => handleRemove(item.id, item.asset)}
+                      onClick={() => handleRemove(ticker)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
