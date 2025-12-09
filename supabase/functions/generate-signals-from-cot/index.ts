@@ -95,16 +95,24 @@ serve(async (req) => {
       });
     }
 
-    const { error: insertError } = await supabaseClient
+    // Use upsert to handle duplicate signals gracefully
+    const { data: upsertResult, error: insertError } = await supabaseClient
       .from('signals')
-      .insert(signals);
+      .upsert(signals, { 
+        onConflict: 'checksum',
+        ignoreDuplicates: true 
+      })
+      .select('id');
 
     if (insertError) {
       console.error('[SIGNAL-GEN-COT] Insert error:', insertError);
       throw insertError;
     }
+    
+    const actualInserted = upsertResult?.length || 0;
+    console.log(`[SIGNAL-GEN-COT] Upserted ${actualInserted} signals (${signals.length - actualInserted} duplicates skipped)`);
 
-    console.log(`[SIGNAL-GEN-COT] ✅ Created ${signals.length} COT positioning signals`);
+    console.log(`[SIGNAL-GEN-COT] ✅ Created ${actualInserted} COT positioning signals`);
 
     const duration = Date.now() - startTime;
     await slackAlerter.sendLiveAlert({
@@ -112,13 +120,15 @@ serve(async (req) => {
       status: 'success',
       duration,
       latencyMs: duration,
-      rowsInserted: signals.length,
+      rowsInserted: actualInserted,
+      rowsSkipped: signals.length - actualInserted,
     });
 
     return new Response(JSON.stringify({ 
       success: true,
       reports_processed: reports.length,
-      signals_created: signals.length 
+      signals_created: actualInserted,
+      duplicates_skipped: signals.length - actualInserted
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
