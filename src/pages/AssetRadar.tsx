@@ -8,9 +8,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { computeAssetScoresBatch } from "@/lib/assetScoring";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
@@ -37,12 +38,6 @@ const formatLabel = (str: string): string => {
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
-};
-
-// Generate deterministic score based on ticker for consistency
-const getAssetScore = (ticker: string): number => {
-  const hash = ticker.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
-  return Math.round((hash % 100) * 10) / 10;
 };
 
 const getSentiment = (score: number): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } => {
@@ -149,9 +144,17 @@ const AssetRadar = () => {
         }
       });
 
+      // Compute real scores for all assets using data-driven scoring
+      const assetsForScoring = (data || []).map(a => ({
+        id: a.id,
+        ticker: a.ticker,
+        asset_class: a.asset_class
+      }));
+      const scoreMap = await computeAssetScoresBatch(assetsForScoring);
+
       // Enhance assets with computed scores, last updated, and price change
       const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
-        const score = getAssetScore(asset.ticker);
+        const score = scoreMap.get(asset.id) ?? 50;
         const sentiment = getSentiment(score);
         const priceInfo = priceMap.get(asset.ticker);
         
