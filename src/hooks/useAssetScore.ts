@@ -181,8 +181,8 @@ export function useAssetScore(ticker: string | null, assetId: string | null, ass
             .from('social_signals')
             .select('*')
             .eq('ticker', ticker)
-            .gte('observed_at', sevenDaysAgo)
-            .order('observed_at', { ascending: false })
+            .gte('created_at', sevenDaysAgo)
+            .order('created_at', { ascending: false })
             .limit(30),
 
           // 8. Search Trends
@@ -190,8 +190,8 @@ export function useAssetScore(ticker: string | null, assetId: string | null, ass
             .from('search_trends')
             .select('*')
             .eq('ticker', ticker)
-            .gte('date', thirtyDaysAgo)
-            .order('date', { ascending: false })
+            .gte('period_start', thirtyDaysAgo)
+            .order('period_start', { ascending: false })
             .limit(30),
 
           // 9. Dark Pool Activity
@@ -208,8 +208,8 @@ export function useAssetScore(ticker: string | null, assetId: string | null, ass
             .from('smart_money_flow')
             .select('*')
             .eq('ticker', ticker)
-            .gte('flow_date', thirtyDaysAgo)
-            .order('flow_date', { ascending: false })
+            .gte('timestamp', thirtyDaysAgo)
+            .order('timestamp', { ascending: false })
             .limit(30),
 
           // 11. Options Flow

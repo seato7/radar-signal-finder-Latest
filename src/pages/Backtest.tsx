@@ -139,32 +139,12 @@ const Backtest = () => {
         <Card className="shadow-data">
           <CardHeader>
             <CardTitle>Recent Results</CardTitle>
-            <CardDescription>Last 3 backtest runs</CardDescription>
+            <CardDescription>Run a backtest to see results</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {[
-                { period: "Q1 2025", hitRate: 72.3, opportunities: 156, avgReturn: 8.4 },
-                { period: "Q4 2024", hitRate: 68.9, opportunities: 142, avgReturn: 6.7 },
-                { period: "Q3 2024", hitRate: 71.2, opportunities: 138, avgReturn: 7.9 },
-              ].map((result) => (
-                <div key={result.period} className="p-4 rounded-md bg-muted/50 border border-border space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-foreground">{result.period}</span>
-                    <span className="text-sm text-primary font-bold">{result.hitRate}% Hit Rate</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <div className="text-muted-foreground">Opportunities</div>
-                      <div className="font-medium text-foreground">{result.opportunities}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Avg Return</div>
-                      <div className="font-medium text-success">+{result.avgReturn}%</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Configure parameters and run a backtest to see historical performance analysis.</p>
+              <p className="text-sm mt-2">Results will appear here after running a backtest.</p>
             </div>
           </CardContent>
         </Card>
