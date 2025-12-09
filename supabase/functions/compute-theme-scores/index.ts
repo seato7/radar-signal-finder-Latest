@@ -20,6 +20,7 @@ interface Theme {
   id: string;
   name: string;
   keywords: string[];
+  tickers: string[];
 }
 
 // Component weights from backend/scoring.py
@@ -171,68 +172,66 @@ function computeThemeScore(signals: Signal[], asOf: Date = new Date()): {
   return { score, components: normalizedComponents, positives };
 }
 
-// Calculate relevance between signal and theme based on keyword matching
+// Calculate relevance between signal and theme based on TICKER and keyword matching
 function calculateRelevance(signal: Signal, theme: Theme): number {
-  // HIGH-VALUE SIGNALS: Always relevant regardless of keywords
-  // These institutional/capex signals represent broad market forces
-  const highValueSignalTypes = [
-    'dark_pool_activity',
-    'cot_positioning', 
-    'capex_hiring',
-    'politician_buy',
-    'politician_sell',
-    'filing_13f_new',
-    'filing_13f_increase',
-    'smart_money_flow'
-  ];
+  const themeTickers = (theme.tickers || []).map(t => t.toUpperCase());
+  const signalTicker = (signal.ticker || '').toUpperCase();
+  const themeKeywords = (theme.keywords || []).map(k => k.toLowerCase());
   
-  // Give high-value signals automatic minimum relevance
-  if (highValueSignalTypes.includes(signal.signal_type)) {
-    return 0.8; // High relevance - these always matter
+  // Combine all signal text for keyword matching
+  const signalText = `${signal.ticker || ''} ${signal.signal_type} ${(signal as any).value_text || ''}`.toLowerCase();
+  
+  // 1. TICKER MATCH (highest priority) - signal ticker matches theme's focus tickers
+  if (signalTicker && themeTickers.includes(signalTicker)) {
+    return 1.0;
   }
   
-  // Combine ticker, signal type, and value_text for matching
-  const signalText = `${signal.ticker} ${signal.signal_type} ${(signal as any).value_text || ''}`.toLowerCase();
+  // 2. KEYWORD MATCH - check if signal content contains theme-relevant keywords
+  let keywordMatches = 0;
+  let matchedKeywords: string[] = [];
   
-  // Also check if ticker is a major tech stock for tech themes
-  const techTickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'ADBE', 'NFLX'];
-  const isTechStock = techTickers.includes(signal.ticker.toUpperCase());
-  
-  let matchCount = 0;
-  let weightedScore = 0;
-  
-  for (const keyword of theme.keywords) {
-    const lowerKeyword = keyword.toLowerCase();
-    
-    // Direct keyword match in signal text
-    if (signalText.includes(lowerKeyword)) {
-      matchCount++;
-      weightedScore += 1.0;
-    }
-    
-    // Special case: tech-related themes get bonus for tech stocks
-    if (isTechStock && ['tech', 'technology', 'innovation', 'growth'].includes(lowerKeyword)) {
-      weightedScore += 0.5;
-    }
-    
-    // Signal type matching
-    if (signal.signal_type.includes('institutional') && ['institutional', 'smart money', 'buying'].includes(lowerKeyword)) {
-      weightedScore += 0.5;
-    }
-    
-    if (signal.signal_type.includes('technical') && ['technical', 'chart', 'pattern'].includes(lowerKeyword)) {
-      weightedScore += 0.3;
+  for (const keyword of themeKeywords) {
+    if (signalText.includes(keyword)) {
+      keywordMatches++;
+      matchedKeywords.push(keyword);
     }
   }
   
-  // Calculate relevance as percentage of keywords matched, with weighting
-  const keywordMatchRatio = theme.keywords.length > 0 ? matchCount / theme.keywords.length : 0;
-  const weightedRatio = theme.keywords.length > 0 ? weightedScore / theme.keywords.length : 0;
+  if (keywordMatches >= 2) {
+    // Strong keyword match (2+ keywords)
+    return 0.8;
+  } else if (keywordMatches === 1) {
+    // Weak keyword match (1 keyword)
+    return 0.4;
+  }
   
-  // Use the higher of the two ratios
-  const relevance = Math.max(keywordMatchRatio, weightedRatio);
+  // 3. SIGNAL TYPE RELEVANCE - map signal types to theme categories
+  const signalType = signal.signal_type.toLowerCase();
+  const themeName = theme.name.toLowerCase();
   
-  return Math.min(relevance, 1.0);
+  // AI/Semiconductor theme matches tech signals
+  if (themeName.includes('ai') || themeName.includes('semiconductor')) {
+    if (signalType.includes('technical') || signalText.includes('nvda') || signalText.includes('amd')) {
+      return 0.3;
+    }
+  }
+  
+  // Crypto/Fintech theme matches crypto signals
+  if (themeName.includes('crypto') || themeName.includes('fintech')) {
+    if (signalType.includes('crypto') || signalType.includes('onchain')) {
+      return 0.6;
+    }
+  }
+  
+  // Clean Energy theme matches EV/energy signals
+  if (themeName.includes('energy') || themeName.includes('ev')) {
+    if (signalText.includes('tesla') || signalText.includes('electric') || signalText.includes('solar')) {
+      return 0.5;
+    }
+  }
+  
+  // No relevant match
+  return 0;
 }
 
 serve(async (req) => {
