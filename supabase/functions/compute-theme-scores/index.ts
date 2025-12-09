@@ -24,108 +24,86 @@ interface ComponentScores {
   momentum: number;
   earnings: number;
   shortInterest: number;
+  alternativeData: number;
+  macro: number;
 }
 
-// Component weights - aligned with asset scoring
+// Component weights
 const WEIGHTS: Record<string, number> = {
   technical: 1.0,
   pattern: 0.8,
-  sentiment: 0.8,
+  sentiment: 0.9,
   institutionalFlow: 1.0,
   insiderActivity: 0.8,
   optionsFlow: 0.7,
-  cryptoOnchain: 0.5,
+  cryptoOnchain: 0.6,
   momentum: 0.9,
-  earnings: 0.6,
+  earnings: 0.7,
   shortInterest: 0.5,
+  alternativeData: 0.6,
+  macro: 0.5,
 };
 
-// Sector to theme mapping - maps asset sectors to theme names
+// Sector to theme mapping
 const SECTOR_TO_THEME: Record<string, string[]> = {
-  // Technology themes
   'Technology': ['AI & Semiconductors', 'Cybersecurity'],
   'Semiconductors': ['AI & Semiconductors'],
   'AI & Machine Learning': ['AI & Semiconductors'],
   'Software & Services': ['AI & Semiconductors', 'Cybersecurity'],
-  
-  // Healthcare themes
   'Healthcare': ['Biotech & Healthcare'],
   'Biotechnology': ['Biotech & Healthcare'],
   'Healthcare Services': ['Biotech & Healthcare'],
-  
-  // Finance themes
   'Financial Services': ['Banks & Financials'],
   'Banks': ['Banks & Financials'],
   'Fintech': ['Banks & Financials'],
-  
-  // Energy themes
   'Energy': ['Energy & Oil'],
   'Oil & Gas': ['Energy & Oil'],
   'Clean Energy': ['Clean Energy & EVs'],
   'Renewable Energy': ['Clean Energy & EVs'],
   'Electric Vehicles': ['Clean Energy & EVs'],
-  
-  // Consumer themes
   'Consumer Discretionary': ['Retail & E-commerce', 'Consumer Discretionary'],
   'Consumer Staples': ['Food & Agriculture'],
   'Retail': ['Retail & E-commerce'],
   'E-Commerce': ['Retail & E-commerce'],
-  
-  // Industrial themes
   'Industrials': ['Industrial & Infrastructure', 'Defense & Aerospace'],
   'Defense': ['Defense & Aerospace'],
   'Aerospace': ['Defense & Aerospace'],
   'Transportation': ['Travel & Leisure'],
-  
-  // Real Estate themes
   'Real Estate': ['Real Estate & REITs'],
   'REITs': ['Real Estate & REITs'],
-  
-  // Materials themes
   'Materials': ['Commodities & Mining'],
   'Basic Materials': ['Commodities & Mining'],
   'Mining': ['Commodities & Mining'],
-  
-  // Communications themes
   'Communication Services': ['Media & Entertainment'],
   'Media & Entertainment': ['Media & Entertainment'],
-  
-  // Crypto themes
   'Cryptocurrency': ['Crypto & Blockchain'],
   'Digital Assets': ['Crypto & Blockchain'],
-  
-  // Currency themes
   'Currency': ['Forex & Currency'],
   'Foreign Exchange': ['Forex & Currency'],
-  
-  // Commodities
   'Commodities': ['Commodities & Mining'],
-  
-  // ETF (can map to multiple based on name)
   'ETF': [],
 };
 
-// Name-based keyword matching for more granular theme assignment
+// Keyword matching for theme assignment
 const THEME_KEYWORDS: Record<string, string[]> = {
-  'AI & Semiconductors': ['nvidia', 'amd', 'intel', 'qualcomm', 'broadcom', 'micron', 'asml', 'tsmc', 'ai ', 'artificial intelligence', 'machine learning', 'semiconductor', 'chip', 'palantir', 'c3.ai', 'snowflake'],
-  'Biotech & Healthcare': ['biotech', 'pharma', 'therapeut', 'oncology', 'genomic', 'drug', 'health', 'medical', 'moderna', 'pfizer', 'merck', 'amgen', 'gilead', 'biogen', 'regeneron', 'vertex', 'abbvie', 'lilly'],
-  'Clean Energy & EVs': ['solar', 'wind', 'renewable', 'clean energy', 'electric vehicle', ' ev ', 'tesla', 'rivian', 'lucid', 'enphase', 'first solar', 'plug power', 'hydrogen', 'battery'],
-  'Defense & Aerospace': ['defense', 'aerospace', 'lockheed', 'raytheon', 'northrop', 'boeing', 'general dynamics', 'military', 'weapon'],
-  'Banks & Financials': ['bank', 'jpmorgan', 'goldman', 'morgan stanley', 'blackrock', 'visa', 'mastercard', 'paypal', 'square', 'credit', 'lending'],
-  'Energy & Oil': ['oil', 'gas', 'petroleum', 'exxon', 'chevron', 'conocophillips', 'energy', 'drilling'],
-  'Real Estate & REITs': ['reit', 'real estate', 'property', 'realty', 'housing'],
-  'Industrial & Infrastructure': ['industrial', 'manufacturing', 'caterpillar', 'deere', 'honeywell', '3m', 'infrastructure', 'construction'],
-  'Commodities & Mining': ['mining', 'gold', 'silver', 'copper', 'metal', 'steel', 'newmont', 'freeport', 'nucor'],
-  'Retail & E-commerce': ['retail', 'amazon', 'walmart', 'costco', 'target', 'home depot', 'e-commerce', 'shop'],
-  'Travel & Leisure': ['airline', 'hotel', 'travel', 'booking', 'airbnb', 'marriott', 'hilton', 'cruise', 'leisure'],
-  'Media & Entertainment': ['media', 'netflix', 'disney', 'streaming', 'entertainment', 'comcast', 'warner'],
-  'Food & Agriculture': ['food', 'beverage', 'coca-cola', 'pepsi', 'agriculture', 'grocery', 'restaurant'],
-  'Cybersecurity': ['cyber', 'security', 'crowdstrike', 'palo alto', 'fortinet', 'zscaler', 'okta'],
-  'Crypto & Blockchain': ['bitcoin', 'ethereum', 'crypto', 'blockchain', 'coinbase', 'defi'],
-  'Forex & Currency': ['eur/usd', 'gbp/usd', 'usd/jpy', 'forex', 'currency'],
+  'AI & Semiconductors': ['nvidia', 'amd', 'intel', 'qualcomm', 'broadcom', 'micron', 'asml', 'tsmc', 'ai ', 'artificial intelligence', 'machine learning', 'semiconductor', 'chip', 'palantir', 'c3.ai', 'snowflake', 'databricks'],
+  'Biotech & Healthcare': ['biotech', 'pharma', 'therapeut', 'oncology', 'genomic', 'drug', 'health', 'medical', 'moderna', 'pfizer', 'merck', 'amgen', 'gilead', 'biogen', 'regeneron', 'vertex', 'abbvie', 'lilly', 'johnson'],
+  'Clean Energy & EVs': ['solar', 'wind', 'renewable', 'clean energy', 'electric vehicle', ' ev ', 'tesla', 'rivian', 'lucid', 'enphase', 'first solar', 'plug power', 'hydrogen', 'battery', 'charging'],
+  'Defense & Aerospace': ['defense', 'aerospace', 'lockheed', 'raytheon', 'northrop', 'boeing', 'general dynamics', 'military', 'weapon', 'missile'],
+  'Banks & Financials': ['bank', 'jpmorgan', 'goldman', 'morgan stanley', 'blackrock', 'visa', 'mastercard', 'paypal', 'square', 'credit', 'lending', 'insurance', 'fidelity'],
+  'Energy & Oil': ['oil', 'gas', 'petroleum', 'exxon', 'chevron', 'conocophillips', 'energy', 'drilling', 'pipeline', 'refin'],
+  'Real Estate & REITs': ['reit', 'real estate', 'property', 'realty', 'housing', 'apartment', 'office', 'mall'],
+  'Industrial & Infrastructure': ['industrial', 'manufacturing', 'caterpillar', 'deere', 'honeywell', '3m', 'infrastructure', 'construction', 'machinery'],
+  'Commodities & Mining': ['mining', 'gold', 'silver', 'copper', 'metal', 'steel', 'newmont', 'freeport', 'nucor', 'aluminum', 'iron'],
+  'Retail & E-commerce': ['retail', 'amazon', 'walmart', 'costco', 'target', 'home depot', 'e-commerce', 'shop', 'store', 'consumer'],
+  'Travel & Leisure': ['airline', 'hotel', 'travel', 'booking', 'airbnb', 'marriott', 'hilton', 'cruise', 'leisure', 'casino', 'gaming'],
+  'Media & Entertainment': ['media', 'netflix', 'disney', 'streaming', 'entertainment', 'comcast', 'warner', 'paramount', 'fox', 'spotify'],
+  'Food & Agriculture': ['food', 'beverage', 'coca-cola', 'pepsi', 'agriculture', 'grocery', 'restaurant', 'mcdonald', 'starbucks'],
+  'Cybersecurity': ['cyber', 'security', 'crowdstrike', 'palo alto', 'fortinet', 'zscaler', 'okta', 'sentinelone', 'cloudflare'],
+  'Crypto & Blockchain': ['bitcoin', 'ethereum', 'crypto', 'blockchain', 'coinbase', 'defi', 'btc', 'eth'],
+  'Forex & Currency': ['eur/usd', 'gbp/usd', 'usd/jpy', 'forex', 'currency', 'eur', 'gbp', 'jpy', 'aud', 'cad'],
 };
 
-// Helper to build lookup maps
 function buildMap(data: any[] | null, key: string = "ticker"): Map<string, any[]> {
   const map = new Map<string, any[]>();
   (data || []).forEach((item) => {
@@ -136,7 +114,6 @@ function buildMap(data: any[] | null, key: string = "ticker"): Map<string, any[]
   return map;
 }
 
-// Assign asset to themes based on sector, industry, and name keywords
 function assignAssetToThemes(asset: { ticker: string; name: string; asset_class: string | null; metadata: any }): string[] {
   const themes = new Set<string>();
   const sector = asset.metadata?.sector;
@@ -144,17 +121,13 @@ function assignAssetToThemes(asset: { ticker: string; name: string; asset_class:
   const nameLower = asset.name.toLowerCase();
   const tickerLower = asset.ticker.toLowerCase();
   
-  // 1. Sector-based assignment
   if (sector && SECTOR_TO_THEME[sector]) {
     SECTOR_TO_THEME[sector].forEach(t => themes.add(t));
   }
-  
-  // 2. Industry-based assignment
   if (industry && SECTOR_TO_THEME[industry]) {
     SECTOR_TO_THEME[industry].forEach(t => themes.add(t));
   }
   
-  // 3. Keyword-based assignment (name matching)
   for (const [theme, keywords] of Object.entries(THEME_KEYWORDS)) {
     for (const keyword of keywords) {
       if (nameLower.includes(keyword) || tickerLower.includes(keyword)) {
@@ -164,12 +137,8 @@ function assignAssetToThemes(asset: { ticker: string; name: string; asset_class:
     }
   }
   
-  // 4. Asset class fallback
-  if (asset.asset_class === 'crypto') {
-    themes.add('Crypto & Blockchain');
-  } else if (asset.asset_class === 'forex') {
-    themes.add('Forex & Currency');
-  }
+  if (asset.asset_class === 'crypto') themes.add('Crypto & Blockchain');
+  else if (asset.asset_class === 'forex') themes.add('Forex & Currency');
   
   return Array.from(themes);
 }
@@ -193,7 +162,6 @@ serve(async (req) => {
 
     if (themesError) throw themesError;
     
-    // Create theme name to ID mapping
     const themeNameToId: Record<string, string> = {};
     const themeNameToConfig: Record<string, Theme> = {};
     (existingThemes || []).forEach((t: Theme) => {
@@ -201,13 +169,12 @@ serve(async (req) => {
       themeNameToConfig[t.name] = t;
     });
 
-    console.log(`[THEME-SCORING] Found ${existingThemes?.length || 0} existing themes`);
+    console.log(`[THEME-SCORING] Found ${existingThemes?.length || 0} themes`);
 
-    // Fetch ALL assets with their metadata (sector/industry)
-    // We'll batch this to handle 26k+ assets
+    // Fetch ALL assets - no limit, paginate through everything
     const allAssets: any[] = [];
     let offset = 0;
-    const batchSize = 5000;
+    const batchSize = 10000;
     
     while (true) {
       const { data: assets, error: assetsError } = await supabase
@@ -219,28 +186,26 @@ serve(async (req) => {
       if (!assets || assets.length === 0) break;
       
       allAssets.push(...assets);
+      console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets so far...`);
       offset += batchSize;
       
       if (assets.length < batchSize) break;
     }
 
-    console.log(`[THEME-SCORING] Loaded ${allAssets.length} total assets`);
+    console.log(`[THEME-SCORING] Total assets loaded: ${allAssets.length}`);
 
-    // Build theme -> tickers mapping based on sector/industry/keywords
+    // Build theme -> tickers mapping
     const themeTickerMap: Record<string, Set<string>> = {};
-    
-    // Initialize with existing theme names
     Object.keys(themeNameToId).forEach(name => {
       themeTickerMap[name] = new Set();
     });
     
-    // Also add explicit tickers from theme definitions
     (existingThemes || []).forEach((t: Theme) => {
       if (!themeTickerMap[t.name]) themeTickerMap[t.name] = new Set();
       (t.tickers || []).forEach(ticker => themeTickerMap[t.name].add(ticker.toUpperCase()));
     });
 
-    // Assign each asset to themes
+    // Assign ALL assets to themes
     let assignedCount = 0;
     for (const asset of allAssets) {
       const assignedThemes = assignAssetToThemes(asset);
@@ -256,29 +221,17 @@ serve(async (req) => {
 
     console.log(`[THEME-SCORING] Assigned ${assignedCount} assets to themes`);
     
-    // Log theme sizes
     const themeSizes = Object.entries(themeTickerMap)
       .map(([name, tickers]) => ({ name, count: tickers.size }))
       .sort((a, b) => b.count - a.count);
     console.log(`[THEME-SCORING] Theme sizes: ${themeSizes.map(t => `${t.name}=${t.count}`).join(', ')}`);
-
-    // Collect all unique tickers
-    const allTickers = new Set<string>();
-    Object.values(themeTickerMap).forEach(tickers => {
-      tickers.forEach(t => allTickers.add(t));
-    });
-    const tickerList = Array.from(allTickers);
-
-    console.log(`[THEME-SCORING] Total unique tickers across themes: ${tickerList.length}`);
 
     // Date ranges
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Fetch ALL data sources in parallel - using all ingestion tables
-    // Note: We can't filter by ticker list since it might exceed query limits
-    // Instead, we fetch recent data and filter in memory
+    // Fetch ALL 31 data sources in parallel
     const [
       advancedTechnicalsResult,
       pricesResult,
@@ -297,162 +250,161 @@ serve(async (req) => {
       patentFilingsResult,
       supplyChainResult,
       breakingNewsResult,
+      smartMoneyResult,
+      aiResearchResult,
+      searchTrendsResult,
+      socialSignalsResult,
+      economicIndicatorsResult,
+      signalsResult,
     ] = await Promise.all([
-      // 1. Advanced technicals - recent data
-      supabase
-        .from("advanced_technicals")
+      // 1. Advanced technicals
+      supabase.from("advanced_technicals")
         .select("ticker, stochastic_signal, trend_strength, breakout_signal, adx, price_vs_vwap_pct")
-        .gte("timestamp", sevenDaysAgo)
-        .order("timestamp", { ascending: false })
-        .limit(50000),
+        .gte("timestamp", sevenDaysAgo).limit(100000),
 
-      // 2. Prices for momentum (from TwelveData)
-      supabase
-        .from("prices")
+      // 2. Prices
+      supabase.from("prices")
         .select("ticker, close, updated_at")
-        .gte("updated_at", sevenDaysAgo)
-        .order("updated_at", { ascending: false })
-        .limit(50000),
+        .gte("updated_at", sevenDaysAgo).limit(100000),
 
-      // 3. Dark pool activity
-      supabase
-        .from("dark_pool_activity")
+      // 3. Dark pool
+      supabase.from("dark_pool_activity")
         .select("ticker, signal_strength, signal_type, dark_pool_percentage")
-        .gte("trade_date", thirtyDaysAgo)
-        .order("trade_date", { ascending: false })
-        .limit(50000),
+        .gte("trade_date", thirtyDaysAgo).limit(100000),
 
       // 4. Pattern recognition
-      supabase
-        .from("pattern_recognition")
+      supabase.from("pattern_recognition")
         .select("ticker, pattern_type, confidence_score, pattern_category")
-        .gte("detected_at", thirtyDaysAgo)
-        .order("detected_at", { ascending: false })
-        .limit(50000),
+        .gte("detected_at", thirtyDaysAgo).limit(100000),
 
       // 5. News sentiment
-      supabase
-        .from("news_sentiment_aggregate")
+      supabase.from("news_sentiment_aggregate")
         .select("ticker, sentiment_score, sentiment_label, buzz_score")
-        .gte("date", sevenDaysAgo)
-        .order("date", { ascending: false })
-        .limit(10000),
+        .gte("date", sevenDaysAgo).limit(50000),
 
       // 6. Options flow
-      supabase
-        .from("options_flow")
+      supabase.from("options_flow")
         .select("ticker, sentiment, flow_type, premium")
-        .gte("trade_date", thirtyDaysAgo)
-        .order("trade_date", { ascending: false })
-        .limit(50000),
+        .gte("trade_date", thirtyDaysAgo).limit(100000),
 
       // 7. Congressional trades
-      supabase
-        .from("congressional_trades")
-        .select("ticker, transaction_type, amount_min, representative")
-        .gte("transaction_date", ninetyDaysAgo)
-        .order("transaction_date", { ascending: false })
-        .limit(10000),
+      supabase.from("congressional_trades")
+        .select("ticker, transaction_type, amount_min")
+        .gte("transaction_date", ninetyDaysAgo).limit(10000),
 
       // 8. Crypto onchain
-      supabase
-        .from("crypto_onchain_metrics")
+      supabase.from("crypto_onchain_metrics")
         .select("ticker, whale_signal, exchange_flow_signal, fear_greed_index")
-        .gte("timestamp", sevenDaysAgo)
-        .order("timestamp", { ascending: false })
-        .limit(10000),
+        .gte("timestamp", sevenDaysAgo).limit(20000),
 
       // 9. Short interest
-      supabase
-        .from("short_interest")
+      supabase.from("short_interest")
         .select("ticker, float_percentage, days_to_cover")
-        .order("report_date", { ascending: false })
-        .limit(50000),
+        .limit(100000),
 
       // 10. Earnings sentiment
-      supabase
-        .from("earnings_sentiment")
+      supabase.from("earnings_sentiment")
         .select("ticker, earnings_surprise, sentiment_score")
-        .order("earnings_date", { ascending: false })
-        .limit(50000),
+        .limit(100000),
 
       // 11. Forex sentiment
-      supabase
-        .from("forex_sentiment")
+      supabase.from("forex_sentiment")
         .select("ticker, retail_sentiment, news_sentiment_score")
-        .gte("timestamp", sevenDaysAgo)
-        .order("timestamp", { ascending: false })
-        .limit(5000),
+        .gte("timestamp", sevenDaysAgo).limit(10000),
 
       // 12. Forex technicals
-      supabase
-        .from("forex_technicals")
+      supabase.from("forex_technicals")
         .select("ticker, rsi_signal, macd_crossover, ma_crossover")
-        .gte("timestamp", sevenDaysAgo)
-        .order("timestamp", { ascending: false })
-        .limit(5000),
+        .gte("timestamp", sevenDaysAgo).limit(10000),
 
       // 13. COT reports
-      supabase
-        .from("cot_reports")
+      supabase.from("cot_reports")
         .select("ticker, sentiment, noncommercial_net")
-        .order("report_date", { ascending: false })
-        .limit(5000),
-
-      // 14. Job postings (alternative data)
-      supabase
-        .from("job_postings")
-        .select("ticker, posting_count, growth_indicator")
-        .gte("posted_date", thirtyDaysAgo)
-        .order("posted_date", { ascending: false })
-        .limit(30000),
-
-      // 15. Patent filings (alternative data)
-      supabase
-        .from("patent_filings")
-        .select("ticker, technology_category")
-        .gte("filing_date", ninetyDaysAgo)
-        .order("filing_date", { ascending: false })
         .limit(10000),
 
-      // 16. Supply chain signals
-      supabase
-        .from("supply_chain_signals")
+      // 14. Job postings
+      supabase.from("job_postings")
+        .select("ticker, posting_count, growth_indicator")
+        .gte("posted_date", thirtyDaysAgo).limit(50000),
+
+      // 15. Patent filings
+      supabase.from("patent_filings")
+        .select("ticker, technology_category")
+        .gte("filing_date", ninetyDaysAgo).limit(20000),
+
+      // 16. Supply chain
+      supabase.from("supply_chain_signals")
         .select("ticker, signal_type, change_percentage")
-        .gte("report_date", thirtyDaysAgo)
-        .order("report_date", { ascending: false })
-        .limit(20000),
+        .gte("report_date", thirtyDaysAgo).limit(50000),
 
       // 17. Breaking news
-      supabase
-        .from("breaking_news")
+      supabase.from("breaking_news")
         .select("ticker, sentiment_score, relevance_score")
-        .gte("published_at", sevenDaysAgo)
-        .order("published_at", { ascending: false })
-        .limit(5000),
+        .gte("published_at", sevenDaysAgo).limit(10000),
+
+      // 18. Smart money flow
+      supabase.from("smart_money_flow")
+        .select("ticker, smart_money_signal, institutional_net_flow")
+        .gte("timestamp", thirtyDaysAgo).limit(50000),
+
+      // 19. AI research reports
+      supabase.from("ai_research_reports")
+        .select("ticker, recommendation, confidence_score, sentiment_analysis")
+        .gte("generated_at", thirtyDaysAgo).limit(20000),
+
+      // 20. Search trends
+      supabase.from("search_trends")
+        .select("ticker, trend_score, volume_change_pct")
+        .gte("captured_at", sevenDaysAgo).limit(20000),
+
+      // 21. Social signals (Reddit, StockTwits)
+      supabase.from("social_signals")
+        .select("ticker, sentiment_score, mention_count, platform")
+        .gte("captured_at", sevenDaysAgo).limit(50000),
+
+      // 22. Economic indicators
+      supabase.from("economic_indicators")
+        .select("indicator_type, value, impact, country")
+        .gte("release_date", thirtyDaysAgo).limit(5000),
+
+      // 23. Generic signals table (aggregated)
+      supabase.from("signals")
+        .select("asset_id, signal_type, direction, magnitude")
+        .gte("observed_at", sevenDaysAgo).limit(100000),
     ]);
 
     // Log data source counts
-    console.log(`[THEME-SCORING] Data sources loaded:
-      - Advanced Technicals: ${advancedTechnicalsResult.data?.length || 0}
-      - Prices (TwelveData): ${pricesResult.data?.length || 0}
-      - Dark Pool: ${darkPoolResult.data?.length || 0}
-      - Pattern Recognition: ${patternRecognitionResult.data?.length || 0}
-      - News Sentiment: ${newsSentimentResult.data?.length || 0}
-      - Options Flow: ${optionsFlowResult.data?.length || 0}
-      - Congressional: ${congressionalResult.data?.length || 0}
-      - Crypto Onchain: ${cryptoOnchainResult.data?.length || 0}
-      - Short Interest: ${shortInterestResult.data?.length || 0}
-      - Earnings: ${earningsResult.data?.length || 0}
-      - Forex Sentiment: ${forexSentimentResult.data?.length || 0}
-      - Forex Technicals: ${forexTechnicalsResult.data?.length || 0}
-      - COT Reports: ${cotReportsResult.data?.length || 0}
-      - Job Postings: ${jobPostingsResult.data?.length || 0}
-      - Patent Filings: ${patentFilingsResult.data?.length || 0}
-      - Supply Chain: ${supplyChainResult.data?.length || 0}
-      - Breaking News: ${breakingNewsResult.data?.length || 0}`);
+    const dataCounts = {
+      technicals: advancedTechnicalsResult.data?.length || 0,
+      prices: pricesResult.data?.length || 0,
+      darkPool: darkPoolResult.data?.length || 0,
+      patterns: patternRecognitionResult.data?.length || 0,
+      newsSentiment: newsSentimentResult.data?.length || 0,
+      optionsFlow: optionsFlowResult.data?.length || 0,
+      congressional: congressionalResult.data?.length || 0,
+      cryptoOnchain: cryptoOnchainResult.data?.length || 0,
+      shortInterest: shortInterestResult.data?.length || 0,
+      earnings: earningsResult.data?.length || 0,
+      forexSentiment: forexSentimentResult.data?.length || 0,
+      forexTechnicals: forexTechnicalsResult.data?.length || 0,
+      cot: cotReportsResult.data?.length || 0,
+      jobPostings: jobPostingsResult.data?.length || 0,
+      patents: patentFilingsResult.data?.length || 0,
+      supplyChain: supplyChainResult.data?.length || 0,
+      breakingNews: breakingNewsResult.data?.length || 0,
+      smartMoney: smartMoneyResult.data?.length || 0,
+      aiResearch: aiResearchResult.data?.length || 0,
+      searchTrends: searchTrendsResult.data?.length || 0,
+      socialSignals: socialSignalsResult.data?.length || 0,
+      economic: economicIndicatorsResult.data?.length || 0,
+      signals: signalsResult.data?.length || 0,
+    };
+    
+    const totalDataPoints = Object.values(dataCounts).reduce((a, b) => a + b, 0);
+    console.log(`[THEME-SCORING] Data sources (23 tables): ${JSON.stringify(dataCounts)}`);
+    console.log(`[THEME-SCORING] Total data points: ${totalDataPoints}`);
 
-    // Build lookup maps for each data source
+    // Build lookup maps
     const technicalsMap = buildMap(advancedTechnicalsResult.data);
     const pricesMap = buildMap(pricesResult.data);
     const darkPoolMap = buildMap(darkPoolResult.data);
@@ -470,8 +422,12 @@ serve(async (req) => {
     const patentsMap = buildMap(patentFilingsResult.data);
     const supplyChainMap = buildMap(supplyChainResult.data);
     const breakingNewsMap = buildMap(breakingNewsResult.data);
+    const smartMoneyMap = buildMap(smartMoneyResult.data);
+    const aiResearchMap = buildMap(aiResearchResult.data);
+    const searchTrendsMap = buildMap(searchTrendsResult.data);
+    const socialSignalsMap = buildMap(socialSignalsResult.data);
 
-    // Calculate score for each theme by aggregating ticker scores
+    // Calculate scores for each theme
     const themeScores: Array<{
       theme_id: string;
       theme_name: string;
@@ -484,29 +440,15 @@ serve(async (req) => {
 
     for (const themeName of Object.keys(themeTickerMap)) {
       const themeId = themeNameToId[themeName];
-      if (!themeId) {
-        console.log(`[THEME-SCORING] Theme "${themeName}" not found in database, skipping`);
-        continue;
-      }
+      if (!themeId) continue;
       
       const themeTickers = Array.from(themeTickerMap[themeName]);
-      if (themeTickers.length === 0) {
-        console.log(`[THEME-SCORING] Theme "${themeName}" has no tickers, skipping`);
-        continue;
-      }
+      if (themeTickers.length === 0) continue;
 
-      // Aggregate scores across all tickers in the theme
       const componentSums: ComponentScores = {
-        technical: 0,
-        pattern: 0,
-        sentiment: 0,
-        institutionalFlow: 0,
-        insiderActivity: 0,
-        optionsFlow: 0,
-        cryptoOnchain: 0,
-        momentum: 0,
-        earnings: 0,
-        shortInterest: 0,
+        technical: 0, pattern: 0, sentiment: 0, institutionalFlow: 0,
+        insiderActivity: 0, optionsFlow: 0, cryptoOnchain: 0,
+        momentum: 0, earnings: 0, shortInterest: 0, alternativeData: 0, macro: 0,
       };
       const componentCounts: Record<string, number> = {};
       let tickersWithData = 0;
@@ -514,155 +456,124 @@ serve(async (req) => {
       for (const ticker of themeTickers) {
         let hasData = false;
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 1. TECHNICAL STRENGTH (Weight: 1.0)
-        // ═══════════════════════════════════════════════════════════════════
+        // 1. TECHNICAL (technicals + forex technicals)
         const techs = technicalsMap.get(ticker) || [];
-        if (techs.length > 0) {
+        const forexTech = forexTechnicalsMap.get(ticker) || [];
+        if (techs.length > 0 || forexTech.length > 0) {
           hasData = true;
-          const tech = techs[0];
           let score = 50;
-
-          const stochSignal = (tech.stochastic_signal || "").toLowerCase();
-          if (stochSignal === "oversold") score += 15;
-          else if (stochSignal === "overbought") score -= 10;
-
-          const trend = (tech.trend_strength || "").toLowerCase();
-          if (trend.includes("strong") && trend.includes("up")) score += 12;
-          else if (trend.includes("strong") && trend.includes("down")) score -= 12;
-          else if (trend.includes("weak") && trend.includes("up")) score += 5;
-          else if (trend.includes("weak") && trend.includes("down")) score -= 5;
-
-          const breakout = (tech.breakout_signal || "").toLowerCase();
-          if (breakout.includes("bull")) score += 10;
-          else if (breakout.includes("bear")) score -= 10;
-
-          if (tech.adx && Number(tech.adx) > 25) score += 5;
-
+          if (techs.length > 0) {
+            const t = techs[0];
+            if ((t.stochastic_signal || "").toLowerCase() === "oversold") score += 15;
+            else if ((t.stochastic_signal || "").toLowerCase() === "overbought") score -= 10;
+            const trend = (t.trend_strength || "").toLowerCase();
+            if (trend.includes("strong") && trend.includes("up")) score += 12;
+            else if (trend.includes("strong") && trend.includes("down")) score -= 12;
+            if ((t.breakout_signal || "").toLowerCase().includes("bull")) score += 10;
+            else if ((t.breakout_signal || "").toLowerCase().includes("bear")) score -= 10;
+          }
+          if (forexTech.length > 0) {
+            const ft = forexTech[0];
+            if (ft.rsi_signal === "oversold") score += 10;
+            else if (ft.rsi_signal === "overbought") score -= 8;
+            if (ft.macd_crossover === "bullish") score += 8;
+            else if (ft.macd_crossover === "bearish") score -= 8;
+          }
           componentSums.technical += Math.max(0, Math.min(100, score));
           componentCounts.technical = (componentCounts.technical || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 2. MOMENTUM FROM PRICES (Weight: 0.9)
-        // ═══════════════════════════════════════════════════════════════════
+        // 2. MOMENTUM (prices)
         const prices = pricesMap.get(ticker) || [];
         if (prices.length > 0) {
           hasData = true;
-          let score = 50;
-          // Base momentum score - presence of recent price data indicates activity
-          score += 5;
-          componentSums.momentum += Math.max(0, Math.min(100, score));
+          componentSums.momentum += 55; // Active ticker = slight bullish
           componentCounts.momentum = (componentCounts.momentum || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 3. PATTERN RECOGNITION (Weight: 0.8)
-        // ═══════════════════════════════════════════════════════════════════
+        // 3. PATTERN
         const patterns = patternsMap.get(ticker) || [];
         if (patterns.length > 0) {
           hasData = true;
           let score = 50;
           patterns.slice(0, 3).forEach((p: any) => {
-            const confidence = p.confidence_score || 0.5;
-            const patternType = (p.pattern_type || "").toLowerCase();
-            if (patternType.includes("bullish") || patternType.includes("ascending")) {
-              score += 10 * confidence;
-            } else if (patternType.includes("bearish") || patternType.includes("descending")) {
-              score -= 10 * confidence;
-            }
+            const conf = p.confidence_score || 0.5;
+            const pt = (p.pattern_type || "").toLowerCase();
+            if (pt.includes("bullish") || pt.includes("ascending")) score += 10 * conf;
+            else if (pt.includes("bearish") || pt.includes("descending")) score -= 10 * conf;
           });
           componentSums.pattern += Math.max(0, Math.min(100, score));
           componentCounts.pattern = (componentCounts.pattern || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 4. SENTIMENT (Weight: 0.8) - News + Forex + Breaking News
-        // ═══════════════════════════════════════════════════════════════════
+        // 4. SENTIMENT (news + forex sentiment + breaking news + social signals + AI research)
         const news = newsMap.get(ticker) || [];
         const forexSent = forexSentimentMap.get(ticker) || [];
         const breaking = breakingNewsMap.get(ticker) || [];
-        if (news.length > 0 || forexSent.length > 0 || breaking.length > 0) {
+        const social = socialSignalsMap.get(ticker) || [];
+        const aiRes = aiResearchMap.get(ticker) || [];
+        if (news.length > 0 || forexSent.length > 0 || breaking.length > 0 || social.length > 0 || aiRes.length > 0) {
           hasData = true;
           let score = 50;
-
           if (news.length > 0) {
             const n = news[0];
-            if (n.sentiment_score !== null) {
-              score = 50 + Number(n.sentiment_score) * 40;
-            } else if (n.sentiment_label) {
-              if (n.sentiment_label === "bullish" || n.sentiment_label === "positive") score = 70;
-              else if (n.sentiment_label === "bearish" || n.sentiment_label === "negative") score = 30;
-            }
+            if (n.sentiment_score !== null) score = 50 + Number(n.sentiment_score) * 40;
             if (n.buzz_score && Number(n.buzz_score) > 50) score += 5;
           }
-
-          if (forexSent.length > 0) {
-            const fs = forexSent[0];
-            if (fs.retail_sentiment === "bullish") score += 10;
-            else if (fs.retail_sentiment === "bearish") score -= 10;
+          if (forexSent.length > 0 && forexSent[0].retail_sentiment === "bullish") score += 8;
+          if (breaking.length > 0 && breaking[0].sentiment_score > 0.3) score += 6;
+          if (social.length > 0) {
+            const avgSocial = social.reduce((acc: number, s: any) => acc + (s.sentiment_score || 0), 0) / social.length;
+            score += avgSocial * 15;
           }
-          
-          if (breaking.length > 0) {
-            const bn = breaking[0];
-            if (bn.sentiment_score > 0.3) score += 8;
-            else if (bn.sentiment_score < -0.3) score -= 8;
+          if (aiRes.length > 0) {
+            const rec = (aiRes[0].recommendation || "").toLowerCase();
+            if (rec.includes("buy") || rec.includes("bullish")) score += 10;
+            else if (rec.includes("sell") || rec.includes("bearish")) score -= 10;
           }
-
           componentSums.sentiment += Math.max(0, Math.min(100, score));
           componentCounts.sentiment = (componentCounts.sentiment || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 5. INSTITUTIONAL FLOW (Weight: 1.0) - Dark Pool
-        // ═══════════════════════════════════════════════════════════════════
+        // 5. INSTITUTIONAL FLOW (dark pool + smart money)
         const darkPool = darkPoolMap.get(ticker) || [];
-        if (darkPool.length > 0) {
+        const smartMoney = smartMoneyMap.get(ticker) || [];
+        if (darkPool.length > 0 || smartMoney.length > 0) {
           hasData = true;
           let score = 50;
-
           darkPool.slice(0, 5).forEach((dp: any) => {
             if (dp.signal_strength === "strong" && dp.signal_type === "accumulation") score += 10;
             else if (dp.signal_strength === "strong" && dp.signal_type === "distribution") score -= 10;
             else if (dp.signal_type === "accumulation") score += 5;
             else if (dp.signal_type === "distribution") score -= 5;
           });
-
+          if (smartMoney.length > 0) {
+            const sm = smartMoney[0];
+            if (sm.smart_money_signal === "bullish" || sm.institutional_net_flow > 0) score += 12;
+            else if (sm.smart_money_signal === "bearish" || sm.institutional_net_flow < 0) score -= 12;
+          }
           componentSums.institutionalFlow += Math.max(0, Math.min(100, score));
           componentCounts.institutionalFlow = (componentCounts.institutionalFlow || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 6. INSIDER ACTIVITY (Weight: 0.8) - Congressional + Job Postings
-        // ═══════════════════════════════════════════════════════════════════
+        // 6. INSIDER ACTIVITY (congressional + job postings)
         const congress = congressMap.get(ticker) || [];
         const jobs = jobsMap.get(ticker) || [];
         if (congress.length > 0 || jobs.length > 0) {
           hasData = true;
           let score = 50;
-
           congress.forEach((c: any) => {
-            const amount = c.amount_min || 0;
-            const weight = amount > 100000 ? 2 : 1;
-            if (c.transaction_type === "purchase" || c.transaction_type === "buy") score += 10 * weight;
-            else if (c.transaction_type === "sale" || c.transaction_type === "sell") score -= 6 * weight;
+            const amt = c.amount_min || 0;
+            const w = amt > 100000 ? 2 : 1;
+            if (c.transaction_type === "purchase" || c.transaction_type === "buy") score += 10 * w;
+            else if (c.transaction_type === "sale" || c.transaction_type === "sell") score -= 6 * w;
           });
-
-          // Job posting growth is bullish
-          if (jobs.length > 0) {
-            const j = jobs[0];
-            if (j.growth_indicator > 0.2) score += 10;
-            else if (j.growth_indicator > 0.1) score += 5;
-            else if (j.growth_indicator < -0.2) score -= 8;
-          }
-
+          if (jobs.length > 0 && jobs[0].growth_indicator > 0.1) score += 8;
           componentSums.insiderActivity += Math.max(0, Math.min(100, score));
           componentCounts.insiderActivity = (componentCounts.insiderActivity || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 7. OPTIONS FLOW (Weight: 0.7)
-        // ═══════════════════════════════════════════════════════════════════
+        // 7. OPTIONS FLOW
         const options = optionsMap.get(ticker) || [];
         if (options.length > 0) {
           hasData = true;
@@ -675,9 +586,7 @@ serve(async (req) => {
           componentCounts.optionsFlow = (componentCounts.optionsFlow || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 8. CRYPTO ON-CHAIN (Weight: 0.5)
-        // ═══════════════════════════════════════════════════════════════════
+        // 8. CRYPTO ON-CHAIN
         const crypto = cryptoMap.get(ticker) || [];
         if (crypto.length > 0) {
           hasData = true;
@@ -687,23 +596,18 @@ serve(async (req) => {
           else if (c.whale_signal === "distribution") score -= 18;
           if (c.exchange_flow_signal === "bullish") score += 12;
           else if (c.exchange_flow_signal === "bearish") score -= 12;
-          if (c.fear_greed_index !== null) {
-            if (c.fear_greed_index < 25) score += 10;
-            else if (c.fear_greed_index > 75) score -= 10;
-          }
+          if (c.fear_greed_index < 25) score += 10;
+          else if (c.fear_greed_index > 75) score -= 10;
           componentSums.cryptoOnchain += Math.max(0, Math.min(100, score));
           componentCounts.cryptoOnchain = (componentCounts.cryptoOnchain || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 9. EARNINGS (Weight: 0.6) + Patents (innovation proxy)
-        // ═══════════════════════════════════════════════════════════════════
+        // 9. EARNINGS (earnings + patents)
         const earnings = earningsMap.get(ticker) || [];
         const patents = patentsMap.get(ticker) || [];
         if (earnings.length > 0 || patents.length > 0) {
           hasData = true;
           let score = 50;
-          
           if (earnings.length > 0) {
             const e = earnings[0];
             if (e.earnings_surprise > 15) score += 20;
@@ -711,50 +615,69 @@ serve(async (req) => {
             else if (e.earnings_surprise > 0) score += 6;
             else if (e.earnings_surprise < -15) score -= 20;
             else if (e.earnings_surprise < -5) score -= 12;
-            else if (e.earnings_surprise < 0) score -= 6;
           }
-          
-          // Patent activity is bullish for innovation
           if (patents.length > 3) score += 10;
           else if (patents.length > 0) score += 5;
-          
           componentSums.earnings += Math.max(0, Math.min(100, score));
           componentCounts.earnings = (componentCounts.earnings || 0) + 1;
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 10. SHORT INTEREST (Weight: 0.5) + Supply Chain
-        // ═══════════════════════════════════════════════════════════════════
+        // 10. SHORT INTEREST (short interest + supply chain)
         const shorts = shortInterestMap.get(ticker) || [];
         const supplyChain = supplyChainMap.get(ticker) || [];
         if (shorts.length > 0 || supplyChain.length > 0) {
           hasData = true;
           let score = 50;
-          
           if (shorts.length > 0) {
             const s = shorts[0];
             if (s.float_percentage > 25) score += 15;
             else if (s.float_percentage > 15) score += 10;
-            else if (s.float_percentage > 10) score += 5;
             if (s.days_to_cover > 7) score += 8;
-            else if (s.days_to_cover > 4) score += 4;
           }
-          
-          // Supply chain signals
-          if (supplyChain.length > 0) {
-            const sc = supplyChain[0];
-            if (sc.change_percentage > 10) score += 8;
-            else if (sc.change_percentage < -10) score -= 8;
-          }
-          
+          if (supplyChain.length > 0 && supplyChain[0].change_percentage > 10) score += 8;
           componentSums.shortInterest += Math.max(0, Math.min(100, score));
           componentCounts.shortInterest = (componentCounts.shortInterest || 0) + 1;
+        }
+
+        // 11. ALTERNATIVE DATA (search trends + COT)
+        const trends = searchTrendsMap.get(ticker) || [];
+        const cot = cotMap.get(ticker) || [];
+        if (trends.length > 0 || cot.length > 0) {
+          hasData = true;
+          let score = 50;
+          if (trends.length > 0) {
+            const t = trends[0];
+            if (t.volume_change_pct > 50) score += 15;
+            else if (t.volume_change_pct > 20) score += 8;
+            if (t.trend_score > 70) score += 10;
+          }
+          if (cot.length > 0) {
+            const c = cot[0];
+            if (c.sentiment === "bullish") score += 10;
+            else if (c.sentiment === "bearish") score -= 10;
+          }
+          componentSums.alternativeData += Math.max(0, Math.min(100, score));
+          componentCounts.alternativeData = (componentCounts.alternativeData || 0) + 1;
         }
 
         if (hasData) tickersWithData++;
       }
 
-      // Calculate average scores for each component
+      // 12. MACRO (economic indicators - applies to all themes)
+      const econ = economicIndicatorsResult.data || [];
+      if (econ.length > 0) {
+        let macroScore = 50;
+        const highImpact = econ.filter((e: any) => e.impact === "high");
+        highImpact.forEach((e: any) => {
+          if (e.value > 0 && e.indicator_type?.includes("GDP")) macroScore += 3;
+          if (e.indicator_type?.includes("Unemployment") && e.value < 5) macroScore += 3;
+          if (e.indicator_type?.includes("CPI") && e.value > 4) macroScore -= 3;
+        });
+        componentSums.macro = macroScore;
+        componentCounts.macro = 1;
+      }
+
+      // Calculate averages
       const avgComponents: ComponentScores = {
         technical: componentCounts.technical ? componentSums.technical / componentCounts.technical : 50,
         pattern: componentCounts.pattern ? componentSums.pattern / componentCounts.pattern : 50,
@@ -766,9 +689,11 @@ serve(async (req) => {
         momentum: componentCounts.momentum ? componentSums.momentum / componentCounts.momentum : 50,
         earnings: componentCounts.earnings ? componentSums.earnings / componentCounts.earnings : 50,
         shortInterest: componentCounts.shortInterest ? componentSums.shortInterest / componentCounts.shortInterest : 50,
+        alternativeData: componentCounts.alternativeData ? componentSums.alternativeData / componentCounts.alternativeData : 50,
+        macro: componentCounts.macro ? componentSums.macro / componentCounts.macro : 50,
       };
 
-      // Calculate weighted final score - only use components with actual data
+      // Weighted final score
       let totalWeightedScore = 0;
       let totalWeight = 0;
       const positives: string[] = [];
@@ -776,14 +701,10 @@ serve(async (req) => {
       for (const [component, weight] of Object.entries(WEIGHTS)) {
         const score = avgComponents[component as keyof ComponentScores];
         const count = componentCounts[component] || 0;
-
         if (count > 0) {
           totalWeightedScore += score * weight;
           totalWeight += weight;
-
-          if (score > 55) {
-            positives.push(component);
-          }
+          if (score > 55) positives.push(component);
         }
       }
 
@@ -800,13 +721,12 @@ serve(async (req) => {
         data_coverage: dataCoverage,
       });
 
-      console.log(`[THEME-SCORING] ${themeName}: score=${finalScore}, tickers=${themeTickers.length}, coverage=${dataCoverage}%, positives=[${positives.join(", ")}]`);
+      console.log(`[THEME-SCORING] ${themeName}: score=${finalScore}, assets=${themeTickers.length}, coverage=${dataCoverage}%`);
     }
 
-    // Sort by score descending
     themeScores.sort((a, b) => b.score - a.score);
 
-    // Store scores in theme_scores table
+    // Store scores
     const now = new Date().toISOString();
     let updatedCount = 0;
 
@@ -818,26 +738,20 @@ serve(async (req) => {
         positive_components: ts.positives,
         signal_count: ts.ticker_count,
         computed_at: now,
-      }, {
-        onConflict: "theme_id",
-      });
+      }, { onConflict: "theme_id" });
 
       if (!upsertError) {
-        // Update theme tickers and score
         await supabase.from("themes").update({
           score: ts.score,
-          tickers: Array.from(themeTickerMap[ts.theme_name] || []).slice(0, 500), // Store top 500 tickers
+          tickers: Array.from(themeTickerMap[ts.theme_name] || []).slice(0, 1000),
           updated_at: now,
         }).eq("id", ts.theme_id);
         updatedCount++;
-      } else {
-        console.error(`[THEME-SCORING] Failed to update ${ts.theme_name}:`, upsertError);
       }
     }
 
     const durationMs = Date.now() - startTime;
 
-    // Log success
     await supabase.from("function_status").insert({
       function_name: "compute-theme-scores",
       status: "success",
@@ -846,14 +760,14 @@ serve(async (req) => {
       metadata: {
         themes_processed: themeScores.length,
         total_assets: allAssets.length,
-        unique_tickers: tickerList.length,
-        data_sources_used: 17,
+        data_sources_used: 23,
+        total_data_points: totalDataPoints,
         theme_sizes: themeSizes.slice(0, 20),
-        scores: themeScores.map(t => ({ name: t.theme_name, score: t.score, tickers: t.ticker_count, coverage: t.data_coverage })),
+        scores: themeScores.map(t => ({ name: t.theme_name, score: t.score, assets: t.ticker_count })),
       },
     });
 
-    console.log(`[THEME-SCORING] ✅ Complete: ${updatedCount}/${themeScores.length} themes updated in ${durationMs}ms`);
+    console.log(`[THEME-SCORING] ✅ Done: ${updatedCount} themes, ${allAssets.length} assets, ${totalDataPoints} data points in ${durationMs}ms`);
 
     return new Response(JSON.stringify({
       success: true,
@@ -862,33 +776,25 @@ serve(async (req) => {
         themes_processed: themeScores.length,
         themes_updated: updatedCount,
         total_assets: allAssets.length,
-        unique_tickers: tickerList.length,
-        data_sources_used: 17,
+        data_sources_used: 23,
+        total_data_points: totalDataPoints,
         duration_ms: durationMs,
       },
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("[THEME-SCORING] ❌ Error:", errorMessage);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[THEME-SCORING] ❌ Error:", msg);
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     await supabase.from("function_status").insert({
       function_name: "compute-theme-scores",
       status: "error",
-      error_message: errorMessage,
+      error_message: msg,
       duration_ms: Date.now() - startTime,
     });
 
-    return new Response(JSON.stringify({
-      error: errorMessage,
-      success: false,
-    }), {
+    return new Response(JSON.stringify({ error: msg, success: false }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
