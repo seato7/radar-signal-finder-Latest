@@ -6,13 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface Theme {
-  id: string;
-  name: string;
-  tickers: string[];
-  keywords: string[];
-}
-
 interface ComponentScores {
   technical: number;
   pattern: number;
@@ -44,64 +37,174 @@ const WEIGHTS: Record<string, number> = {
   macro: 0.5,
 };
 
-// Sector to theme mapping
-const SECTOR_TO_THEME: Record<string, string[]> = {
-  'Technology': ['AI & Semiconductors', 'Cybersecurity'],
-  'Semiconductors': ['AI & Semiconductors'],
-  'AI & Machine Learning': ['AI & Semiconductors'],
-  'Software & Services': ['AI & Semiconductors', 'Cybersecurity'],
-  'Healthcare': ['Biotech & Healthcare'],
-  'Biotechnology': ['Biotech & Healthcare'],
-  'Healthcare Services': ['Biotech & Healthcare'],
-  'Financial Services': ['Banks & Financials'],
-  'Banks': ['Banks & Financials'],
-  'Fintech': ['Banks & Financials'],
-  'Energy': ['Energy & Oil'],
-  'Oil & Gas': ['Energy & Oil'],
-  'Clean Energy': ['Clean Energy & EVs'],
-  'Renewable Energy': ['Clean Energy & EVs'],
-  'Electric Vehicles': ['Clean Energy & EVs'],
-  'Consumer Discretionary': ['Retail & E-commerce', 'Consumer Discretionary'],
-  'Consumer Staples': ['Food & Agriculture'],
-  'Retail': ['Retail & E-commerce'],
-  'E-Commerce': ['Retail & E-commerce'],
-  'Industrials': ['Industrial & Infrastructure', 'Defense & Aerospace'],
-  'Defense': ['Defense & Aerospace'],
-  'Aerospace': ['Defense & Aerospace'],
-  'Transportation': ['Travel & Leisure'],
-  'Real Estate': ['Real Estate & REITs'],
-  'REITs': ['Real Estate & REITs'],
-  'Materials': ['Commodities & Mining'],
-  'Basic Materials': ['Commodities & Mining'],
-  'Mining': ['Commodities & Mining'],
-  'Communication Services': ['Media & Entertainment'],
-  'Media & Entertainment': ['Media & Entertainment'],
-  'Cryptocurrency': ['Crypto & Blockchain'],
-  'Digital Assets': ['Crypto & Blockchain'],
-  'Currency': ['Forex & Currency'],
-  'Foreign Exchange': ['Forex & Currency'],
-  'Commodities': ['Commodities & Mining'],
-  'ETF': [],
+// EXACT theme name -> keywords mapping (must match DB theme names exactly)
+const THEME_KEYWORDS: Record<string, string[]> = {
+  'AI & Semiconductors': [
+    'nvidia', 'nvda', 'amd', 'intel', 'intc', 'qualcomm', 'qcom', 'broadcom', 'avgo', 
+    'micron', 'mu', 'asml', 'tsmc', 'tsm', 'arm', 'marvell', 'mrvl', 'lam', 'lrcx', 
+    'applied', 'amat', 'klac', 'synopsys', 'snps', 'cadence', 'cdns',
+    'palantir', 'pltr', 'c3.ai', 'snowflake', 'snow', 'databricks', 'openai',
+    'artificial intelligence', 'machine learning', 'semiconductor', 'chip', 'gpu', 'processor', 'neural'
+  ],
+  'Cloud & Cybersecurity': [
+    'crowdstrike', 'crwd', 'palo alto', 'panw', 'fortinet', 'ftnt', 'zscaler', 'zs', 
+    'okta', 'sentinelone', 's', 'cloudflare', 'net', 'datadog', 'ddog', 
+    'microsoft', 'msft', 'amazon', 'amzn', 'google', 'googl', 'goog', 'aws', 'azure',
+    'salesforce', 'crm', 'oracle', 'orcl', 'sap', 'vmware', 'vmw', 'servicenow', 'now',
+    'cyber', 'security', 'cloud', 'saas', 'enterprise software', 'infrastructure'
+  ],
+  'Biotech & Healthcare': [
+    'moderna', 'mrna', 'pfizer', 'pfe', 'merck', 'mrk', 'amgen', 'amgn', 'gilead', 'gild',
+    'biogen', 'biib', 'regeneron', 'regn', 'vertex', 'vrtx', 'abbvie', 'abbv', 'lilly', 'lly',
+    'johnson', 'jnj', 'bristol', 'bmy', 'novartis', 'nvs', 'astrazeneca', 'azn', 'roche',
+    'unitedhealth', 'unh', 'anthem', 'cigna', 'humana', 'hum', 'cvs', 'walgreens', 'wba',
+    'biotech', 'pharma', 'therapeut', 'oncology', 'genomic', 'drug', 'health', 'medical', 'hospital', 'clinical'
+  ],
+  'Clean Energy & EVs': [
+    'tesla', 'tsla', 'rivian', 'rivn', 'lucid', 'lcid', 'nio', 'xpeng', 'xpev', 'li auto', 'li',
+    'enphase', 'enph', 'first solar', 'fslr', 'sunrun', 'run', 'plug power', 'plug',
+    'chargepoint', 'chpt', 'evgo', 'blink', 'blnk', 'quantumscape', 'qs',
+    'solar', 'wind', 'renewable', 'clean energy', 'electric vehicle', ' ev ', 'hydrogen', 'battery', 'charging', 'lithium'
+  ],
+  'Defense & Aerospace': [
+    'lockheed', 'lmt', 'raytheon', 'rtx', 'northrop', 'noc', 'boeing', 'ba', 
+    'general dynamics', 'gd', 'l3harris', 'lhx', 'huntington', 'hii', 'textron', 'txt',
+    'defense', 'aerospace', 'military', 'weapon', 'missile', 'satellite', 'space', 'rocket'
+  ],
+  'Banks & Financials': [
+    'jpmorgan', 'jpm', 'goldman', 'gs', 'morgan stanley', 'ms', 'bank of america', 'bac',
+    'citigroup', 'c', 'wells fargo', 'wfc', 'blackrock', 'blk', 'schwab', 'schw',
+    'visa', 'v', 'mastercard', 'ma', 'american express', 'axp', 'capital one', 'cof',
+    'bank', 'financial', 'credit', 'lending', 'insurance', 'wealth management', 'asset management'
+  ],
+  'Fintech & Crypto': [
+    'paypal', 'pypl', 'square', 'sq', 'block', 'affirm', 'afrm', 'sofi', 
+    'coinbase', 'coin', 'robinhood', 'hood', 'upstart', 'upst', 'lemonade', 'lmnd',
+    'bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'fintech', 'digital payment'
+  ],
+  'Energy & Oil': [
+    'exxon', 'xom', 'chevron', 'cvx', 'conocophillips', 'cop', 'schlumberger', 'slb',
+    'eog', 'pioneer', 'pxd', 'devon', 'dvn', 'occidental', 'oxy', 'marathon', 'mro', 'mpc',
+    'valero', 'vlo', 'phillips 66', 'psx', 'halliburton', 'hal', 'baker hughes', 'bkr',
+    'oil', 'gas', 'petroleum', 'energy', 'drilling', 'pipeline', 'refin', 'crude'
+  ],
+  'Real Estate & REITs': [
+    'prologis', 'pld', 'american tower', 'amt', 'crown castle', 'cci', 'equinix', 'eqix',
+    'digital realty', 'dlr', 'public storage', 'psa', 'simon property', 'spg', 'realty income', 'o',
+    'avalonbay', 'avb', 'equity residential', 'eqr', 'welltower', 'well', 'ventas', 'vtr',
+    'reit', 'real estate', 'property', 'realty', 'housing', 'apartment', 'office', 'mall', 'data center'
+  ],
+  'Industrial & Infrastructure': [
+    'caterpillar', 'cat', 'deere', 'de', 'honeywell', 'hon', '3m', 'mmm', 'general electric', 'ge',
+    'united rentals', 'uri', 'parker hannifin', 'ph', 'illinois tool', 'itw', 'emerson', 'emr',
+    'rockwell', 'rok', 'dover', 'dov', 'ingersoll', 'ir', 'xylem', 'xyl', 'flowserve', 'fls',
+    'industrial', 'manufacturing', 'infrastructure', 'construction', 'machinery', 'automation', 'robotics'
+  ],
+  'Commodities & Mining': [
+    'newmont', 'nem', 'freeport', 'fcx', 'nucor', 'nue', 'southern copper', 'scco',
+    'barrick', 'gold', 'rio tinto', 'rio', 'bhp', 'vale', 'mosaic', 'mos', 'cf industries', 'cf',
+    'alcoa', 'aa', 'steel dynamics', 'stld', 'cleveland cliffs', 'clf',
+    'mining', 'gold', 'silver', 'copper', 'metal', 'steel', 'aluminum', 'iron', 'lithium', 'rare earth'
+  ],
+  'Retail & E-commerce': [
+    'amazon', 'amzn', 'walmart', 'wmt', 'costco', 'cost', 'target', 'tgt', 'home depot', 'hd',
+    'lowes', 'low', 'tjx', 'ross', 'rost', 'dollar general', 'dg', 'dollar tree', 'dltr',
+    'etsy', 'ebay', 'shopify', 'shop', 'wayfair', 'w', 'chewy', 'chwy', 'carvana', 'cvna',
+    'retail', 'e-commerce', 'shop', 'store', 'consumer', 'ecommerce', 'online shopping'
+  ],
+  'Travel & Leisure': [
+    'delta', 'dal', 'united', 'ual', 'southwest', 'luv', 'american airlines', 'aal',
+    'booking', 'bkng', 'airbnb', 'abnb', 'expedia', 'expe', 'marriott', 'mar', 'hilton', 'hlt',
+    'hyatt', 'h', 'mgm', 'wynn', 'las vegas sands', 'lvs', 'carnival', 'ccl', 'royal caribbean', 'rcl',
+    'airline', 'hotel', 'travel', 'leisure', 'casino', 'gaming', 'cruise', 'tourism', 'vacation'
+  ],
+  'Media & Entertainment': [
+    'netflix', 'nflx', 'disney', 'dis', 'comcast', 'cmcsa', 'warner', 'wbd', 'paramount', 'para',
+    'fox', 'foxa', 'spotify', 'spot', 'live nation', 'lyv', 'madison square', 'msgs',
+    'activision', 'atvi', 'electronic arts', 'ea', 'take-two', 'ttwo', 'roblox', 'rblx', 'unity', 'u',
+    'media', 'streaming', 'entertainment', 'movie', 'gaming', 'music', 'content'
+  ],
+  'Food & Agriculture': [
+    'coca-cola', 'ko', 'pepsi', 'pep', 'nestle', 'mondelez', 'mdlz', 'kraft', 'khc', 
+    'general mills', 'gis', 'kellogg', 'k', 'campbell', 'cpb', 'hormel', 'hrl', 'tyson', 'tsn',
+    'mcdonald', 'mcd', 'starbucks', 'sbux', 'chipotle', 'cmg', 'yum', 'dominos', 'dpz',
+    'deere', 'de', 'archer daniels', 'adm', 'bunge', 'bg', 'nutrien', 'ntr', 'corteva', 'ctva',
+    'food', 'beverage', 'agriculture', 'grocery', 'restaurant', 'farming', 'grain'
+  ],
+  'Big Tech & Consumer': [
+    'apple', 'aapl', 'microsoft', 'msft', 'google', 'googl', 'goog', 'amazon', 'amzn', 
+    'meta', 'fb', 'alphabet', 'tesla', 'tsla', 'netflix', 'nflx',
+    'nvidia', 'nvda', 'adobe', 'adbe', 'salesforce', 'crm', 'intuit', 'intu',
+    'big tech', 'faang', 'social media', 'advertising', 'consumer tech', 'iphone', 'smartphone'
+  ],
 };
 
-// Keyword matching for theme assignment
-const THEME_KEYWORDS: Record<string, string[]> = {
-  'AI & Semiconductors': ['nvidia', 'amd', 'intel', 'qualcomm', 'broadcom', 'micron', 'asml', 'tsmc', 'ai ', 'artificial intelligence', 'machine learning', 'semiconductor', 'chip', 'palantir', 'c3.ai', 'snowflake', 'databricks'],
-  'Biotech & Healthcare': ['biotech', 'pharma', 'therapeut', 'oncology', 'genomic', 'drug', 'health', 'medical', 'moderna', 'pfizer', 'merck', 'amgen', 'gilead', 'biogen', 'regeneron', 'vertex', 'abbvie', 'lilly', 'johnson'],
-  'Clean Energy & EVs': ['solar', 'wind', 'renewable', 'clean energy', 'electric vehicle', ' ev ', 'tesla', 'rivian', 'lucid', 'enphase', 'first solar', 'plug power', 'hydrogen', 'battery', 'charging'],
-  'Defense & Aerospace': ['defense', 'aerospace', 'lockheed', 'raytheon', 'northrop', 'boeing', 'general dynamics', 'military', 'weapon', 'missile'],
-  'Banks & Financials': ['bank', 'jpmorgan', 'goldman', 'morgan stanley', 'blackrock', 'visa', 'mastercard', 'paypal', 'square', 'credit', 'lending', 'insurance', 'fidelity'],
-  'Energy & Oil': ['oil', 'gas', 'petroleum', 'exxon', 'chevron', 'conocophillips', 'energy', 'drilling', 'pipeline', 'refin'],
-  'Real Estate & REITs': ['reit', 'real estate', 'property', 'realty', 'housing', 'apartment', 'office', 'mall'],
-  'Industrial & Infrastructure': ['industrial', 'manufacturing', 'caterpillar', 'deere', 'honeywell', '3m', 'infrastructure', 'construction', 'machinery'],
-  'Commodities & Mining': ['mining', 'gold', 'silver', 'copper', 'metal', 'steel', 'newmont', 'freeport', 'nucor', 'aluminum', 'iron'],
-  'Retail & E-commerce': ['retail', 'amazon', 'walmart', 'costco', 'target', 'home depot', 'e-commerce', 'shop', 'store', 'consumer'],
-  'Travel & Leisure': ['airline', 'hotel', 'travel', 'booking', 'airbnb', 'marriott', 'hilton', 'cruise', 'leisure', 'casino', 'gaming'],
-  'Media & Entertainment': ['media', 'netflix', 'disney', 'streaming', 'entertainment', 'comcast', 'warner', 'paramount', 'fox', 'spotify'],
-  'Food & Agriculture': ['food', 'beverage', 'coca-cola', 'pepsi', 'agriculture', 'grocery', 'restaurant', 'mcdonald', 'starbucks'],
-  'Cybersecurity': ['cyber', 'security', 'crowdstrike', 'palo alto', 'fortinet', 'zscaler', 'okta', 'sentinelone', 'cloudflare'],
-  'Crypto & Blockchain': ['bitcoin', 'ethereum', 'crypto', 'blockchain', 'coinbase', 'defi', 'btc', 'eth'],
-  'Forex & Currency': ['eur/usd', 'gbp/usd', 'usd/jpy', 'forex', 'currency', 'eur', 'gbp', 'jpy', 'aud', 'cad'],
+// Additional ticker -> themes mapping for well-known stocks
+const TICKER_TO_THEMES: Record<string, string[]> = {
+  'AAPL': ['Big Tech & Consumer'],
+  'MSFT': ['Big Tech & Consumer', 'Cloud & Cybersecurity', 'AI & Semiconductors'],
+  'GOOGL': ['Big Tech & Consumer', 'AI & Semiconductors', 'Media & Entertainment'],
+  'GOOG': ['Big Tech & Consumer', 'AI & Semiconductors', 'Media & Entertainment'],
+  'AMZN': ['Big Tech & Consumer', 'Cloud & Cybersecurity', 'Retail & E-commerce'],
+  'META': ['Big Tech & Consumer', 'AI & Semiconductors', 'Media & Entertainment'],
+  'TSLA': ['Big Tech & Consumer', 'Clean Energy & EVs'],
+  'NVDA': ['AI & Semiconductors', 'Big Tech & Consumer'],
+  'AMD': ['AI & Semiconductors'],
+  'INTC': ['AI & Semiconductors'],
+  'CRM': ['Cloud & Cybersecurity'],
+  'JPM': ['Banks & Financials'],
+  'BAC': ['Banks & Financials'],
+  'WMT': ['Retail & E-commerce'],
+  'XOM': ['Energy & Oil'],
+  'CVX': ['Energy & Oil'],
+  'JNJ': ['Biotech & Healthcare'],
+  'PFE': ['Biotech & Healthcare'],
+  'UNH': ['Biotech & Healthcare'],
+  'V': ['Banks & Financials', 'Fintech & Crypto'],
+  'MA': ['Banks & Financials', 'Fintech & Crypto'],
+  'PYPL': ['Fintech & Crypto'],
+  'SQ': ['Fintech & Crypto'],
+  'COIN': ['Fintech & Crypto'],
+  'LMT': ['Defense & Aerospace'],
+  'BA': ['Defense & Aerospace'],
+  'RTX': ['Defense & Aerospace'],
+  'CAT': ['Industrial & Infrastructure'],
+  'DE': ['Industrial & Infrastructure', 'Food & Agriculture'],
+  'HON': ['Industrial & Infrastructure'],
+  'NEE': ['Clean Energy & EVs'],
+  'DIS': ['Media & Entertainment'],
+  'NFLX': ['Media & Entertainment', 'Big Tech & Consumer'],
+  'COST': ['Retail & E-commerce'],
+  'HD': ['Retail & E-commerce'],
+  'MCD': ['Food & Agriculture'],
+  'SBUX': ['Food & Agriculture'],
+  'KO': ['Food & Agriculture'],
+  'PEP': ['Food & Agriculture'],
+  'GLD': ['Commodities & Mining'],
+  'SLV': ['Commodities & Mining'],
+  'NEM': ['Commodities & Mining'],
+  'FCX': ['Commodities & Mining'],
+  'BTC': ['Fintech & Crypto'],
+  'ETH': ['Fintech & Crypto'],
+  'ABNB': ['Travel & Leisure'],
+  'BKNG': ['Travel & Leisure'],
+  'MAR': ['Travel & Leisure'],
+  'DAL': ['Travel & Leisure'],
+  'AMT': ['Real Estate & REITs'],
+  'PLD': ['Real Estate & REITs'],
+  'EQIX': ['Real Estate & REITs', 'Cloud & Cybersecurity'],
+  'SPG': ['Real Estate & REITs'],
+  'CRWD': ['Cloud & Cybersecurity'],
+  'PANW': ['Cloud & Cybersecurity'],
+  'ZS': ['Cloud & Cybersecurity'],
+};
+
+// Asset class -> theme mapping
+const ASSET_CLASS_TO_THEMES: Record<string, string[]> = {
+  'crypto': ['Fintech & Crypto'],
+  'forex': [], // Forex doesn't map to any specific theme
+  'commodity': ['Commodities & Mining'],
+  'etf': [], // ETFs can be multiple - handled separately
 };
 
 function buildMap(data: any[] | null, key: string = "ticker"): Map<string, any[]> {
@@ -114,31 +217,93 @@ function buildMap(data: any[] | null, key: string = "ticker"): Map<string, any[]
   return map;
 }
 
-function assignAssetToThemes(asset: { ticker: string; name: string; asset_class: string | null; metadata: any }): string[] {
+function assignAssetToThemes(
+  asset: { ticker: string; name: string; asset_class: string | null; metadata: any },
+  availableThemes: Set<string>
+): string[] {
   const themes = new Set<string>();
-  const sector = asset.metadata?.sector;
-  const industry = asset.metadata?.industry;
-  const nameLower = asset.name.toLowerCase();
-  const tickerLower = asset.ticker.toLowerCase();
+  const tickerUpper = asset.ticker.toUpperCase();
+  const nameLower = (asset.name || '').toLowerCase();
   
-  if (sector && SECTOR_TO_THEME[sector]) {
-    SECTOR_TO_THEME[sector].forEach(t => themes.add(t));
-  }
-  if (industry && SECTOR_TO_THEME[industry]) {
-    SECTOR_TO_THEME[industry].forEach(t => themes.add(t));
+  // 1. Direct ticker mapping (highest priority)
+  if (TICKER_TO_THEMES[tickerUpper]) {
+    TICKER_TO_THEMES[tickerUpper].forEach(t => {
+      if (availableThemes.has(t)) themes.add(t);
+    });
   }
   
-  for (const [theme, keywords] of Object.entries(THEME_KEYWORDS)) {
+  // 2. Asset class mapping
+  if (asset.asset_class && ASSET_CLASS_TO_THEMES[asset.asset_class]) {
+    ASSET_CLASS_TO_THEMES[asset.asset_class].forEach(t => {
+      if (availableThemes.has(t)) themes.add(t);
+    });
+  }
+  
+  // 3. Keyword matching against asset name and ticker
+  for (const [themeName, keywords] of Object.entries(THEME_KEYWORDS)) {
+    if (!availableThemes.has(themeName)) continue;
+    
     for (const keyword of keywords) {
-      if (nameLower.includes(keyword) || tickerLower.includes(keyword)) {
-        themes.add(theme);
+      const kw = keyword.toLowerCase();
+      if (nameLower.includes(kw) || tickerUpper.toLowerCase().includes(kw)) {
+        themes.add(themeName);
         break;
       }
     }
   }
   
-  if (asset.asset_class === 'crypto') themes.add('Crypto & Blockchain');
-  else if (asset.asset_class === 'forex') themes.add('Forex & Currency');
+  // 4. Sector/industry from metadata
+  const sector = (asset.metadata?.sector || '').toLowerCase();
+  const industry = (asset.metadata?.industry || '').toLowerCase();
+  
+  if (sector || industry) {
+    const sectorIndustry = sector + ' ' + industry;
+    
+    if (sectorIndustry.includes('tech') || sectorIndustry.includes('software')) {
+      if (availableThemes.has('Big Tech & Consumer')) themes.add('Big Tech & Consumer');
+      if (availableThemes.has('Cloud & Cybersecurity')) themes.add('Cloud & Cybersecurity');
+    }
+    if (sectorIndustry.includes('semiconductor') || sectorIndustry.includes('chip')) {
+      if (availableThemes.has('AI & Semiconductors')) themes.add('AI & Semiconductors');
+    }
+    if (sectorIndustry.includes('health') || sectorIndustry.includes('pharma') || sectorIndustry.includes('biotech')) {
+      if (availableThemes.has('Biotech & Healthcare')) themes.add('Biotech & Healthcare');
+    }
+    if (sectorIndustry.includes('energy')) {
+      if (sectorIndustry.includes('renewable') || sectorIndustry.includes('solar') || sectorIndustry.includes('clean')) {
+        if (availableThemes.has('Clean Energy & EVs')) themes.add('Clean Energy & EVs');
+      } else {
+        if (availableThemes.has('Energy & Oil')) themes.add('Energy & Oil');
+      }
+    }
+    if (sectorIndustry.includes('bank') || sectorIndustry.includes('financial') || sectorIndustry.includes('insurance')) {
+      if (availableThemes.has('Banks & Financials')) themes.add('Banks & Financials');
+    }
+    if (sectorIndustry.includes('retail') || sectorIndustry.includes('consumer')) {
+      if (availableThemes.has('Retail & E-commerce')) themes.add('Retail & E-commerce');
+    }
+    if (sectorIndustry.includes('industrial') || sectorIndustry.includes('manufacturing')) {
+      if (availableThemes.has('Industrial & Infrastructure')) themes.add('Industrial & Infrastructure');
+    }
+    if (sectorIndustry.includes('real estate') || sectorIndustry.includes('reit')) {
+      if (availableThemes.has('Real Estate & REITs')) themes.add('Real Estate & REITs');
+    }
+    if (sectorIndustry.includes('aerospace') || sectorIndustry.includes('defense')) {
+      if (availableThemes.has('Defense & Aerospace')) themes.add('Defense & Aerospace');
+    }
+    if (sectorIndustry.includes('media') || sectorIndustry.includes('entertainment') || sectorIndustry.includes('communication')) {
+      if (availableThemes.has('Media & Entertainment')) themes.add('Media & Entertainment');
+    }
+    if (sectorIndustry.includes('material') || sectorIndustry.includes('mining') || sectorIndustry.includes('metal')) {
+      if (availableThemes.has('Commodities & Mining')) themes.add('Commodities & Mining');
+    }
+    if (sectorIndustry.includes('food') || sectorIndustry.includes('beverage') || sectorIndustry.includes('staple')) {
+      if (availableThemes.has('Food & Agriculture')) themes.add('Food & Agriculture');
+    }
+    if (sectorIndustry.includes('travel') || sectorIndustry.includes('hotel') || sectorIndustry.includes('leisure') || sectorIndustry.includes('airline')) {
+      if (availableThemes.has('Travel & Leisure')) themes.add('Travel & Leisure');
+    }
+  }
   
   return Array.from(themes);
 }
@@ -155,37 +320,34 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get all themes
+    // Get all themes from DB
     const { data: existingThemes, error: themesError } = await supabase
       .from("themes")
-      .select("id, name, tickers, keywords");
+      .select("id, name, keywords");
 
     if (themesError) throw themesError;
     
     const themeNameToId: Record<string, string> = {};
-    const themeNameToConfig: Record<string, Theme> = {};
-    (existingThemes || []).forEach((t: Theme) => {
+    const availableThemeNames = new Set<string>();
+    
+    (existingThemes || []).forEach((t: any) => {
       themeNameToId[t.name] = t.id;
-      themeNameToConfig[t.name] = t;
+      availableThemeNames.add(t.name);
     });
 
-    console.log(`[THEME-SCORING] Found ${existingThemes?.length || 0} themes`);
+    console.log(`[THEME-SCORING] Found ${existingThemes?.length || 0} themes: ${Array.from(availableThemeNames).join(', ')}`);
 
-    // Fetch ALL assets - Supabase API defaults to 1000 rows max, so we must paginate
+    // Fetch ALL assets with pagination
     const allAssets: any[] = [];
     let offset = 0;
-    const batchSize = 1000; // Supabase default max is 1000
+    const batchSize = 1000;
     
-    console.log(`[THEME-SCORING] Loading all assets...`);
-    
-    // First get total count
     const { count: totalCount } = await supabase
       .from("assets")
       .select("*", { count: "exact", head: true });
     
     console.log(`[THEME-SCORING] Total assets in database: ${totalCount}`);
     
-    // Fetch in batches, explicitly paginating
     while (true) {
       const { data: assets, error: assetsError } = await supabase
         .from("assets")
@@ -193,74 +355,55 @@ serve(async (req) => {
         .range(offset, offset + batchSize - 1)
         .order("id", { ascending: true });
       
-      if (assetsError) {
-        console.error(`[THEME-SCORING] Error fetching assets at offset ${offset}:`, assetsError);
-        throw assetsError;
-      }
-      
-      if (!assets || assets.length === 0) {
-        console.log(`[THEME-SCORING] No more assets at offset ${offset}`);
-        break;
-      }
+      if (assetsError) throw assetsError;
+      if (!assets || assets.length === 0) break;
       
       allAssets.push(...assets);
-      console.log(`[THEME-SCORING] Loaded batch: ${assets.length} assets (total: ${allAssets.length}/${totalCount})`);
-      
       offset += assets.length;
       
-      // Safety check - if we got less than batch size, we've reached the end
-      if (assets.length < batchSize) {
-        console.log(`[THEME-SCORING] Last batch (got ${assets.length} < ${batchSize})`);
-        break;
-      }
-      
-      // Timeout protection - stop after 26 batches (26k assets)
-      if (offset >= 26600) {
-        console.log(`[THEME-SCORING] Reached ${offset} assets, stopping pagination`);
-        break;
-      }
+      if (assets.length < batchSize) break;
+      if (offset >= 30000) break; // Safety limit
     }
 
-    console.log(`[THEME-SCORING] Total assets loaded: ${allAssets.length}`);
+    console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets`);
 
     // Build theme -> tickers mapping
     const themeTickerMap: Record<string, Set<string>> = {};
-    Object.keys(themeNameToId).forEach(name => {
+    Array.from(availableThemeNames).forEach(name => {
       themeTickerMap[name] = new Set();
-    });
-    
-    (existingThemes || []).forEach((t: Theme) => {
-      if (!themeTickerMap[t.name]) themeTickerMap[t.name] = new Set();
-      (t.tickers || []).forEach(ticker => themeTickerMap[t.name].add(ticker.toUpperCase()));
     });
 
     // Assign ALL assets to themes
     let assignedCount = 0;
+    let multiThemeCount = 0;
+    
     for (const asset of allAssets) {
-      const assignedThemes = assignAssetToThemes(asset);
+      const assignedThemes = assignAssetToThemes(asset, availableThemeNames);
       if (assignedThemes.length > 0) {
         assignedCount++;
+        if (assignedThemes.length > 1) multiThemeCount++;
+        
         assignedThemes.forEach(themeName => {
-          if (themeTickerMap[themeName]) {
-            themeTickerMap[themeName].add(asset.ticker.toUpperCase());
-          }
+          themeTickerMap[themeName].add(asset.ticker.toUpperCase());
         });
       }
     }
 
-    console.log(`[THEME-SCORING] Assigned ${assignedCount} assets to themes`);
+    console.log(`[THEME-SCORING] Assigned ${assignedCount} assets to themes (${multiThemeCount} to multiple themes)`);
     
     const themeSizes = Object.entries(themeTickerMap)
       .map(([name, tickers]) => ({ name, count: tickers.size }))
       .sort((a, b) => b.count - a.count);
-    console.log(`[THEME-SCORING] Theme sizes: ${themeSizes.map(t => `${t.name}=${t.count}`).join(', ')}`);
+    
+    console.log(`[THEME-SCORING] Theme distribution:`);
+    themeSizes.forEach(t => console.log(`  - ${t.name}: ${t.count} assets`));
 
     // Date ranges
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Fetch ALL 31 data sources in parallel
+    // Fetch data from ALL 23+ data sources
     const [
       advancedTechnicalsResult,
       pricesResult,
@@ -286,124 +429,32 @@ serve(async (req) => {
       economicIndicatorsResult,
       signalsResult,
     ] = await Promise.all([
-      // 1. Advanced technicals
-      supabase.from("advanced_technicals")
-        .select("ticker, stochastic_signal, trend_strength, breakout_signal, adx, price_vs_vwap_pct")
-        .gte("timestamp", sevenDaysAgo).limit(100000),
-
-      // 2. Prices
-      supabase.from("prices")
-        .select("ticker, close, updated_at")
-        .gte("updated_at", sevenDaysAgo).limit(100000),
-
-      // 3. Dark pool
-      supabase.from("dark_pool_activity")
-        .select("ticker, signal_strength, signal_type, dark_pool_percentage")
-        .gte("trade_date", thirtyDaysAgo).limit(100000),
-
-      // 4. Pattern recognition
-      supabase.from("pattern_recognition")
-        .select("ticker, pattern_type, confidence_score, pattern_category")
-        .gte("detected_at", thirtyDaysAgo).limit(100000),
-
-      // 5. News sentiment
-      supabase.from("news_sentiment_aggregate")
-        .select("ticker, sentiment_score, sentiment_label, buzz_score")
-        .gte("date", sevenDaysAgo).limit(50000),
-
-      // 6. Options flow
-      supabase.from("options_flow")
-        .select("ticker, sentiment, flow_type, premium")
-        .gte("trade_date", thirtyDaysAgo).limit(100000),
-
-      // 7. Congressional trades
-      supabase.from("congressional_trades")
-        .select("ticker, transaction_type, amount_min")
-        .gte("transaction_date", ninetyDaysAgo).limit(10000),
-
-      // 8. Crypto onchain
-      supabase.from("crypto_onchain_metrics")
-        .select("ticker, whale_signal, exchange_flow_signal, fear_greed_index")
-        .gte("timestamp", sevenDaysAgo).limit(20000),
-
-      // 9. Short interest
-      supabase.from("short_interest")
-        .select("ticker, float_percentage, days_to_cover")
-        .limit(100000),
-
-      // 10. Earnings sentiment
-      supabase.from("earnings_sentiment")
-        .select("ticker, earnings_surprise, sentiment_score")
-        .limit(100000),
-
-      // 11. Forex sentiment
-      supabase.from("forex_sentiment")
-        .select("ticker, retail_sentiment, news_sentiment_score")
-        .gte("timestamp", sevenDaysAgo).limit(10000),
-
-      // 12. Forex technicals
-      supabase.from("forex_technicals")
-        .select("ticker, rsi_signal, macd_crossover, ma_crossover")
-        .gte("timestamp", sevenDaysAgo).limit(10000),
-
-      // 13. COT reports
-      supabase.from("cot_reports")
-        .select("ticker, sentiment, noncommercial_net")
-        .limit(10000),
-
-      // 14. Job postings
-      supabase.from("job_postings")
-        .select("ticker, posting_count, growth_indicator")
-        .gte("posted_date", thirtyDaysAgo).limit(50000),
-
-      // 15. Patent filings
-      supabase.from("patent_filings")
-        .select("ticker, technology_category")
-        .gte("filing_date", ninetyDaysAgo).limit(20000),
-
-      // 16. Supply chain
-      supabase.from("supply_chain_signals")
-        .select("ticker, signal_type, change_percentage")
-        .gte("report_date", thirtyDaysAgo).limit(50000),
-
-      // 17. Breaking news
-      supabase.from("breaking_news")
-        .select("ticker, sentiment_score, relevance_score")
-        .gte("published_at", sevenDaysAgo).limit(10000),
-
-      // 18. Smart money flow
-      supabase.from("smart_money_flow")
-        .select("ticker, smart_money_signal, institutional_net_flow")
-        .gte("timestamp", thirtyDaysAgo).limit(50000),
-
-      // 19. AI research reports
-      supabase.from("ai_research_reports")
-        .select("ticker, recommendation, confidence_score, sentiment_analysis")
-        .gte("generated_at", thirtyDaysAgo).limit(20000),
-
-      // 20. Search trends
-      supabase.from("search_trends")
-        .select("ticker, trend_score, volume_change_pct")
-        .gte("captured_at", sevenDaysAgo).limit(20000),
-
-      // 21. Social signals (Reddit, StockTwits)
-      supabase.from("social_signals")
-        .select("ticker, sentiment_score, mention_count, platform")
-        .gte("captured_at", sevenDaysAgo).limit(50000),
-
-      // 22. Economic indicators
-      supabase.from("economic_indicators")
-        .select("indicator_type, value, impact, country")
-        .gte("release_date", thirtyDaysAgo).limit(5000),
-
-      // 23. Generic signals table (aggregated)
-      supabase.from("signals")
-        .select("asset_id, signal_type, direction, magnitude")
-        .gte("observed_at", sevenDaysAgo).limit(100000),
+      supabase.from("advanced_technicals").select("ticker, stochastic_signal, trend_strength, breakout_signal, adx, price_vs_vwap_pct").gte("timestamp", sevenDaysAgo).limit(100000),
+      supabase.from("prices").select("ticker, close, updated_at").gte("updated_at", sevenDaysAgo).limit(100000),
+      supabase.from("dark_pool_activity").select("ticker, signal_strength, signal_type, dark_pool_percentage").gte("trade_date", thirtyDaysAgo).limit(100000),
+      supabase.from("pattern_recognition").select("ticker, pattern_type, confidence_score, pattern_category").gte("detected_at", thirtyDaysAgo).limit(100000),
+      supabase.from("news_sentiment_aggregate").select("ticker, sentiment_score, sentiment_label, buzz_score").gte("date", sevenDaysAgo).limit(50000),
+      supabase.from("options_flow").select("ticker, sentiment, flow_type, premium").gte("trade_date", thirtyDaysAgo).limit(100000),
+      supabase.from("congressional_trades").select("ticker, transaction_type, amount_min").gte("transaction_date", ninetyDaysAgo).limit(10000),
+      supabase.from("crypto_onchain_metrics").select("ticker, whale_signal, exchange_flow_signal, fear_greed_index").gte("timestamp", sevenDaysAgo).limit(20000),
+      supabase.from("short_interest").select("ticker, float_percentage, days_to_cover").limit(100000),
+      supabase.from("earnings_sentiment").select("ticker, earnings_surprise, sentiment_score").limit(100000),
+      supabase.from("forex_sentiment").select("ticker, retail_sentiment, news_sentiment_score").gte("timestamp", sevenDaysAgo).limit(10000),
+      supabase.from("forex_technicals").select("ticker, rsi_signal, macd_crossover, ma_crossover").gte("timestamp", sevenDaysAgo).limit(10000),
+      supabase.from("cot_reports").select("ticker, sentiment, noncommercial_net").limit(10000),
+      supabase.from("job_postings").select("ticker, posting_count, growth_indicator").gte("posted_date", thirtyDaysAgo).limit(50000),
+      supabase.from("patent_filings").select("ticker, technology_category").gte("filing_date", ninetyDaysAgo).limit(20000),
+      supabase.from("supply_chain_signals").select("ticker, signal_type, change_percentage").gte("report_date", thirtyDaysAgo).limit(50000),
+      supabase.from("breaking_news").select("ticker, sentiment_score, relevance_score").gte("published_at", sevenDaysAgo).limit(10000),
+      supabase.from("smart_money_flow").select("ticker, smart_money_signal, institutional_net_flow").gte("timestamp", thirtyDaysAgo).limit(50000),
+      supabase.from("ai_research_reports").select("ticker, recommendation, confidence_score, sentiment_analysis").gte("generated_at", thirtyDaysAgo).limit(20000),
+      supabase.from("search_trends").select("ticker, trend_score, volume_change_pct").gte("captured_at", sevenDaysAgo).limit(20000),
+      supabase.from("social_signals").select("ticker, sentiment_score, mention_count, platform").gte("captured_at", sevenDaysAgo).limit(50000),
+      supabase.from("economic_indicators").select("indicator_type, value, impact, country").gte("release_date", thirtyDaysAgo).limit(5000),
+      supabase.from("signals").select("asset_id, signal_type, direction, magnitude").gte("observed_at", sevenDaysAgo).limit(100000),
     ]);
 
-    // Log data source counts
-    const dataCounts = {
+    const dataCounts: Record<string, number> = {
       technicals: advancedTechnicalsResult.data?.length || 0,
       prices: pricesResult.data?.length || 0,
       darkPool: darkPoolResult.data?.length || 0,
@@ -430,7 +481,7 @@ serve(async (req) => {
     };
     
     const totalDataPoints = Object.values(dataCounts).reduce((a, b) => a + b, 0);
-    console.log(`[THEME-SCORING] Data sources (23 tables): ${JSON.stringify(dataCounts)}`);
+    console.log(`[THEME-SCORING] Data sources: ${JSON.stringify(dataCounts)}`);
     console.log(`[THEME-SCORING] Total data points: ${totalDataPoints}`);
 
     // Build lookup maps
@@ -467,12 +518,11 @@ serve(async (req) => {
       data_coverage: number;
     }> = [];
 
-    for (const themeName of Object.keys(themeTickerMap)) {
+    for (const themeName of Array.from(availableThemeNames)) {
       const themeId = themeNameToId[themeName];
       if (!themeId) continue;
       
-      const themeTickers = Array.from(themeTickerMap[themeName]);
-      if (themeTickers.length === 0) continue;
+      const themeTickers = Array.from(themeTickerMap[themeName] || new Set());
 
       const componentSums: ComponentScores = {
         technical: 0, pattern: 0, sentiment: 0, institutionalFlow: 0,
@@ -485,7 +535,7 @@ serve(async (req) => {
       for (const ticker of themeTickers) {
         let hasData = false;
 
-        // 1. TECHNICAL (technicals + forex technicals)
+        // 1. TECHNICAL
         const techs = technicalsMap.get(ticker) || [];
         const forexTech = forexTechnicalsMap.get(ticker) || [];
         if (techs.length > 0 || forexTech.length > 0) {
@@ -512,11 +562,11 @@ serve(async (req) => {
           componentCounts.technical = (componentCounts.technical || 0) + 1;
         }
 
-        // 2. MOMENTUM (prices)
+        // 2. MOMENTUM
         const prices = pricesMap.get(ticker) || [];
         if (prices.length > 0) {
           hasData = true;
-          componentSums.momentum += 55; // Active ticker = slight bullish
+          componentSums.momentum += 55;
           componentCounts.momentum = (componentCounts.momentum || 0) + 1;
         }
 
@@ -535,7 +585,7 @@ serve(async (req) => {
           componentCounts.pattern = (componentCounts.pattern || 0) + 1;
         }
 
-        // 4. SENTIMENT (news + forex sentiment + breaking news + social signals + AI research)
+        // 4. SENTIMENT
         const news = newsMap.get(ticker) || [];
         const forexSent = forexSentimentMap.get(ticker) || [];
         const breaking = breakingNewsMap.get(ticker) || [];
@@ -564,7 +614,7 @@ serve(async (req) => {
           componentCounts.sentiment = (componentCounts.sentiment || 0) + 1;
         }
 
-        // 5. INSTITUTIONAL FLOW (dark pool + smart money)
+        // 5. INSTITUTIONAL FLOW
         const darkPool = darkPoolMap.get(ticker) || [];
         const smartMoney = smartMoneyMap.get(ticker) || [];
         if (darkPool.length > 0 || smartMoney.length > 0) {
@@ -585,7 +635,7 @@ serve(async (req) => {
           componentCounts.institutionalFlow = (componentCounts.institutionalFlow || 0) + 1;
         }
 
-        // 6. INSIDER ACTIVITY (congressional + job postings)
+        // 6. INSIDER ACTIVITY
         const congress = congressMap.get(ticker) || [];
         const jobs = jobsMap.get(ticker) || [];
         if (congress.length > 0 || jobs.length > 0) {
@@ -631,7 +681,7 @@ serve(async (req) => {
           componentCounts.cryptoOnchain = (componentCounts.cryptoOnchain || 0) + 1;
         }
 
-        // 9. EARNINGS (earnings + patents)
+        // 9. EARNINGS
         const earnings = earningsMap.get(ticker) || [];
         const patents = patentsMap.get(ticker) || [];
         if (earnings.length > 0 || patents.length > 0) {
@@ -651,7 +701,7 @@ serve(async (req) => {
           componentCounts.earnings = (componentCounts.earnings || 0) + 1;
         }
 
-        // 10. SHORT INTEREST (short interest + supply chain)
+        // 10. SHORT INTEREST
         const shorts = shortInterestMap.get(ticker) || [];
         const supplyChain = supplyChainMap.get(ticker) || [];
         if (shorts.length > 0 || supplyChain.length > 0) {
@@ -668,7 +718,7 @@ serve(async (req) => {
           componentCounts.shortInterest = (componentCounts.shortInterest || 0) + 1;
         }
 
-        // 11. ALTERNATIVE DATA (search trends + COT)
+        // 11. ALTERNATIVE DATA
         const trends = searchTrendsMap.get(ticker) || [];
         const cot = cotMap.get(ticker) || [];
         if (trends.length > 0 || cot.length > 0) {
@@ -692,7 +742,7 @@ serve(async (req) => {
         if (hasData) tickersWithData++;
       }
 
-      // 12. MACRO (economic indicators - applies to all themes)
+      // 12. MACRO
       const econ = economicIndicatorsResult.data || [];
       if (econ.length > 0) {
         let macroScore = 50;
@@ -772,7 +822,7 @@ serve(async (req) => {
       if (!upsertError) {
         await supabase.from("themes").update({
           score: ts.score,
-          tickers: Array.from(themeTickerMap[ts.theme_name] || []).slice(0, 1000),
+          tickers: Array.from(themeTickerMap[ts.theme_name] || new Set()).slice(0, 1000),
           updated_at: now,
         }).eq("id", ts.theme_id);
         updatedCount++;
@@ -789,14 +839,16 @@ serve(async (req) => {
       metadata: {
         themes_processed: themeScores.length,
         total_assets: allAssets.length,
-        data_sources_used: 23,
+        assigned_assets: assignedCount,
+        multi_theme_assets: multiThemeCount,
+        data_sources_used: Object.keys(dataCounts).length,
         total_data_points: totalDataPoints,
-        theme_sizes: themeSizes.slice(0, 20),
-        scores: themeScores.map(t => ({ name: t.theme_name, score: t.score, assets: t.ticker_count })),
+        theme_sizes: themeSizes,
+        scores: themeScores.map(t => ({ name: t.theme_name, score: t.score, assets: t.ticker_count, coverage: t.data_coverage })),
       },
     });
 
-    console.log(`[THEME-SCORING] ✅ Done: ${updatedCount} themes, ${allAssets.length} assets, ${totalDataPoints} data points in ${durationMs}ms`);
+    console.log(`[THEME-SCORING] ✅ Done: ${updatedCount} themes, ${allAssets.length} assets, ${assignedCount} assigned in ${durationMs}ms`);
 
     return new Response(JSON.stringify({
       success: true,
@@ -805,7 +857,8 @@ serve(async (req) => {
         themes_processed: themeScores.length,
         themes_updated: updatedCount,
         total_assets: allAssets.length,
-        data_sources_used: 23,
+        assigned_assets: assignedCount,
+        data_sources_used: Object.keys(dataCounts).length,
         total_data_points: totalDataPoints,
         duration_ms: durationMs,
       },
