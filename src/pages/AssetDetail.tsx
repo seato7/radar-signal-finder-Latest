@@ -58,11 +58,14 @@ const AssetDetail = () => {
   const [loading, setLoading] = useState(true);
   const [ranking, setRanking] = useState<number>(0);
   const [totalAssets, setTotalAssets] = useState<number>(0);
+  const [batchScore, setBatchScore] = useState<number | null>(null);
   const { toast } = useToast();
 
-  // Comprehensive scoring from ALL 22 data sources
+  // Comprehensive scoring from ALL 22 data sources (for breakdown display)
   const scoreResult = useAssetScore(ticker, asset?.id || null, asset?.asset_class || null);
-  const sentiment = getSentiment(scoreResult.score);
+  // Use batch score if available (consistent with radar), otherwise fall back to useAssetScore
+  const displayScore = batchScore !== null ? batchScore : scoreResult.score;
+  const sentiment = getSentiment(displayScore);
 
   useEffect(() => {
     const fetchAssetData = async () => {
@@ -91,10 +94,6 @@ const AssetDetail = () => {
         if (latestPrice) {
           setPriceData(latestPrice);
         }
-        
-        const { count } = await supabase.from('assets').select('id', { count: 'exact', head: true });
-        setTotalAssets(count || 0);
-        // Higher score = lower rank (rank 1 = best). Ranking is calculated after scores load
 
         // Fetch themes
         const { data: signals } = await supabase
@@ -126,14 +125,46 @@ const AssetDetail = () => {
     fetchAssetData();
   }, [ticker]);
 
-  // Calculate ranking based on score - higher score = lower rank number (rank 1 is best)
+  // Calculate actual ranking by comparing against all assets with same scoring logic
   useEffect(() => {
-    if (scoreResult.score > 0 && totalAssets > 0) {
-      // Rank is inversely proportional to score: top 1% scores get ranks 1-10, etc.
-      const percentileRank = Math.max(1, Math.ceil((1 - scoreResult.score / 100) * totalAssets));
-      setRanking(percentileRank);
-    }
-  }, [scoreResult.score, totalAssets]);
+    const calculateActualRanking = async () => {
+      if (!asset) return;
+      
+      try {
+        // Import the batch scoring function to compute scores consistently
+        const { computeAssetScoresBatch } = await import('@/lib/assetScoring');
+        
+        // Fetch ALL assets to compute their scores and find this asset's actual rank
+        const { data: allAssets, count } = await supabase
+          .from('assets')
+          .select('id, ticker, asset_class', { count: 'exact' })
+          .limit(50000);
+        
+        if (!allAssets || allAssets.length === 0) return;
+        setTotalAssets(count || allAssets.length);
+        
+        // Compute scores for all assets
+        const scoreMap = await computeAssetScoresBatch(allAssets);
+        
+        // Set this asset's batch score for display consistency
+        const thisAssetScore = scoreMap.get(asset.id) || 50;
+        setBatchScore(thisAssetScore);
+        
+        // Create array of [assetId, score] and sort by score descending
+        const scoredAssets = allAssets
+          .map(a => ({ id: a.id, score: scoreMap.get(a.id) || 50 }))
+          .sort((a, b) => b.score - a.score);
+        
+        // Find this asset's position (1-indexed)
+        const position = scoredAssets.findIndex(a => a.id === asset.id) + 1;
+        setRanking(position > 0 ? position : 1);
+      } catch (error) {
+        console.error('Error calculating ranking:', error);
+      }
+    };
+    
+    calculateActualRanking();
+  }, [asset]);
 
   const handleAddToWatchlist = () => {
     toast({ title: "Added to Watchlist", description: `${ticker} has been added to your watchlist` });
@@ -165,7 +196,7 @@ const AssetDetail = () => {
         <Card>
           <CardHeader><CardTitle>Current Score (0-100)</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-5xl font-bold">{scoreResult.score}</div>
+            <div className="text-5xl font-bold">{displayScore}</div>
             <div className={`flex items-center mt-2 ${scoreResult.scoreChange >= 0 ? 'text-success' : 'text-destructive'}`}>
               {scoreResult.scoreChange >= 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
               {scoreResult.scoreChange >= 0 ? '+' : ''}{scoreResult.scoreChange} (24h)
