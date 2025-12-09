@@ -368,22 +368,34 @@ serve(async (req) => {
       
       console.log(`[THEME-SCORING] Retrieved ${recentSignals?.length || 0} signals from database (since ${since.toISOString()})`);
       
-      // Get asset tickers
-      const assetIds = [...new Set(recentSignals?.map(s => s.asset_id).filter(Boolean) || [])]; // Filter out nulls
+      // Get asset tickers - batch queries to avoid "Bad Request" for large IN clauses
+      const assetIds = [...new Set(recentSignals?.map(s => s.asset_id).filter(Boolean) || [])];
       
       let assets: any[] = [];
-      let assetsError = null;
+      const BATCH_SIZE = 100; // Reduced to avoid URL length limits
       
       if (assetIds.length > 0) {
-        const result = await supabaseClient
-          .from('assets')
-          .select('id, ticker')
-          .in('id', assetIds);
-        assets = result.data || [];
-        assetsError = result.error;
-      }
+        console.log(`[THEME-SCORING] Fetching tickers for ${assetIds.length} assets in batches of ${BATCH_SIZE}`);
         
-      if (assetsError) throw assetsError;
+        for (let i = 0; i < assetIds.length; i += BATCH_SIZE) {
+          const batch = assetIds.slice(i, i + BATCH_SIZE);
+          const { data: batchAssets, error: batchError } = await supabaseClient
+            .from('assets')
+            .select('id, ticker')
+            .in('id', batch);
+          
+          if (batchError) {
+            console.error(`[THEME-SCORING] Batch ${i / BATCH_SIZE + 1} error:`, batchError);
+            throw batchError;
+          }
+          
+          if (batchAssets) {
+            assets = assets.concat(batchAssets);
+          }
+        }
+        
+        console.log(`[THEME-SCORING] Successfully fetched ${assets.length} asset tickers`);
+      }
       
       const assetMap = new Map(assets?.map(a => [a.id, a.ticker]) || []);
       
