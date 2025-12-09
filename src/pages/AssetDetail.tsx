@@ -125,45 +125,47 @@ const AssetDetail = () => {
     fetchAssetData();
   }, [ticker]);
 
-  // Calculate actual ranking by comparing against all assets with same scoring logic
+  // Calculate score and ranking for this asset
   useEffect(() => {
-    const calculateActualRanking = async () => {
+    const calculateScoreAndRanking = async () => {
       if (!asset) return;
       
       try {
         // Import the batch scoring function to compute scores consistently
         const { computeAssetScoresBatch } = await import('@/lib/assetScoring');
         
-        // Fetch ALL assets to compute their scores and find this asset's actual rank
-        const { data: allAssets, count } = await supabase
+        // Get total count of assets
+        const { count: totalCount } = await supabase
           .from('assets')
-          .select('id, ticker, asset_class', { count: 'exact' })
-          .limit(50000);
+          .select('id', { count: 'exact', head: true });
         
-        if (!allAssets || allAssets.length === 0) return;
-        setTotalAssets(count || allAssets.length);
+        setTotalAssets(totalCount || 0);
         
-        // Compute scores for all assets
-        const scoreMap = await computeAssetScoresBatch(allAssets);
+        // Compute score for just this asset
+        const scoreMap = await computeAssetScoresBatch([{
+          id: asset.id,
+          ticker: asset.ticker,
+          asset_class: asset.asset_class
+        }]);
         
-        // Set this asset's batch score for display consistency
         const thisAssetScore = scoreMap.get(asset.id) || 50;
         setBatchScore(thisAssetScore);
         
-        // Create array of [assetId, score] and sort by score descending
-        const scoredAssets = allAssets
-          .map(a => ({ id: a.id, score: scoreMap.get(a.id) || 50 }))
-          .sort((a, b) => b.score - a.score);
-        
-        // Find this asset's position (1-indexed)
-        const position = scoredAssets.findIndex(a => a.id === asset.id) + 1;
-        setRanking(position > 0 ? position : 1);
+        // Estimate ranking based on score percentile
+        // Score of 100 = rank 1, Score of 0 = rank = totalAssets
+        // This is an approximation since we can't efficiently compute all scores
+        if (totalCount && totalCount > 0) {
+          // Linear interpolation: higher score = lower rank number
+          const percentile = thisAssetScore / 100;
+          const estimatedRank = Math.max(1, Math.round((1 - percentile) * totalCount + 1));
+          setRanking(estimatedRank);
+        }
       } catch (error) {
-        console.error('Error calculating ranking:', error);
+        console.error('Error calculating score and ranking:', error);
       }
     };
     
-    calculateActualRanking();
+    calculateScoreAndRanking();
   }, [asset]);
 
   const handleAddToWatchlist = () => {

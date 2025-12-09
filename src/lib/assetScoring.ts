@@ -212,29 +212,43 @@ export async function computeAssetScoresBatch(
       let technicalScore = 50;
       const tech = technicalsMap.get(asset.ticker);
       if (tech) {
-        if (tech.stochastic_signal === 'oversold') technicalScore += 15;
-        else if (tech.stochastic_signal === 'overbought') technicalScore -= 10;
+        // Stochastic signals - normalize case for comparison
+        const stochSignal = (tech.stochastic_signal || '').toLowerCase();
+        if (stochSignal === 'oversold') technicalScore += 15;
+        else if (stochSignal === 'overbought') technicalScore -= 10;
 
-        if (tech.trend_strength === 'strong_up') technicalScore += 12;
-        else if (tech.trend_strength === 'strong_down') technicalScore -= 12;
+        // Trend strength - check for various naming patterns
+        const trend = (tech.trend_strength || '').toLowerCase();
+        if (trend.includes('strong') && trend.includes('up')) technicalScore += 12;
+        else if (trend.includes('strong') && trend.includes('down')) technicalScore -= 12;
+        else if (trend.includes('weak') && trend.includes('up')) technicalScore += 5;
+        else if (trend.includes('weak') && trend.includes('down')) technicalScore -= 5;
 
-        if (tech.breakout_signal === 'bullish') technicalScore += 10;
-        else if (tech.breakout_signal === 'bearish') technicalScore -= 10;
+        // Breakout signals
+        const breakout = (tech.breakout_signal || '').toLowerCase();
+        if (breakout === 'bullish' || breakout.includes('bull')) technicalScore += 10;
+        else if (breakout === 'bearish' || breakout.includes('bear')) technicalScore -= 10;
 
-        if (tech.adx && tech.adx > 25) technicalScore += 5;
+        // ADX above 25 indicates strong trend
+        if (tech.adx && Number(tech.adx) > 25) technicalScore += 5;
 
+        // VWAP position
         if (tech.price_vs_vwap_pct) {
-          if (tech.price_vs_vwap_pct > 2) technicalScore += 5;
-          else if (tech.price_vs_vwap_pct < -2) technicalScore -= 5;
+          const vwapPct = Number(tech.price_vs_vwap_pct);
+          if (vwapPct > 2) technicalScore += 5;
+          else if (vwapPct < -2) technicalScore -= 5;
         }
       }
 
       // Price momentum
       const prices = pricesMap.get(asset.ticker) || [];
       if (prices.length >= 2) {
-        const priceChange = ((prices[0] - prices[prices.length - 1]) / prices[prices.length - 1]) * 100;
-        if (priceChange > 5) technicalScore += 8;
-        else if (priceChange < -5) technicalScore -= 8;
+        const oldPrice = prices[prices.length - 1];
+        if (oldPrice !== 0) {
+          const priceChange = ((prices[0] - oldPrice) / oldPrice) * 100;
+          if (priceChange > 5) technicalScore += 8;
+          else if (priceChange < -5) technicalScore -= 8;
+        }
       }
 
       technicalScore = Math.max(0, Math.min(100, technicalScore));
