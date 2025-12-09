@@ -171,25 +171,54 @@ serve(async (req) => {
 
     console.log(`[THEME-SCORING] Found ${existingThemes?.length || 0} themes`);
 
-    // Fetch ALL assets - no limit, paginate through everything
+    // Fetch ALL assets - Supabase API defaults to 1000 rows max, so we must paginate
     const allAssets: any[] = [];
     let offset = 0;
-    const batchSize = 10000;
+    const batchSize = 1000; // Supabase default max is 1000
     
+    console.log(`[THEME-SCORING] Loading all assets...`);
+    
+    // First get total count
+    const { count: totalCount } = await supabase
+      .from("assets")
+      .select("*", { count: "exact", head: true });
+    
+    console.log(`[THEME-SCORING] Total assets in database: ${totalCount}`);
+    
+    // Fetch in batches, explicitly paginating
     while (true) {
       const { data: assets, error: assetsError } = await supabase
         .from("assets")
         .select("id, ticker, name, asset_class, metadata")
-        .range(offset, offset + batchSize - 1);
+        .range(offset, offset + batchSize - 1)
+        .order("id", { ascending: true });
       
-      if (assetsError) throw assetsError;
-      if (!assets || assets.length === 0) break;
+      if (assetsError) {
+        console.error(`[THEME-SCORING] Error fetching assets at offset ${offset}:`, assetsError);
+        throw assetsError;
+      }
+      
+      if (!assets || assets.length === 0) {
+        console.log(`[THEME-SCORING] No more assets at offset ${offset}`);
+        break;
+      }
       
       allAssets.push(...assets);
-      console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets so far...`);
-      offset += batchSize;
+      console.log(`[THEME-SCORING] Loaded batch: ${assets.length} assets (total: ${allAssets.length}/${totalCount})`);
       
-      if (assets.length < batchSize) break;
+      offset += assets.length;
+      
+      // Safety check - if we got less than batch size, we've reached the end
+      if (assets.length < batchSize) {
+        console.log(`[THEME-SCORING] Last batch (got ${assets.length} < ${batchSize})`);
+        break;
+      }
+      
+      // Timeout protection - stop after 26 batches (26k assets)
+      if (offset >= 26600) {
+        console.log(`[THEME-SCORING] Reached ${offset} assets, stopping pagination`);
+        break;
+      }
     }
 
     console.log(`[THEME-SCORING] Total assets loaded: ${allAssets.length}`);
