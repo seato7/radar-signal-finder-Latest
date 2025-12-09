@@ -60,17 +60,22 @@ serve(async (req) => {
     }
 
     const duration = Date.now() - startTime;
-    await slackAlerter.sendLiveAlert({
-      etlName: 'bot-scheduler',
-      status: errorCount === 0 ? 'success' : 'partial',
-      duration,
-      latencyMs: duration,
-      rowsInserted: processedCount,
-      metadata: { errors: errorCount },
-    });
+    
+    // Only send Slack alerts if there were bots to process or errors occurred
+    if ((bots && bots.length > 0) || errorCount > 0) {
+      await slackAlerter.sendLiveAlert({
+        etlName: 'bot-scheduler',
+        status: errorCount === 0 ? 'success' : 'partial',
+        duration,
+        latencyMs: duration,
+        rowsInserted: processedCount,
+        metadata: { errors: errorCount, totalBots: bots?.length || 0 },
+      });
+    }
 
     return new Response(JSON.stringify({
       bots_processed: processedCount,
+      bots_found: bots?.length || 0,
       errors: errorCount,
       timestamp: new Date().toISOString()
     }), {

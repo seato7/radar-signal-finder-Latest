@@ -160,7 +160,10 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    const { signal_id, value_text, batch_mode } = await req.json();
+    const body = await req.json();
+    // Accept both "batch" and "batch_mode" for backwards compatibility with cron
+    const batch_mode = body.batch_mode || body.batch;
+    const { signal_id, value_text } = body;
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
