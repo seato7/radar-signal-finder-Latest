@@ -94,7 +94,7 @@ const AssetDetail = () => {
         
         const { count } = await supabase.from('assets').select('id', { count: 'exact', head: true });
         setTotalAssets(count || 0);
-        setRanking(Math.max(1, Math.round((1 - scoreResult.score / 100) * (count || 100))));
+        // Higher score = lower rank (rank 1 = best). Ranking is calculated after scores load
 
         // Fetch themes
         const { data: signals } = await supabase
@@ -124,7 +124,16 @@ const AssetDetail = () => {
       }
     };
     fetchAssetData();
-  }, [ticker, scoreResult.score]);
+  }, [ticker]);
+
+  // Calculate ranking based on score - higher score = lower rank number (rank 1 is best)
+  useEffect(() => {
+    if (scoreResult.score > 0 && totalAssets > 0) {
+      // Rank is inversely proportional to score: top 1% scores get ranks 1-10, etc.
+      const percentileRank = Math.max(1, Math.ceil((1 - scoreResult.score / 100) * totalAssets));
+      setRanking(percentileRank);
+    }
+  }, [scoreResult.score, totalAssets]);
 
   const handleAddToWatchlist = () => {
     toast({ title: "Added to Watchlist", description: `${ticker} has been added to your watchlist` });

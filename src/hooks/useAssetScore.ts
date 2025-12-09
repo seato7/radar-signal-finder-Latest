@@ -146,7 +146,7 @@ export function useAssetScore(ticker: string | null, assetId: string | null, ass
             .from('prices')
             .select('*')
             .eq('ticker', ticker)
-            .order('timestamp', { ascending: false })
+            .order('date', { ascending: false })
             .limit(30),
 
           // 4. Pattern Recognition
