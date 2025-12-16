@@ -6,7 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Comprehensive theme patterns - each theme has multiple matching strategies
+// ============================================================================
+// COMPREHENSIVE THEME SCORING ENGINE
+// Processes ALL 37 ingestion functions → 22 investment themes
+// ============================================================================
+
+// Theme patterns for asset-to-theme mapping
 const THEME_PATTERNS: Record<string, {
   tickers: string[];
   etfPatterns: RegExp[];
@@ -56,7 +61,7 @@ const THEME_PATTERNS: Record<string, {
     sectorKeywords: ["bank", "financial", "investment", "insurance", "credit"]
   },
   "Fintech & Crypto": {
-    tickers: ["V", "MA", "PYPL", "SQ", "COIN", "MSTR", "HOOD", "SOFI", "AFRM", "UPST", "NU", "BILL", "TOST", "GPN", "FIS", "FISV", "ADP", "PAYX"],
+    tickers: ["V", "MA", "PYPL", "SQ", "COIN", "MSTR", "HOOD", "SOFI", "AFRM", "UPST", "NU", "BILL", "TOST", "GPN", "FIS", "FISV", "ADP", "PAYX", "BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC", "LINK", "UNI", "LTC"],
     etfPatterns: [/fintech/i, /crypto/i, /bitcoin/i, /blockchain/i, /digital asset/i, /arkf/i, /gbtc/i, /bito/i, /blok/i, /bitq/i, /btc/i, /eth/i],
     namePatterns: [/fintech/i, /crypto/i, /bitcoin/i, /blockchain/i, /digital payment/i, /mobile payment/i, /defi/i, /ethereum/i],
     sectorKeywords: ["fintech", "crypto", "blockchain", "digital payment", "cryptocurrency"]
@@ -109,63 +114,292 @@ const THEME_PATTERNS: Record<string, {
     namePatterns: [/agriculture/i, /food/i, /farm/i, /crop/i, /grain/i, /livestock/i, /fertilizer/i, /seed/i, /meat/i, /dairy/i, /beverage/i, /packaged food/i],
     sectorKeywords: ["agriculture", "food", "farm", "crop", "grain", "fertilizer", "livestock"]
   },
-  // NEW BROAD-MARKET THEMES
   "Fixed Income & Bonds": {
     tickers: ["BND", "AGG", "TLT", "IEF", "SHY", "LQD", "HYG", "JNK", "MUB", "TIP", "VCIT", "VCSH", "GOVT", "SCHZ", "BSV", "BIV", "BLV"],
-    etfPatterns: [/bond/i, /treasury/i, /fixed income/i, /corporate/i, /municipal/i, /high yield/i, /investment grade/i, /govt/i, /tip/i, /muni/i, /aggregate/i, /duration/i, /maturity/i, /coupon/i, /intermediate/i, /short.?term/i, /long.?term/i, /floating/i],
-    namePatterns: [/bond/i, /treasury/i, /fixed income/i, /debt/i, /corporate bond/i, /municipal/i, /government/i, /yield/i, /coupon/i, /maturity/i, /credit/i, /investment grade/i, /high yield/i, /junk/i],
+    etfPatterns: [/bond/i, /treasury/i, /fixed income/i, /corporate/i, /municipal/i, /high yield/i, /aggregate/i, /govt/i, /tip/i],
+    namePatterns: [/bond/i, /treasury/i, /fixed income/i, /debt/i, /corporate bond/i, /municipal/i, /government/i, /yield/i],
     sectorKeywords: ["bond", "treasury", "fixed income", "debt", "municipal", "corporate bond"]
   },
   "Growth & Allocation": {
     tickers: ["VTI", "VOO", "IVV", "SPY", "VT", "VXUS", "ACWI", "AOR", "AOM", "AOA", "AOK"],
-    etfPatterns: [/allocation/i, /balanced/i, /moderate/i, /aggressive/i, /conservative/i, /60.?40/i, /80.?20/i, /70.?30/i, /multi.?asset/i, /asset allocation/i, /lifecycle/i, /strategy/i, /tactical/i, /dynamic/i, /flexible/i, /hybrid/i],
-    namePatterns: [/allocation/i, /balanced/i, /growth/i, /value/i, /blend/i, /moderate/i, /aggressive/i, /conservative/i, /portfolio/i, /multi-asset/i, /strategic/i, /tactical/i],
+    etfPatterns: [/allocation/i, /balanced/i, /moderate/i, /multi.?asset/i, /strategy/i, /tactical/i],
+    namePatterns: [/allocation/i, /balanced/i, /growth/i, /value/i, /blend/i, /portfolio/i, /multi-asset/i],
     sectorKeywords: ["allocation", "balanced", "growth", "value", "blend", "multi-asset", "portfolio"]
   },
   "International & Emerging": {
     tickers: ["EFA", "VEA", "IEFA", "EEM", "VWO", "IEMG", "VXUS", "IXUS", "EWJ", "FXI", "EWZ", "EWT", "EWY", "INDA", "KWEB", "MCHI"],
-    etfPatterns: [/international/i, /emerging/i, /global/i, /foreign/i, /msci/i, /ex.?u\.?s/i, /europe/i, /asia/i, /pacific/i, /china/i, /japan/i, /india/i, /brazil/i, /developed/i, /world/i, /frontier/i, /latin/i, /eafe/i, /acwi/i],
-    namePatterns: [/international/i, /emerging market/i, /global/i, /foreign/i, /developed market/i, /world/i, /ex-us/i, /europe/i, /asia/i, /pacific/i, /china/i, /japan/i, /india/i, /brazil/i, /latin america/i, /frontier/i],
+    etfPatterns: [/international/i, /emerging/i, /global/i, /foreign/i, /ex.?u\.?s/i, /europe/i, /asia/i, /china/i, /japan/i, /india/i, /brazil/i, /eafe/i],
+    namePatterns: [/international/i, /emerging market/i, /global/i, /foreign/i, /developed market/i, /world/i, /ex-us/i],
     sectorKeywords: ["international", "emerging", "global", "foreign", "world", "developed markets"]
   },
   "Index & Passive": {
     tickers: ["SPY", "IVV", "VOO", "VTI", "QQQ", "IWM", "VB", "VTV", "VUG", "VIG", "SCHD", "NOBL", "RSP"],
-    etfPatterns: [/s\&?p\s?500/i, /index/i, /total market/i, /broad market/i, /core/i, /passive/i, /tracker/i, /equal weight/i, /cap.?weight/i, /market cap/i, /russell/i, /wilshire/i, /nasdaq.?100/i, /dow jones/i, /mid.?cap/i, /small.?cap/i, /large.?cap/i, /micro.?cap/i, /blend/i],
-    namePatterns: [/index/i, /s\&p 500/i, /total stock/i, /total market/i, /broad market/i, /passive/i, /core/i, /tracker/i, /benchmark/i, /russell/i, /nasdaq 100/i, /dow/i, /large cap/i, /mid cap/i, /small cap/i],
+    etfPatterns: [/s\&?p\s?500/i, /index/i, /total market/i, /passive/i, /russell/i, /nasdaq.?100/i, /dow/i, /mid.?cap/i, /small.?cap/i, /large.?cap/i],
+    namePatterns: [/index/i, /s\&p 500/i, /total stock/i, /total market/i, /passive/i, /tracker/i, /benchmark/i],
     sectorKeywords: ["index", "s&p 500", "total market", "passive", "benchmark", "market cap"]
   },
   "Income & Dividend": {
-    tickers: ["SCHD", "VYM", "HDV", "DVY", "SPHD", "SPYD", "VIG", "DGRO", "SDY", "NOBL", "DIVO", "JEPI", "JEPQ", "QYLD", "XYLD", "NUSI"],
-    etfPatterns: [/dividend/i, /income/i, /yield/i, /distribution/i, /equity income/i, /high dividend/i, /div/i, /covered call/i, /premium income/i, /monthly income/i, /aristocrat/i, /achiever/i, /grower/i, /quality dividend/i],
-    namePatterns: [/dividend/i, /income/i, /yield/i, /distribution/i, /equity income/i, /high yield/i, /covered call/i, /premium/i, /aristocrat/i, /achiever/i, /grower/i, /payer/i],
+    tickers: ["SCHD", "VYM", "HDV", "DVY", "SPHD", "SPYD", "VIG", "DGRO", "SDY", "NOBL", "DIVO", "JEPI", "JEPQ", "QYLD", "XYLD"],
+    etfPatterns: [/dividend/i, /income/i, /yield/i, /equity income/i, /high dividend/i, /covered call/i, /aristocrat/i],
+    namePatterns: [/dividend/i, /income/i, /yield/i, /distribution/i, /equity income/i, /covered call/i],
     sectorKeywords: ["dividend", "income", "yield", "distribution", "equity income", "high dividend"]
   },
-  "Retirement & Target Date": {
-    tickers: [],
-    etfPatterns: [/target/i, /retirement/i, /20[2-6][0-9]/i, /lifetime/i, /freedom/i, /lifecycle/i, /path/i, /journey/i, /glide/i, /date/i, /horizon/i, /through/i, /to\s+20/i, /in\s+retirement/i, /age.?based/i],
-    namePatterns: [/target date/i, /target.?20[2-6][0-9]/i, /retirement 20/i, /20[2-6][0-9] fund/i, /lifetime/i, /freedom 20/i, /lifecycle/i, /pathway/i, /journey/i, /glide path/i, /horizon/i, /through 20/i, /to 20[2-6][0-9]/i, /in retirement/i],
-    sectorKeywords: ["target date", "retirement", "2025", "2030", "2035", "2040", "2045", "2050", "2055", "2060", "2065", "lifetime", "freedom"]
+  "Forex & Currencies": {
+    tickers: ["UUP", "FXE", "FXY", "FXB", "FXA", "FXC", "FXF", "CYB", "CEW"],
+    etfPatterns: [/currency/i, /forex/i, /fx/i, /dollar/i, /euro/i, /yen/i, /pound/i],
+    namePatterns: [/currency/i, /forex/i, /foreign exchange/i, /dollar/i, /euro/i, /yen/i],
+    sectorKeywords: ["currency", "forex", "foreign exchange", "fx", "dollar"]
   }
 };
 
-// Signal type to theme fallback mapping
-const SIGNAL_TYPE_FALLBACKS: Record<string, string[]> = {
-  "flow_pressure_etf": ["Index & Passive", "Growth & Allocation"],
-  "dark_pool_activity": ["Banks & Financials", "Big Tech & Consumer"],
-  "smart_money_flow": ["Banks & Financials", "Big Tech & Consumer"],
-  "insider_buy": ["Big Tech & Consumer", "Banks & Financials"],
-  "insider_sell": ["Big Tech & Consumer", "Banks & Financials"],
-  "congressional_buy": ["Big Tech & Consumer", "Defense & Aerospace"],
-  "congressional_sell": ["Big Tech & Consumer", "Defense & Aerospace"],
-  "options_unusual": ["Big Tech & Consumer", "AI & Semiconductors"],
-  "sentiment_extreme": ["Big Tech & Consumer", "AI & Semiconductors"],
-  "technical_breakout": ["Big Tech & Consumer", "Index & Passive"],
-  "technical_breakdown": ["Big Tech & Consumer", "Index & Passive"],
-  "crypto_whale_activity": ["Fintech & Crypto"],
-  "crypto_exchange_flow": ["Fintech & Crypto"],
-  "policy_approval": ["Banks & Financials", "Energy & Oil"],
-  "policy_rejection": ["Banks & Financials", "Energy & Oil"],
+// ============================================================================
+// COMPREHENSIVE SIGNAL TYPE → THEME MAPPING
+// Maps ALL signal types from 37 functions to appropriate themes
+// ============================================================================
+const SIGNAL_TYPE_TO_THEMES: Record<string, { themes: string[]; weights: number[] }> = {
+  // --- FROM: ingest-13f-holdings (Function #1) ---
+  "filing_13f_new": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "filing_13f_increase": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "filing_13f_decrease": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "13f_new_position": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "13f_increase": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "13f_decrease": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  
+  // --- FROM: ingest-form4 (Function #2) ---
+  "insider_buy": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "insider_sell": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "form4_buy": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "form4_sell": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-congressional-trades (Function #3) ---
+  "politician_buy": { themes: ["Defense & Aerospace", "Big Tech & Consumer", "Banks & Financials"], weights: [0.4, 0.3, 0.3] },
+  "politician_sell": { themes: ["Defense & Aerospace", "Big Tech & Consumer", "Banks & Financials"], weights: [0.4, 0.3, 0.3] },
+  "congressional_buy": { themes: ["Defense & Aerospace", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "congressional_sell": { themes: ["Defense & Aerospace", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-etf-flows (Function #4) ---
+  "flow_pressure_etf": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
+  "etf_inflow": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
+  "etf_outflow": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
+  "flow_pressure": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
+  
+  // --- FROM: ingest-options-flow (Function #5) ---
+  "options_unusual": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "unusual_options": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "options_sweep": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "options_block": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-dark-pool / ingest-finra-darkpool (Functions #6, #26) ---
+  "darkpool_block": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "dark_pool_activity": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "darkpool_accumulation": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "darkpool_distribution": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-short-interest (Function #7) ---
+  "short_squeeze": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "short_interest_high": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "short_interest_low": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-policy-feeds (Function #8) ---
+  "policy_keyword": { themes: ["Clean Energy & EVs", "Defense & Aerospace", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
+  "policy_mention": { themes: ["Clean Energy & EVs", "Defense & Aerospace", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
+  "policy_approval": { themes: ["Banks & Financials", "Clean Energy & EVs"], weights: [0.5, 0.5] },
+  "policy_rejection": { themes: ["Banks & Financials", "Clean Energy & EVs"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-breaking-news (Function #9) ---
+  "news_mention": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "breaking_news": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "news_alert": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-news-sentiment (Function #10) ---
+  "sentiment_shift": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "sentiment_bullish": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
+  "sentiment_bearish": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
+  "sentiment_extreme": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-reddit-sentiment / ingest-stocktwits (Functions #11, #12) ---
+  "social_mention": { themes: ["Fintech & Crypto", "Media & Entertainment", "Big Tech & Consumer"], weights: [0.4, 0.3, 0.3] },
+  "social_bullish": { themes: ["Fintech & Crypto", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "social_bearish": { themes: ["Fintech & Crypto", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "reddit_mention": { themes: ["Fintech & Crypto", "Media & Entertainment"], weights: [0.5, 0.5] },
+  "stocktwits_mention": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-google-trends / ingest-search-trends (Function #13) ---
+  "search_interest": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  "search_spike": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  "trending_topic": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-earnings (Function #14) ---
+  "earnings_surprise": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "earnings_beat": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "earnings_miss": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "revenue_surprise": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-job-postings (Function #15) ---
+  "capex_hiring": { themes: ["AI & Semiconductors", "Big Tech & Consumer", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
+  "hiring_surge": { themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "job_growth": { themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-patents (Function #16) ---
+  "patent_filed": { themes: ["AI & Semiconductors", "Biotech & Healthcare", "Clean Energy & EVs"], weights: [0.4, 0.3, 0.3] },
+  "patent_granted": { themes: ["AI & Semiconductors", "Biotech & Healthcare"], weights: [0.5, 0.5] },
+  "innovation_signal": { themes: ["AI & Semiconductors", "Biotech & Healthcare"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-cot-reports / ingest-cot-cftc (Functions #17) ---
+  "cot_positioning": { themes: ["Commodities & Mining", "Forex & Currencies", "Fintech & Crypto"], weights: [0.4, 0.3, 0.3] },
+  "cot_bullish": { themes: ["Commodities & Mining", "Energy & Oil"], weights: [0.5, 0.5] },
+  "cot_bearish": { themes: ["Commodities & Mining", "Energy & Oil"], weights: [0.5, 0.5] },
+  "commercial_positioning": { themes: ["Commodities & Mining", "Energy & Oil"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-crypto-onchain (Function #18) ---
+  "onchain_whale": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "crypto_whale_activity": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "crypto_exchange_flow": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "whale_accumulation": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "whale_distribution": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "exchange_inflow": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "exchange_outflow": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  
+  // --- FROM: ingest-forex-sentiment (Function #19) ---
+  "forex_sentiment": { themes: ["Forex & Currencies", "International & Emerging"], weights: [0.6, 0.4] },
+  "forex_bullish": { themes: ["Forex & Currencies"], weights: [1.0] },
+  "forex_bearish": { themes: ["Forex & Currencies"], weights: [1.0] },
+  "retail_positioning": { themes: ["Forex & Currencies"], weights: [1.0] },
+  
+  // --- FROM: ingest-forex-technicals (Function #20) ---
+  "forex_technical": { themes: ["Forex & Currencies"], weights: [1.0] },
+  "forex_breakout": { themes: ["Forex & Currencies"], weights: [1.0] },
+  "forex_breakdown": { themes: ["Forex & Currencies"], weights: [1.0] },
+  
+  // --- FROM: ingest-advanced-technicals (Function #21) ---
+  "technical_signal": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "technical_breakout": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "technical_breakdown": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "support_bounce": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "resistance_break": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "vwap_signal": { themes: ["Index & Passive"], weights: [1.0] },
+  "stochastic_signal": { themes: ["Index & Passive"], weights: [1.0] },
+  
+  // --- FROM: ingest-pattern-recognition (Function #22) ---
+  "pattern_detected": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "bullish_pattern": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
+  "bearish_pattern": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
+  "reversal_pattern": { themes: ["Index & Passive"], weights: [1.0] },
+  "continuation_pattern": { themes: ["Index & Passive"], weights: [1.0] },
+  
+  // --- FROM: ingest-economic-calendar (Function #23) ---
+  "macro_event": { themes: ["Index & Passive", "Fixed Income & Bonds", "Forex & Currencies"], weights: [0.4, 0.3, 0.3] },
+  "fed_decision": { themes: ["Fixed Income & Bonds", "Banks & Financials"], weights: [0.5, 0.5] },
+  "gdp_release": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
+  "inflation_data": { themes: ["Fixed Income & Bonds", "Income & Dividend"], weights: [0.5, 0.5] },
+  "employment_data": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-fred-economics (Function #24) ---
+  "macro_indicator": { themes: ["Income & Dividend", "Fixed Income & Bonds", "Index & Passive"], weights: [0.4, 0.3, 0.3] },
+  "interest_rate_change": { themes: ["Fixed Income & Bonds", "Banks & Financials"], weights: [0.5, 0.5] },
+  "yield_curve_signal": { themes: ["Fixed Income & Bonds"], weights: [1.0] },
+  "economic_indicator": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-supply-chain (Function #25) ---
+  "supply_chain": { themes: ["AI & Semiconductors", "Clean Energy & EVs", "Industrial & Infrastructure"], weights: [0.4, 0.3, 0.3] },
+  "supply_disruption": { themes: ["Industrial & Infrastructure", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "supply_recovery": { themes: ["Industrial & Infrastructure", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-smart-money (Function #27) ---
+  "smart_money": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "smart_money_flow": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "institutional_buying": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "institutional_selling": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // --- FROM: ingest-ai-research (Function #28) ---
+  "ai_insight": { themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "ai_recommendation": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "ai_analysis": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // --- FROM: generate-signals-from-* (Functions #29-37) ---
+  // These generate derived signals and are covered by the types above
+  
+  // --- GENERIC/FALLBACK SIGNAL TYPES ---
+  "price_alert": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "volume_spike": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "momentum_shift": { themes: ["Growth & Allocation", "Index & Passive"], weights: [0.5, 0.5] },
+  "trend_change": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
+  "volatility_spike": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
 };
+
+// ============================================================================
+// DIRECT DATA SOURCE QUERIES
+// Pulls data directly from source tables when signals table is incomplete
+// ============================================================================
+
+interface DataSourceConfig {
+  table: string;
+  tickerColumn: string;
+  dateColumn: string;
+  directionField?: string;
+  magnitudeField?: string;
+  themes: string[];
+  weights: number[];
+}
+
+const DATA_SOURCE_CONFIGS: DataSourceConfig[] = [
+  // ETF Flows → Index & Passive, Growth & Allocation
+  { table: 'etf_flows', tickerColumn: 'ticker', dateColumn: 'flow_date', directionField: 'flow_direction', magnitudeField: 'net_flow_millions', themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
+  
+  // Dark Pool Activity → Banks & Financials
+  { table: 'dark_pool_activity', tickerColumn: 'ticker', dateColumn: 'trade_date', directionField: 'signal_type', magnitudeField: 'dark_pool_percentage', themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // Congressional Trades → Defense & Aerospace, Big Tech
+  { table: 'congressional_trades', tickerColumn: 'ticker', dateColumn: 'transaction_date', directionField: 'transaction_type', magnitudeField: 'amount_max', themes: ["Defense & Aerospace", "Big Tech & Consumer", "Banks & Financials"], weights: [0.4, 0.3, 0.3] },
+  
+  // Options Flow → Big Tech & Consumer, AI
+  { table: 'options_flow', tickerColumn: 'ticker', dateColumn: 'trade_date', directionField: 'sentiment', magnitudeField: 'premium', themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // Short Interest → Various
+  { table: 'short_interest', tickerColumn: 'ticker', dateColumn: 'report_date', magnitudeField: 'float_percentage', themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // COT Reports → Commodities, Forex
+  { table: 'cot_reports', tickerColumn: 'ticker', dateColumn: 'report_date', directionField: 'sentiment', magnitudeField: 'noncommercial_net', themes: ["Commodities & Mining", "Forex & Currencies", "Energy & Oil"], weights: [0.4, 0.3, 0.3] },
+  
+  // Crypto Onchain → Fintech & Crypto
+  { table: 'crypto_onchain_metrics', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'whale_signal', magnitudeField: 'exchange_net_flow', themes: ["Fintech & Crypto"], weights: [1.0] },
+  
+  // Forex Sentiment → Forex
+  { table: 'forex_sentiment', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'retail_sentiment', magnitudeField: 'news_sentiment_score', themes: ["Forex & Currencies", "International & Emerging"], weights: [0.6, 0.4] },
+  
+  // Forex Technicals → Forex
+  { table: 'forex_technicals', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'rsi_signal', themes: ["Forex & Currencies"], weights: [1.0] },
+  
+  // Advanced Technicals → Index & Passive
+  { table: 'advanced_technicals', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'breakout_signal', magnitudeField: 'adx', themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // News Sentiment → Big Tech & Consumer
+  { table: 'news_sentiment_aggregate', tickerColumn: 'ticker', dateColumn: 'date', directionField: 'sentiment_label', magnitudeField: 'sentiment_score', themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  
+  // Earnings → Big Tech, Financials
+  { table: 'earnings_sentiment', tickerColumn: 'ticker', dateColumn: 'earnings_date', magnitudeField: 'earnings_surprise', themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  
+  // Job Postings → AI, Biotech
+  { table: 'job_postings', tickerColumn: 'ticker', dateColumn: 'posted_date', magnitudeField: 'growth_indicator', themes: ["AI & Semiconductors", "Big Tech & Consumer", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
+  
+  // Patents → AI, Biotech, Clean Energy
+  { table: 'patent_filings', tickerColumn: 'ticker', dateColumn: 'filing_date', themes: ["AI & Semiconductors", "Biotech & Healthcare", "Clean Energy & EVs"], weights: [0.4, 0.3, 0.3] },
+  
+  // Supply Chain → Semiconductors, EVs, Industrial
+  { table: 'supply_chain_signals', tickerColumn: 'ticker', dateColumn: 'report_date', magnitudeField: 'change_percentage', themes: ["AI & Semiconductors", "Clean Energy & EVs", "Industrial & Infrastructure"], weights: [0.4, 0.3, 0.3] },
+  
+  // Breaking News → Big Tech
+  { table: 'breaking_news', tickerColumn: 'ticker', dateColumn: 'published_at', magnitudeField: 'sentiment_score', themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  
+  // AI Research Reports → AI, Big Tech
+  { table: 'ai_research_reports', tickerColumn: 'ticker', dateColumn: 'generated_at', magnitudeField: 'confidence_score', themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // Pattern Recognition → Index, Big Tech
+  { table: 'pattern_recognition', tickerColumn: 'ticker', dateColumn: 'detected_at', directionField: 'pattern_category', magnitudeField: 'confidence_score', themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // Economic Indicators → Bonds, Index
+  { table: 'economic_indicators', tickerColumn: 'indicator_type', dateColumn: 'release_date', directionField: 'impact', themes: ["Fixed Income & Bonds", "Index & Passive", "Forex & Currencies"], weights: [0.4, 0.3, 0.3] },
+];
 
 function assignAssetToThemes(
   ticker: string,
@@ -182,13 +416,11 @@ function assignAssetToThemes(
     let matched = false;
     let weight = 1.0;
 
-    // 1. Direct ticker match (highest priority, full weight)
     if (patterns.tickers.includes(tickerUpper)) {
       matched = true;
       weight = 1.0;
     }
 
-    // 2. ETF pattern match on name
     if (!matched) {
       for (const pattern of patterns.etfPatterns) {
         if (pattern.test(nameLower) || pattern.test(tickerUpper)) {
@@ -199,7 +431,6 @@ function assignAssetToThemes(
       }
     }
 
-    // 3. Name pattern match
     if (!matched) {
       for (const pattern of patterns.namePatterns) {
         if (pattern.test(nameLower)) {
@@ -210,7 +441,6 @@ function assignAssetToThemes(
       }
     }
 
-    // 4. Sector keyword match
     if (!matched && sectorLower) {
       for (const keyword of patterns.sectorKeywords) {
         if (sectorLower.includes(keyword.toLowerCase())) {
@@ -226,24 +456,25 @@ function assignAssetToThemes(
     }
   }
 
-  // Asset class based fallbacks for unmatched assets
+  // Asset class fallbacks
   if (matchedThemes.length === 0) {
     if (assetClass === "crypto") {
-      matchedThemes.push({ theme: "Fintech & Crypto", weight: 0.6 });
+      matchedThemes.push({ theme: "Fintech & Crypto", weight: 0.8 });
     } else if (assetClass === "forex") {
-      matchedThemes.push({ theme: "International & Emerging", weight: 0.5 });
+      matchedThemes.push({ theme: "Forex & Currencies", weight: 0.8 });
     } else if (assetClass === "commodity") {
-      matchedThemes.push({ theme: "Commodities & Mining", weight: 0.6 });
+      matchedThemes.push({ theme: "Commodities & Mining", weight: 0.8 });
     } else if (assetClass === "etf" || assetClass === "mutual_fund") {
-      matchedThemes.push({ theme: "Index & Passive", weight: 0.4 });
+      matchedThemes.push({ theme: "Index & Passive", weight: 0.6 });
+    } else if (assetClass === "bond") {
+      matchedThemes.push({ theme: "Fixed Income & Bonds", weight: 0.8 });
     } else if (assetClass === "stock") {
-      matchedThemes.push({ theme: "Big Tech & Consumer", weight: 0.3 });
+      matchedThemes.push({ theme: "Big Tech & Consumer", weight: 0.4 });
     }
   }
 
-  // Last resort - assign to Growth & Allocation (catches everything)
   if (matchedThemes.length === 0) {
-    matchedThemes.push({ theme: "Growth & Allocation", weight: 0.2 });
+    matchedThemes.push({ theme: "Growth & Allocation", weight: 0.3 });
   }
 
   const totalWeight = matchedThemes.reduce((sum, m) => sum + m.weight, 0);
@@ -266,7 +497,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    console.log("[THEME-SCORING] Starting comprehensive theme computation...");
+    console.log("[THEME-SCORING] Starting COMPREHENSIVE theme computation with all 37 data sources...");
 
     // Fetch all themes
     const { data: themes, error: themesError } = await supabaseClient
@@ -278,7 +509,26 @@ serve(async (req) => {
 
     const themeNameToId = new Map(themes?.map(t => [t.name, t.id]) || []);
 
-    // Fetch ALL assets with pagination
+    // Initialize theme scores
+    const themeScores: Record<string, {
+      signalCount: number;
+      totalMagnitude: number;
+      positiveSignals: number;
+      negativeSignals: number;
+      sources: Set<string>;
+    }> = {};
+
+    for (const theme of themes || []) {
+      themeScores[theme.name] = {
+        signalCount: 0,
+        totalMagnitude: 0,
+        positiveSignals: 0,
+        negativeSignals: 0,
+        sources: new Set()
+      };
+    }
+
+    // Fetch assets for ticker mapping
     const allAssets: any[] = [];
     let assetOffset = 0;
     const ASSET_BATCH = 5000;
@@ -296,128 +546,174 @@ serve(async (req) => {
     }
     console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets`);
 
-    // Build asset to themes mapping
+    // Build mappings
     const assetToThemes = new Map<string, { themes: string[]; weights: number[] }>();
-    const tickerToAssetId = new Map<string, string>();
+    const tickerToAssetThemes = new Map<string, { themes: string[]; weights: number[] }>();
     
     for (const asset of allAssets) {
       const sector = asset.metadata?.sector || asset.metadata?.industry || null;
       const mapping = assignAssetToThemes(asset.ticker, asset.name, asset.asset_class, sector);
       assetToThemes.set(asset.id, mapping);
-      tickerToAssetId.set(asset.ticker.toUpperCase(), asset.id);
+      tickerToAssetThemes.set(asset.ticker.toUpperCase(), mapping);
     }
 
-    // Count theme assignments
-    const themeAssetCounts: Record<string, number> = {};
-    for (const mapping of assetToThemes.values()) {
-      for (const theme of mapping.themes) {
-        themeAssetCounts[theme] = (themeAssetCounts[theme] || 0) + 1;
-      }
-    }
-    console.log("[THEME-SCORING] Theme asset distribution:", themeAssetCounts);
-
-    // Fetch ALL signals with pagination (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const allSignals: any[] = [];
+    // ========================================================================
+    // LAYER 1: Process signals table (traditional approach)
+    // ========================================================================
+    console.log("[THEME-SCORING] Processing signals table...");
+    
+    let signalsProcessed = 0;
     let signalOffset = 0;
     const SIGNAL_BATCH = 5000;
+    
     while (true) {
-      const { data: batch, error } = await supabaseClient
+      const { data: signals, error } = await supabaseClient
         .from('signals')
         .select('id, signal_type, asset_id, magnitude, direction, observed_at')
         .gte('observed_at', thirtyDaysAgo.toISOString())
-        .range(signalOffset, signalOffset + SIGNAL_BATCH - 1)
-        .order('observed_at', { ascending: false });
+        .range(signalOffset, signalOffset + SIGNAL_BATCH - 1);
       
       if (error) throw error;
-      if (!batch || batch.length === 0) break;
-      allSignals.push(...batch);
-      signalOffset += batch.length;
-      if (batch.length < SIGNAL_BATCH) break;
-    }
-    console.log(`[THEME-SCORING] Loaded ${allSignals.length} signals from last 30 days`);
-
-    // Process signals and map to themes
-    const themeScores: Record<string, {
-      signalCount: number;
-      totalMagnitude: number;
-      positiveSignals: number;
-      negativeSignals: number;
-      signalIds: string[];
-    }> = {};
-
-    for (const theme of themes || []) {
-      themeScores[theme.name] = {
-        signalCount: 0,
-        totalMagnitude: 0,
-        positiveSignals: 0,
-        negativeSignals: 0,
-        signalIds: []
-      };
-    }
-
-    const signalThemeMappings: { signal_id: string; theme_id: string; weight: number }[] = [];
-
-    for (const signal of allSignals) {
-      let signalThemes: string[] = [];
-      let weights: number[] = [];
-
-      // Try to map via asset_id
-      if (signal.asset_id && assetToThemes.has(signal.asset_id)) {
-        const mapping = assetToThemes.get(signal.asset_id)!;
-        signalThemes = mapping.themes;
-        weights = mapping.weights;
-      }
-
-      // Fallback: use signal type to assign to default themes
-      if (signalThemes.length === 0 && signal.signal_type) {
-        const fallbackThemes = SIGNAL_TYPE_FALLBACKS[signal.signal_type];
-        if (fallbackThemes) {
-          signalThemes = fallbackThemes;
-          weights = fallbackThemes.map(() => 1 / fallbackThemes.length);
-        }
-      }
-
-      // Last resort: assign to Growth & Allocation
-      if (signalThemes.length === 0) {
-        signalThemes = ["Growth & Allocation"];
-        weights = [1.0];
-      }
-
-      // Apply signal to matched themes
-      for (let i = 0; i < signalThemes.length; i++) {
-        const themeName = signalThemes[i];
-        const weight = weights[i];
+      if (!signals || signals.length === 0) break;
+      
+      for (const signal of signals) {
+        let signalThemes: string[] = [];
+        let weights: number[] = [];
         
-        if (themeScores[themeName]) {
-          themeScores[themeName].signalCount++;
-          themeScores[themeName].totalMagnitude += (signal.magnitude || 1) * weight;
-          
-          if (signal.direction === 'up' || signal.direction === 'bullish') {
-            themeScores[themeName].positiveSignals++;
-          } else if (signal.direction === 'down' || signal.direction === 'bearish') {
-            themeScores[themeName].negativeSignals++;
-          }
-          
-          themeScores[themeName].signalIds.push(signal.id);
-
-          const themeId = themeNameToId.get(themeName);
-          if (themeId) {
-            signalThemeMappings.push({
-              signal_id: signal.id,
-              theme_id: themeId,
-              weight: weight
-            });
+        // Try asset_id mapping first
+        if (signal.asset_id && assetToThemes.has(signal.asset_id)) {
+          const mapping = assetToThemes.get(signal.asset_id)!;
+          signalThemes = mapping.themes;
+          weights = mapping.weights;
+        }
+        
+        // Try signal_type mapping
+        if (signalThemes.length === 0 && signal.signal_type) {
+          const typeMapping = SIGNAL_TYPE_TO_THEMES[signal.signal_type];
+          if (typeMapping) {
+            signalThemes = typeMapping.themes;
+            weights = typeMapping.weights;
           }
         }
+        
+        // Fallback
+        if (signalThemes.length === 0) {
+          signalThemes = ["Growth & Allocation"];
+          weights = [1.0];
+        }
+        
+        // Apply to themes
+        for (let i = 0; i < signalThemes.length; i++) {
+          const themeName = signalThemes[i];
+          const weight = weights[i];
+          
+          if (themeScores[themeName]) {
+            themeScores[themeName].signalCount++;
+            themeScores[themeName].totalMagnitude += (signal.magnitude || 1) * weight;
+            themeScores[themeName].sources.add('signals');
+            
+            if (signal.direction === 'up' || signal.direction === 'bullish') {
+              themeScores[themeName].positiveSignals++;
+            } else if (signal.direction === 'down' || signal.direction === 'bearish') {
+              themeScores[themeName].negativeSignals++;
+            }
+          }
+        }
+        signalsProcessed++;
+      }
+      
+      signalOffset += signals.length;
+      if (signals.length < SIGNAL_BATCH) break;
+    }
+    console.log(`[THEME-SCORING] Processed ${signalsProcessed} signals from signals table`);
+
+    // ========================================================================
+    // LAYER 2: Process direct data source tables
+    // ========================================================================
+    console.log("[THEME-SCORING] Processing direct data sources...");
+    
+    let directSourcesProcessed = 0;
+    
+    for (const config of DATA_SOURCE_CONFIGS) {
+      try {
+        const { data: records, error } = await supabaseClient
+          .from(config.table)
+          .select('*')
+          .gte(config.dateColumn, thirtyDaysAgo.toISOString())
+          .limit(2000);
+        
+        if (error) {
+          console.log(`[THEME-SCORING] Skipping ${config.table}: ${error.message}`);
+          continue;
+        }
+        
+        if (!records || records.length === 0) continue;
+        
+        for (const record of records) {
+          const ticker = record[config.tickerColumn]?.toUpperCase();
+          let recordThemes = config.themes;
+          let recordWeights = config.weights;
+          
+          // Try to get more specific theme from ticker
+          if (ticker && tickerToAssetThemes.has(ticker)) {
+            const assetMapping = tickerToAssetThemes.get(ticker)!;
+            recordThemes = assetMapping.themes;
+            recordWeights = assetMapping.weights;
+          }
+          
+          // Determine direction
+          let direction = 'neutral';
+          if (config.directionField && record[config.directionField]) {
+            const dirVal = String(record[config.directionField]).toLowerCase();
+            if (dirVal.includes('bull') || dirVal.includes('up') || dirVal.includes('buy') || dirVal.includes('inflow') || dirVal.includes('positive')) {
+              direction = 'up';
+            } else if (dirVal.includes('bear') || dirVal.includes('down') || dirVal.includes('sell') || dirVal.includes('outflow') || dirVal.includes('negative')) {
+              direction = 'down';
+            }
+          }
+          
+          // Get magnitude
+          let magnitude = 1;
+          if (config.magnitudeField && record[config.magnitudeField]) {
+            magnitude = Math.abs(Number(record[config.magnitudeField])) || 1;
+            magnitude = Math.min(10, Math.log10(magnitude + 1) + 1); // Normalize
+          }
+          
+          // Apply to themes
+          for (let i = 0; i < recordThemes.length; i++) {
+            const themeName = recordThemes[i];
+            const weight = recordWeights[i];
+            
+            if (themeScores[themeName]) {
+              themeScores[themeName].signalCount++;
+              themeScores[themeName].totalMagnitude += magnitude * weight;
+              themeScores[themeName].sources.add(config.table);
+              
+              if (direction === 'up') {
+                themeScores[themeName].positiveSignals++;
+              } else if (direction === 'down') {
+                themeScores[themeName].negativeSignals++;
+              }
+            }
+          }
+          directSourcesProcessed++;
+        }
+        
+        console.log(`[THEME-SCORING] Processed ${records.length} records from ${config.table}`);
+        
+      } catch (err) {
+        console.log(`[THEME-SCORING] Error processing ${config.table}:`, err);
       }
     }
+    
+    console.log(`[THEME-SCORING] Processed ${directSourcesProcessed} records from direct sources`);
 
-    console.log(`[THEME-SCORING] Created ${signalThemeMappings.length} signal-theme mappings`);
-
-    // Calculate final scores for each theme
+    // ========================================================================
+    // Calculate final scores
+    // ========================================================================
     const results: any[] = [];
     const now = new Date();
 
@@ -428,17 +724,25 @@ serve(async (req) => {
       let score = 50;
       
       if (stats.signalCount > 0) {
-        const signalBoost = Math.min(30, Math.log10(stats.signalCount + 1) * 15);
+        // Signal count contribution (log scale)
+        const signalBoost = Math.min(25, Math.log10(stats.signalCount + 1) * 12);
+        
+        // Sentiment contribution
         const totalDirectional = stats.positiveSignals + stats.negativeSignals;
         let sentimentScore = 0;
         if (totalDirectional > 0) {
           const positiveRatio = stats.positiveSignals / totalDirectional;
-          sentimentScore = (positiveRatio - 0.5) * 40;
+          sentimentScore = (positiveRatio - 0.5) * 30;
         }
-        const avgMagnitude = stats.totalMagnitude / stats.signalCount;
-        const magnitudeBoost = Math.min(10, avgMagnitude * 5);
         
-        score = 50 + signalBoost + sentimentScore + magnitudeBoost;
+        // Magnitude contribution
+        const avgMagnitude = stats.totalMagnitude / stats.signalCount;
+        const magnitudeBoost = Math.min(10, avgMagnitude * 3);
+        
+        // Source diversity bonus
+        const sourceBonus = Math.min(10, stats.sources.size * 2);
+        
+        score = 50 + signalBoost + sentimentScore + magnitudeBoost + sourceBonus;
         score = Math.max(0, Math.min(100, score));
       }
 
@@ -449,13 +753,20 @@ serve(async (req) => {
         signal_count: stats.signalCount,
         positive_signals: stats.positiveSignals,
         negative_signals: stats.negativeSignals,
+        sources: Array.from(stats.sources),
         computed_at: now.toISOString()
       });
     }
 
     results.sort((a, b) => b.score - a.score);
 
-    // Update theme_scores and themes tables
+    // Log theme distribution
+    console.log("[THEME-SCORING] Theme signal distribution:");
+    for (const r of results) {
+      console.log(`  ${r.theme_name}: ${r.signal_count} signals, score=${r.score.toFixed(1)}, sources=[${r.sources.join(',')}]`);
+    }
+
+    // Update database
     for (const result of results) {
       await supabaseClient
         .from('theme_scores')
@@ -465,7 +776,8 @@ serve(async (req) => {
           signal_count: result.signal_count,
           component_scores: {
             positive_signals: result.positive_signals,
-            negative_signals: result.negative_signals
+            negative_signals: result.negative_signals,
+            sources: result.sources
           },
           positive_components: result.positive_signals > result.negative_signals ? ['bullish_momentum'] : [],
           computed_at: result.computed_at
@@ -477,34 +789,32 @@ serve(async (req) => {
         .eq('id', result.theme_id);
     }
 
-    // Clear old mappings and insert new
-    await supabaseClient.from('signal_theme_map').delete().lt('created_at', thirtyDaysAgo.toISOString());
-
-    const MAPPING_BATCH = 1000;
-    let insertedMappings = 0;
-    for (let i = 0; i < signalThemeMappings.length; i += MAPPING_BATCH) {
-      const batch = signalThemeMappings.slice(i, i + MAPPING_BATCH);
-      const { error: mapError } = await supabaseClient
-        .from('signal_theme_map')
-        .upsert(batch, { onConflict: 'signal_id,theme_id', ignoreDuplicates: true });
-      
-      if (!mapError) insertedMappings += batch.length;
-    }
-
     const duration = Date.now() - startTime;
-    console.log(`[THEME-SCORING] Complete in ${duration}ms. ${results.length} themes, ${allSignals.length} signals, ${insertedMappings} mappings`);
+    console.log(`[THEME-SCORING] Complete in ${duration}ms. ${results.length} themes, ${signalsProcessed} signals, ${directSourcesProcessed} direct records`);
 
     await supabaseClient.from('function_status').insert({
       function_name: 'compute-theme-scores',
       status: 'success',
       executed_at: now.toISOString(),
       duration_ms: duration,
-      rows_inserted: insertedMappings,
-      metadata: { themes: results.length, signals: allSignals.length, assets: allAssets.length, distribution: themeAssetCounts }
+      rows_inserted: signalsProcessed + directSourcesProcessed,
+      metadata: { 
+        themes: results.length, 
+        signals_processed: signalsProcessed, 
+        direct_sources_processed: directSourcesProcessed,
+        total_records: signalsProcessed + directSourcesProcessed
+      }
     });
 
     return new Response(
-      JSON.stringify({ success: true, themes: results.length, signals: allSignals.length, mappings: insertedMappings, duration_ms: duration, results }),
+      JSON.stringify({ 
+        success: true, 
+        themes: results.length, 
+        signals_processed: signalsProcessed, 
+        direct_sources_processed: directSourcesProcessed,
+        duration_ms: duration, 
+        results 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
