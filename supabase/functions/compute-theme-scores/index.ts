@@ -7,11 +7,10 @@ const corsHeaders = {
 };
 
 // ============================================================================
-// COMPREHENSIVE THEME SCORING ENGINE
-// Processes ALL 37 ingestion functions → 22 investment themes
+// THEME SCORING ENGINE - 17 CORE SECTOR THEMES ONLY
 // ============================================================================
 
-// Theme patterns for asset-to-theme mapping
+// Theme patterns for asset-to-theme mapping - ONLY the 17 active themes
 const THEME_PATTERNS: Record<string, {
   tickers: string[];
   etfPatterns: RegExp[];
@@ -19,145 +18,114 @@ const THEME_PATTERNS: Record<string, {
   sectorKeywords: string[];
 }> = {
   "AI & Semiconductors": {
-    tickers: ["NVDA", "AMD", "INTC", "AVGO", "QCOM", "MU", "TSM", "ASML", "AMAT", "LRCX", "KLAC", "MRVL", "TXN", "ADI", "NXPI", "ON", "MCHP", "SWKS", "QRVO", "ARM"],
-    etfPatterns: [/semicon/i, /chip/i, /\bai\b/i, /artificial/i, /robot/i, /smh/i, /soxx/i],
-    namePatterns: [/semiconductor/i, /artificial intelligence/i, /machine learning/i, /neural/i, /gpu/i, /processor/i, /chip/i],
-    sectorKeywords: ["semiconductor", "chips", "artificial intelligence", "machine learning"]
-  },
-  "Big Tech & Consumer": {
-    tickers: ["AAPL", "MSFT", "GOOGL", "GOOG", "META", "AMZN", "NFLX", "TSLA", "CRM", "ADBE", "ORCL", "IBM", "CSCO", "SAP", "NOW", "INTU", "SNOW", "DDOG", "ZS", "CRWD"],
-    etfPatterns: [/tech/i, /qqq/i, /nasdaq/i, /growth/i, /innovation/i, /xlk/i, /vgt/i, /ftec/i],
-    namePatterns: [/technology/i, /software/i, /internet/i, /digital/i, /e-commerce/i, /cloud/i, /saas/i],
-    sectorKeywords: ["technology", "software", "internet", "digital", "big tech"]
-  },
-  "Cloud & Cybersecurity": {
-    tickers: ["PANW", "CRWD", "ZS", "FTNT", "NET", "OKTA", "S", "CYBR", "TENB", "VRNS", "QLYS", "RPD", "AKAM", "SAIC", "LDOS"],
-    etfPatterns: [/cyber/i, /cloud/i, /security/i, /hack/i, /cibr/i, /bug/i, /wcld/i, /skyy/i],
-    namePatterns: [/cybersecurity/i, /cloud computing/i, /network security/i, /firewall/i, /encryption/i, /data protection/i],
-    sectorKeywords: ["cybersecurity", "cloud", "security", "network", "data protection"]
-  },
-  "Biotech & Healthcare": {
-    tickers: ["JNJ", "UNH", "PFE", "MRK", "ABBV", "LLY", "TMO", "DHR", "BMY", "AMGN", "GILD", "VRTX", "REGN", "MRNA", "BIIB", "ISRG", "SYK", "MDT", "ABT", "ZTS"],
-    etfPatterns: [/health/i, /biotech/i, /pharma/i, /med/i, /xbi/i, /ibb/i, /xlv/i, /vht/i, /fbt/i, /drug/i],
-    namePatterns: [/healthcare/i, /biotech/i, /pharmaceutical/i, /medical/i, /therapeutic/i, /clinical/i, /hospital/i, /medicine/i, /vaccine/i, /oncology/i],
-    sectorKeywords: ["healthcare", "biotech", "pharmaceutical", "medical", "hospital", "drug"]
-  },
-  "Clean Energy & EVs": {
-    tickers: ["TSLA", "RIVN", "LCID", "NIO", "XPEV", "LI", "ENPH", "SEDG", "FSLR", "PLUG", "BE", "CHPT", "BLNK", "NEE", "AES", "CEG", "VST", "RUN", "NOVA"],
-    etfPatterns: [/clean/i, /solar/i, /wind/i, /renew/i, /green/i, /\bev\b/i, /electric/i, /icln/i, /qcln/i, /tan/i, /fan/i, /lit/i, /driv/i],
-    namePatterns: [/clean energy/i, /renewable/i, /solar/i, /wind/i, /electric vehicle/i, /battery/i, /sustainable/i, /green/i, /lithium/i, /hydrogen/i],
-    sectorKeywords: ["clean energy", "renewable", "solar", "wind", "electric", "battery", "sustainable"]
-  },
-  "Defense & Aerospace": {
-    tickers: ["LMT", "RTX", "NOC", "GD", "BA", "LHX", "TDG", "HII", "LDOS", "SAIC", "KTOS", "PLTR", "AXON", "RKLB", "LUNR"],
-    etfPatterns: [/defense/i, /aerospace/i, /space/i, /military/i, /ita/i, /xar/i, /ppa/i, /dfen/i, /ufo/i],
-    namePatterns: [/defense/i, /aerospace/i, /military/i, /weapons/i, /aviation/i, /satellite/i, /rocket/i, /space/i],
-    sectorKeywords: ["defense", "aerospace", "military", "weapons", "aviation", "space"]
+    tickers: ["NVDA", "AMD", "INTC", "AVGO", "QCOM", "MU", "TSM", "ASML", "AMAT", "LRCX", "KLAC", "MRVL", "TXN", "ADI", "NXPI", "ON", "MCHP", "SWKS", "QRVO", "ARM", "SMCI", "SNPS", "CDNS"],
+    etfPatterns: [/semicon/i, /chip/i, /\bai\b/i, /artificial/i, /robot/i, /smh/i, /soxx/i, /soxq/i],
+    namePatterns: [/semiconductor/i, /artificial intelligence/i, /machine learning/i, /neural/i, /gpu/i, /processor/i, /chip/i, /foundry/i],
+    sectorKeywords: ["semiconductor", "chips", "artificial intelligence", "machine learning", "gpu", "processor"]
   },
   "Banks & Financials": {
-    tickers: ["JPM", "BAC", "WFC", "C", "GS", "MS", "USB", "PNC", "TFC", "SCHW", "BLK", "AXP", "SPGI", "CME", "ICE", "BK", "STT", "COF", "DFS"],
-    etfPatterns: [/bank/i, /financ/i, /xlf/i, /vfh/i, /kbe/i, /kre/i, /iai/i, /kie/i],
-    namePatterns: [/bank/i, /financial/i, /capital/i, /investment/i, /credit/i, /lending/i, /insurance/i, /asset management/i],
-    sectorKeywords: ["bank", "financial", "investment", "insurance", "credit"]
+    tickers: ["JPM", "BAC", "WFC", "C", "GS", "MS", "USB", "PNC", "TFC", "SCHW", "BLK", "AXP", "SPGI", "CME", "ICE", "BK", "STT", "COF", "DFS", "AIG", "MET", "PRU", "ALL", "TRV"],
+    etfPatterns: [/bank/i, /financ/i, /xlf/i, /vfh/i, /kbe/i, /kre/i, /iai/i, /kie/i, /insurance/i],
+    namePatterns: [/bank/i, /financial/i, /capital/i, /investment/i, /credit/i, /lending/i, /insurance/i, /asset management/i, /wealth/i],
+    sectorKeywords: ["bank", "financial", "investment", "insurance", "credit", "mortgage", "wealth management", "capital markets"]
   },
-  "Fintech & Crypto": {
-    tickers: ["V", "MA", "PYPL", "SQ", "COIN", "MSTR", "HOOD", "SOFI", "AFRM", "UPST", "NU", "BILL", "TOST", "GPN", "FIS", "FISV", "ADP", "PAYX", "BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC", "LINK", "UNI", "LTC"],
-    etfPatterns: [/fintech/i, /crypto/i, /bitcoin/i, /blockchain/i, /digital asset/i, /arkf/i, /gbtc/i, /bito/i, /blok/i, /bitq/i, /btc/i, /eth/i],
-    namePatterns: [/fintech/i, /crypto/i, /bitcoin/i, /blockchain/i, /digital payment/i, /mobile payment/i, /defi/i, /ethereum/i],
-    sectorKeywords: ["fintech", "crypto", "blockchain", "digital payment", "cryptocurrency"]
+  "Big Tech & Consumer": {
+    tickers: ["AAPL", "MSFT", "GOOGL", "GOOG", "META", "AMZN", "NFLX", "CRM", "ADBE", "ORCL", "IBM", "CSCO", "SAP", "NOW", "INTU", "SNOW", "DDOG", "ZS", "CRWD", "UBER", "LYFT"],
+    etfPatterns: [/tech/i, /qqq/i, /nasdaq/i, /growth/i, /innovation/i, /xlk/i, /vgt/i, /ftec/i, /igv/i],
+    namePatterns: [/technology/i, /software/i, /internet/i, /digital/i, /e-commerce/i, /cloud/i, /saas/i, /platform/i],
+    sectorKeywords: ["technology", "software", "internet", "digital", "big tech", "platform", "enterprise"]
   },
-  "Energy & Oil": {
-    tickers: ["XOM", "CVX", "COP", "SLB", "EOG", "PXD", "MPC", "VLO", "PSX", "OXY", "HAL", "DVN", "BKR", "FANG", "HES", "OKE", "WMB", "KMI", "ET"],
-    etfPatterns: [/oil/i, /gas/i, /energy(?!.*clean)/i, /petro/i, /xle/i, /vde/i, /oih/i, /xop/i, /uso/i, /ung/i, /mlp/i],
-    namePatterns: [/oil/i, /gas/i, /petroleum/i, /crude/i, /natural gas/i, /pipeline/i, /drilling/i, /refin/i, /fossil/i],
-    sectorKeywords: ["oil", "gas", "petroleum", "energy", "pipeline", "drilling"]
+  "Biotech & Healthcare": {
+    tickers: ["JNJ", "UNH", "PFE", "MRK", "ABBV", "LLY", "TMO", "DHR", "BMY", "AMGN", "GILD", "VRTX", "REGN", "MRNA", "BIIB", "ISRG", "SYK", "MDT", "ABT", "ZTS", "CVS", "CI", "HUM", "ELV"],
+    etfPatterns: [/health/i, /biotech/i, /pharma/i, /med/i, /xbi/i, /ibb/i, /xlv/i, /vht/i, /fbt/i, /drug/i, /genomic/i],
+    namePatterns: [/healthcare/i, /biotech/i, /pharmaceutical/i, /medical/i, /therapeutic/i, /clinical/i, /hospital/i, /medicine/i, /vaccine/i, /oncology/i, /diagnostic/i],
+    sectorKeywords: ["healthcare", "biotech", "pharmaceutical", "medical", "hospital", "drug", "therapeutics", "diagnostics"]
   },
-  "Real Estate & REITs": {
-    tickers: ["AMT", "PLD", "EQIX", "PSA", "CCI", "DLR", "O", "SPG", "WELL", "AVB", "EQR", "VTR", "ARE", "MAA", "UDR", "ESS", "INVH", "SBAC"],
-    etfPatterns: [/reit/i, /real estate/i, /property/i, /xlre/i, /vnq/i, /iyr/i, /schh/i, /usrt/i, /rem/i, /mort/i],
-    namePatterns: [/reit/i, /real estate/i, /property/i, /housing/i, /apartment/i, /commercial property/i, /mortgage/i, /residential/i],
-    sectorKeywords: ["reit", "real estate", "property", "housing", "mortgage"]
+  "Clean Energy & EVs": {
+    tickers: ["TSLA", "RIVN", "LCID", "NIO", "XPEV", "LI", "ENPH", "SEDG", "FSLR", "PLUG", "BE", "CHPT", "BLNK", "NEE", "AES", "CEG", "VST", "RUN", "NOVA", "STEM", "HYLN"],
+    etfPatterns: [/clean/i, /solar/i, /wind/i, /renew/i, /green/i, /\bev\b/i, /electric/i, /icln/i, /qcln/i, /tan/i, /fan/i, /lit/i, /driv/i, /battery/i],
+    namePatterns: [/clean energy/i, /renewable/i, /solar/i, /wind/i, /electric vehicle/i, /battery/i, /sustainable/i, /green/i, /lithium/i, /hydrogen/i, /fuel cell/i],
+    sectorKeywords: ["clean energy", "renewable", "solar", "wind", "electric", "battery", "sustainable", "ev", "hydrogen"]
   },
-  "Industrial & Infrastructure": {
-    tickers: ["CAT", "DE", "HON", "UNP", "UPS", "FDX", "GE", "RTX", "MMM", "ETN", "EMR", "ITW", "PH", "ROK", "CMI", "PCAR", "WM", "RSG"],
-    etfPatterns: [/industrial/i, /infrastr/i, /construct/i, /xli/i, /vir/i, /pave/i, /ifra/i],
-    namePatterns: [/industrial/i, /infrastructure/i, /manufacturing/i, /construction/i, /machinery/i, /equipment/i, /engineering/i, /transport/i, /railroad/i, /logistics/i],
-    sectorKeywords: ["industrial", "infrastructure", "manufacturing", "construction", "machinery"]
+  "Cloud & Cybersecurity": {
+    tickers: ["PANW", "CRWD", "ZS", "FTNT", "NET", "OKTA", "S", "CYBR", "TENB", "VRNS", "QLYS", "RPD", "AKAM", "SAIC", "LDOS", "SPLK", "ESTC", "MDB", "DDOG", "SNOW"],
+    etfPatterns: [/cyber/i, /cloud/i, /security/i, /hack/i, /cibr/i, /bug/i, /wcld/i, /skyy/i, /clou/i],
+    namePatterns: [/cybersecurity/i, /cloud computing/i, /network security/i, /firewall/i, /encryption/i, /data protection/i, /identity/i, /zero trust/i],
+    sectorKeywords: ["cybersecurity", "cloud", "security", "network", "data protection", "saas", "infrastructure"]
   },
   "Commodities & Mining": {
-    tickers: ["FCX", "NEM", "GOLD", "BHP", "RIO", "VALE", "NUE", "STLD", "CLF", "AA", "SCCO", "TECK", "WPM", "FNV", "RGLD", "PAAS", "HL", "AG", "SLV", "GLD", "IAU"],
-    etfPatterns: [/gold/i, /silver/i, /metal/i, /mining/i, /commod/i, /gdx/i, /gdxj/i, /slv/i, /gld/i, /iau/i, /dbc/i, /dba/i, /dbo/i, /ung/i, /corn/i, /weat/i, /soyb/i, /cper/i],
+    tickers: ["FCX", "NEM", "GOLD", "BHP", "RIO", "VALE", "NUE", "STLD", "CLF", "AA", "SCCO", "TECK", "WPM", "FNV", "RGLD", "PAAS", "HL", "AG"],
+    etfPatterns: [/gold/i, /silver/i, /metal/i, /mining/i, /commod/i, /gdx/i, /gdxj/i, /slv/i, /gld/i, /iau/i, /dbc/i, /dba/i, /cper/i, /steel/i],
     namePatterns: [/gold/i, /silver/i, /mining/i, /metal/i, /commodity/i, /copper/i, /platinum/i, /palladium/i, /iron/i, /steel/i, /aluminum/i, /zinc/i, /nickel/i],
-    sectorKeywords: ["gold", "silver", "mining", "metal", "commodity", "steel"]
+    sectorKeywords: ["gold", "silver", "mining", "metal", "commodity", "steel", "copper", "aluminum", "iron ore"]
   },
-  "Retail & E-commerce": {
-    tickers: ["WMT", "COST", "TGT", "HD", "LOW", "AMZN", "EBAY", "ETSY", "W", "SHOP", "MELI", "JD", "BABA", "PDD", "SE", "DG", "DLTR", "TJX", "ROST", "BBY"],
-    etfPatterns: [/retail/i, /consumer/i, /e-?commerce/i, /xrt/i, /xly/i, /ibuy/i, /onln/i],
-    namePatterns: [/retail/i, /consumer/i, /e-commerce/i, /shopping/i, /department store/i, /discount/i, /online retail/i, /marketplace/i],
-    sectorKeywords: ["retail", "consumer", "e-commerce", "shopping", "department store"]
+  "Defense & Aerospace": {
+    tickers: ["LMT", "RTX", "NOC", "GD", "BA", "LHX", "TDG", "HII", "LDOS", "SAIC", "KTOS", "PLTR", "AXON", "RKLB", "LUNR", "ASTR", "SPR"],
+    etfPatterns: [/defense/i, /aerospace/i, /space/i, /military/i, /ita/i, /xar/i, /ppa/i, /dfen/i, /ufo/i],
+    namePatterns: [/defense/i, /aerospace/i, /military/i, /weapons/i, /aviation/i, /satellite/i, /rocket/i, /space/i, /drone/i],
+    sectorKeywords: ["defense", "aerospace", "military", "weapons", "aviation", "space", "satellite", "government contractor"]
   },
-  "Travel & Leisure": {
-    tickers: ["MAR", "HLT", "H", "ABNB", "BKNG", "EXPE", "DAL", "UAL", "LUV", "AAL", "ALK", "CCL", "RCL", "NCLH", "DIS", "CMCSA", "PARA", "WBD", "LYV", "MTN"],
-    etfPatterns: [/travel/i, /leisure/i, /hotel/i, /airline/i, /cruise/i, /jets/i, /away/i, /pej/i],
-    namePatterns: [/travel/i, /hotel/i, /airline/i, /cruise/i, /resort/i, /vacation/i, /tourism/i, /hospitality/i, /entertainment/i, /casino/i, /gaming/i],
-    sectorKeywords: ["travel", "hotel", "airline", "cruise", "resort", "tourism", "leisure"]
+  "Energy & Oil": {
+    tickers: ["XOM", "CVX", "COP", "SLB", "EOG", "PXD", "MPC", "VLO", "PSX", "OXY", "HAL", "DVN", "BKR", "FANG", "HES", "OKE", "WMB", "KMI", "ET", "LNG"],
+    etfPatterns: [/oil/i, /gas/i, /energy(?!.*clean)/i, /petro/i, /xle/i, /vde/i, /oih/i, /xop/i, /uso/i, /ung/i, /mlp/i],
+    namePatterns: [/oil/i, /gas/i, /petroleum/i, /crude/i, /natural gas/i, /pipeline/i, /drilling/i, /refin/i, /fossil/i, /lng/i],
+    sectorKeywords: ["oil", "gas", "petroleum", "energy", "pipeline", "drilling", "refining", "lng"]
   },
-  "Media & Entertainment": {
-    tickers: ["DIS", "NFLX", "CMCSA", "WBD", "PARA", "FOX", "FOXA", "SPOT", "ROKU", "TTD", "MGNI", "PUBM", "ZD", "TTWO", "EA", "RBLX", "U", "ATVI"],
-    etfPatterns: [/media/i, /entertain/i, /stream/i, /gaming/i, /esport/i, /pej/i, /gamr/i, /espo/i],
-    namePatterns: [/media/i, /entertainment/i, /streaming/i, /broadcast/i, /content/i, /gaming/i, /video game/i, /esport/i, /movie/i, /film/i, /music/i, /podcast/i],
-    sectorKeywords: ["media", "entertainment", "streaming", "broadcast", "gaming", "movie"]
+  "Fintech & Crypto": {
+    tickers: ["V", "MA", "PYPL", "SQ", "COIN", "MSTR", "HOOD", "SOFI", "AFRM", "UPST", "NU", "BILL", "TOST", "GPN", "FIS", "FISV", "ADP", "PAYX", "BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC", "LINK", "UNI", "LTC", "BNB"],
+    etfPatterns: [/fintech/i, /crypto/i, /bitcoin/i, /blockchain/i, /digital asset/i, /arkf/i, /gbtc/i, /bito/i, /blok/i, /bitq/i, /btc/i, /eth/i, /payment/i],
+    namePatterns: [/fintech/i, /crypto/i, /bitcoin/i, /blockchain/i, /digital payment/i, /mobile payment/i, /defi/i, /ethereum/i, /forex/i, /currency/i],
+    sectorKeywords: ["fintech", "crypto", "blockchain", "digital payment", "cryptocurrency", "forex", "currency", "payments"]
   },
   "Food & Agriculture": {
-    tickers: ["ADM", "BG", "CTVA", "FMC", "DE", "AGCO", "MOS", "NTR", "CF", "TSN", "HRL", "GIS", "K", "KHC", "MDLZ", "HSY", "CAG", "SJM", "CPB"],
-    etfPatterns: [/agri/i, /food/i, /farm/i, /crop/i, /grain/i, /corn/i, /wheat/i, /soy/i, /dba/i, /cow/i, /vegi/i, /crop/i, /moo/i],
-    namePatterns: [/agriculture/i, /food/i, /farm/i, /crop/i, /grain/i, /livestock/i, /fertilizer/i, /seed/i, /meat/i, /dairy/i, /beverage/i, /packaged food/i],
-    sectorKeywords: ["agriculture", "food", "farm", "crop", "grain", "fertilizer", "livestock"]
+    tickers: ["ADM", "BG", "CTVA", "FMC", "DE", "AGCO", "MOS", "NTR", "CF", "TSN", "HRL", "GIS", "K", "KHC", "MDLZ", "HSY", "CAG", "SJM", "CPB", "KO", "PEP", "MNST"],
+    etfPatterns: [/agri/i, /food/i, /farm/i, /crop/i, /grain/i, /corn/i, /wheat/i, /soy/i, /dba/i, /cow/i, /vegi/i, /moo/i],
+    namePatterns: [/agriculture/i, /food/i, /farm/i, /crop/i, /grain/i, /livestock/i, /fertilizer/i, /seed/i, /meat/i, /dairy/i, /beverage/i, /packaged food/i, /snack/i],
+    sectorKeywords: ["agriculture", "food", "farm", "crop", "grain", "fertilizer", "livestock", "beverage", "packaged food"]
   },
-  "Fixed Income & Bonds": {
-    tickers: ["BND", "AGG", "TLT", "IEF", "SHY", "LQD", "HYG", "JNK", "MUB", "TIP", "VCIT", "VCSH", "GOVT", "SCHZ", "BSV", "BIV", "BLV"],
-    etfPatterns: [/bond/i, /treasury/i, /fixed income/i, /corporate/i, /municipal/i, /high yield/i, /aggregate/i, /govt/i, /tip/i],
-    namePatterns: [/bond/i, /treasury/i, /fixed income/i, /debt/i, /corporate bond/i, /municipal/i, /government/i, /yield/i],
-    sectorKeywords: ["bond", "treasury", "fixed income", "debt", "municipal", "corporate bond"]
-  },
-  "Growth & Allocation": {
-    tickers: ["VTI", "VOO", "IVV", "SPY", "VT", "VXUS", "ACWI", "AOR", "AOM", "AOA", "AOK"],
-    etfPatterns: [/allocation/i, /balanced/i, /moderate/i, /multi.?asset/i, /strategy/i, /tactical/i],
-    namePatterns: [/allocation/i, /balanced/i, /growth/i, /value/i, /blend/i, /portfolio/i, /multi-asset/i],
-    sectorKeywords: ["allocation", "balanced", "growth", "value", "blend", "multi-asset", "portfolio"]
+  "Industrial & Infrastructure": {
+    tickers: ["CAT", "DE", "HON", "UNP", "UPS", "FDX", "GE", "RTX", "MMM", "ETN", "EMR", "ITW", "PH", "ROK", "CMI", "PCAR", "WM", "RSG", "CNI", "NSC", "CSX"],
+    etfPatterns: [/industrial/i, /infrastr/i, /construct/i, /xli/i, /vir/i, /pave/i, /ifra/i, /transport/i, /railroad/i],
+    namePatterns: [/industrial/i, /infrastructure/i, /manufacturing/i, /construction/i, /machinery/i, /equipment/i, /engineering/i, /transport/i, /railroad/i, /logistics/i],
+    sectorKeywords: ["industrial", "infrastructure", "manufacturing", "construction", "machinery", "transportation", "logistics"]
   },
   "International & Emerging": {
-    tickers: ["EFA", "VEA", "IEFA", "EEM", "VWO", "IEMG", "VXUS", "IXUS", "EWJ", "FXI", "EWZ", "EWT", "EWY", "INDA", "KWEB", "MCHI"],
-    etfPatterns: [/international/i, /emerging/i, /global/i, /foreign/i, /ex.?u\.?s/i, /europe/i, /asia/i, /china/i, /japan/i, /india/i, /brazil/i, /eafe/i],
-    namePatterns: [/international/i, /emerging market/i, /global/i, /foreign/i, /developed market/i, /world/i, /ex-us/i],
-    sectorKeywords: ["international", "emerging", "global", "foreign", "world", "developed markets"]
+    tickers: ["EFA", "VEA", "IEFA", "EEM", "VWO", "IEMG", "VXUS", "IXUS", "EWJ", "FXI", "EWZ", "EWT", "EWY", "INDA", "KWEB", "MCHI", "BABA", "JD", "PDD", "SE"],
+    etfPatterns: [/international/i, /emerging/i, /global/i, /foreign/i, /ex.?u\.?s/i, /europe/i, /asia/i, /china/i, /japan/i, /india/i, /brazil/i, /eafe/i, /acwi/i],
+    namePatterns: [/international/i, /emerging market/i, /global/i, /foreign/i, /developed market/i, /world/i, /ex-us/i, /china/i, /asia/i, /europe/i],
+    sectorKeywords: ["international", "emerging", "global", "foreign", "world", "developed markets", "asia", "europe", "china"]
   },
-  "Index & Passive": {
-    tickers: ["SPY", "IVV", "VOO", "VTI", "QQQ", "IWM", "VB", "VTV", "VUG", "VIG", "SCHD", "NOBL", "RSP"],
-    etfPatterns: [/s\&?p\s?500/i, /index/i, /total market/i, /passive/i, /russell/i, /nasdaq.?100/i, /dow/i, /mid.?cap/i, /small.?cap/i, /large.?cap/i],
-    namePatterns: [/index/i, /s\&p 500/i, /total stock/i, /total market/i, /passive/i, /tracker/i, /benchmark/i],
-    sectorKeywords: ["index", "s&p 500", "total market", "passive", "benchmark", "market cap"]
+  "Media & Entertainment": {
+    tickers: ["DIS", "NFLX", "CMCSA", "WBD", "PARA", "FOX", "FOXA", "SPOT", "ROKU", "TTD", "MGNI", "PUBM", "ZD", "TTWO", "EA", "RBLX", "U", "ATVI", "GOOGL", "META"],
+    etfPatterns: [/media/i, /entertain/i, /stream/i, /gaming/i, /esport/i, /pej/i, /gamr/i, /espo/i, /socl/i],
+    namePatterns: [/media/i, /entertainment/i, /streaming/i, /broadcast/i, /content/i, /gaming/i, /video game/i, /esport/i, /movie/i, /film/i, /music/i, /podcast/i, /advertising/i],
+    sectorKeywords: ["media", "entertainment", "streaming", "broadcast", "gaming", "movie", "music", "advertising"]
   },
-  "Income & Dividend": {
-    tickers: ["SCHD", "VYM", "HDV", "DVY", "SPHD", "SPYD", "VIG", "DGRO", "SDY", "NOBL", "DIVO", "JEPI", "JEPQ", "QYLD", "XYLD"],
-    etfPatterns: [/dividend/i, /income/i, /yield/i, /equity income/i, /high dividend/i, /covered call/i, /aristocrat/i],
-    namePatterns: [/dividend/i, /income/i, /yield/i, /distribution/i, /equity income/i, /covered call/i],
-    sectorKeywords: ["dividend", "income", "yield", "distribution", "equity income", "high dividend"]
+  "Real Estate & REITs": {
+    tickers: ["AMT", "PLD", "EQIX", "PSA", "CCI", "DLR", "O", "SPG", "WELL", "AVB", "EQR", "VTR", "ARE", "MAA", "UDR", "ESS", "INVH", "SBAC", "WY"],
+    etfPatterns: [/reit/i, /real estate/i, /property/i, /xlre/i, /vnq/i, /iyr/i, /schh/i, /usrt/i, /rem/i, /mort/i, /housing/i],
+    namePatterns: [/reit/i, /real estate/i, /property/i, /housing/i, /apartment/i, /commercial property/i, /mortgage/i, /residential/i, /data center/i, /warehouse/i],
+    sectorKeywords: ["reit", "real estate", "property", "housing", "mortgage", "apartment", "commercial", "industrial property"]
   },
-  "Forex & Currencies": {
-    tickers: ["UUP", "FXE", "FXY", "FXB", "FXA", "FXC", "FXF", "CYB", "CEW"],
-    etfPatterns: [/currency/i, /forex/i, /fx/i, /dollar/i, /euro/i, /yen/i, /pound/i],
-    namePatterns: [/currency/i, /forex/i, /foreign exchange/i, /dollar/i, /euro/i, /yen/i],
-    sectorKeywords: ["currency", "forex", "foreign exchange", "fx", "dollar"]
+  "Retail & E-commerce": {
+    tickers: ["WMT", "COST", "TGT", "HD", "LOW", "AMZN", "EBAY", "ETSY", "W", "SHOP", "MELI", "JD", "BABA", "PDD", "SE", "DG", "DLTR", "TJX", "ROST", "BBY", "ULTA", "LULU"],
+    etfPatterns: [/retail/i, /consumer/i, /e-?commerce/i, /xrt/i, /xly/i, /ibuy/i, /onln/i, /shop/i],
+    namePatterns: [/retail/i, /consumer/i, /e-commerce/i, /shopping/i, /department store/i, /discount/i, /online retail/i, /marketplace/i, /apparel/i],
+    sectorKeywords: ["retail", "consumer", "e-commerce", "shopping", "department store", "discount", "apparel"]
+  },
+  "Travel & Leisure": {
+    tickers: ["MAR", "HLT", "H", "ABNB", "BKNG", "EXPE", "DAL", "UAL", "LUV", "AAL", "ALK", "CCL", "RCL", "NCLH", "DIS", "CMCSA", "LYV", "MTN", "SIX", "FUN", "WYNN", "LVS", "MGM"],
+    etfPatterns: [/travel/i, /leisure/i, /hotel/i, /airline/i, /cruise/i, /jets/i, /away/i, /pej/i, /casino/i, /gaming/i],
+    namePatterns: [/travel/i, /hotel/i, /airline/i, /cruise/i, /resort/i, /vacation/i, /tourism/i, /hospitality/i, /entertainment/i, /casino/i, /gaming/i, /theme park/i],
+    sectorKeywords: ["travel", "hotel", "airline", "cruise", "resort", "tourism", "leisure", "casino", "hospitality"]
   }
 };
 
 // ============================================================================
-// COMPREHENSIVE SIGNAL TYPE → THEME MAPPING
-// Maps ALL signal types from 37 functions to appropriate themes
+// SIGNAL TYPE → THEME MAPPING (Only valid 17 themes)
 // ============================================================================
 const SIGNAL_TYPE_TO_THEMES: Record<string, { themes: string[]; weights: number[] }> = {
-  // --- FROM: ingest-13f-holdings (Function #1) ---
+  // --- 13F Holdings ---
   "filing_13f_new": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
   "filing_13f_increase": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
   "filing_13f_decrease": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
@@ -165,93 +133,93 @@ const SIGNAL_TYPE_TO_THEMES: Record<string, { themes: string[]; weights: number[
   "13f_increase": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
   "13f_decrease": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.6, 0.4] },
   
-  // --- FROM: ingest-form4 (Function #2) ---
+  // --- Form4 Insider ---
   "insider_buy": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "insider_sell": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "form4_buy": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "form4_sell": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-congressional-trades (Function #3) ---
+  // --- Congressional Trades ---
   "politician_buy": { themes: ["Defense & Aerospace", "Big Tech & Consumer", "Banks & Financials"], weights: [0.4, 0.3, 0.3] },
   "politician_sell": { themes: ["Defense & Aerospace", "Big Tech & Consumer", "Banks & Financials"], weights: [0.4, 0.3, 0.3] },
   "congressional_buy": { themes: ["Defense & Aerospace", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "congressional_sell": { themes: ["Defense & Aerospace", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-etf-flows (Function #4) ---
-  "flow_pressure_etf": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
-  "etf_inflow": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
-  "etf_outflow": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
-  "flow_pressure": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
+  // --- ETF Flows (now mapped to valid themes) ---
+  "flow_pressure_etf": { themes: ["Big Tech & Consumer", "Banks & Financials", "AI & Semiconductors"], weights: [0.4, 0.3, 0.3] },
+  "etf_inflow": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "etf_outflow": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "flow_pressure": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-options-flow (Function #5) ---
+  // --- Options Flow ---
   "options_unusual": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "unusual_options": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "options_sweep": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "options_block": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-dark-pool / ingest-finra-darkpool (Functions #6, #26) ---
+  // --- Dark Pool ---
   "darkpool_block": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "dark_pool_activity": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "darkpool_accumulation": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "darkpool_distribution": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-short-interest (Function #7) ---
+  // --- Short Interest ---
   "short_squeeze": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "short_interest_high": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "short_interest_low": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-policy-feeds (Function #8) ---
+  // --- Policy ---
   "policy_keyword": { themes: ["Clean Energy & EVs", "Defense & Aerospace", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
   "policy_mention": { themes: ["Clean Energy & EVs", "Defense & Aerospace", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
   "policy_approval": { themes: ["Banks & Financials", "Clean Energy & EVs"], weights: [0.5, 0.5] },
   "policy_rejection": { themes: ["Banks & Financials", "Clean Energy & EVs"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-breaking-news (Function #9) ---
+  // --- Breaking News ---
   "news_mention": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
-  "breaking_news": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  "news_alert": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
+  "breaking_news": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  "news_alert": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-news-sentiment (Function #10) ---
-  "sentiment_shift": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  "sentiment_bullish": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
-  "sentiment_bearish": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
+  // --- Sentiment ---
+  "sentiment_shift": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  "sentiment_bullish": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "sentiment_bearish": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "sentiment_extreme": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-reddit-sentiment / ingest-stocktwits (Functions #11, #12) ---
+  // --- Social ---
   "social_mention": { themes: ["Fintech & Crypto", "Media & Entertainment", "Big Tech & Consumer"], weights: [0.4, 0.3, 0.3] },
   "social_bullish": { themes: ["Fintech & Crypto", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "social_bearish": { themes: ["Fintech & Crypto", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "reddit_mention": { themes: ["Fintech & Crypto", "Media & Entertainment"], weights: [0.5, 0.5] },
   "stocktwits_mention": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-google-trends / ingest-search-trends (Function #13) ---
+  // --- Search Trends ---
   "search_interest": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
   "search_spike": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
   "trending_topic": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-earnings (Function #14) ---
+  // --- Earnings ---
   "earnings_surprise": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "earnings_beat": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "earnings_miss": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   "revenue_surprise": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-job-postings (Function #15) ---
+  // --- Job Postings ---
   "capex_hiring": { themes: ["AI & Semiconductors", "Big Tech & Consumer", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
   "hiring_surge": { themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "job_growth": { themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-patents (Function #16) ---
+  // --- Patents ---
   "patent_filed": { themes: ["AI & Semiconductors", "Biotech & Healthcare", "Clean Energy & EVs"], weights: [0.4, 0.3, 0.3] },
   "patent_granted": { themes: ["AI & Semiconductors", "Biotech & Healthcare"], weights: [0.5, 0.5] },
   "innovation_signal": { themes: ["AI & Semiconductors", "Biotech & Healthcare"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-cot-reports / ingest-cot-cftc (Functions #17) ---
-  "cot_positioning": { themes: ["Commodities & Mining", "Forex & Currencies", "Fintech & Crypto"], weights: [0.4, 0.3, 0.3] },
+  // --- COT Reports ---
+  "cot_positioning": { themes: ["Commodities & Mining", "Fintech & Crypto", "Energy & Oil"], weights: [0.4, 0.3, 0.3] },
   "cot_bullish": { themes: ["Commodities & Mining", "Energy & Oil"], weights: [0.5, 0.5] },
   "cot_bearish": { themes: ["Commodities & Mining", "Energy & Oil"], weights: [0.5, 0.5] },
   "commercial_positioning": { themes: ["Commodities & Mining", "Energy & Oil"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-crypto-onchain (Function #18) ---
+  // --- Crypto ---
   "onchain_whale": { themes: ["Fintech & Crypto"], weights: [1.0] },
   "crypto_whale_activity": { themes: ["Fintech & Crypto"], weights: [1.0] },
   "crypto_exchange_flow": { themes: ["Fintech & Crypto"], weights: [1.0] },
@@ -260,78 +228,69 @@ const SIGNAL_TYPE_TO_THEMES: Record<string, { themes: string[]; weights: number[
   "exchange_inflow": { themes: ["Fintech & Crypto"], weights: [1.0] },
   "exchange_outflow": { themes: ["Fintech & Crypto"], weights: [1.0] },
   
-  // --- FROM: ingest-forex-sentiment (Function #19) ---
-  "forex_sentiment": { themes: ["Forex & Currencies", "International & Emerging"], weights: [0.6, 0.4] },
-  "forex_bullish": { themes: ["Forex & Currencies"], weights: [1.0] },
-  "forex_bearish": { themes: ["Forex & Currencies"], weights: [1.0] },
-  "retail_positioning": { themes: ["Forex & Currencies"], weights: [1.0] },
+  // --- Forex (mapped to Fintech & Crypto for currency trading) ---
+  "forex_sentiment": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  "forex_bullish": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  "forex_bearish": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  "retail_positioning": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "forex_technical": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  "forex_breakout": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  "forex_breakdown": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
   
-  // --- FROM: ingest-forex-technicals (Function #20) ---
-  "forex_technical": { themes: ["Forex & Currencies"], weights: [1.0] },
-  "forex_breakout": { themes: ["Forex & Currencies"], weights: [1.0] },
-  "forex_breakdown": { themes: ["Forex & Currencies"], weights: [1.0] },
+  // --- Technical Signals ---
+  "technical_signal": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "technical_breakout": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "technical_breakdown": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "support_bounce": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "resistance_break": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "vwap_signal": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "stochastic_signal": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-advanced-technicals (Function #21) ---
-  "technical_signal": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  "technical_breakout": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  "technical_breakdown": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  "support_bounce": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  "resistance_break": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  "vwap_signal": { themes: ["Index & Passive"], weights: [1.0] },
-  "stochastic_signal": { themes: ["Index & Passive"], weights: [1.0] },
+  // --- Pattern Recognition ---
+  "pattern_detected": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "bullish_pattern": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "bearish_pattern": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "reversal_pattern": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "continuation_pattern": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-pattern-recognition (Function #22) ---
-  "pattern_detected": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  "bullish_pattern": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
-  "bearish_pattern": { themes: ["Big Tech & Consumer", "Growth & Allocation"], weights: [0.5, 0.5] },
-  "reversal_pattern": { themes: ["Index & Passive"], weights: [1.0] },
-  "continuation_pattern": { themes: ["Index & Passive"], weights: [1.0] },
+  // --- Economic/Macro ---
+  "macro_event": { themes: ["Banks & Financials", "International & Emerging", "Fintech & Crypto"], weights: [0.4, 0.3, 0.3] },
+  "fed_decision": { themes: ["Banks & Financials", "Real Estate & REITs"], weights: [0.6, 0.4] },
+  "gdp_release": { themes: ["Banks & Financials", "Industrial & Infrastructure"], weights: [0.5, 0.5] },
+  "inflation_data": { themes: ["Banks & Financials", "Real Estate & REITs"], weights: [0.6, 0.4] },
+  "employment_data": { themes: ["Banks & Financials", "Retail & E-commerce"], weights: [0.5, 0.5] },
+  "macro_indicator": { themes: ["Banks & Financials", "Real Estate & REITs"], weights: [0.6, 0.4] },
+  "interest_rate_change": { themes: ["Banks & Financials", "Real Estate & REITs"], weights: [0.6, 0.4] },
+  "yield_curve_signal": { themes: ["Banks & Financials"], weights: [1.0] },
+  "economic_indicator": { themes: ["Banks & Financials", "Industrial & Infrastructure"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-economic-calendar (Function #23) ---
-  "macro_event": { themes: ["Index & Passive", "Fixed Income & Bonds", "Forex & Currencies"], weights: [0.4, 0.3, 0.3] },
-  "fed_decision": { themes: ["Fixed Income & Bonds", "Banks & Financials"], weights: [0.5, 0.5] },
-  "gdp_release": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
-  "inflation_data": { themes: ["Fixed Income & Bonds", "Income & Dividend"], weights: [0.5, 0.5] },
-  "employment_data": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
-  
-  // --- FROM: ingest-fred-economics (Function #24) ---
-  "macro_indicator": { themes: ["Income & Dividend", "Fixed Income & Bonds", "Index & Passive"], weights: [0.4, 0.3, 0.3] },
-  "interest_rate_change": { themes: ["Fixed Income & Bonds", "Banks & Financials"], weights: [0.5, 0.5] },
-  "yield_curve_signal": { themes: ["Fixed Income & Bonds"], weights: [1.0] },
-  "economic_indicator": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
-  
-  // --- FROM: ingest-supply-chain (Function #25) ---
+  // --- Supply Chain ---
   "supply_chain": { themes: ["AI & Semiconductors", "Clean Energy & EVs", "Industrial & Infrastructure"], weights: [0.4, 0.3, 0.3] },
   "supply_disruption": { themes: ["Industrial & Infrastructure", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "supply_recovery": { themes: ["Industrial & Infrastructure", "AI & Semiconductors"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-smart-money (Function #27) ---
+  // --- Smart Money ---
   "smart_money": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "smart_money_flow": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "institutional_buying": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   "institutional_selling": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   
-  // --- FROM: ingest-ai-research (Function #28) ---
+  // --- AI Research ---
   "ai_insight": { themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.6, 0.4] },
   "ai_recommendation": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "ai_analysis": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   
-  // --- FROM: generate-signals-from-* (Functions #29-37) ---
-  // These generate derived signals and are covered by the types above
-  
-  // --- GENERIC/FALLBACK SIGNAL TYPES ---
-  "price_alert": { themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  "volume_spike": { themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  "momentum_shift": { themes: ["Growth & Allocation", "Index & Passive"], weights: [0.5, 0.5] },
-  "trend_change": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
-  "volatility_spike": { themes: ["Index & Passive", "Growth & Allocation"], weights: [0.5, 0.5] },
+  // --- Generic ---
+  "price_alert": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "volume_spike": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "momentum_shift": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "trend_change": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "volatility_spike": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
 };
 
 // ============================================================================
-// DIRECT DATA SOURCE QUERIES
-// Pulls data directly from source tables when signals table is incomplete
+// DIRECT DATA SOURCE CONFIGS (Only valid 17 themes)
 // ============================================================================
-
 interface DataSourceConfig {
   table: string;
   tickerColumn: string;
@@ -343,62 +302,23 @@ interface DataSourceConfig {
 }
 
 const DATA_SOURCE_CONFIGS: DataSourceConfig[] = [
-  // ETF Flows → Index & Passive, Growth & Allocation
-  { table: 'etf_flows', tickerColumn: 'ticker', dateColumn: 'flow_date', directionField: 'flow_direction', magnitudeField: 'net_flow_millions', themes: ["Index & Passive", "Growth & Allocation"], weights: [0.6, 0.4] },
-  
-  // Dark Pool Activity → Banks & Financials
   { table: 'dark_pool_activity', tickerColumn: 'ticker', dateColumn: 'trade_date', directionField: 'signal_type', magnitudeField: 'dark_pool_percentage', themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  
-  // Congressional Trades → Defense & Aerospace, Big Tech
   { table: 'congressional_trades', tickerColumn: 'ticker', dateColumn: 'transaction_date', directionField: 'transaction_type', magnitudeField: 'amount_max', themes: ["Defense & Aerospace", "Big Tech & Consumer", "Banks & Financials"], weights: [0.4, 0.3, 0.3] },
-  
-  // Options Flow → Big Tech & Consumer, AI
   { table: 'options_flow', tickerColumn: 'ticker', dateColumn: 'trade_date', directionField: 'sentiment', magnitudeField: 'premium', themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
-  
-  // Short Interest → Various
   { table: 'short_interest', tickerColumn: 'ticker', dateColumn: 'report_date', magnitudeField: 'float_percentage', themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
-  
-  // COT Reports → Commodities, Forex
-  { table: 'cot_reports', tickerColumn: 'ticker', dateColumn: 'report_date', directionField: 'sentiment', magnitudeField: 'noncommercial_net', themes: ["Commodities & Mining", "Forex & Currencies", "Energy & Oil"], weights: [0.4, 0.3, 0.3] },
-  
-  // Crypto Onchain → Fintech & Crypto
+  { table: 'cot_reports', tickerColumn: 'ticker', dateColumn: 'report_date', directionField: 'sentiment', magnitudeField: 'noncommercial_net', themes: ["Commodities & Mining", "Energy & Oil", "Fintech & Crypto"], weights: [0.4, 0.3, 0.3] },
   { table: 'crypto_onchain_metrics', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'whale_signal', magnitudeField: 'exchange_net_flow', themes: ["Fintech & Crypto"], weights: [1.0] },
-  
-  // Forex Sentiment → Forex
-  { table: 'forex_sentiment', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'retail_sentiment', magnitudeField: 'news_sentiment_score', themes: ["Forex & Currencies", "International & Emerging"], weights: [0.6, 0.4] },
-  
-  // Forex Technicals → Forex
-  { table: 'forex_technicals', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'rsi_signal', themes: ["Forex & Currencies"], weights: [1.0] },
-  
-  // Advanced Technicals → Index & Passive
-  { table: 'advanced_technicals', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'breakout_signal', magnitudeField: 'adx', themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  
-  // News Sentiment → Big Tech & Consumer
+  { table: 'forex_sentiment', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'retail_sentiment', magnitudeField: 'news_sentiment_score', themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  { table: 'forex_technicals', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'rsi_signal', themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  { table: 'advanced_technicals', tickerColumn: 'ticker', dateColumn: 'timestamp', directionField: 'breakout_signal', magnitudeField: 'adx', themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   { table: 'news_sentiment_aggregate', tickerColumn: 'ticker', dateColumn: 'date', directionField: 'sentiment_label', magnitudeField: 'sentiment_score', themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
-  
-  // Earnings → Big Tech, Financials
   { table: 'earnings_sentiment', tickerColumn: 'ticker', dateColumn: 'earnings_date', magnitudeField: 'earnings_surprise', themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
-  
-  // Job Postings → AI, Biotech
   { table: 'job_postings', tickerColumn: 'ticker', dateColumn: 'posted_date', magnitudeField: 'growth_indicator', themes: ["AI & Semiconductors", "Big Tech & Consumer", "Biotech & Healthcare"], weights: [0.4, 0.3, 0.3] },
-  
-  // Patents → AI, Biotech, Clean Energy
   { table: 'patent_filings', tickerColumn: 'ticker', dateColumn: 'filing_date', themes: ["AI & Semiconductors", "Biotech & Healthcare", "Clean Energy & EVs"], weights: [0.4, 0.3, 0.3] },
-  
-  // Supply Chain → Semiconductors, EVs, Industrial
   { table: 'supply_chain_signals', tickerColumn: 'ticker', dateColumn: 'report_date', magnitudeField: 'change_percentage', themes: ["AI & Semiconductors", "Clean Energy & EVs", "Industrial & Infrastructure"], weights: [0.4, 0.3, 0.3] },
-  
-  // Breaking News → Big Tech
-  { table: 'breaking_news', tickerColumn: 'ticker', dateColumn: 'published_at', magnitudeField: 'sentiment_score', themes: ["Big Tech & Consumer", "Index & Passive"], weights: [0.5, 0.5] },
-  
-  // AI Research Reports → AI, Big Tech
+  { table: 'breaking_news', tickerColumn: 'ticker', dateColumn: 'published_at', magnitudeField: 'sentiment_score', themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
   { table: 'ai_research_reports', tickerColumn: 'ticker', dateColumn: 'generated_at', magnitudeField: 'confidence_score', themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  
-  // Pattern Recognition → Index, Big Tech
-  { table: 'pattern_recognition', tickerColumn: 'ticker', dateColumn: 'detected_at', directionField: 'pattern_category', magnitudeField: 'confidence_score', themes: ["Index & Passive", "Big Tech & Consumer"], weights: [0.5, 0.5] },
-  
-  // Economic Indicators → Bonds, Index
-  { table: 'economic_indicators', tickerColumn: 'indicator_type', dateColumn: 'release_date', directionField: 'impact', themes: ["Fixed Income & Bonds", "Index & Passive", "Forex & Currencies"], weights: [0.4, 0.3, 0.3] },
+  { table: 'economic_indicators', tickerColumn: 'indicator_type', dateColumn: 'release_date', directionField: 'impact', themes: ["Banks & Financials", "Real Estate & REITs", "International & Emerging"], weights: [0.4, 0.3, 0.3] },
 ];
 
 function assignAssetToThemes(
@@ -456,25 +376,26 @@ function assignAssetToThemes(
     }
   }
 
-  // Asset class fallbacks
+  // Asset class fallbacks - using valid themes only
   if (matchedThemes.length === 0) {
     if (assetClass === "crypto") {
       matchedThemes.push({ theme: "Fintech & Crypto", weight: 0.8 });
     } else if (assetClass === "forex") {
-      matchedThemes.push({ theme: "Forex & Currencies", weight: 0.8 });
+      matchedThemes.push({ theme: "Fintech & Crypto", weight: 0.6 });
+      matchedThemes.push({ theme: "International & Emerging", weight: 0.4 });
     } else if (assetClass === "commodity") {
       matchedThemes.push({ theme: "Commodities & Mining", weight: 0.8 });
     } else if (assetClass === "etf" || assetClass === "mutual_fund") {
-      matchedThemes.push({ theme: "Index & Passive", weight: 0.6 });
-    } else if (assetClass === "bond") {
-      matchedThemes.push({ theme: "Fixed Income & Bonds", weight: 0.8 });
+      matchedThemes.push({ theme: "Big Tech & Consumer", weight: 0.4 });
+      matchedThemes.push({ theme: "Banks & Financials", weight: 0.3 });
     } else if (assetClass === "stock") {
       matchedThemes.push({ theme: "Big Tech & Consumer", weight: 0.4 });
     }
   }
 
+  // Ultimate fallback
   if (matchedThemes.length === 0) {
-    matchedThemes.push({ theme: "Growth & Allocation", weight: 0.3 });
+    matchedThemes.push({ theme: "Big Tech & Consumer", weight: 0.3 });
   }
 
   const totalWeight = matchedThemes.reduce((sum, m) => sum + m.weight, 0);
@@ -497,9 +418,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    console.log("[THEME-SCORING] Starting COMPREHENSIVE theme computation with all 37 data sources...");
+    console.log("[THEME-SCORING] Starting theme computation for 17 sector themes...");
 
-    // Fetch all themes
+    // Fetch themes
     const { data: themes, error: themesError } = await supabaseClient
       .from('themes')
       .select('id, name');
@@ -507,15 +428,15 @@ serve(async (req) => {
     if (themesError) throw themesError;
     console.log(`[THEME-SCORING] Found ${themes?.length || 0} themes`);
 
-    const themeNameToId = new Map(themes?.map(t => [t.name, t.id]) || []);
-
-    // Initialize theme scores
+    // Initialize theme scores and track coverage
     const themeScores: Record<string, {
       signalCount: number;
       totalMagnitude: number;
       positiveSignals: number;
       negativeSignals: number;
       sources: Set<string>;
+      assetsWithData: Set<string>;
+      totalAssets: Set<string>;
     }> = {};
 
     for (const theme of themes || []) {
@@ -524,11 +445,13 @@ serve(async (req) => {
         totalMagnitude: 0,
         positiveSignals: 0,
         negativeSignals: 0,
-        sources: new Set()
+        sources: new Set(),
+        assetsWithData: new Set(),
+        totalAssets: new Set()
       };
     }
 
-    // Fetch assets for ticker mapping
+    // Fetch all assets
     const allAssets: any[] = [];
     let assetOffset = 0;
     const ASSET_BATCH = 5000;
@@ -546,22 +469,31 @@ serve(async (req) => {
     }
     console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets`);
 
-    // Build mappings
+    // Build mappings and populate totalAssets for each theme
     const assetToThemes = new Map<string, { themes: string[]; weights: number[] }>();
+    const tickerToAssetId = new Map<string, string>();
     const tickerToAssetThemes = new Map<string, { themes: string[]; weights: number[] }>();
     
     for (const asset of allAssets) {
       const sector = asset.metadata?.sector || asset.metadata?.industry || null;
       const mapping = assignAssetToThemes(asset.ticker, asset.name, asset.asset_class, sector);
       assetToThemes.set(asset.id, mapping);
+      tickerToAssetId.set(asset.ticker.toUpperCase(), asset.id);
       tickerToAssetThemes.set(asset.ticker.toUpperCase(), mapping);
+      
+      // Track total assets per theme
+      for (const themeName of mapping.themes) {
+        if (themeScores[themeName]) {
+          themeScores[themeName].totalAssets.add(asset.id);
+        }
+      }
     }
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     // ========================================================================
-    // LAYER 1: Process signals table (traditional approach)
+    // LAYER 1: Process signals table
     // ========================================================================
     console.log("[THEME-SCORING] Processing signals table...");
     
@@ -601,7 +533,7 @@ serve(async (req) => {
         
         // Fallback
         if (signalThemes.length === 0) {
-          signalThemes = ["Growth & Allocation"];
+          signalThemes = ["Big Tech & Consumer"];
           weights = [1.0];
         }
         
@@ -614,6 +546,10 @@ serve(async (req) => {
             themeScores[themeName].signalCount++;
             themeScores[themeName].totalMagnitude += (signal.magnitude || 1) * weight;
             themeScores[themeName].sources.add('signals');
+            
+            if (signal.asset_id) {
+              themeScores[themeName].assetsWithData.add(signal.asset_id);
+            }
             
             if (signal.direction === 'up' || signal.direction === 'bullish') {
               themeScores[themeName].positiveSignals++;
@@ -643,7 +579,7 @@ serve(async (req) => {
           .from(config.table)
           .select('*')
           .gte(config.dateColumn, thirtyDaysAgo.toISOString())
-          .limit(2000);
+          .limit(5000);
         
         if (error) {
           console.log(`[THEME-SCORING] Skipping ${config.table}: ${error.message}`);
@@ -656,6 +592,9 @@ serve(async (req) => {
           const ticker = record[config.tickerColumn]?.toUpperCase();
           let recordThemes = config.themes;
           let recordWeights = config.weights;
+          
+          // Get asset_id for tracking coverage
+          const assetId = ticker ? tickerToAssetId.get(ticker) : null;
           
           // Try to get more specific theme from ticker
           if (ticker && tickerToAssetThemes.has(ticker)) {
@@ -679,7 +618,7 @@ serve(async (req) => {
           let magnitude = 1;
           if (config.magnitudeField && record[config.magnitudeField]) {
             magnitude = Math.abs(Number(record[config.magnitudeField])) || 1;
-            magnitude = Math.min(10, Math.log10(magnitude + 1) + 1); // Normalize
+            magnitude = Math.min(10, Math.log10(magnitude + 1) + 1);
           }
           
           // Apply to themes
@@ -691,6 +630,10 @@ serve(async (req) => {
               themeScores[themeName].signalCount++;
               themeScores[themeName].totalMagnitude += magnitude * weight;
               themeScores[themeName].sources.add(config.table);
+              
+              if (assetId) {
+                themeScores[themeName].assetsWithData.add(assetId);
+              }
               
               if (direction === 'up') {
                 themeScores[themeName].positiveSignals++;
@@ -712,7 +655,7 @@ serve(async (req) => {
     console.log(`[THEME-SCORING] Processed ${directSourcesProcessed} records from direct sources`);
 
     // ========================================================================
-    // Calculate final scores
+    // Calculate final scores with coverage
     // ========================================================================
     const results: any[] = [];
     const now = new Date();
@@ -721,13 +664,16 @@ serve(async (req) => {
       const stats = themeScores[theme.name];
       if (!stats) continue;
 
+      // Calculate coverage
+      const totalAssetCount = stats.totalAssets.size || 1;
+      const assetsWithDataCount = stats.assetsWithData.size;
+      const coveragePercent = Math.round((assetsWithDataCount / totalAssetCount) * 100);
+
       let score = 50;
       
       if (stats.signalCount > 0) {
-        // Signal count contribution (log scale)
         const signalBoost = Math.min(25, Math.log10(stats.signalCount + 1) * 12);
         
-        // Sentiment contribution
         const totalDirectional = stats.positiveSignals + stats.negativeSignals;
         let sentimentScore = 0;
         if (totalDirectional > 0) {
@@ -735,11 +681,9 @@ serve(async (req) => {
           sentimentScore = (positiveRatio - 0.5) * 30;
         }
         
-        // Magnitude contribution
         const avgMagnitude = stats.totalMagnitude / stats.signalCount;
         const magnitudeBoost = Math.min(10, avgMagnitude * 3);
         
-        // Source diversity bonus
         const sourceBonus = Math.min(10, stats.sources.size * 2);
         
         score = 50 + signalBoost + sentimentScore + magnitudeBoost + sourceBonus;
@@ -754,16 +698,19 @@ serve(async (req) => {
         positive_signals: stats.positiveSignals,
         negative_signals: stats.negativeSignals,
         sources: Array.from(stats.sources),
+        total_assets: totalAssetCount,
+        assets_with_data: assetsWithDataCount,
+        coverage_percent: coveragePercent,
         computed_at: now.toISOString()
       });
     }
 
     results.sort((a, b) => b.score - a.score);
 
-    // Log theme distribution
+    // Log theme distribution with coverage
     console.log("[THEME-SCORING] Theme signal distribution:");
     for (const r of results) {
-      console.log(`  ${r.theme_name}: ${r.signal_count} signals, score=${r.score.toFixed(1)}, sources=[${r.sources.join(',')}]`);
+      console.log(`  ${r.theme_name}: ${r.signal_count} signals, score=${r.score.toFixed(1)}, coverage=${r.coverage_percent}%, sources=[${r.sources.join(',')}]`);
     }
 
     // Update database
@@ -777,7 +724,10 @@ serve(async (req) => {
           component_scores: {
             positive_signals: result.positive_signals,
             negative_signals: result.negative_signals,
-            sources: result.sources
+            sources: result.sources,
+            coverage_percent: result.coverage_percent,
+            total_assets: result.total_assets,
+            assets_with_data: result.assets_with_data
           },
           positive_components: result.positive_signals > result.negative_signals ? ['bullish_momentum'] : [],
           computed_at: result.computed_at
@@ -785,7 +735,15 @@ serve(async (req) => {
 
       await supabaseClient
         .from('themes')
-        .update({ score: result.score, updated_at: now.toISOString() })
+        .update({ 
+          score: result.score, 
+          updated_at: now.toISOString(),
+          metadata: {
+            signal_count: result.signal_count,
+            coverage_percent: result.coverage_percent,
+            sources: result.sources
+          }
+        })
         .eq('id', result.theme_id);
     }
 
