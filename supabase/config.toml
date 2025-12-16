@@ -173,3 +173,6 @@ verify_jwt = false
 
 [functions.sync-twelvedata-assets]
 verify_jwt = false
+
+[functions.populate-signal-theme-map]
+verify_jwt = false
