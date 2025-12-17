@@ -2278,14 +2278,14 @@ export type Database = {
           {
             foreignKeyName: "theme_scores_theme_id_fkey"
             columns: ["theme_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "theme_overview"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "theme_scores_theme_id_fkey"
             columns: ["theme_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "themes"
             referencedColumns: ["id"]
           },
