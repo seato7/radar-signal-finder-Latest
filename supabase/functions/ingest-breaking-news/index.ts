@@ -242,15 +242,42 @@ serve(async (req) => {
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     
-    // Fetch assets dynamically from database
-    const { data: assets, error: assetsError } = await supabase
+    // Fetch assets with intelligent rotation - prioritize tickers not recently processed
+    // First, get all tickers from assets table
+    const { data: allAssets, error: assetsError } = await supabase
       .from('assets')
       .select('ticker')
-      .in('asset_class', ['stock', 'crypto'])
-      .limit(50); // Process 50 assets per run for breaking news
+      .in('asset_class', ['stock', 'crypto']);
     
     if (assetsError) throw assetsError;
-    const tickers = assets?.map((a: any) => a.ticker) || [];
+    const allTickers = allAssets?.map((a: any) => a.ticker) || [];
+    
+    // Get last processed times from tracker
+    const { data: trackerData } = await supabase
+      .from('news_coverage_tracker')
+      .select('ticker, last_processed_at')
+      .in('ticker', allTickers);
+    
+    const trackerMap = new Map<string, Date>();
+    trackerData?.forEach((t: any) => {
+      if (t.last_processed_at) {
+        trackerMap.set(t.ticker, new Date(t.last_processed_at));
+      }
+    });
+    
+    // Sort tickers: never-processed first (null), then oldest-processed
+    const sortedTickers = allTickers.sort((a, b) => {
+      const aTime = trackerMap.get(a);
+      const bTime = trackerMap.get(b);
+      if (!aTime && !bTime) return 0;
+      if (!aTime) return -1; // a never processed, prioritize
+      if (!bTime) return 1;  // b never processed, prioritize
+      return aTime.getTime() - bTime.getTime(); // oldest first
+    });
+    
+    // Take top 50 for this run
+    const tickers = sortedTickers.slice(0, 50);
+    console.log(`[ROTATION] Selected ${tickers.length} tickers. First 5: ${tickers.slice(0, 5).join(', ')}. Never processed: ${sortedTickers.filter(t => !trackerMap.has(t)).length} remaining`);
     const newsItems = [];
     let sourceUsed = 'Perplexity API';
     let cacheHit = false;
@@ -294,6 +321,13 @@ serve(async (req) => {
             created_at: new Date().toISOString(),
           });
         }
+        
+        // Update tracker even for no-API-key fallback
+        await supabase.from('news_coverage_tracker').upsert({
+          ticker,
+          last_processed_at: new Date().toISOString(),
+          process_count: 1
+        }, { onConflict: 'ticker', ignoreDuplicates: false });
       }
 
       await supabase.from('breaking_news').insert(newsItems);
@@ -445,9 +479,19 @@ serve(async (req) => {
               }
             }
 
-            // Cache the fetched news
+            // Cache the fetched news and update tracker
             if (tickerNews.length > 0) {
               await redisCache.set(`news:${ticker}`, tickerNews, 'Perplexity API');
+              
+              // Update rotation tracker
+              await supabase.from('news_coverage_tracker').upsert({
+                ticker: sanitizeTicker(ticker),
+                last_processed_at: new Date().toISOString(),
+                process_count: 1
+              }, {
+                onConflict: 'ticker',
+                ignoreDuplicates: false
+              });
             }
           }
         }
@@ -492,6 +536,13 @@ serve(async (req) => {
             created_at: new Date().toISOString(),
           });
         }
+        
+        // Update tracker even for fallback to maintain rotation
+        await supabase.from('news_coverage_tracker').upsert({
+          ticker,
+          last_processed_at: new Date().toISOString(),
+          process_count: 1
+        }, { onConflict: 'ticker', ignoreDuplicates: false });
       }
     }
 
