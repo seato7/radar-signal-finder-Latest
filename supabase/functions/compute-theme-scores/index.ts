@@ -673,86 +673,93 @@ serve(async (req) => {
     console.log(`[THEME-SCORING] Processed ${signalsProcessed} signals from signals table`);
 
     // ========================================================================
-    // LAYER 2: Process direct data source tables
+    // LAYER 2: Process direct data source tables - PAGINATED FOR FULL COVERAGE
     // ========================================================================
-    console.log("[THEME-SCORING] Processing direct data sources...");
+    console.log("[THEME-SCORING] Processing direct data sources with full pagination...");
     
     let directSourcesProcessed = 0;
     
     for (const config of DATA_SOURCE_CONFIGS) {
       try {
-        const { data: records, error } = await supabaseClient
-          .from(config.table)
-          .select('*')
-          .gte(config.dateColumn, thirtyDaysAgo.toISOString())
-          .limit(5000);
+        let sourceOffset = 0;
+        const SOURCE_BATCH = 1000;
+        let tableRecordsProcessed = 0;
+        const MAX_BATCHES = 50; // Limit to prevent timeout
+        let batchCount = 0;
         
-        if (error) {
-          console.log(`[THEME-SCORING] Skipping ${config.table}: ${error.message}`);
-          continue;
-        }
-        
-        if (!records || records.length === 0) continue;
-        
-        for (const record of records) {
-          const ticker = record[config.tickerColumn]?.toUpperCase();
-          let recordThemes = config.themes;
-          let recordWeights = config.weights;
+        // PAGINATE through records with limit to prevent timeout
+        while (batchCount < MAX_BATCHES) {
+          const { data: records, error } = await supabaseClient
+            .from(config.table)
+            .select('*')
+            .gte(config.dateColumn, thirtyDaysAgo.toISOString())
+            .order(config.dateColumn, { ascending: false })
+            .range(sourceOffset, sourceOffset + SOURCE_BATCH - 1);
           
-          // Get asset_id for tracking coverage
-          const assetId = ticker ? tickerToAssetId.get(ticker) : null;
-          
-          // Try to get more specific theme from ticker
-          if (ticker && tickerToAssetThemes.has(ticker)) {
-            const assetMapping = tickerToAssetThemes.get(ticker)!;
-            recordThemes = assetMapping.themes;
-            recordWeights = assetMapping.weights;
+          if (error) {
+            console.log(`[THEME-SCORING] Skipping ${config.table}: ${error.message}`);
+            break;
           }
           
-          // Determine direction
-          let direction = 'neutral';
-          if (config.directionField && record[config.directionField]) {
-            const dirVal = String(record[config.directionField]).toLowerCase();
-            if (dirVal.includes('bull') || dirVal.includes('up') || dirVal.includes('buy') || dirVal.includes('inflow') || dirVal.includes('positive')) {
-              direction = 'up';
-            } else if (dirVal.includes('bear') || dirVal.includes('down') || dirVal.includes('sell') || dirVal.includes('outflow') || dirVal.includes('negative')) {
-              direction = 'down';
-            }
-          }
+          if (!records || records.length === 0) break;
           
-          // Get magnitude
-          let magnitude = 1;
-          if (config.magnitudeField && record[config.magnitudeField]) {
-            magnitude = Math.abs(Number(record[config.magnitudeField])) || 1;
-            magnitude = Math.min(10, Math.log10(magnitude + 1) + 1);
-          }
-          
-          // Apply to themes
-          for (let i = 0; i < recordThemes.length; i++) {
-            const themeName = recordThemes[i];
-            const weight = recordWeights[i];
+          for (const record of records) {
+            const ticker = record[config.tickerColumn]?.toUpperCase();
+            let recordThemes = config.themes;
+            let recordWeights = config.weights;
             
-            if (themeScores[themeName]) {
-              themeScores[themeName].signalCount++;
-              themeScores[themeName].totalMagnitude += magnitude * weight;
-              themeScores[themeName].sources.add(config.table);
-              
-              // Track ticker for coverage (using ticker directly!)
-              if (ticker) {
-                themeScores[themeName].tickersWithData.add(ticker);
-              }
-              
-              if (direction === 'up') {
-                themeScores[themeName].positiveSignals++;
-              } else if (direction === 'down') {
-                themeScores[themeName].negativeSignals++;
+            if (ticker && tickerToAssetThemes.has(ticker)) {
+              const assetMapping = tickerToAssetThemes.get(ticker)!;
+              recordThemes = assetMapping.themes;
+              recordWeights = assetMapping.weights;
+            }
+            
+            let direction = 'neutral';
+            if (config.directionField && record[config.directionField]) {
+              const dirVal = String(record[config.directionField]).toLowerCase();
+              if (dirVal.includes('bull') || dirVal.includes('up') || dirVal.includes('buy') || dirVal.includes('inflow') || dirVal.includes('positive')) {
+                direction = 'up';
+              } else if (dirVal.includes('bear') || dirVal.includes('down') || dirVal.includes('sell') || dirVal.includes('outflow') || dirVal.includes('negative')) {
+                direction = 'down';
               }
             }
+            
+            let magnitude = 1;
+            if (config.magnitudeField && record[config.magnitudeField]) {
+              magnitude = Math.abs(Number(record[config.magnitudeField])) || 1;
+              magnitude = Math.min(10, Math.log10(magnitude + 1) + 1);
+            }
+            
+            for (let i = 0; i < recordThemes.length; i++) {
+              const themeName = recordThemes[i];
+              const weight = recordWeights[i];
+              
+              if (themeScores[themeName]) {
+                themeScores[themeName].signalCount++;
+                themeScores[themeName].totalMagnitude += magnitude * weight;
+                themeScores[themeName].sources.add(config.table);
+                
+                if (ticker) {
+                  themeScores[themeName].tickersWithData.add(ticker);
+                }
+                
+                if (direction === 'up') {
+                  themeScores[themeName].positiveSignals++;
+                } else if (direction === 'down') {
+                  themeScores[themeName].negativeSignals++;
+                }
+              }
+            }
+            tableRecordsProcessed++;
           }
-          directSourcesProcessed++;
+          
+          sourceOffset += records.length;
+          batchCount++;
+          if (records.length < SOURCE_BATCH) break;
         }
         
-        console.log(`[THEME-SCORING] Processed ${records.length} records from ${config.table}`);
+        directSourcesProcessed += tableRecordsProcessed;
+        console.log(`[THEME-SCORING] Processed ${tableRecordsProcessed} records from ${config.table}`);
         
       } catch (err) {
         console.log(`[THEME-SCORING] Error processing ${config.table}:`, err);
