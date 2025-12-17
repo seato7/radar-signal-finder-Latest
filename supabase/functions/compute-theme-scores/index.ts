@@ -321,6 +321,65 @@ const DATA_SOURCE_CONFIGS: DataSourceConfig[] = [
   { table: 'economic_indicators', tickerColumn: 'indicator_type', dateColumn: 'release_date', directionField: 'impact', themes: ["Banks & Financials", "Real Estate & REITs", "International & Emerging"], weights: [0.4, 0.3, 0.3] },
 ];
 
+// Comprehensive SECTOR → THEME mapping (covers all 26k+ enriched assets)
+const SECTOR_TO_THEME: Record<string, { themes: string[]; weights: number[] }> = {
+  // Primary sector mappings (exact match)
+  "financial services": { themes: ["Banks & Financials"], weights: [1.0] },
+  "technology": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.6, 0.4] },
+  "cryptocurrency": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  "biotechnology": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "mining & metals": { themes: ["Commodities & Mining"], weights: [1.0] },
+  "currency": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
+  "oil & gas": { themes: ["Energy & Oil"], weights: [1.0] },
+  "semiconductors": { themes: ["AI & Semiconductors"], weights: [1.0] },
+  "healthcare": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "banks": { themes: ["Banks & Financials"], weights: [1.0] },
+  "real estate": { themes: ["Real Estate & REITs"], weights: [1.0] },
+  "food & beverage": { themes: ["Food & Agriculture"], weights: [1.0] },
+  "media & entertainment": { themes: ["Media & Entertainment"], weights: [1.0] },
+  "transportation": { themes: ["Industrial & Infrastructure"], weights: [1.0] },
+  "clean energy": { themes: ["Clean Energy & EVs"], weights: [1.0] },
+  "consumer goods": { themes: ["Retail & E-commerce"], weights: [1.0] },
+  "etf": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "telecom": { themes: ["Big Tech & Consumer"], weights: [1.0] },
+  "utilities": { themes: ["Industrial & Infrastructure", "Clean Energy & EVs"], weights: [0.6, 0.4] },
+  "ai & machine learning": { themes: ["AI & Semiconductors"], weights: [1.0] },
+  "aerospace & defense": { themes: ["Defense & Aerospace"], weights: [1.0] },
+  "insurance": { themes: ["Banks & Financials"], weights: [1.0] },
+  "industrial manufacturing": { themes: ["Industrial & Infrastructure"], weights: [1.0] },
+  "retail": { themes: ["Retail & E-commerce"], weights: [1.0] },
+  "construction": { themes: ["Industrial & Infrastructure", "Real Estate & REITs"], weights: [0.6, 0.4] },
+  "energy": { themes: ["Energy & Oil"], weights: [1.0] },
+  "medical devices": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "materials": { themes: ["Commodities & Mining", "Industrial & Infrastructure"], weights: [0.6, 0.4] },
+  "fintech": { themes: ["Fintech & Crypto", "Banks & Financials"], weights: [0.7, 0.3] },
+  "agriculture": { themes: ["Food & Agriculture"], weights: [1.0] },
+  "chemicals": { themes: ["Commodities & Mining", "Industrial & Infrastructure"], weights: [0.5, 0.5] },
+  "restaurants": { themes: ["Food & Agriculture", "Travel & Leisure"], weights: [0.5, 0.5] },
+  "consumer discretionary": { themes: ["Retail & E-commerce"], weights: [1.0] },
+  "communication services": { themes: ["Media & Entertainment", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "industrials": { themes: ["Industrial & Infrastructure"], weights: [1.0] },
+  "consumer staples": { themes: ["Food & Agriculture", "Retail & E-commerce"], weights: [0.6, 0.4] },
+  "software": { themes: ["Big Tech & Consumer", "Cloud & Cybersecurity"], weights: [0.6, 0.4] },
+  "internet": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.7, 0.3] },
+  "e-commerce": { themes: ["Retail & E-commerce", "Big Tech & Consumer"], weights: [0.7, 0.3] },
+  "gaming": { themes: ["Media & Entertainment"], weights: [1.0] },
+  "travel": { themes: ["Travel & Leisure"], weights: [1.0] },
+  "hotels": { themes: ["Travel & Leisure", "Real Estate & REITs"], weights: [0.7, 0.3] },
+  "airlines": { themes: ["Travel & Leisure"], weights: [1.0] },
+  "cybersecurity": { themes: ["Cloud & Cybersecurity"], weights: [1.0] },
+  "cloud": { themes: ["Cloud & Cybersecurity", "Big Tech & Consumer"], weights: [0.6, 0.4] },
+  "ev": { themes: ["Clean Energy & EVs"], weights: [1.0] },
+  "electric vehicles": { themes: ["Clean Energy & EVs"], weights: [1.0] },
+  "solar": { themes: ["Clean Energy & EVs"], weights: [1.0] },
+  "renewable": { themes: ["Clean Energy & EVs"], weights: [1.0] },
+  "gold": { themes: ["Commodities & Mining"], weights: [1.0] },
+  "silver": { themes: ["Commodities & Mining"], weights: [1.0] },
+  "pharma": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "pharmaceutical": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "reit": { themes: ["Real Estate & REITs"], weights: [1.0] },
+};
+
 function assignAssetToThemes(
   ticker: string,
   assetName: string,
@@ -329,54 +388,68 @@ function assignAssetToThemes(
 ): { themes: string[]; weights: number[] } {
   const matchedThemes: { theme: string; weight: number }[] = [];
   const nameLower = (assetName || "").toLowerCase();
-  const sectorLower = (sector || "").toLowerCase();
+  const sectorLower = (sector || "").toLowerCase().trim();
   const tickerUpper = ticker.toUpperCase();
 
-  for (const [themeName, patterns] of Object.entries(THEME_PATTERNS)) {
-    let matched = false;
-    let weight = 1.0;
-
-    if (patterns.tickers.includes(tickerUpper)) {
-      matched = true;
-      weight = 1.0;
-    }
-
-    if (!matched) {
-      for (const pattern of patterns.etfPatterns) {
-        if (pattern.test(nameLower) || pattern.test(tickerUpper)) {
-          matched = true;
-          weight = 0.9;
-          break;
-        }
-      }
-    }
-
-    if (!matched) {
-      for (const pattern of patterns.namePatterns) {
-        if (pattern.test(nameLower)) {
-          matched = true;
-          weight = 0.8;
-          break;
-        }
-      }
-    }
-
-    if (!matched && sectorLower) {
-      for (const keyword of patterns.sectorKeywords) {
-        if (sectorLower.includes(keyword.toLowerCase())) {
-          matched = true;
-          weight = 0.7;
-          break;
-        }
-      }
-    }
-
-    if (matched) {
-      matchedThemes.push({ theme: themeName, weight });
+  // PRIORITY 1: Direct sector mapping (covers 26k+ enriched assets)
+  if (sectorLower && SECTOR_TO_THEME[sectorLower]) {
+    const mapping = SECTOR_TO_THEME[sectorLower];
+    for (let i = 0; i < mapping.themes.length; i++) {
+      matchedThemes.push({ theme: mapping.themes[i], weight: mapping.weights[i] });
     }
   }
 
-  // Asset class fallbacks - using valid themes only
+  // PRIORITY 2: Partial sector keyword match (catches variations)
+  if (matchedThemes.length === 0 && sectorLower) {
+    for (const [sectorKey, mapping] of Object.entries(SECTOR_TO_THEME)) {
+      // Check if sector contains the key OR key contains the sector
+      if (sectorLower.includes(sectorKey) || sectorKey.includes(sectorLower) ||
+          // Also check word boundaries
+          sectorLower.split(/\s+/).some(word => sectorKey.includes(word) && word.length > 3)) {
+        for (let i = 0; i < mapping.themes.length; i++) {
+          matchedThemes.push({ theme: mapping.themes[i], weight: mapping.weights[i] * 0.9 });
+        }
+        break;
+      }
+    }
+  }
+
+  // PRIORITY 3: Explicit ticker list from THEME_PATTERNS
+  if (matchedThemes.length === 0) {
+    for (const [themeName, patterns] of Object.entries(THEME_PATTERNS)) {
+      if (patterns.tickers.includes(tickerUpper)) {
+        matchedThemes.push({ theme: themeName, weight: 1.0 });
+      }
+    }
+  }
+
+  // PRIORITY 4: ETF/name pattern matching
+  if (matchedThemes.length === 0) {
+    for (const [themeName, patterns] of Object.entries(THEME_PATTERNS)) {
+      for (const pattern of patterns.etfPatterns) {
+        if (pattern.test(nameLower) || pattern.test(tickerUpper)) {
+          matchedThemes.push({ theme: themeName, weight: 0.9 });
+          break;
+        }
+      }
+      if (matchedThemes.length > 0) break;
+    }
+  }
+
+  // PRIORITY 5: Name pattern matching
+  if (matchedThemes.length === 0) {
+    for (const [themeName, patterns] of Object.entries(THEME_PATTERNS)) {
+      for (const pattern of patterns.namePatterns) {
+        if (pattern.test(nameLower)) {
+          matchedThemes.push({ theme: themeName, weight: 0.8 });
+          break;
+        }
+      }
+      if (matchedThemes.length > 0) break;
+    }
+  }
+
+  // PRIORITY 6: Asset class fallbacks
   if (matchedThemes.length === 0) {
     if (assetClass === "crypto") {
       matchedThemes.push({ theme: "Fintech & Crypto", weight: 0.8 });
@@ -451,10 +524,10 @@ serve(async (req) => {
       };
     }
 
-    // Fetch all assets
+    // Fetch all assets (Supabase max is 1000 per query, so we paginate)
     const allAssets: any[] = [];
     let assetOffset = 0;
-    const ASSET_BATCH = 5000;
+    const ASSET_BATCH = 1000; // Supabase default limit
     while (true) {
       const { data: batch, error } = await supabaseClient
         .from('assets')
@@ -465,6 +538,7 @@ serve(async (req) => {
       if (!batch || batch.length === 0) break;
       allAssets.push(...batch);
       assetOffset += batch.length;
+      // Only break if we got fewer than requested (end of data)
       if (batch.length < ASSET_BATCH) break;
     }
     console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets`);
