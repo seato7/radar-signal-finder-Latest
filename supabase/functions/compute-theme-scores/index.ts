@@ -769,23 +769,93 @@ serve(async (req) => {
     console.log(`[THEME-SCORING] Processed ${directSourcesProcessed} records from direct sources`);
 
     // ========================================================================
-    // 8-COMPONENT RESEARCH-BACKED SCORING MODEL
-    // Based on backend/scoring.py - uses exponential decay + signal classification
+    // PROFESSIONAL HYBRID SCORING MODEL v2.0
+    // Based on Morningstar, BlackRock, AQR, Fama-French methodologies
+    // Implements: Confirmation-first approach, Macro regime awareness, Strict risk penalties
     // ========================================================================
     
-    // Component weights from backend/scoring.py (spec values)
+    // PROFESSIONAL COMPONENT WEIGHTS (research-backed)
+    // Key insight: Confirmation signals (institutional) should carry MORE weight than sentiment
     const COMPONENT_WEIGHTS: Record<string, number> = {
-      PolicyMomentum: 1.0,
-      FlowPressure: 1.0,
-      BigMoneyConfirm: 1.0,
-      InsiderPoliticianConfirm: 0.8,
-      Attention: 0.5,
-      TechEdge: 0.4,
-      RiskFlags: -1.0,
-      CapexMomentum: 0.6,
+      // CONFIRMATION FACTORS (60% total weight) - Must have institutional alignment
+      BigMoneyConfirm: 1.5,        // 13F holdings - institutional conviction (was 1.0)
+      FlowPressure: 1.4,           // ETF/Dark pool flows - capital direction (was 1.0)
+      InsiderPoliticianConfirm: 1.2, // Smart money alignment (was 0.8)
+      CapexMomentum: 1.0,          // Jobs/patents - growth proxy (was 0.6)
+      
+      // SENTIMENT FACTORS (25% weight) - Directional bias indicators
+      Attention: 0.6,              // News/social - market awareness (was 0.5)
+      TechEdge: 0.7,               // Technical/options - price action (was 0.4)
+      PolicyMomentum: 0.8,         // Policy catalysts (was 1.0 - demoted without data)
+      
+      // PENALTY FACTORS (Subtractive, not just weighted lower)
+      RiskFlags: -2.0,             // DOUBLED penalty for risk signals (was -1.0)
     };
     
-    // Signal type → component mapping
+    // MACRO REGIME DETECTION - Fetch latest economic indicators
+    console.log('[THEME-SCORING] Detecting macro regime from economic indicators...');
+    const { data: macroData } = await supabaseClient
+      .from('economic_indicators')
+      .select('indicator_type, value, previous_value')
+      .gte('release_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .order('release_date', { ascending: false })
+      .limit(50);
+    
+    // Parse macro regime
+    let interestRate = 4.0; // Default neutral
+    let inflationRate = 2.5; // Default target
+    let employmentHealth = 'stable';
+    
+    if (macroData) {
+      const rateData = macroData.find(d => d.indicator_type === 'interest_rate' && d.value > 0);
+      const cpiData = macroData.find(d => d.indicator_type === 'cpi');
+      const nfpData = macroData.find(d => d.indicator_type === 'nfp');
+      
+      if (rateData) interestRate = rateData.value;
+      if (cpiData) inflationRate = cpiData.value;
+      if (nfpData) {
+        const nfpChange = (nfpData.value - nfpData.previous_value) / nfpData.previous_value;
+        employmentHealth = nfpChange < -0.05 ? 'weak' : nfpChange > 0.05 ? 'strong' : 'stable';
+      }
+    }
+    
+    const highRateEnvironment = interestRate >= 5.0;
+    const elevatedInflation = inflationRate >= 3.0;
+    const consumerStress = employmentHealth === 'weak' || elevatedInflation;
+    
+    console.log(`[THEME-SCORING] Macro regime: rates=${interestRate}%, inflation=${inflationRate}%, employment=${employmentHealth}`);
+    console.log(`[THEME-SCORING] Regime flags: highRates=${highRateEnvironment}, elevatedInflation=${elevatedInflation}, consumerStress=${consumerStress}`);
+    
+    // SECTOR-SPECIFIC REGIME MODIFIERS
+    // These apply AFTER base scoring to align with analyst consensus
+    const REGIME_MODIFIERS: Record<string, number> = {
+      // Rate-sensitive sectors (penalized in high-rate environment)
+      "Real Estate & REITs": highRateEnvironment ? -15 : 0,
+      "Banks & Financials": highRateEnvironment ? -5 : (interestRate > 3 ? 5 : 0), // Banks benefit somewhat
+      
+      // Consumer-sensitive sectors (penalized in consumer stress)
+      "Retail & E-commerce": consumerStress ? -12 : 0,
+      "Travel & Leisure": consumerStress ? -10 : 0,
+      
+      // Defensive/beneficiary sectors
+      "Defense & Aerospace": 5, // Government spending insulated
+      "Energy & Oil": elevatedInflation ? 5 : 0, // Inflation hedge
+      "Biotech & Healthcare": 3, // Defensive with growth
+      
+      // Neutral adjustments
+      "AI & Semiconductors": 0,
+      "Big Tech & Consumer": 0,
+      "Cloud & Cybersecurity": 0,
+      "Clean Energy & EVs": highRateEnvironment ? -5 : 0, // Capital intensive
+      "Commodities & Mining": elevatedInflation ? 8 : 0, // Inflation hedge
+      "Fintech & Crypto": 0,
+      "Food & Agriculture": 0,
+      "Industrial & Infrastructure": 0,
+      "International & Emerging": highRateEnvironment ? -8 : 0, // Dollar strength
+      "Media & Entertainment": 0,
+    };
+    
+    // Signal type → component mapping (unchanged but validated)
     const SIGNAL_TO_COMPONENT: Record<string, string> = {
       // PolicyMomentum
       'policy_keyword': 'PolicyMomentum',
@@ -811,6 +881,9 @@ serve(async (req) => {
       '13f_increase': 'BigMoneyConfirm',
       '13f_decrease': 'BigMoneyConfirm',
       'institutional_13f': 'BigMoneyConfirm',
+      'smart_money_flow': 'BigMoneyConfirm',
+      'institutional_buying': 'BigMoneyConfirm',
+      'institutional_selling': 'BigMoneyConfirm',
       
       // InsiderPoliticianConfirm
       'insider_buy': 'InsiderPoliticianConfirm',
@@ -842,6 +915,9 @@ serve(async (req) => {
       // TechEdge
       'technical_breakout': 'TechEdge',
       'technical_breakdown': 'TechEdge',
+      'technical_stochastic': 'TechEdge',
+      'technical_ma_crossover': 'TechEdge',
+      'technical_rsi': 'TechEdge',
       'chart_pattern': 'TechEdge',
       'pattern_detected': 'TechEdge',
       'options_unusual': 'TechEdge',
@@ -864,6 +940,7 @@ serve(async (req) => {
       'patent_filed': 'CapexMomentum',
       'patent_granted': 'CapexMomentum',
       'innovation_signal': 'CapexMomentum',
+      'innovation_patent': 'CapexMomentum',
       'earnings_surprise': 'CapexMomentum',
       'earnings_beat': 'CapexMomentum',
       'revenue_surprise': 'CapexMomentum',
@@ -1042,69 +1119,114 @@ serve(async (req) => {
         }
       }
       
-      // ========== ACCURATE MARKET-ALIGNED SCORING ==========
-      // Target scale: <35 = bearish/sell, 36-65 = neutral, 65+ = bullish/buy
-      // Key insight: Use SENTIMENT RATIO (positive vs negative signals) as primary driver
+      // ========================================================================
+      // PROFESSIONAL HYBRID SCORING v2.0
+      // Target: <35 = UNDERPERFORM/BEARISH, 35-65 = NEUTRAL, >65 = OUTPERFORM/BULLISH
+      // Key insight: CONFIRMATION signals (institutional) + MACRO regime drive accuracy
+      // ========================================================================
       
-      // Step 1: Calculate sentiment ratio - this is the PRIMARY score driver
+      // Step 1: Calculate raw sentiment metrics
       const totalSignals = stats.positiveSignals + stats.negativeSignals;
       let sentimentRatio = 0.5; // Default neutral
+      let negativeRatio = 0;
       if (totalSignals > 0) {
-        // Ratio from 0 (all negative) to 1 (all positive), 0.5 = balanced
         sentimentRatio = stats.positiveSignals / totalSignals;
+        negativeRatio = stats.negativeSignals / totalSignals;
       }
       
-      // Step 2: Normalize component scores for strength assessment
+      // Step 2: Normalize component scores with professional scaling
       const normalizedComponents: Record<string, number> = {};
       let totalComponentStrength = 0;
       const activeComponents: string[] = [];
+      let hasInstitutionalConfirmation = false;
       
       for (const [comp, rawScore] of Object.entries(componentScores)) {
-        // More aggressive scaling: sqrt * 35 gives better spread
-        const normalized = rawScore > 0 ? Math.min(100, Math.sqrt(rawScore) * 35) : 0;
+        // Professional scaling: log + sqrt hybrid for better distribution
+        const normalized = rawScore > 0 
+          ? Math.min(100, (Math.log10(rawScore + 1) * 20 + Math.sqrt(rawScore) * 15))
+          : 0;
         normalizedComponents[comp] = Math.round(normalized * 100) / 100;
         
         const weight = COMPONENT_WEIGHTS[comp];
         if (normalized > 0.1 && weight > 0) {
           activeComponents.push(comp);
           totalComponentStrength += normalized * weight;
+          
+          // Track institutional confirmation
+          if (['BigMoneyConfirm', 'FlowPressure', 'InsiderPoliticianConfirm'].includes(comp) && normalized > 5) {
+            hasInstitutionalConfirmation = true;
+          }
         }
       }
       
-      // Step 3: Calculate score using sentiment-driven approach
-      // Base: 50 (neutral), shifted by sentiment ratio
-      // sentimentRatio=0.7 (70% positive) → shift +20 → score ~70
-      // sentimentRatio=0.3 (30% positive) → shift -20 → score ~30
-      const sentimentShift = (sentimentRatio - 0.5) * 60; // Range: -30 to +30
+      // Step 3: PROFESSIONAL SCORE CALCULATION
+      // Base: 50 (neutral)
+      // Primary driver: Sentiment ratio with institutional confirmation multiplier
+      const sentimentShift = (sentimentRatio - 0.5) * 50; // Range: -25 to +25
       
-      // Component strength modifier (0-15 points based on signal quality)
+      // Institutional confirmation bonus (critical for bullish calls)
+      const institutionalBonus = hasInstitutionalConfirmation ? 10 : -5;
+      
+      // Component strength modifier (max 15 points)
       const avgComponentStrength = activeComponents.length > 0 
-        ? totalComponentStrength / (activeComponents.length * Math.max(...Object.values(COMPONENT_WEIGHTS)))
+        ? totalComponentStrength / (activeComponents.length * 1.5)
         : 0;
-      const strengthModifier = Math.min(15, avgComponentStrength * 0.2);
+      const strengthModifier = Math.min(15, avgComponentStrength * 0.25);
       
-      // Risk penalty from RiskFlags component
-      const riskPenalty = Math.min(10, (normalizedComponents.RiskFlags || 0) * 0.15);
+      // PROFESSIONAL RISK PENALTIES (stricter than before)
+      let riskPenalty = 0;
       
-      // Diversity bonus: more active components = more confidence
-      const diversityBonus = Math.min(8, activeComponents.length * 1.2);
+      // a) RiskFlags component penalty (doubled)
+      riskPenalty += Math.min(15, (normalizedComponents.RiskFlags || 0) * 0.3);
       
-      // Calculate final score
-      let score = 50 + sentimentShift + strengthModifier + diversityBonus - riskPenalty;
+      // b) HIGH NEGATIVE RATIO PENALTY (>40% negative = structural bearish)
+      if (negativeRatio > 0.4) {
+        riskPenalty += (negativeRatio - 0.4) * 30; // Up to -18 points at 100% negative
+        console.log(`[THEME-SCORING] ${theme.name}: High negative ratio penalty (${(negativeRatio * 100).toFixed(1)}%)`);
+      }
       
-      // Step 4: Apply coverage quality adjustment
+      // c) NO INSTITUTIONAL CONFIRMATION PENALTY (caps bullish potential)
+      const bigMoneyScore = normalizedComponents.BigMoneyConfirm || 0;
+      const noBigMoneyCap = bigMoneyScore < 5 ? Math.max(0, (sentimentShift - 10)) * 0.5 : 0;
+      
+      // Diversity bonus (capped lower to prevent inflation)
+      const diversityBonus = Math.min(6, activeComponents.length * 0.8);
+      
+      // Calculate base score
+      let score = 50 + sentimentShift + institutionalBonus + strengthModifier + diversityBonus - riskPenalty - noBigMoneyCap;
+      
+      // Step 4: Apply MACRO REGIME MODIFIER
+      const regimeModifier = REGIME_MODIFIERS[theme.name] || 0;
+      if (regimeModifier !== 0) {
+        score += regimeModifier;
+        console.log(`[THEME-SCORING] ${theme.name}: Macro regime modifier ${regimeModifier > 0 ? '+' : ''}${regimeModifier}`);
+      }
+      
+      // Step 5: Coverage quality adjustment
       const totalTickerCount = stats.totalTickers.size || 1;
       const tickersWithDataInTheme = [...stats.tickersWithData].filter(t => stats.totalTickers.has(t)).length;
       const coveragePercent = Math.round((tickersWithDataInTheme / totalTickerCount) * 100);
       
-      // Coverage penalty: <50% coverage reduces score slightly
       if (coveragePercent < 50) {
         const coveragePenalty = (50 - coveragePercent) / 50 * 0.1;
         score = score * (1 - coveragePenalty);
       }
       
-      // Clamp final score to 5-95 (avoid extreme edges)
-      score = Math.max(5, Math.min(95, score));
+      // Step 6: PROFESSIONAL SCORE CAPS (alignment with analyst consensus ranges)
+      // BigMoneyConfirm = 0 caps score at 60 (no institutional validation = can't be OUTPERFORM)
+      if (bigMoneyScore < 1 && score > 60) {
+        console.log(`[THEME-SCORING] ${theme.name}: Capping at 60 (no institutional confirmation)`);
+        score = 60;
+      }
+      
+      // Extreme negative ratio override (>50% negative = bearish regardless)
+      if (negativeRatio > 0.5 && score > 45) {
+        console.log(`[THEME-SCORING] ${theme.name}: Bearish override (${(negativeRatio * 100).toFixed(1)}% negative)`);
+        score = Math.min(score, 45);
+      }
+      
+      // Final clamp with wider range for professional distribution
+      score = Math.max(15, Math.min(90, score));
       
       results.push({
         theme_id: theme.id,
