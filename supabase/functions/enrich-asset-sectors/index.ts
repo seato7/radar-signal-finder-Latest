@@ -503,10 +503,164 @@ const ETF_SECTOR_MAP: Record<string, { sector: string; industry: string }> = {
   'ETHE': { sector: 'Cryptocurrency', industry: 'Ethereum Trust' },
 };
 
+// Enhanced ETF name parsing - extract sector from common ETF naming patterns
+function parseETFName(name: string): { sector: string; industry: string } | null {
+  const nameLower = name.toLowerCase();
+  
+  // Specific sector/industry keywords with priority ordering (most specific first)
+  const etfPatterns: Array<{ keywords: string[]; sector: string; industry: string }> = [
+    // AI & Semiconductors
+    { keywords: ['semiconductor', 'chip', 'soxx', 'smh'], sector: 'Semiconductors', industry: 'Semiconductor ETF' },
+    { keywords: ['artificial intelligence', ' ai ', 'machine learning', 'robotics'], sector: 'AI & Machine Learning', industry: 'AI ETF' },
+    
+    // Tech
+    { keywords: ['cloud', 'software', 'saas'], sector: 'Technology', industry: 'Software ETF' },
+    { keywords: ['cybersecurity', 'cyber'], sector: 'Technology', industry: 'Cybersecurity ETF' },
+    { keywords: ['technology', 'tech', 'nasdaq', 'qqq'], sector: 'Technology', industry: 'Technology ETF' },
+    { keywords: ['internet', 'digital'], sector: 'Technology', industry: 'Internet ETF' },
+    
+    // Healthcare & Biotech
+    { keywords: ['biotech', 'biotechnology', 'genomic'], sector: 'Biotechnology', industry: 'Biotech ETF' },
+    { keywords: ['healthcare', 'health care', 'medical'], sector: 'Healthcare', industry: 'Healthcare ETF' },
+    { keywords: ['pharma', 'pharmaceutical'], sector: 'Biotechnology', industry: 'Pharma ETF' },
+    
+    // Energy
+    { keywords: ['solar', 'wind', 'clean energy', 'renewable'], sector: 'Clean Energy', industry: 'Clean Energy ETF' },
+    { keywords: ['electric vehicle', 'ev ', ' ev', 'lithium', 'battery'], sector: 'Clean Energy', industry: 'EV ETF' },
+    { keywords: ['oil', 'gas', 'energy', 'petroleum', 'crude'], sector: 'Oil & Gas', industry: 'Energy ETF' },
+    { keywords: ['utilities', 'utility'], sector: 'Utilities', industry: 'Utilities ETF' },
+    
+    // Financial
+    { keywords: ['bank', 'banking'], sector: 'Banks', industry: 'Bank ETF' },
+    { keywords: ['fintech', 'payment'], sector: 'Fintech', industry: 'Fintech ETF' },
+    { keywords: ['insurance'], sector: 'Insurance', industry: 'Insurance ETF' },
+    { keywords: ['financial', 'financials'], sector: 'Financial Services', industry: 'Financial ETF' },
+    
+    // Real Estate
+    { keywords: ['reit', 'real estate', 'property'], sector: 'Real Estate', industry: 'Real Estate ETF' },
+    
+    // Materials & Mining
+    { keywords: ['gold', 'silver', 'precious metal'], sector: 'Mining & Metals', industry: 'Precious Metals ETF' },
+    { keywords: ['mining', 'metal', 'materials'], sector: 'Mining & Metals', industry: 'Materials ETF' },
+    
+    // Industrial & Defense
+    { keywords: ['defense', 'aerospace', 'military'], sector: 'Aerospace & Defense', industry: 'Defense ETF' },
+    { keywords: ['industrial', 'infrastructure'], sector: 'Industrial Manufacturing', industry: 'Industrial ETF' },
+    { keywords: ['construction', 'building'], sector: 'Construction', industry: 'Construction ETF' },
+    { keywords: ['transport', 'logistics', 'shipping'], sector: 'Transportation', industry: 'Transportation ETF' },
+    
+    // Consumer
+    { keywords: ['consumer discretionary', 'retail', 'e-commerce'], sector: 'Retail', industry: 'Retail ETF' },
+    { keywords: ['consumer staples', 'food', 'beverage'], sector: 'Food & Beverage', industry: 'Consumer Staples ETF' },
+    { keywords: ['travel', 'leisure', 'hotel', 'cruise'], sector: 'Transportation', industry: 'Travel ETF' },
+    
+    // Media & Communications
+    { keywords: ['media', 'entertainment', 'streaming', 'gaming'], sector: 'Media & Entertainment', industry: 'Media ETF' },
+    { keywords: ['communication', 'telecom'], sector: 'Telecom', industry: 'Telecom ETF' },
+    
+    // Crypto
+    { keywords: ['bitcoin', 'ethereum', 'crypto', 'blockchain'], sector: 'Cryptocurrency', industry: 'Crypto ETF' },
+    
+    // International/Regional
+    { keywords: ['emerging market', 'em ', 'frontier'], sector: 'Financial Services', industry: 'Emerging Markets ETF' },
+    { keywords: ['china', 'chinese'], sector: 'Financial Services', industry: 'China ETF' },
+    { keywords: ['japan', 'japanese'], sector: 'Financial Services', industry: 'Japan ETF' },
+    { keywords: ['europe', 'european'], sector: 'Financial Services', industry: 'Europe ETF' },
+    { keywords: ['international', 'global', 'world'], sector: 'Financial Services', industry: 'International ETF' },
+    
+    // Agriculture
+    { keywords: ['agriculture', 'agri', 'farm', 'grain'], sector: 'Agriculture', industry: 'Agriculture ETF' },
+    
+    // Broad Market (lower priority)
+    { keywords: ['small cap', 'smallcap', 'small-cap'], sector: 'Financial Services', industry: 'Small Cap ETF' },
+    { keywords: ['mid cap', 'midcap', 'mid-cap'], sector: 'Financial Services', industry: 'Mid Cap ETF' },
+    { keywords: ['large cap', 'largecap', 'large-cap', 's&p 500', 's&p500'], sector: 'Financial Services', industry: 'Large Cap ETF' },
+    { keywords: ['growth'], sector: 'Financial Services', industry: 'Growth ETF' },
+    { keywords: ['value'], sector: 'Financial Services', industry: 'Value ETF' },
+    { keywords: ['dividend'], sector: 'Financial Services', industry: 'Dividend ETF' },
+    { keywords: ['bond', 'treasury', 'fixed income', 'debt'], sector: 'Financial Services', industry: 'Bond ETF' },
+  ];
+  
+  for (const pattern of etfPatterns) {
+    for (const keyword of pattern.keywords) {
+      if (nameLower.includes(keyword)) {
+        return { sector: pattern.sector, industry: pattern.industry };
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Score-based keyword matching for stocks - requires multiple matches for generic keywords
+function classifyStockByName(name: string): { sector: string; industry: string } | null {
+  const nameLower = name.toLowerCase();
+  const nameWords = nameLower.split(/\s+/);
+  
+  // High-confidence keywords that are sector-specific (single match is enough)
+  const highConfidencePatterns: Array<{ keywords: string[]; sector: string; industry: string }> = [
+    // Aerospace & Defense - very specific terms
+    { keywords: ['aerospace', 'aircraft', 'aviation', 'defense contractor', 'military', 'missile', 'radar', 'satellite'], sector: 'Aerospace & Defense', industry: 'Aerospace & Defense' },
+    
+    // Biotechnology - very specific terms
+    { keywords: ['biotech', 'bioscience', 'biopharmaceutical', 'therapeutics', 'oncology', 'genomics', 'pharmaceutical'], sector: 'Biotechnology', industry: 'Biotechnology' },
+    
+    // Semiconductors - very specific
+    { keywords: ['semiconductor', 'chip', 'wafer', 'foundry', 'microprocessor'], sector: 'Semiconductors', industry: 'Semiconductors' },
+    
+    // Oil & Gas - specific terms
+    { keywords: ['petroleum', 'drilling', 'oilfield', 'refinery', 'crude oil', 'natural gas'], sector: 'Oil & Gas', industry: 'Oil & Gas' },
+    
+    // Mining - specific terms
+    { keywords: ['mining', 'gold mine', 'silver mine', 'copper mine', 'rare earth', 'mineral'], sector: 'Mining & Metals', industry: 'Mining' },
+    
+    // Clean Energy - specific
+    { keywords: ['solar energy', 'wind power', 'renewable energy', 'electric vehicle', 'ev charging', 'hydrogen fuel'], sector: 'Clean Energy', industry: 'Clean Energy' },
+    
+    // Real Estate - specific
+    { keywords: ['reit', 'real estate investment', 'property trust', 'realty'], sector: 'Real Estate', industry: 'REITs' },
+    
+    // Insurance - specific
+    { keywords: ['insurance company', 'insurer', 'underwriter', 'reinsurance'], sector: 'Insurance', industry: 'Insurance' },
+    
+    // Banks - specific
+    { keywords: ['bancorp', 'bancshares', 'bank corp', 'savings bank', 'community bank'], sector: 'Banks', industry: 'Banks' },
+  ];
+  
+  // Check high-confidence patterns first
+  for (const pattern of highConfidencePatterns) {
+    for (const keyword of pattern.keywords) {
+      if (nameLower.includes(keyword)) {
+        return { sector: pattern.sector, industry: pattern.industry };
+      }
+    }
+  }
+  
+  // For lower-confidence matches, use the existing SECTOR_PATTERNS but require word boundaries
+  // This prevents "Air Industries" matching "financial" just because it has "i" in it
+  for (const [sector, config] of Object.entries(SECTOR_PATTERNS)) {
+    for (const keyword of config.keywords) {
+      // Skip very short keywords that cause false matches
+      if (keyword.length < 4) continue;
+      
+      // Require the keyword to be a distinct word or phrase
+      const keywordLower = keyword.toLowerCase().trim();
+      
+      // Check for word boundary match
+      const regex = new RegExp(`\\b${keywordLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (regex.test(nameLower)) {
+        return { sector, industry: config.industry };
+      }
+    }
+  }
+  
+  return null;
+}
+
 function classifyAsset(ticker: string, name: string, assetClass: string): { sector: string; industry: string } | null {
   const tickerUpper = ticker.toUpperCase();
   
-  // 1. Check direct ticker mapping first
+  // 1. Check direct ticker mapping first (most reliable)
   if (TICKER_SECTOR_MAP[tickerUpper]) {
     return TICKER_SECTOR_MAP[tickerUpper];
   }
@@ -516,17 +670,17 @@ function classifyAsset(ticker: string, name: string, assetClass: string): { sect
     return ETF_SECTOR_MAP[tickerUpper];
   }
   
-  // 3. For crypto assets
+  // 3. For crypto assets - always classify
   if (assetClass === 'crypto') {
     return { sector: 'Cryptocurrency', industry: 'Digital Assets' };
   }
   
-  // 4. For forex assets
+  // 4. For forex assets - always classify
   if (assetClass === 'forex') {
     return { sector: 'Currency', industry: 'Foreign Exchange' };
   }
   
-  // 5. For commodities
+  // 5. For commodities - classify by name
   if (assetClass === 'commodity') {
     const nameLower = name.toLowerCase();
     if (nameLower.includes('gold')) return { sector: 'Mining & Metals', industry: 'Gold' };
@@ -540,46 +694,22 @@ function classifyAsset(ticker: string, name: string, assetClass: string): { sect
     return { sector: 'Mining & Metals', industry: 'Commodities' };
   }
   
-  // 6. For ETFs without specific mapping, try name analysis
+  // 6. For ETFs - use enhanced name parsing
   if (assetClass === 'etf') {
-    const nameLower = name.toLowerCase();
-    if (nameLower.includes('semiconductor') || nameLower.includes('chip')) {
-      return { sector: 'Semiconductors', industry: 'Semiconductor ETF' };
-    }
-    if (nameLower.includes('tech') || nameLower.includes('technology')) {
-      return { sector: 'Technology', industry: 'Technology ETF' };
-    }
-    if (nameLower.includes('healthcare') || nameLower.includes('health')) {
-      return { sector: 'Healthcare', industry: 'Healthcare ETF' };
-    }
-    if (nameLower.includes('financial') || nameLower.includes('bank')) {
-      return { sector: 'Banks', industry: 'Financial ETF' };
-    }
-    if (nameLower.includes('energy') || nameLower.includes('oil')) {
-      return { sector: 'Oil & Gas', industry: 'Energy ETF' };
-    }
-    if (nameLower.includes('real estate') || nameLower.includes('reit')) {
-      return { sector: 'Real Estate', industry: 'Real Estate ETF' };
-    }
-    return { sector: 'Financial Services', industry: 'ETF' };
+    const parsed = parseETFName(name);
+    if (parsed) return parsed;
+    // Don't default ETFs to Financial Services - leave unclassified
+    return null;
   }
   
-  // 7. Try name-based classification for stocks
-  const nameLower = name.toLowerCase();
-  
-  for (const [sector, config] of Object.entries(SECTOR_PATTERNS)) {
-    for (const keyword of config.keywords) {
-      if (nameLower.includes(keyword.toLowerCase())) {
-        return { sector, industry: config.industry };
-      }
-    }
+  // 7. For stocks - use smart name-based classification
+  const stockClassification = classifyStockByName(name);
+  if (stockClassification) {
+    return stockClassification;
   }
   
-  // 8. Default based on asset class
-  if (assetClass === 'stock') {
-    return { sector: 'Financial Services', industry: 'Equity' };
-  }
-  
+  // 8. NO DEFAULT - leave unclassified assets as null
+  // This prevents pollution of theme data with incorrect classifications
   return null;
 }
 
