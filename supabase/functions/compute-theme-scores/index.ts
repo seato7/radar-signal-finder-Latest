@@ -543,25 +543,50 @@ serve(async (req) => {
     }
     console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets`);
 
-    // Build mappings and populate totalAssets for each theme
+    // OPTIMIZED: Build mappings using DIRECT sector lookup first (fast path)
     const assetToThemes = new Map<string, { themes: string[]; weights: number[] }>();
     const tickerToAssetId = new Map<string, string>();
     const tickerToAssetThemes = new Map<string, { themes: string[]; weights: number[] }>();
     
+    let fastPathCount = 0;
+    let slowPathCount = 0;
+    
     for (const asset of allAssets) {
-      const sector = asset.metadata?.sector || asset.metadata?.industry || null;
-      const mapping = assignAssetToThemes(asset.ticker, asset.name, asset.asset_class, sector);
-      assetToThemes.set(asset.id, mapping);
-      tickerToAssetId.set(asset.ticker.toUpperCase(), asset.id);
-      tickerToAssetThemes.set(asset.ticker.toUpperCase(), mapping);
+      const sector = (asset.metadata?.sector || '').toLowerCase().trim();
+      const tickerUpper = asset.ticker.toUpperCase();
+      let mapping: { themes: string[]; weights: number[] };
       
-      // Track total tickers per theme (using ticker for accurate coverage)
+      // FAST PATH: Direct sector lookup (covers 90%+ of assets)
+      if (sector && SECTOR_TO_THEME[sector]) {
+        mapping = SECTOR_TO_THEME[sector];
+        fastPathCount++;
+      } else if (asset.asset_class === 'crypto') {
+        mapping = { themes: ["Fintech & Crypto"], weights: [1.0] };
+        fastPathCount++;
+      } else if (asset.asset_class === 'forex') {
+        mapping = { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] };
+        fastPathCount++;
+      } else if (asset.asset_class === 'commodity') {
+        mapping = { themes: ["Commodities & Mining"], weights: [1.0] };
+        fastPathCount++;
+      } else {
+        // SLOW PATH: Full pattern matching (only for unclassified assets)
+        mapping = assignAssetToThemes(asset.ticker, asset.name, asset.asset_class, sector || null);
+        slowPathCount++;
+      }
+      
+      assetToThemes.set(asset.id, mapping);
+      tickerToAssetId.set(tickerUpper, asset.id);
+      tickerToAssetThemes.set(tickerUpper, mapping);
+      
+      // Track total tickers per theme
       for (const themeName of mapping.themes) {
         if (themeScores[themeName]) {
-          themeScores[themeName].totalTickers.add(asset.ticker.toUpperCase());
+          themeScores[themeName].totalTickers.add(tickerUpper);
         }
       }
     }
+    console.log(`[THEME-SCORING] Asset mapping: ${fastPathCount} fast, ${slowPathCount} slow`);
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

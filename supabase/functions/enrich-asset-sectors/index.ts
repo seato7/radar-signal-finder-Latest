@@ -749,8 +749,11 @@ serve(async (req) => {
     const updates: any[] = [];
 
     for (const asset of assets || []) {
-      // Skip if already has sector (unless force)
-      if (asset.metadata?.sector && !force) {
+      // Skip if already has valid sector (unless force)
+      const existingSector = asset.metadata?.sector;
+      const isStaleFinancialServices = existingSector === 'Financial Services' && asset.asset_class !== 'etf';
+      
+      if (existingSector && !force && !isStaleFinancialServices) {
         alreadyHad++;
         continue;
       }
@@ -772,6 +775,20 @@ serve(async (req) => {
           }
         });
         enriched++;
+      } else if (force && existingSector) {
+        // In force mode, CLEAR stale sector data if we can't classify
+        // This prevents polluted "Financial Services" from persisting
+        updates.push({
+          id: asset.id,
+          metadata: {
+            ...asset.metadata,
+            sector: null,
+            industry: null,
+            enriched_at: new Date().toISOString(),
+            unclassified: true
+          }
+        });
+        skipped++;
       } else {
         skipped++;
       }
