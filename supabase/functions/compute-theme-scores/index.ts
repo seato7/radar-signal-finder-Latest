@@ -543,40 +543,36 @@ serve(async (req) => {
     }
     console.log(`[THEME-SCORING] Loaded ${allAssets.length} assets`);
 
-    // OPTIMIZED: Build mappings using DIRECT sector lookup first (fast path)
+    // OPTIMIZED: Build mappings - NO SLOW PATH (use default for unclassified)
     const assetToThemes = new Map<string, { themes: string[]; weights: number[] }>();
     const tickerToAssetId = new Map<string, string>();
+    const assetIdToTicker = new Map<string, string>(); // REVERSE LOOKUP - O(1) instead of O(n)
     const tickerToAssetThemes = new Map<string, { themes: string[]; weights: number[] }>();
     
-    let fastPathCount = 0;
-    let slowPathCount = 0;
+    const DEFAULT_MAPPING = { themes: ["Big Tech & Consumer"], weights: [1.0] };
     
     for (const asset of allAssets) {
       const sector = (asset.metadata?.sector || '').toLowerCase().trim();
       const tickerUpper = asset.ticker.toUpperCase();
       let mapping: { themes: string[]; weights: number[] };
       
-      // FAST PATH: Direct sector lookup (covers 90%+ of assets)
+      // FAST PATH ONLY - no expensive regex
       if (sector && SECTOR_TO_THEME[sector]) {
         mapping = SECTOR_TO_THEME[sector];
-        fastPathCount++;
       } else if (asset.asset_class === 'crypto') {
         mapping = { themes: ["Fintech & Crypto"], weights: [1.0] };
-        fastPathCount++;
       } else if (asset.asset_class === 'forex') {
         mapping = { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] };
-        fastPathCount++;
       } else if (asset.asset_class === 'commodity') {
         mapping = { themes: ["Commodities & Mining"], weights: [1.0] };
-        fastPathCount++;
       } else {
-        // SLOW PATH: Full pattern matching (only for unclassified assets)
-        mapping = assignAssetToThemes(asset.ticker, asset.name, asset.asset_class, sector || null);
-        slowPathCount++;
+        // Default for unclassified - NO SLOW REGEX
+        mapping = DEFAULT_MAPPING;
       }
       
       assetToThemes.set(asset.id, mapping);
       tickerToAssetId.set(tickerUpper, asset.id);
+      assetIdToTicker.set(asset.id, tickerUpper); // O(1) reverse lookup
       tickerToAssetThemes.set(tickerUpper, mapping);
       
       // Track total tickers per theme
@@ -586,7 +582,7 @@ serve(async (req) => {
         }
       }
     }
-    console.log(`[THEME-SCORING] Asset mapping: ${fastPathCount} fast, ${slowPathCount} slow`);
+    console.log(`[THEME-SCORING] Mapped ${allAssets.length} assets`);
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -646,9 +642,9 @@ serve(async (req) => {
             themeScores[themeName].totalMagnitude += (signal.magnitude || 1) * weight;
             themeScores[themeName].sources.add('signals');
             
-            // Track ticker for coverage (get ticker from asset_id mapping)
+            // Track ticker for coverage - O(1) lookup
             if (signal.asset_id) {
-              const ticker = [...tickerToAssetId.entries()].find(([_, id]) => id === signal.asset_id)?.[0];
+              const ticker = assetIdToTicker.get(signal.asset_id);
               if (ticker) {
                 themeScores[themeName].tickersWithData.add(ticker);
               }
