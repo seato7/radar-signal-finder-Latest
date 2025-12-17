@@ -428,15 +428,15 @@ serve(async (req) => {
     if (themesError) throw themesError;
     console.log(`[THEME-SCORING] Found ${themes?.length || 0} themes`);
 
-    // Initialize theme scores and track coverage
+    // Initialize theme scores and track coverage BY TICKER (not asset_id)
     const themeScores: Record<string, {
       signalCount: number;
       totalMagnitude: number;
       positiveSignals: number;
       negativeSignals: number;
       sources: Set<string>;
-      assetsWithData: Set<string>;
-      totalAssets: Set<string>;
+      tickersWithData: Set<string>;  // Track by ticker for accurate coverage
+      totalTickers: Set<string>;      // Track by ticker for accurate coverage
     }> = {};
 
     for (const theme of themes || []) {
@@ -446,8 +446,8 @@ serve(async (req) => {
         positiveSignals: 0,
         negativeSignals: 0,
         sources: new Set(),
-        assetsWithData: new Set(),
-        totalAssets: new Set()
+        tickersWithData: new Set(),
+        totalTickers: new Set()
       };
     }
 
@@ -481,10 +481,10 @@ serve(async (req) => {
       tickerToAssetId.set(asset.ticker.toUpperCase(), asset.id);
       tickerToAssetThemes.set(asset.ticker.toUpperCase(), mapping);
       
-      // Track total assets per theme
+      // Track total tickers per theme (using ticker for accurate coverage)
       for (const themeName of mapping.themes) {
         if (themeScores[themeName]) {
-          themeScores[themeName].totalAssets.add(asset.id);
+          themeScores[themeName].totalTickers.add(asset.ticker.toUpperCase());
         }
       }
     }
@@ -547,8 +547,12 @@ serve(async (req) => {
             themeScores[themeName].totalMagnitude += (signal.magnitude || 1) * weight;
             themeScores[themeName].sources.add('signals');
             
+            // Track ticker for coverage (get ticker from asset_id mapping)
             if (signal.asset_id) {
-              themeScores[themeName].assetsWithData.add(signal.asset_id);
+              const ticker = [...tickerToAssetId.entries()].find(([_, id]) => id === signal.asset_id)?.[0];
+              if (ticker) {
+                themeScores[themeName].tickersWithData.add(ticker);
+              }
             }
             
             if (signal.direction === 'up' || signal.direction === 'bullish') {
@@ -631,8 +635,9 @@ serve(async (req) => {
               themeScores[themeName].totalMagnitude += magnitude * weight;
               themeScores[themeName].sources.add(config.table);
               
-              if (assetId) {
-                themeScores[themeName].assetsWithData.add(assetId);
+              // Track ticker for coverage (using ticker directly!)
+              if (ticker) {
+                themeScores[themeName].tickersWithData.add(ticker);
               }
               
               if (direction === 'up') {
@@ -664,10 +669,11 @@ serve(async (req) => {
       const stats = themeScores[theme.name];
       if (!stats) continue;
 
-      // Calculate coverage
-      const totalAssetCount = stats.totalAssets.size || 1;
-      const assetsWithDataCount = stats.assetsWithData.size;
-      const coveragePercent = Math.round((assetsWithDataCount / totalAssetCount) * 100);
+      // Calculate coverage by TICKER (only count tickers that are IN the theme's asset list)
+      const totalTickerCount = stats.totalTickers.size || 1;
+      // Only count tickers that have data AND are in the theme's explicit asset list
+      const tickersWithDataInTheme = [...stats.tickersWithData].filter(t => stats.totalTickers.has(t)).length;
+      const coveragePercent = Math.round((tickersWithDataInTheme / totalTickerCount) * 100);
 
       let score = 50;
       
@@ -698,8 +704,9 @@ serve(async (req) => {
         positive_signals: stats.positiveSignals,
         negative_signals: stats.negativeSignals,
         sources: Array.from(stats.sources),
-        total_assets: totalAssetCount,
-        assets_with_data: assetsWithDataCount,
+        total_tickers: totalTickerCount,
+        tickers_with_data: tickersWithDataInTheme,
+        all_tickers_with_signals: stats.tickersWithData.size,
         coverage_percent: coveragePercent,
         computed_at: now.toISOString()
       });
@@ -726,8 +733,8 @@ serve(async (req) => {
             negative_signals: result.negative_signals,
             sources: result.sources,
             coverage_percent: result.coverage_percent,
-            total_assets: result.total_assets,
-            assets_with_data: result.assets_with_data
+            total_tickers: result.total_tickers,
+            tickers_with_data: result.tickers_with_data
           },
           positive_components: result.positive_signals > result.negative_signals ? ['bullish_momentum'] : [],
           computed_at: result.computed_at
