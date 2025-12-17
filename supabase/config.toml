@@ -179,3 +179,9 @@ verify_jwt = false
 
 [functions.enrich-asset-sectors]
 verify_jwt = false
+
+[functions.ingest-news-rss]
+verify_jwt = false
+
+[functions.ingest-sec-13f-edgar]
+verify_jwt = false
