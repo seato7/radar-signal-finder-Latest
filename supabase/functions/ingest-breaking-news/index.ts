@@ -1,15 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { redisCache } from "../_shared/redis-cache.ts";
 import { withRetry } from "../_shared/retry-wrapper.ts";
-import { 
-  validateAuthHeaders, 
-  validateAuthResponse, 
-  validatePerplexityRequest,
-  logAuthFailure,
-  PerplexityAuthResponseSchema 
-} from "../_shared/auth-validator.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
@@ -23,193 +15,242 @@ const validateSentiment = (score: number): number => {
 };
 
 const sanitizeTicker = (ticker: string): string => {
-  return ticker.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 10);
+  return ticker.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10);
 };
 
-// Helper: Log to ingest_failures table with enhanced metadata
-async function logFailure(
-  supabase: any,
-  ticker: string | null,
-  errorType: string,
-  errorMessage: string,
-  statusCode: number | null,
-  metadata?: Record<string, any>
-) {
-  await supabase.from('ingest_failures').insert({
-    etl_name: 'ingest-breaking-news',
-    ticker,
-    error_type: errorType,
-    error_message: errorMessage,
-    status_code: statusCode,
-    retry_count: 0,
-    failed_at: new Date().toISOString(),
-    metadata: metadata || {}
-  });
+interface Asset {
+  ticker: string;
+  name: string;
+  asset_class: string;
+  metadata: {
+    industry?: string;
+    sector?: string;
+    country?: string;
+    type?: string;
+  } | null;
 }
 
-async function fetchNewsForTicker(ticker: string, perplexityKey: string, supabase: any, slackAlerter: SlackAlerter) {
-  try {
-    const headers = {
-      'Authorization': `Bearer ${perplexityKey}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': 'InsiderPulseBot/1.0'
-    };
+interface NewsHeadline {
+  headline: string;
+  summary: string;
+  source: string;
+  sentiment: number;
+  tickers_mentioned: string[];
+  companies_mentioned: string[];
+  sectors_mentioned: string[];
+}
+
+// Build search terms for each asset for matching
+function buildAssetSearchTerms(asset: Asset): string[] {
+  const terms: string[] = [];
+  
+  // Ticker symbol (exact match)
+  terms.push(asset.ticker.toUpperCase());
+  
+  // Company name and variations
+  if (asset.name) {
+    terms.push(asset.name.toLowerCase());
+    // Add significant words from company name (>3 chars, not common words)
+    const commonWords = ['inc', 'corp', 'ltd', 'llc', 'company', 'the', 'and', 'etf', 'fund', 'trust', 'class'];
+    const nameWords = asset.name.toLowerCase().split(/\s+/)
+      .filter(w => w.length > 3 && !commonWords.includes(w));
+    terms.push(...nameWords);
+  }
+  
+  // Sector and industry keywords
+  if (asset.metadata?.sector) {
+    terms.push(asset.metadata.sector.toLowerCase());
+  }
+  if (asset.metadata?.industry) {
+    terms.push(asset.metadata.industry.toLowerCase());
+  }
+  
+  return terms.filter(t => t.length > 0);
+}
+
+// Match a headline to assets based on content
+function matchHeadlineToAssets(
+  headline: NewsHeadline, 
+  assets: Asset[]
+): Asset[] {
+  const matchedAssets: Asset[] = [];
+  const headlineText = `${headline.headline} ${headline.summary}`.toLowerCase();
+  const mentionedTickers = headline.tickers_mentioned.map(t => t.toUpperCase());
+  const mentionedCompanies = headline.companies_mentioned.map(c => c.toLowerCase());
+  const mentionedSectors = headline.sectors_mentioned.map(s => s.toLowerCase());
+  
+  for (const asset of assets) {
+    let score = 0;
     
-    const payload = {
-      model: 'sonar',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a financial data provider. Return only the requested data without explanations.'
-        },
-        {
-          role: 'user',
-          content: `List 3 recent news headlines for ${ticker} stock from the last 24 hours. For each, provide: HEADLINE: [headline text], SUMMARY: [one sentence], SOURCE: [source name], SENTIMENT: [number from -1 to 1]. Separate each news item with "---".`
-        }
-      ],
-      temperature: 0.2,
-      max_tokens: 1000,
-    };
-    
-    // Validate auth headers before making request
-    const headerValidation = validateAuthHeaders(headers, 'bearer');
-    if (!headerValidation.isValid) {
-      const errorMsg = `Invalid auth headers: ${headerValidation.errors.join(', ')}`;
-      console.error(`❌ ${errorMsg}`);
-      await logFailure(supabase, ticker, 'api_auth', errorMsg, null, { validation: headerValidation });
-      throw new Error('HEADER_VALIDATION_ERROR');
+    // Direct ticker mention (highest priority)
+    if (mentionedTickers.includes(asset.ticker.toUpperCase())) {
+      score += 100;
     }
     
-    // Validate request payload structure
-    const payloadValidation = validatePerplexityRequest(payload);
-    if (!payloadValidation.isValid) {
-      const errorMsg = `Invalid request payload: ${payloadValidation.errors.join(', ')}`;
-      console.error(`❌ ${errorMsg}`);
-      await logFailure(supabase, ticker, 'validation', errorMsg, null, { validation: payloadValidation });
-      throw new Error('PAYLOAD_VALIDATION_ERROR');
+    // Ticker appears in headline text
+    const tickerRegex = new RegExp(`\\b${asset.ticker}\\b`, 'i');
+    if (tickerRegex.test(headlineText)) {
+      score += 80;
     }
     
-    // Make request with retry logic (handles rate limits gracefully)
-    const result = await withRetry(
-      async () => {
-        const response = await fetch('https://api.perplexity.ai/chat/completions', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        });
-        
-        // CRITICAL: Check for HTML masquerade BEFORE parsing JSON
-        const contentType = response.headers.get('content-type');
-        const responseText = await response.text();
-        
-        if (contentType?.includes('text/html') || responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
-          console.log(`⚠️ Rate limit HTML page for ${ticker} - will retry with exponential backoff`);
-          await logFailure(supabase, ticker, 'rate_limit_html', 
-            `Perplexity rate limit (HTML response)`,
-            response.status,
-            { content_preview: responseText.substring(0, 200) }
-          );
-          
-          // Throw retriable error for exponential backoff
-          throw new Error('RATE_LIMIT_HTML');
-        }
-        
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (e) {
-          const errMsg = e instanceof Error ? e.message : String(e);
-          throw new Error(`Failed to parse JSON response: ${errMsg}`);
-        }
-        
-        return { response, data };
+    // Company name mentioned
+    if (asset.name) {
+      const nameWords = asset.name.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      const significantMatches = nameWords.filter(word => 
+        mentionedCompanies.some(c => c.includes(word)) || headlineText.includes(word)
+      );
+      if (significantMatches.length >= 2 || (nameWords.length === 1 && significantMatches.length === 1)) {
+        score += 60;
+      }
+    }
+    
+    // Sector/industry match (lower priority - broad matching)
+    if (asset.metadata?.sector && mentionedSectors.some(s => 
+      s.includes(asset.metadata!.sector!.toLowerCase()) || 
+      asset.metadata!.sector!.toLowerCase().includes(s)
+    )) {
+      score += 20;
+    }
+    if (asset.metadata?.industry && mentionedSectors.some(s => 
+      s.includes(asset.metadata!.industry!.toLowerCase()) || 
+      asset.metadata!.industry!.toLowerCase().includes(s)
+    )) {
+      score += 15;
+    }
+    
+    // Only include if score > 50 (direct ticker or strong company match)
+    if (score >= 50) {
+      matchedAssets.push(asset);
+    }
+  }
+  
+  return matchedAssets;
+}
+
+// Fetch general market headlines (1 API call)
+async function fetchMarketHeadlines(
+  perplexityKey: string, 
+  supabase: any
+): Promise<NewsHeadline[]> {
+  const headers = {
+    'Authorization': `Bearer ${perplexityKey}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': 'InsiderPulseBot/1.0'
+  };
+  
+  const payload = {
+    model: 'sonar',
+    messages: [
+      {
+        role: 'system',
+        content: `You are a financial news aggregator. Return structured data about recent market news.
+For each news item, extract:
+- The headline
+- A brief summary
+- The source
+- Sentiment score (-1 to 1)
+- Any ticker symbols mentioned
+- Any company names mentioned
+- Any sectors/industries mentioned`
       },
       {
-        maxRetries: 5,
-        initialDelayMs: 2000,
-        maxDelayMs: 30000,
-        onRetry: (attempt, error) => {
-          console.log(`⏳ Retry ${attempt}/5 for ${ticker}: ${error.message}`);
-        }
-      }
-    );
-    
-    const { response, data: rawData } = result;
+        role: 'user',
+        content: `List the 15 most important financial market news headlines from the last 24 hours.
+Include news about stocks, crypto, ETFs, commodities, and major market movements.
 
-    // Handle authentication errors explicitly
-    if (response.status === 401) {
-      const errorMsg = 'Perplexity API authentication failed - check API key format and validity';
-      console.error(`❌ AUTH ERROR for ${ticker}: ${errorMsg}`);
-      await logAuthFailure(supabase, 'ingest-breaking-news', 'Perplexity', 
-        { isValid: false, errors: [errorMsg], warnings: [], statusCode: 401 },
-        { ticker, headers_validated: true, payload_validated: true }
-      );
-      
-      // Send critical Slack alert for auth errors
-      await slackAlerter.sendCriticalAlert({
-        type: 'auth_error',
-        etlName: 'ingest-breaking-news',
-        message: `Perplexity API returning 401 for ${ticker}. Headers and payload validated successfully - likely API key issue.`,
-        details: { ticker, status_code: 401 }
+For EACH headline, provide this EXACT format:
+HEADLINE: [the headline]
+SUMMARY: [one sentence summary]
+SOURCE: [news source name]
+SENTIMENT: [number from -1 to 1]
+TICKERS: [comma-separated list of any stock/crypto tickers mentioned, or "none"]
+COMPANIES: [comma-separated list of company names mentioned]
+SECTORS: [comma-separated list of sectors/industries mentioned, e.g. "technology, healthcare, energy"]
+---
+
+Separate each news item with "---".`
+      }
+    ],
+    temperature: 0.2,
+    max_tokens: 4000,
+  };
+  
+  const result = await withRetry(
+    async () => {
+      const response = await fetch('https://api.perplexity.ai/chat/completions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
       });
       
-      throw new Error('AUTH_ERROR');
-    }
-
-    if (response.status === 429) {
-      console.log(`⚠️ Rate limit (429) for ${ticker}, will retry with backoff`);
-      await logFailure(supabase, ticker, 'rate_limit', 'Perplexity rate limit (429)', 429);
-      throw new Error('RATE_LIMIT_429');
-    }
-
-    if (!response.ok) {
-      const errorMsg = `Failed to fetch news for ${ticker}: ${response.status}`;
-      console.log(errorMsg);
-      await logFailure(supabase, ticker, 'network', errorMsg, response.status);
-      return null;
-    }
-    
-    // Validate response structure
-    const authValidation = await validateAuthResponse(response, rawData);
-    if (!authValidation.isValid) {
-      const errorMsg = `Perplexity API validation failed: ${authValidation.errors.join(', ')}`;
-      console.error(`❌ ${errorMsg}`);
-      await logAuthFailure(supabase, 'ingest-breaking-news', 'Perplexity', authValidation, { ticker });
-      return null;
-    }
-    
-    const validatedData = PerplexityAuthResponseSchema.parse(rawData);
-    
-    // Check for API errors in response
-    if (validatedData.error) {
-      const errorMsg = `Perplexity API error: ${validatedData.error.message}`;
-      await logFailure(supabase, ticker, 'api_error', errorMsg, response.status);
-      return null;
-    }
-    
-    if (!validatedData.choices || validatedData.choices.length === 0) {
-      await logFailure(supabase, ticker, 'validation', 'No choices in Perplexity response', null);
-      return null;
-    }
-    
-    return { ticker, content: validatedData.choices[0].message.content };
-  } catch (err) {
-    if (err instanceof Error) {
-      // Don't log rate limits as unknown errors, they're expected
-      if (!err.message.includes('AUTH_ERROR') && 
-          !err.message.includes('RATE_LIMIT') &&
-          !err.message.includes('HTML_MASQUERADE')) {
-        await logFailure(supabase, ticker, 'unknown', err.message, null);
+      const contentType = response.headers.get('content-type');
+      const responseText = await response.text();
+      
+      if (contentType?.includes('text/html') || responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+        console.log('⚠️ Rate limit HTML page received - will retry');
+        throw new Error('RATE_LIMIT_HTML');
       }
-      // Return null for rate limits instead of throwing - function will continue with other tickers
-      if (err.message.includes('RATE_LIMIT') || err.message.includes('HTML_MASQUERADE')) {
-        console.log(`⏭️ Skipping ${ticker} due to rate limit, will try again later`);
-        return null;
+      
+      if (response.status === 401) {
+        throw new Error('AUTH_ERROR');
+      }
+      
+      if (response.status === 429) {
+        throw new Error('RATE_LIMIT_429');
+      }
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = JSON.parse(responseText);
+      return { response, data };
+    },
+    {
+      maxRetries: 5,
+      initialDelayMs: 2000,
+      maxDelayMs: 30000,
+      onRetry: (attempt, error) => {
+        console.log(`⏳ Retry ${attempt}/5: ${error.message}`);
       }
     }
-    throw err;
+  );
+  
+  const content = result.data.choices?.[0]?.message?.content || '';
+  const headlines: NewsHeadline[] = [];
+  
+  const newsBlocks = content.split('---').filter((block: string) => block.trim());
+  
+  for (const block of newsBlocks) {
+    const headlineMatch = block.match(/HEADLINE:\s*(.+?)(?=SUMMARY:|$)/s);
+    const summaryMatch = block.match(/SUMMARY:\s*(.+?)(?=SOURCE:|$)/s);
+    const sourceMatch = block.match(/SOURCE:\s*(.+?)(?=SENTIMENT:|$)/s);
+    const sentimentMatch = block.match(/SENTIMENT:\s*(-?\d+\.?\d*)/);
+    const tickersMatch = block.match(/TICKERS:\s*(.+?)(?=COMPANIES:|$)/s);
+    const companiesMatch = block.match(/COMPANIES:\s*(.+?)(?=SECTORS:|$)/s);
+    const sectorsMatch = block.match(/SECTORS:\s*(.+?)(?=---|$)/s);
+    
+    if (headlineMatch) {
+      const tickersRaw = tickersMatch?.[1]?.trim() || '';
+      const companiesRaw = companiesMatch?.[1]?.trim() || '';
+      const sectorsRaw = sectorsMatch?.[1]?.trim() || '';
+      
+      headlines.push({
+        headline: headlineMatch[1].trim(),
+        summary: summaryMatch?.[1]?.trim() || '',
+        source: sourceMatch?.[1]?.trim() || 'Perplexity',
+        sentiment: sentimentMatch ? validateSentiment(parseFloat(sentimentMatch[1])) : 0,
+        tickers_mentioned: tickersRaw.toLowerCase() === 'none' ? [] : 
+          tickersRaw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0 && t.length <= 6),
+        companies_mentioned: companiesRaw.split(',').map(c => c.trim()).filter(c => c.length > 0),
+        sectors_mentioned: sectorsRaw.split(',').map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
+      });
+    }
   }
+  
+  console.log(`📰 Parsed ${headlines.length} headlines from Perplexity`);
+  return headlines;
 }
 
 serve(async (req) => {
@@ -221,6 +262,7 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseKey);
+  const slackAlerter = new SlackAlerter();
 
   const logId = crypto.randomUUID();
   await supabase.from('ingest_logs').insert({
@@ -235,332 +277,140 @@ serve(async (req) => {
   });
 
   try {
-    console.log('Starting breaking news ingestion...');
-    
-    // Initialize Slack alerter
-    const slackAlerter = new SlackAlerter();
+    console.log('Starting efficient breaking news ingestion (scrape once, map to all tickers)...');
     
     const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
     
-    // Fetch assets with intelligent rotation - prioritize tickers not recently processed
-    // First, get all tickers from assets table
+    // Fetch ALL assets with metadata for matching
     const { data: allAssets, error: assetsError } = await supabase
       .from('assets')
-      .select('ticker')
-      .in('asset_class', ['stock', 'crypto']);
+      .select('ticker, name, asset_class, metadata')
+      .in('asset_class', ['stock', 'crypto', 'etf', 'forex', 'commodity']);
     
     if (assetsError) throw assetsError;
-    const allTickers = allAssets?.map((a: any) => a.ticker) || [];
+    const assets: Asset[] = allAssets || [];
+    console.log(`📊 Loaded ${assets.length} assets for matching`);
     
-    // Get last processed times from tracker
-    const { data: trackerData } = await supabase
-      .from('news_coverage_tracker')
-      .select('ticker, last_processed_at')
-      .in('ticker', allTickers);
-    
-    const trackerMap = new Map<string, Date>();
-    trackerData?.forEach((t: any) => {
-      if (t.last_processed_at) {
-        trackerMap.set(t.ticker, new Date(t.last_processed_at));
-      }
-    });
-    
-    // Sort tickers: never-processed first (null), then oldest-processed
-    const sortedTickers = allTickers.sort((a, b) => {
-      const aTime = trackerMap.get(a);
-      const bTime = trackerMap.get(b);
-      if (!aTime && !bTime) return 0;
-      if (!aTime) return -1; // a never processed, prioritize
-      if (!bTime) return 1;  // b never processed, prioritize
-      return aTime.getTime() - bTime.getTime(); // oldest first
-    });
-    
-    // Take top 50 for this run
-    const tickers = sortedTickers.slice(0, 50);
-    console.log(`[ROTATION] Selected ${tickers.length} tickers. First 5: ${tickers.slice(0, 5).join(', ')}. Never processed: ${sortedTickers.filter(t => !trackerMap.has(t)).length} remaining`);
-    const newsItems = [];
+    let newsItems: any[] = [];
     let sourceUsed = 'Perplexity API';
     let cacheHit = false;
     let fallbackUsed = false;
-    let authFailures = 0;
     const fetchStartTime = Date.now();
     
-    // Send start alert
-    await slackAlerter.sendLiveAlert({
-      etlName: 'ingest-breaking-news',
-      status: 'started',
-      metadata: { tickers_count: tickers.length }
-    });
-
-    // Check if API key is missing or invalid
-    if (!perplexityKey) {
+    // Check cache first
+    const cacheResult = await redisCache.get('breaking-news:global');
+    if (cacheResult.hit && cacheResult.data) {
+      console.log(`✅ Cache HIT for breaking-news:global (${cacheResult.age_seconds?.toFixed(1)}s old)`);
+      cacheHit = true;
+      newsItems = cacheResult.data;
+    } else if (!perplexityKey) {
+      // No API key - use sample data
       console.log('⚠️ No Perplexity API key, using sample news data');
       sourceUsed = 'Simulated';
       fallbackUsed = true;
       
-      const headlines = [
-        'Company announces record quarterly earnings',
-        'New product launch exceeds expectations',
-        'Stock reaches all-time high on positive sentiment',
-        'Analyst upgrades rating citing strong fundamentals',
-        'Partnership deal announced with major tech firm'
+      const sampleHeadlines = [
+        { headline: 'Tech stocks rally on strong earnings reports', sectors: ['technology'], sentiment: 0.7 },
+        { headline: 'Federal Reserve signals interest rate decision', sectors: ['financial services', 'banking'], sentiment: 0.1 },
+        { headline: 'Healthcare sector sees gains after FDA approval', sectors: ['healthcare'], sentiment: 0.6 },
+        { headline: 'Energy prices surge amid supply concerns', sectors: ['energy'], sentiment: -0.2 },
+        { headline: 'Crypto market rebounds following regulatory clarity', sectors: ['cryptocurrency'], sentiment: 0.5 },
       ];
-
-      for (const ticker of tickers) {
-        for (let i = 0; i < 2; i++) {
+      
+      for (const sample of sampleHeadlines) {
+        // Match to assets by sector
+        const matchedAssets = assets.filter(a => 
+          sample.sectors.some(s => 
+            a.metadata?.sector?.toLowerCase().includes(s) ||
+            a.metadata?.industry?.toLowerCase().includes(s)
+          )
+        ).slice(0, 20);
+        
+        for (const asset of matchedAssets) {
           newsItems.push({
-            ticker,
-            headline: headlines[Math.floor(Math.random() * headlines.length)],
-            summary: 'Sample breaking news item for demonstration purposes.',
+            ticker: asset.ticker,
+            headline: sample.headline,
+            summary: 'Sample breaking news for demonstration.',
             source: 'Market Wire',
             url: null,
-            published_at: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-            sentiment_score: (Math.random() * 2) - 1,
-            relevance_score: 0.8,
-            metadata: { sample: true },
+            published_at: new Date(Date.now() - Math.random() * 12 * 60 * 60 * 1000).toISOString(),
+            sentiment_score: sample.sentiment,
+            relevance_score: 0.6,
+            metadata: { sample: true, matched_by: 'sector' },
             created_at: new Date().toISOString(),
           });
         }
-        
-        // Update tracker even for no-API-key fallback
-        await supabase.from('news_coverage_tracker').upsert({
-          ticker,
-          last_processed_at: new Date().toISOString(),
-          process_count: 1
-        }, { onConflict: 'ticker', ignoreDuplicates: false });
       }
-
-      await supabase.from('breaking_news').insert(newsItems);
-      await supabase.from('ingest_logs').update({
-        status: 'success',
-        completed_at: new Date().toISOString(),
-        duration_seconds: Math.round((Date.now() - startTime) / 1000),
-        rows_inserted: newsItems.length,
-        source_used: sourceUsed,
-        fallback_count: 1,
-      }).eq('id', logId);
-
-      return new Response(
-        JSON.stringify({ success: true, count: newsItems.length, note: 'Sample data used (no API key)', source: sourceUsed }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Check last 10 runs for consecutive fallback pattern
-    const { data: recentLogs } = await supabase
-      .from('ingest_logs')
-      .select('source_used, fallback_count, status')
-      .eq('etl_name', 'ingest-breaking-news')
-      .order('started_at', { ascending: false })
-      .limit(10);
-    
-    if (recentLogs && recentLogs.length >= 10) {
-      const consecutiveFallbacks = recentLogs.slice(0, 10).every(log => 
-        log.source_used === 'Simulated' || log.fallback_count > 0
-      );
+    } else {
+      // Make 1 API call for all headlines
+      console.log('🔍 Fetching market headlines with single Perplexity API call...');
       
-      if (consecutiveFallbacks) {
-        const errorMsg = '🚨 HALTED: 10 consecutive runs used fallback - Perplexity API authentication failing';
-        console.error(errorMsg);
-        
-        await supabase.from('ingest_logs').update({
-          status: 'failed',
-          completed_at: new Date().toISOString(),
-          duration_seconds: 0,
-          error_message: errorMsg,
-        }).eq('id', logId);
-        
-        // Send Slack alert
-        const slackWebhook = Deno.env.get('SLACK_WEBHOOK_URL');
-        if (slackWebhook) {
-          await fetch(slackWebhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: `🚨 *CRITICAL: ingest-breaking-news HALTED*\n${errorMsg}\n\n*Action Required:* Verify PERPLEXITY_API_KEY in secrets. Check API status at https://www.perplexity.ai/settings/api`
-            })
-          });
-        }
-        
-        return new Response(JSON.stringify({ 
-          success: false, 
-          error: errorMsg,
-          recommendation: 'Verify Perplexity API key and quota'
-        }), {
-          status: 503,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-    }
-
-    // Process tickers in batches
-    sourceUsed = 'Perplexity API';
-    const batchSize = 3;
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    for (let i = 0; i < tickers.length; i += batchSize) {
-      const batch = tickers.slice(i, i + batchSize);
-      console.log(`Processing batch: ${batch.join(', ')}`);
+      const headlines = await fetchMarketHeadlines(perplexityKey, supabase);
       
-      try {
-        // Check Redis cache first for each ticker in batch
-        const cachePromises = batch.map(ticker => redisCache.get(`news:${ticker}`));
-        const cacheResults = await Promise.all(cachePromises);
-        
-        const tickersToFetch: string[] = [];
-        for (let j = 0; j < batch.length; j++) {
-          const cacheResult = cacheResults[j];
-          if (cacheResult.hit && cacheResult.data) {
-            console.log(`✅ Cache HIT for news:${batch[j]} (${cacheResult.age_seconds?.toFixed(1)}s old)`);
-            cacheHit = true;
-            newsItems.push(...cacheResult.data);
-          } else {
-            console.log(`❌ Cache MISS for news:${batch[j]}`);
-            tickersToFetch.push(batch[j]);
-          }
-        }
-
-        if (tickersToFetch.length === 0) {
-          continue; // All cached
-        }
-
-        const results = await Promise.allSettled(
-          tickersToFetch.map(ticker => fetchNewsForTicker(ticker, perplexityKey, supabase, slackAlerter))
-        );
-
-        for (const result of results) {
-          if (result.status === 'rejected') {
-            if (result.reason?.message === 'AUTH_ERROR') {
-              authFailures++;
-            } else if (result.reason?.message === 'RATE_LIMIT') {
-              if (retryCount < maxRetries) {
-                const backoffMs = 1000 * Math.pow(2, retryCount);
-                console.log(`Rate limit hit, retrying batch in ${backoffMs}ms (attempt ${retryCount + 1}/${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, backoffMs));
-                retryCount++;
-                i -= batchSize; // Retry this batch
-                break;
-              }
-            }
-          } else if (result.status === 'fulfilled' && result.value) {
-            const { ticker, content } = result.value;
-            
-            // Defensive guard: ensure content exists and is non-empty
-            if (!content || typeof content !== 'string' || content.trim().length === 0) {
-              console.error(`⚠️ Empty or invalid content for ${ticker}, skipping`);
-              continue;
-            }
-            
-            const newsBlocks = content.split('---').filter((block: string) => block.trim()).slice(0, 10);
-            const tickerNews = [];
-            
-            for (const block of newsBlocks) {
-              const headlineMatch = block.match(/HEADLINE:\s*(.+?)(?=SUMMARY:|$)/s);
-              const summaryMatch = block.match(/SUMMARY:\s*(.+?)(?=SOURCE:|$)/s);
-              const sourceMatch = block.match(/SOURCE:\s*(.+?)(?=SENTIMENT:|$)/s);
-              const sentimentMatch = block.match(/SENTIMENT:\s*(-?\d+\.?\d*)/);
-              
-              if (headlineMatch) {
-                const newsItem = {
-                  ticker: sanitizeTicker(ticker),
-                  headline: headlineMatch[1].trim().substring(0, 500),
-                  summary: summaryMatch ? summaryMatch[1].trim().substring(0, 1000) : 'No summary available',
-                  source: sourceMatch ? sourceMatch[1].trim().substring(0, 200) : 'Perplexity',
-                  url: null,
-                  published_at: new Date().toISOString(),
-                  sentiment_score: sentimentMatch ? validateSentiment(parseFloat(sentimentMatch[1])) : 0,
-                  relevance_score: 0.8,
-                  metadata: { raw_content: block.substring(0, 2000), source_used: sourceUsed },
-                  created_at: new Date().toISOString(),
-                };
-                tickerNews.push(newsItem);
-                newsItems.push(newsItem);
-              }
-            }
-
-            // Cache the fetched news and update tracker
-            if (tickerNews.length > 0) {
-              await redisCache.set(`news:${ticker}`, tickerNews, 'Perplexity API');
-              
-              // Update rotation tracker
-              await supabase.from('news_coverage_tracker').upsert({
-                ticker: sanitizeTicker(ticker),
-                last_processed_at: new Date().toISOString(),
-                process_count: 1
-              }, {
-                onConflict: 'ticker',
-                ignoreDuplicates: false
-              });
-            }
-          }
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (err) {
-        console.error(`Error processing batch ${batch.join(', ')}:`, err);
-      }
-    }
-
-    // If all API calls failed due to auth, use fallback
-    if (newsItems.length === 0 || authFailures >= tickers.length / 2) {
-      if (authFailures > 0) {
-        console.error(`⚠️ ${authFailures} authentication failures detected, using sample data`);
-        sourceUsed = 'Simulated (Auth Failed)';
-      } else {
-        console.log('No news fetched from API, generating sample data');
+      if (headlines.length === 0) {
+        console.log('⚠️ No headlines fetched, using fallback');
+        fallbackUsed = true;
         sourceUsed = 'Simulated';
-      }
-      
-      fallbackUsed = true;
-      const headlines = [
-        'Company announces record quarterly earnings',
-        'New product launch exceeds expectations',
-        'Stock reaches all-time high on positive sentiment',
-        'Analyst upgrades rating citing strong fundamentals',
-        'Partnership deal announced with major tech firm'
-      ];
-
-      for (const ticker of tickers) {
-        for (let i = 0; i < 2; i++) {
-          newsItems.push({
-            ticker,
-            headline: headlines[Math.floor(Math.random() * headlines.length)],
-            summary: 'Sample breaking news item for demonstration purposes.',
-            source: 'Market Wire',
-            url: null,
-            published_at: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-            sentiment_score: (Math.random() * 2) - 1,
-            relevance_score: 0.8,
-            metadata: { sample: true, source_used: sourceUsed, auth_failures: authFailures },
-            created_at: new Date().toISOString(),
-          });
+      } else {
+        console.log(`🎯 Matching ${headlines.length} headlines to ${assets.length} assets...`);
+        
+        let totalMatches = 0;
+        
+        for (const headline of headlines) {
+          const matchedAssets = matchHeadlineToAssets(headline, assets);
+          
+          console.log(`  → "${headline.headline.substring(0, 50)}..." matched to ${matchedAssets.length} assets`);
+          
+          for (const asset of matchedAssets) {
+            newsItems.push({
+              ticker: sanitizeTicker(asset.ticker),
+              headline: headline.headline.substring(0, 500),
+              summary: headline.summary.substring(0, 1000) || 'No summary available',
+              source: headline.source.substring(0, 200),
+              url: null,
+              published_at: new Date().toISOString(),
+              sentiment_score: headline.sentiment,
+              relevance_score: 0.8,
+              metadata: { 
+                source_used: sourceUsed,
+                tickers_in_headline: headline.tickers_mentioned,
+                companies_in_headline: headline.companies_mentioned,
+                sectors_in_headline: headline.sectors_mentioned,
+                matched_by: headline.tickers_mentioned.includes(asset.ticker) ? 'ticker' : 
+                           headline.companies_mentioned.some(c => asset.name.toLowerCase().includes(c.toLowerCase())) ? 'company' : 'sector'
+              },
+              created_at: new Date().toISOString(),
+            });
+            totalMatches++;
+          }
         }
         
-        // Update tracker even for fallback to maintain rotation
-        await supabase.from('news_coverage_tracker').upsert({
-          ticker,
-          last_processed_at: new Date().toISOString(),
-          process_count: 1
-        }, { onConflict: 'ticker', ignoreDuplicates: false });
+        console.log(`📈 Total matches: ${totalMatches} news items across ${new Set(newsItems.map(n => n.ticker)).size} unique tickers`);
+        
+        // Cache the results
+        if (newsItems.length > 0) {
+          await redisCache.set('breaking-news:global', newsItems, 'Perplexity API', 1800); // 30 min cache
+        }
       }
     }
 
+    // Insert news items (deduplicate by ticker+headline)
     if (newsItems.length > 0) {
-      const { error } = await supabase.from('breaking_news').insert(newsItems);
+      // Deduplicate
+      const seen = new Set<string>();
+      const uniqueItems = newsItems.filter(item => {
+        const key = `${item.ticker}:${item.headline.substring(0, 100)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      
+      const { error } = await supabase.from('breaking_news').insert(uniqueItems);
       if (error) {
-        // Enhanced error logging with full error details
-        console.error('❌ Supabase insert error:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          itemsCount: newsItems.length,
-          sample: newsItems[0]
-        });
-        throw new Error(`Database insert failed: ${error.message || error.code} - ${error.details || 'No details'}`);
+        console.error('❌ Supabase insert error:', error);
+        throw new Error(`Database insert failed: ${error.message}`);
       }
-      console.log(`Inserted ${newsItems.length} breaking news items from ${sourceUsed}`);
+      console.log(`✅ Inserted ${uniqueItems.length} breaking news items`);
     }
 
     const latency = Date.now() - fetchStartTime;
@@ -575,10 +425,13 @@ serve(async (req) => {
       fallback_count: fallbackUsed ? 1 : 0,
       cache_hit: cacheHit,
       latency_ms: latency,
-      metadata: { auth_failures: authFailures },
+      metadata: { 
+        headlines_fetched: cacheHit ? 'cached' : 'api',
+        unique_tickers: new Set(newsItems.map(n => n.ticker)).size,
+        api_calls: cacheHit ? 0 : 1
+      },
     }).eq('id', logId);
     
-    // @guard: Heartbeat log to function_status
     await supabase.from('function_status').insert({
       function_name: 'ingest-breaking-news',
       executed_at: new Date().toISOString(),
@@ -589,10 +442,13 @@ serve(async (req) => {
       duration_ms: Date.now() - startTime,
       source_used: sourceUsed,
       error_message: null,
-      metadata: { tickers: tickers.length, cache_hit: cacheHit, auth_failures: authFailures }
+      metadata: { 
+        api_calls: cacheHit ? 0 : 1,
+        cache_hit: cacheHit,
+        unique_tickers: new Set(newsItems.map(n => n.ticker)).size
+      }
     });
     
-    // Send success alert to Slack
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-breaking-news',
       status: fallbackUsed ? 'partial' : 'success',
@@ -601,32 +457,25 @@ serve(async (req) => {
       sourceUsed,
       fallbackRatio: fallbackUsed ? 1 : 0,
       rowsInserted: newsItems.length,
-      metadata: { auth_failures: authFailures, cache_hit: cacheHit }
+      metadata: { api_calls: cacheHit ? 0 : 1, cache_hit: cacheHit }
     });
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         count: newsItems.length,
+        unique_tickers: new Set(newsItems.map(n => n.ticker)).size,
         source: sourceUsed,
-        auth_failures: authFailures,
-        duration_seconds: Math.round((Date.now() - startTime) / 1000),
+        api_calls: cacheHit ? 0 : 1,
+        duration_seconds: durationSeconds,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('❌ FATAL ERROR in ingest-breaking-news:', {
-      error: error,
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      type: typeof error,
-      errorObject: JSON.stringify(error, null, 2)
-    });
+    console.error('❌ FATAL ERROR in ingest-breaking-news:', error);
     
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    const errorMessage = error instanceof Error ? error.message : 
-                        (error && typeof error === 'object' && 'message' in error ? String(error.message) : 
-                        JSON.stringify(error));
+    const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
     
     await supabase.from('ingest_logs').update({
       status: 'failed',
@@ -635,7 +484,6 @@ serve(async (req) => {
       error_message: errorMessage,
     }).eq('id', logId);
     
-    // @guard: Heartbeat log failure
     await supabase.from('function_status').insert({
       function_name: 'ingest-breaking-news',
       executed_at: new Date().toISOString(),
@@ -649,8 +497,6 @@ serve(async (req) => {
       metadata: {}
     });
     
-    // Send failure alert to Slack
-    const slackAlerter = new SlackAlerter();
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-breaking-news',
       status: 'failed',
@@ -659,11 +505,7 @@ serve(async (req) => {
     });
 
     return new Response(
-      JSON.stringify({ 
-        error: errorMessage,
-        errorType: typeof error,
-        details: error && typeof error === 'object' ? error : undefined
-      }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
