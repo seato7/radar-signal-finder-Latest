@@ -1042,64 +1042,69 @@ serve(async (req) => {
         }
       }
       
-      // ========== INTUITIVE SCORE CALIBRATION ==========
+      // ========== ACCURATE MARKET-ALIGNED SCORING ==========
       // Target scale: <35 = bearish/sell, 36-65 = neutral, 65+ = bullish/buy
-      // Base assumption: average market conditions should produce ~50
+      // Key insight: Use SENTIMENT RATIO (positive vs negative signals) as primary driver
       
-      // Step 1: Normalize each component to 0-100 with aggressive multiplier
-      const normalizedComponents: Record<string, number> = {};
-      for (const [comp, rawScore] of Object.entries(componentScores)) {
-        // Use sqrt for smoother scaling: rawScore=1 → 30, rawScore=4 → 60, rawScore=9 → 90
-        const normalized = rawScore > 0 ? Math.min(100, Math.sqrt(rawScore) * 30) : 0;
-        normalizedComponents[comp] = Math.round(normalized * 100) / 100;
+      // Step 1: Calculate sentiment ratio - this is the PRIMARY score driver
+      const totalSignals = stats.positiveSignals + stats.negativeSignals;
+      let sentimentRatio = 0.5; // Default neutral
+      if (totalSignals > 0) {
+        // Ratio from 0 (all negative) to 1 (all positive), 0.5 = balanced
+        sentimentRatio = stats.positiveSignals / totalSignals;
       }
       
-      // Step 2: Calculate weighted average of active components
-      let weightedSum = 0;
-      let activePositiveWeight = 0;
+      // Step 2: Normalize component scores for strength assessment
+      const normalizedComponents: Record<string, number> = {};
+      let totalComponentStrength = 0;
       const activeComponents: string[] = [];
       
-      for (const [comp, normalized] of Object.entries(normalizedComponents)) {
-        const weight = COMPONENT_WEIGHTS[comp];
+      for (const [comp, rawScore] of Object.entries(componentScores)) {
+        // More aggressive scaling: sqrt * 35 gives better spread
+        const normalized = rawScore > 0 ? Math.min(100, Math.sqrt(rawScore) * 35) : 0;
+        normalizedComponents[comp] = Math.round(normalized * 100) / 100;
         
+        const weight = COMPONENT_WEIGHTS[comp];
         if (normalized > 0.1 && weight > 0) {
           activeComponents.push(comp);
-          activePositiveWeight += weight;
+          totalComponentStrength += normalized * weight;
         }
-        
-        weightedSum += weight * normalized;
       }
       
-      // Step 3: Calculate base score from weighted components
-      let score = 0;
-      if (activePositiveWeight > 0) {
-        // Get the normalized weighted average (0-100)
-        const normalizedAvg = weightedSum / activePositiveWeight;
-        
-        // Transform to intuitive scale:
-        // - normalizedAvg of 30 (weak signals) → score ~40 (bearish)
-        // - normalizedAvg of 50 (average signals) → score ~55 (neutral)
-        // - normalizedAvg of 70+ (strong signals) → score ~70+ (bullish)
-        score = 25 + (normalizedAvg * 0.65);
-        
-        // Diversity bonus: more active components = more confidence
-        const diversityBonus = Math.min(12, activeComponents.length * 2);
-        score += diversityBonus;
-      }
+      // Step 3: Calculate score using sentiment-driven approach
+      // Base: 50 (neutral), shifted by sentiment ratio
+      // sentimentRatio=0.7 (70% positive) → shift +20 → score ~70
+      // sentimentRatio=0.3 (30% positive) → shift -20 → score ~30
+      const sentimentShift = (sentimentRatio - 0.5) * 60; // Range: -30 to +30
+      
+      // Component strength modifier (0-15 points based on signal quality)
+      const avgComponentStrength = activeComponents.length > 0 
+        ? totalComponentStrength / (activeComponents.length * Math.max(...Object.values(COMPONENT_WEIGHTS)))
+        : 0;
+      const strengthModifier = Math.min(15, avgComponentStrength * 0.2);
+      
+      // Risk penalty from RiskFlags component
+      const riskPenalty = Math.min(10, (normalizedComponents.RiskFlags || 0) * 0.15);
+      
+      // Diversity bonus: more active components = more confidence
+      const diversityBonus = Math.min(8, activeComponents.length * 1.2);
+      
+      // Calculate final score
+      let score = 50 + sentimentShift + strengthModifier + diversityBonus - riskPenalty;
       
       // Step 4: Apply coverage quality adjustment
       const totalTickerCount = stats.totalTickers.size || 1;
       const tickersWithDataInTheme = [...stats.tickersWithData].filter(t => stats.totalTickers.has(t)).length;
       const coveragePercent = Math.round((tickersWithDataInTheme / totalTickerCount) * 100);
       
-      // Coverage penalty: <50% coverage reduces score moderately
+      // Coverage penalty: <50% coverage reduces score slightly
       if (coveragePercent < 50) {
-        const coveragePenalty = (50 - coveragePercent) / 50 * 0.15;
+        const coveragePenalty = (50 - coveragePercent) / 50 * 0.1;
         score = score * (1 - coveragePenalty);
       }
       
-      // Clamp final score to 0-100
-      score = Math.max(0, Math.min(100, score));
+      // Clamp final score to 5-95 (avoid extreme edges)
+      score = Math.max(5, Math.min(95, score));
       
       results.push({
         theme_id: theme.id,
