@@ -1042,17 +1042,19 @@ serve(async (req) => {
         }
       }
       
-      // Normalize each component to 0-100 scale
-      // Use higher multiplier to reflect actual signal quality (avg composite_score is 70-95)
+      // ========== INTUITIVE SCORE CALIBRATION ==========
+      // Target scale: <35 = bearish/sell, 36-65 = neutral, 65+ = bullish/buy
+      // Base assumption: average market conditions should produce ~50
+      
+      // Step 1: Normalize each component to 0-100 with aggressive multiplier
       const normalizedComponents: Record<string, number> = {};
       for (const [comp, rawScore] of Object.entries(componentScores)) {
-        // Boosted multiplier: log10(1+x)*70 means rawScore=10 → ~70, rawScore=100 → ~140 (capped at 100)
-        const normalized = rawScore > 0 ? Math.min(100, Math.log10(1 + rawScore) * 70) : 0;
+        // Use sqrt for smoother scaling: rawScore=1 → 30, rawScore=4 → 60, rawScore=9 → 90
+        const normalized = rawScore > 0 ? Math.min(100, Math.sqrt(rawScore) * 30) : 0;
         normalizedComponents[comp] = Math.round(normalized * 100) / 100;
       }
       
-      // Calculate weighted sum using COMPONENT_WEIGHTS
-      // KEY FIX: Only normalize against ACTIVE components (per backend/scoring.py)
+      // Step 2: Calculate weighted average of active components
       let weightedSum = 0;
       let activePositiveWeight = 0;
       const activeComponents: string[] = [];
@@ -1062,36 +1064,42 @@ serve(async (req) => {
         
         if (normalized > 0.1 && weight > 0) {
           activeComponents.push(comp);
-          // Only count active component weights in denominator
           activePositiveWeight += weight;
         }
         
         weightedSum += weight * normalized;
       }
       
-      // Final score: weighted average of ACTIVE component scores only
-      // This prevents penalizing themes for missing data sources (e.g., no PolicyMomentum data)
+      // Step 3: Calculate base score from weighted components
       let score = 0;
       if (activePositiveWeight > 0) {
-        // Normalize only against active components
-        const activeMax = activePositiveWeight * 100;
-        score = (weightedSum / activeMax) * 100;
+        // Get the normalized weighted average (0-100)
+        const normalizedAvg = weightedSum / activePositiveWeight;
         
-        // Small bonus for component diversity (more signals = higher confidence)
-        const diversityBonus = Math.min(10, activeComponents.length * 1.5);
-        score = Math.min(100, score + diversityBonus);
+        // Transform to intuitive scale:
+        // - normalizedAvg of 30 (weak signals) → score ~40 (bearish)
+        // - normalizedAvg of 50 (average signals) → score ~55 (neutral)
+        // - normalizedAvg of 70+ (strong signals) → score ~70+ (bullish)
+        score = 25 + (normalizedAvg * 0.65);
+        
+        // Diversity bonus: more active components = more confidence
+        const diversityBonus = Math.min(12, activeComponents.length * 2);
+        score += diversityBonus;
       }
       
-      // Apply coverage quality adjustment (themes with sparse data get penalized)
+      // Step 4: Apply coverage quality adjustment
       const totalTickerCount = stats.totalTickers.size || 1;
       const tickersWithDataInTheme = [...stats.tickersWithData].filter(t => stats.totalTickers.has(t)).length;
       const coveragePercent = Math.round((tickersWithDataInTheme / totalTickerCount) * 100);
       
-      // Coverage penalty: <50% coverage reduces score by up to 30%
+      // Coverage penalty: <50% coverage reduces score moderately
       if (coveragePercent < 50) {
-        const coveragePenalty = (50 - coveragePercent) / 50 * 0.3;
+        const coveragePenalty = (50 - coveragePercent) / 50 * 0.15;
         score = score * (1 - coveragePenalty);
       }
+      
+      // Clamp final score to 0-100
+      score = Math.max(0, Math.min(100, score));
       
       results.push({
         theme_id: theme.id,
