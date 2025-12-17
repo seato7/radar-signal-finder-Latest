@@ -1348,6 +1348,72 @@ export type Database = {
         }
         Relationships: []
       }
+      holdings_13f: {
+        Row: {
+          change_pct: number | null
+          change_shares: number | null
+          change_type: string | null
+          checksum: string | null
+          company_name: string | null
+          created_at: string | null
+          cusip: string
+          filing_date: string
+          id: string
+          manager_cik: string
+          manager_name: string
+          period_of_report: string
+          previous_shares: number | null
+          previous_value: number | null
+          shares: number
+          source_url: string | null
+          ticker: string | null
+          updated_at: string | null
+          value: number
+        }
+        Insert: {
+          change_pct?: number | null
+          change_shares?: number | null
+          change_type?: string | null
+          checksum?: string | null
+          company_name?: string | null
+          created_at?: string | null
+          cusip: string
+          filing_date: string
+          id?: string
+          manager_cik: string
+          manager_name: string
+          period_of_report: string
+          previous_shares?: number | null
+          previous_value?: number | null
+          shares: number
+          source_url?: string | null
+          ticker?: string | null
+          updated_at?: string | null
+          value: number
+        }
+        Update: {
+          change_pct?: number | null
+          change_shares?: number | null
+          change_type?: string | null
+          checksum?: string | null
+          company_name?: string | null
+          created_at?: string | null
+          cusip?: string
+          filing_date?: string
+          id?: string
+          manager_cik?: string
+          manager_name?: string
+          period_of_report?: string
+          previous_shares?: number | null
+          previous_value?: number | null
+          shares?: number
+          source_url?: string | null
+          ticker?: string | null
+          updated_at?: string | null
+          value?: number
+        }
+        Relationships: []
+      }
       ingest_failures: {
         Row: {
           error_message: string
@@ -1555,6 +1621,54 @@ export type Database = {
           last_processed_at?: string | null
           process_count?: number | null
           ticker?: string
+        }
+        Relationships: []
+      }
+      news_rss_articles: {
+        Row: {
+          checksum: string | null
+          created_at: string | null
+          headline: string
+          id: string
+          metadata: Json | null
+          published_at: string | null
+          relevance_score: number | null
+          sentiment_label: string | null
+          sentiment_score: number | null
+          source: string
+          summary: string | null
+          ticker: string
+          url: string | null
+        }
+        Insert: {
+          checksum?: string | null
+          created_at?: string | null
+          headline: string
+          id?: string
+          metadata?: Json | null
+          published_at?: string | null
+          relevance_score?: number | null
+          sentiment_label?: string | null
+          sentiment_score?: number | null
+          source: string
+          summary?: string | null
+          ticker: string
+          url?: string | null
+        }
+        Update: {
+          checksum?: string | null
+          created_at?: string | null
+          headline?: string
+          id?: string
+          metadata?: Json | null
+          published_at?: string | null
+          relevance_score?: number | null
+          sentiment_label?: string | null
+          sentiment_score?: number | null
+          source?: string
+          summary?: string | null
+          ticker?: string
+          url?: string | null
         }
         Relationships: []
       }
