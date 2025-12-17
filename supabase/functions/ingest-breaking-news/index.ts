@@ -236,15 +236,19 @@ Separate each news item with "---".`
       const companiesRaw = companiesMatch?.[1]?.trim() || '';
       const sectorsRaw = sectorsMatch?.[1]?.trim() || '';
       
+      const parsedTickers = tickersRaw.toLowerCase() === 'none' ? [] : 
+        tickersRaw.split(',').map((t: string) => t.trim().toUpperCase()).filter((t: string) => t.length > 0 && t.length <= 6);
+      const parsedCompanies = companiesRaw.split(',').map((c: string) => c.trim()).filter((c: string) => c.length > 0);
+      const parsedSectors = sectorsRaw.split(',').map((s: string) => s.trim().toLowerCase()).filter((s: string) => s.length > 0);
+      
       headlines.push({
         headline: headlineMatch[1].trim(),
         summary: summaryMatch?.[1]?.trim() || '',
         source: sourceMatch?.[1]?.trim() || 'Perplexity',
         sentiment: sentimentMatch ? validateSentiment(parseFloat(sentimentMatch[1])) : 0,
-        tickers_mentioned: tickersRaw.toLowerCase() === 'none' ? [] : 
-          tickersRaw.split(',').map(t => t.trim().toUpperCase()).filter(t => t.length > 0 && t.length <= 6),
-        companies_mentioned: companiesRaw.split(',').map(c => c.trim()).filter(c => c.length > 0),
-        sectors_mentioned: sectorsRaw.split(',').map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
+        tickers_mentioned: parsedTickers,
+        companies_mentioned: parsedCompanies,
+        sectors_mentioned: parsedSectors,
       });
     }
   }
@@ -389,7 +393,7 @@ serve(async (req) => {
         
         // Cache the results
         if (newsItems.length > 0) {
-          await redisCache.set('breaking-news:global', newsItems, 'Perplexity API', 1800); // 30 min cache
+          await redisCache.set('breaking-news:global', newsItems, 'Perplexity API');
         }
       }
     }
