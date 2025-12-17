@@ -1042,17 +1042,19 @@ serve(async (req) => {
         }
       }
       
-      // Normalize each component to 0-100 scale with boosted multiplier
+      // Normalize each component to 0-100 scale
+      // Use higher multiplier to reflect actual signal quality (avg composite_score is 70-95)
       const normalizedComponents: Record<string, number> = {};
       for (const [comp, rawScore] of Object.entries(componentScores)) {
-        // Boosted normalization for meaningful investment scores
-        const normalized = rawScore > 0 ? Math.min(100, Math.log10(1 + rawScore) * 50) : 0;
+        // Boosted multiplier: log10(1+x)*70 means rawScore=10 → ~70, rawScore=100 → ~140 (capped at 100)
+        const normalized = rawScore > 0 ? Math.min(100, Math.log10(1 + rawScore) * 70) : 0;
         normalizedComponents[comp] = Math.round(normalized * 100) / 100;
       }
       
       // Calculate weighted sum using COMPONENT_WEIGHTS
+      // KEY FIX: Only normalize against ACTIVE components (per backend/scoring.py)
       let weightedSum = 0;
-      let totalPositiveWeight = 0;
+      let activePositiveWeight = 0;
       const activeComponents: string[] = [];
       
       for (const [comp, normalized] of Object.entries(normalizedComponents)) {
@@ -1060,23 +1062,24 @@ serve(async (req) => {
         
         if (normalized > 0.1 && weight > 0) {
           activeComponents.push(comp);
+          // Only count active component weights in denominator
+          activePositiveWeight += weight;
         }
         
-        // Include all positive weights in denominator for fair comparison
-        if (weight > 0) totalPositiveWeight += weight;
         weightedSum += weight * normalized;
       }
       
-      // Final score: weighted average of component scores
-      // Scale to 0-100 based on theoretical max (all components at 100)
-      const theoreticalMax = totalPositiveWeight * 100;
+      // Final score: weighted average of ACTIVE component scores only
+      // This prevents penalizing themes for missing data sources (e.g., no PolicyMomentum data)
       let score = 0;
-      if (theoreticalMax > 0) {
-        // Base score from weighted components
-        score = (weightedSum / theoreticalMax) * 100;
-        // Boost based on active component count (more data = higher confidence)
-        const componentBonus = Math.min(20, activeComponents.length * 3);
-        score = Math.min(100, score + componentBonus);
+      if (activePositiveWeight > 0) {
+        // Normalize only against active components
+        const activeMax = activePositiveWeight * 100;
+        score = (weightedSum / activeMax) * 100;
+        
+        // Small bonus for component diversity (more signals = higher confidence)
+        const diversityBonus = Math.min(10, activeComponents.length * 1.5);
+        score = Math.min(100, score + diversityBonus);
       }
       
       // Apply coverage quality adjustment (themes with sparse data get penalized)
