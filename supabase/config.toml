@@ -176,3 +176,6 @@ verify_jwt = false
 
 [functions.populate-signal-theme-map]
 verify_jwt = false
+
+[functions.enrich-asset-sectors]
+verify_jwt = false
