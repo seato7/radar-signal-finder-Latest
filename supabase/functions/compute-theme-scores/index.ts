@@ -769,79 +769,327 @@ serve(async (req) => {
     console.log(`[THEME-SCORING] Processed ${directSourcesProcessed} records from direct sources`);
 
     // ========================================================================
-    // Calculate final scores with ACCURATE discrimination
-    // New formula: starts from 0, requires quality metrics
+    // 8-COMPONENT RESEARCH-BACKED SCORING MODEL
+    // Based on backend/scoring.py - uses exponential decay + signal classification
     // ========================================================================
+    
+    // Component weights from backend/scoring.py (spec values)
+    const COMPONENT_WEIGHTS: Record<string, number> = {
+      PolicyMomentum: 1.0,
+      FlowPressure: 1.0,
+      BigMoneyConfirm: 1.0,
+      InsiderPoliticianConfirm: 0.8,
+      Attention: 0.5,
+      TechEdge: 0.4,
+      RiskFlags: -1.0,
+      CapexMomentum: 0.6,
+    };
+    
+    // Signal type → component mapping
+    const SIGNAL_TO_COMPONENT: Record<string, string> = {
+      // PolicyMomentum
+      'policy_keyword': 'PolicyMomentum',
+      'policy_mention': 'PolicyMomentum',
+      'policy_approval': 'PolicyMomentum',
+      'policy_rejection': 'PolicyMomentum',
+      
+      // FlowPressure
+      'flow_pressure': 'FlowPressure',
+      'flow_pressure_etf': 'FlowPressure',
+      'etf_inflow': 'FlowPressure',
+      'etf_outflow': 'FlowPressure',
+      'dark_pool_activity': 'FlowPressure',
+      'darkpool_block': 'FlowPressure',
+      'darkpool_accumulation': 'FlowPressure',
+      'darkpool_distribution': 'FlowPressure',
+      
+      // BigMoneyConfirm
+      'filing_13f_new': 'BigMoneyConfirm',
+      'filing_13f_increase': 'BigMoneyConfirm',
+      'filing_13f_decrease': 'BigMoneyConfirm',
+      '13f_new_position': 'BigMoneyConfirm',
+      '13f_increase': 'BigMoneyConfirm',
+      '13f_decrease': 'BigMoneyConfirm',
+      'institutional_13f': 'BigMoneyConfirm',
+      
+      // InsiderPoliticianConfirm
+      'insider_buy': 'InsiderPoliticianConfirm',
+      'insider_sell': 'InsiderPoliticianConfirm',
+      'form4_buy': 'InsiderPoliticianConfirm',
+      'form4_sell': 'InsiderPoliticianConfirm',
+      'politician_buy': 'InsiderPoliticianConfirm',
+      'politician_sell': 'InsiderPoliticianConfirm',
+      'congressional_buy': 'InsiderPoliticianConfirm',
+      'congressional_sell': 'InsiderPoliticianConfirm',
+      
+      // Attention
+      'social_mention': 'Attention',
+      'social_bullish': 'Attention',
+      'social_bearish': 'Attention',
+      'news_mention': 'Attention',
+      'breaking_news': 'Attention',
+      'news_alert': 'Attention',
+      'reddit_mention': 'Attention',
+      'stocktwits_mention': 'Attention',
+      'search_interest': 'Attention',
+      'search_spike': 'Attention',
+      'trending_topic': 'Attention',
+      'sentiment_shift': 'Attention',
+      'sentiment_bullish': 'Attention',
+      'sentiment_bearish': 'Attention',
+      'sentiment_extreme': 'Attention',
+      
+      // TechEdge
+      'technical_breakout': 'TechEdge',
+      'technical_breakdown': 'TechEdge',
+      'chart_pattern': 'TechEdge',
+      'pattern_detected': 'TechEdge',
+      'options_unusual': 'TechEdge',
+      'unusual_options': 'TechEdge',
+      'options_sweep': 'TechEdge',
+      'options_block': 'TechEdge',
+      
+      // RiskFlags
+      'risk_high_volatility': 'RiskFlags',
+      'risk_liquidity': 'RiskFlags',
+      'risk_concentration': 'RiskFlags',
+      'risk_regulatory': 'RiskFlags',
+      'short_interest_high': 'RiskFlags',
+      'short_squeeze': 'RiskFlags',
+      
+      // CapexMomentum
+      'capex_hiring': 'CapexMomentum',
+      'hiring_surge': 'CapexMomentum',
+      'job_growth': 'CapexMomentum',
+      'patent_filed': 'CapexMomentum',
+      'patent_granted': 'CapexMomentum',
+      'innovation_signal': 'CapexMomentum',
+      'earnings_surprise': 'CapexMomentum',
+      'earnings_beat': 'CapexMomentum',
+      'revenue_surprise': 'CapexMomentum',
+    };
+    
+    // Signal classification multipliers (rewards conviction)
+    const CLASSIFICATION_MULTIPLIER: Record<string, number> = {
+      'strong_bullish': 1.5,
+      'strong_bearish': 1.5,
+      'bullish': 1.2,
+      'bearish': 1.2,
+      'weak_bullish': 0.7,
+      'weak_bearish': 0.7,
+      'weak signal': 0.5,
+      'noise': 0.1,
+    };
+    
+    // Exponential decay function (30-day half-life per spec)
+    const HALF_LIFE_DAYS = 30;
+    function exponentialDecay(daysAgo: number): number {
+      if (daysAgo <= 0) return 1.0;
+      return Math.exp(-Math.LN2 * daysAgo / HALF_LIFE_DAYS);
+    }
+    
     const results: any[] = [];
     const now = new Date();
+
+    // Fetch scored signals with composite_score for accurate weighting
+    console.log('[THEME-SCORING] Fetching scored signals for component aggregation...');
+    const scoredSignalsCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    
+    const { data: scoredSignals, error: scoredError } = await supabaseClient
+      .from('signals')
+      .select('id, signal_type, asset_id, theme_id, direction, magnitude, composite_score, signal_classification, observed_at')
+      .gte('observed_at', scoredSignalsCutoff)
+      .not('composite_score', 'is', null)
+      .limit(50000);
+    
+    if (scoredError) {
+      console.log('[THEME-SCORING] Error fetching scored signals:', scoredError.message);
+    }
+    
+    const scoredSignalsList = scoredSignals || [];
+    console.log(`[THEME-SCORING] Found ${scoredSignalsList.length} scored signals for component analysis`);
 
     for (const theme of themes || []) {
       const stats = themeScores[theme.name];
       if (!stats) continue;
 
-      // Calculate coverage by TICKER
+      // Initialize 8-component scores
+      const componentScores: Record<string, number> = {
+        PolicyMomentum: 0,
+        FlowPressure: 0,
+        BigMoneyConfirm: 0,
+        InsiderPoliticianConfirm: 0,
+        Attention: 0,
+        TechEdge: 0,
+        RiskFlags: 0,
+        CapexMomentum: 0,
+      };
+      
+      const componentCounts: Record<string, number> = { ...componentScores };
+
+      // Get theme-related tickers for signal filtering
+      const themeTickers = new Set(stats.totalTickers);
+      
+      // Process scored signals that belong to this theme
+      for (const signal of scoredSignalsList) {
+        // Check if signal belongs to this theme via asset mapping
+        const signalThemes = SIGNAL_TYPE_TO_THEMES[signal.signal_type];
+        const belongsToTheme = signalThemes?.themes.includes(theme.name);
+        
+        if (!belongsToTheme) continue;
+        
+        // Get component for this signal type
+        const component = SIGNAL_TO_COMPONENT[signal.signal_type];
+        if (!component) continue;
+        
+        // Calculate days ago and apply decay
+        const observedAt = new Date(signal.observed_at);
+        const daysAgo = (now.getTime() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
+        const decay = exponentialDecay(daysAgo);
+        
+        // Get classification multiplier
+        const classification = signal.signal_classification?.toLowerCase() || 'weak signal';
+        const classMultiplier = CLASSIFICATION_MULTIPLIER[classification] || 0.5;
+        
+        // Base score from composite_score (0-100 scale)
+        const baseScore = (signal.composite_score || 50) / 100;
+        
+        // Direction adjustment: up signals boost positive components, down signals boost RiskFlags
+        let directionFactor = 1.0;
+        if (component === 'RiskFlags') {
+          // Risk signals are always counted (negative weight will handle)
+          directionFactor = 1.0;
+        } else if (signal.direction === 'down') {
+          // Bearish signals on positive components are weaker
+          directionFactor = 0.3;
+        } else if (signal.direction === 'up') {
+          directionFactor = 1.2;
+        }
+        
+        // Calculate weighted contribution
+        const contribution = baseScore * decay * classMultiplier * directionFactor;
+        
+        componentScores[component] += contribution;
+        componentCounts[component]++;
+      }
+      
+      // ====================================================================
+      // Map direct data sources to 8 components
+      // This ensures scores are populated even without scored signals
+      // ====================================================================
+      if (stats.signalCount > 0) {
+        const avgMagnitude = stats.totalMagnitude / stats.signalCount;
+        const positiveRatio = (stats.positiveSignals + stats.negativeSignals) > 0 
+          ? stats.positiveSignals / (stats.positiveSignals + stats.negativeSignals) 
+          : 0.5;
+        const sentimentStrength = Math.abs(positiveRatio - 0.5) * 2; // 0-1 scale
+        const directionBoost = positiveRatio >= 0.5 ? 1.0 : 0.7;
+        
+        // 1. ATTENTION - news, sentiment, social, search trends
+        if (stats.sources.has('breaking_news') || stats.sources.has('news_sentiment_aggregate') || 
+            stats.sources.has('reddit_sentiment') || stats.sources.has('stocktwits_sentiment') ||
+            stats.sources.has('google_trends') || stats.sources.has('ai_research_reports')) {
+          componentScores.Attention += Math.log10(stats.signalCount + 1) * sentimentStrength * directionBoost;
+          componentCounts.Attention++;
+        }
+        // Always add base attention from volume
+        componentScores.Attention += Math.log10(stats.signalCount + 1) * 0.2;
+        componentCounts.Attention++;
+        
+        // 2. FLOW PRESSURE - ETF flows, dark pool
+        if (stats.sources.has('etf_flows') || stats.sources.has('dark_pool_activity')) {
+          componentScores.FlowPressure += positiveRatio * avgMagnitude * 0.8 * directionBoost;
+          componentCounts.FlowPressure++;
+        }
+        
+        // 3. BIG MONEY CONFIRM - 13F holdings
+        if (stats.sources.has('holdings_13f') || stats.sources.has('signals')) {
+          componentScores.BigMoneyConfirm += positiveRatio * avgMagnitude * 0.6 * directionBoost;
+          componentCounts.BigMoneyConfirm++;
+        }
+        
+        // 4. INSIDER/POLITICIAN CONFIRM - congressional trades, Form 4
+        if (stats.sources.has('congressional_trades') || stats.sources.has('form4_filings')) {
+          componentScores.InsiderPoliticianConfirm += positiveRatio * avgMagnitude * 0.7 * directionBoost;
+          componentCounts.InsiderPoliticianConfirm++;
+        }
+        
+        // 5. TECH EDGE - technicals, patterns, options
+        if (stats.sources.has('advanced_technicals') || stats.sources.has('pattern_recognition') ||
+            stats.sources.has('options_flow') || stats.sources.has('forex_technicals')) {
+          componentScores.TechEdge += sentimentStrength * avgMagnitude * 0.5 * directionBoost;
+          componentCounts.TechEdge++;
+        }
+        
+        // 6. POLICY MOMENTUM - policy feeds, economic indicators
+        if (stats.sources.has('policy_feeds') || stats.sources.has('economic_indicators')) {
+          componentScores.PolicyMomentum += positiveRatio * avgMagnitude * 0.6 * directionBoost;
+          componentCounts.PolicyMomentum++;
+        }
+        
+        // 7. CAPEX MOMENTUM - jobs, patents, earnings
+        if (stats.sources.has('job_postings') || stats.sources.has('patent_filings') ||
+            stats.sources.has('earnings_sentiment')) {
+          componentScores.CapexMomentum += positiveRatio * avgMagnitude * 0.5 * directionBoost;
+          componentCounts.CapexMomentum++;
+        }
+        
+        // 8. RISK FLAGS - short interest, high volatility indicators
+        const negativeRatio = stats.negativeSignals / (stats.signalCount + 1);
+        if (stats.sources.has('short_interest') || negativeRatio > 0.4) {
+          componentScores.RiskFlags += negativeRatio * avgMagnitude * 0.4;
+          componentCounts.RiskFlags++;
+        }
+      }
+      
+      // Normalize each component to 0-100 scale with boosted multiplier
+      const normalizedComponents: Record<string, number> = {};
+      for (const [comp, rawScore] of Object.entries(componentScores)) {
+        // Boosted normalization for meaningful investment scores
+        const normalized = rawScore > 0 ? Math.min(100, Math.log10(1 + rawScore) * 50) : 0;
+        normalizedComponents[comp] = Math.round(normalized * 100) / 100;
+      }
+      
+      // Calculate weighted sum using COMPONENT_WEIGHTS
+      let weightedSum = 0;
+      let totalPositiveWeight = 0;
+      const activeComponents: string[] = [];
+      
+      for (const [comp, normalized] of Object.entries(normalizedComponents)) {
+        const weight = COMPONENT_WEIGHTS[comp];
+        
+        if (normalized > 0.1 && weight > 0) {
+          activeComponents.push(comp);
+        }
+        
+        // Include all positive weights in denominator for fair comparison
+        if (weight > 0) totalPositiveWeight += weight;
+        weightedSum += weight * normalized;
+      }
+      
+      // Final score: weighted average of component scores
+      // Scale to 0-100 based on theoretical max (all components at 100)
+      const theoreticalMax = totalPositiveWeight * 100;
+      let score = 0;
+      if (theoreticalMax > 0) {
+        // Base score from weighted components
+        score = (weightedSum / theoreticalMax) * 100;
+        // Boost based on active component count (more data = higher confidence)
+        const componentBonus = Math.min(20, activeComponents.length * 3);
+        score = Math.min(100, score + componentBonus);
+      }
+      
+      // Apply coverage quality adjustment (themes with sparse data get penalized)
       const totalTickerCount = stats.totalTickers.size || 1;
       const tickersWithDataInTheme = [...stats.tickersWithData].filter(t => stats.totalTickers.has(t)).length;
       const coveragePercent = Math.round((tickersWithDataInTheme / totalTickerCount) * 100);
-
-      // ========================================================================
-      // NEW SCORING MODEL - Starts at 0, max 100
-      // ========================================================================
-      let score = 0;
       
-      if (stats.signalCount > 0) {
-        const totalDirectional = stats.positiveSignals + stats.negativeSignals;
-        const positiveRatio = totalDirectional > 0 ? stats.positiveSignals / totalDirectional : 0.5;
-        const avgMagnitude = stats.totalMagnitude / stats.signalCount;
-        
-        // 1. SIGNAL VOLUME SCORE (0-25 points)
-        // Requires meaningful signal count - log scale with threshold
-        // 10 signals = 5pts, 100 = 12pts, 1000 = 18pts, 10000 = 25pts
-        const signalVolumeScore = Math.min(25, Math.log10(stats.signalCount + 1) * 6.25);
-        
-        // 2. SENTIMENT CONVICTION (0-30 points)
-        // Rewards strong directional alignment, penalizes mixed signals
-        // 50% = 0pts (neutral), 60% = 6pts, 70% = 12pts, 80% = 20pts, 90%+ = 30pts
-        const convictionStrength = Math.abs(positiveRatio - 0.5) * 2; // 0-1 scale
-        const sentimentConviction = convictionStrength * convictionStrength * 30; // Quadratic - rewards strong conviction
-        
-        // Direction bonus/penalty: bullish themes get positive, bearish get score
-        const directionMultiplier = positiveRatio >= 0.5 ? 1.0 : 0.7; // Slight preference for bullish
-        const sentimentScore = sentimentConviction * directionMultiplier;
-        
-        // 3. COVERAGE QUALITY (0-20 points)
-        // Requires good data coverage
-        // <50% = scaled down, 50-70% = moderate, 70-90% = good, 90%+ = full
-        let coverageScore = 0;
-        if (coveragePercent >= 90) coverageScore = 20;
-        else if (coveragePercent >= 70) coverageScore = 12 + (coveragePercent - 70) * 0.4;
-        else if (coveragePercent >= 50) coverageScore = 6 + (coveragePercent - 50) * 0.3;
-        else coverageScore = coveragePercent * 0.12;
-        
-        // 4. SOURCE DIVERSITY (0-15 points)
-        // Multiple independent sources = higher confidence
-        // 1 source = 2pts, 3 sources = 6pts, 5 sources = 10pts, 8+ sources = 15pts
-        const sourceCount = stats.sources.size;
-        const sourceScore = Math.min(15, sourceCount * 1.875);
-        
-        // 5. MAGNITUDE QUALITY (0-10 points)
-        // Higher average magnitude = stronger signals
-        // avg 0.5 = 2pts, avg 1.0 = 5pts, avg 1.5 = 7.5pts, avg 2.0+ = 10pts
-        const magnitudeScore = Math.min(10, avgMagnitude * 5);
-        
-        // 6. CONSISTENCY PENALTY (-10 to 0 points)
-        // Penalize themes where signals conflict heavily
-        // If both positive AND negative are high, signals are inconsistent
-        const inconsistencyRatio = Math.min(stats.positiveSignals, stats.negativeSignals) / 
-                                   Math.max(stats.positiveSignals, stats.negativeSignals, 1);
-        // inconsistencyRatio close to 1 = very inconsistent, close to 0 = consistent
-        const consistencyPenalty = inconsistencyRatio > 0.7 ? -10 * (inconsistencyRatio - 0.3) : 0;
-        
-        // FINAL SCORE CALCULATION
-        score = signalVolumeScore + sentimentScore + coverageScore + sourceScore + magnitudeScore + consistencyPenalty;
-        score = Math.max(0, Math.min(100, score));
+      // Coverage penalty: <50% coverage reduces score by up to 30%
+      if (coveragePercent < 50) {
+        const coveragePenalty = (50 - coveragePercent) / 50 * 0.3;
+        score = score * (1 - coveragePenalty);
       }
-
+      
       results.push({
         theme_id: theme.id,
         theme_name: theme.name,
@@ -854,19 +1102,22 @@ serve(async (req) => {
         tickers_with_data: tickersWithDataInTheme,
         all_tickers_with_signals: stats.tickersWithData.size,
         coverage_percent: coveragePercent,
+        component_scores: normalizedComponents,
+        active_components: activeComponents,
         computed_at: now.toISOString()
       });
     }
 
     results.sort((a, b) => b.score - a.score);
 
-    // Log theme distribution with coverage
-    console.log("[THEME-SCORING] Theme signal distribution:");
+    // Log theme distribution with 8-component breakdown
+    console.log("[THEME-SCORING] Theme scores with 8-component model:");
     for (const r of results) {
-      console.log(`  ${r.theme_name}: ${r.signal_count} signals, score=${r.score.toFixed(1)}, coverage=${r.coverage_percent}%, sources=[${r.sources.join(',')}]`);
+      const activeComps = r.active_components.join(',') || 'none';
+      console.log(`  ${r.theme_name}: score=${r.score.toFixed(1)}, components=[${activeComps}], coverage=${r.coverage_percent}%`);
     }
 
-    // Update database
+    // Update database with 8-component scores
     for (const result of results) {
       await supabaseClient
         .from('theme_scores')
@@ -875,14 +1126,22 @@ serve(async (req) => {
           score: result.score,
           signal_count: result.signal_count,
           component_scores: {
+            // 8-component model scores
+            PolicyMomentum: result.component_scores.PolicyMomentum,
+            FlowPressure: result.component_scores.FlowPressure,
+            BigMoneyConfirm: result.component_scores.BigMoneyConfirm,
+            InsiderPoliticianConfirm: result.component_scores.InsiderPoliticianConfirm,
+            Attention: result.component_scores.Attention,
+            TechEdge: result.component_scores.TechEdge,
+            RiskFlags: result.component_scores.RiskFlags,
+            CapexMomentum: result.component_scores.CapexMomentum,
+            // Legacy fields
             positive_signals: result.positive_signals,
             negative_signals: result.negative_signals,
             sources: result.sources,
             coverage_percent: result.coverage_percent,
-            total_tickers: result.total_tickers,
-            tickers_with_data: result.tickers_with_data
           },
-          positive_components: result.positive_signals > result.negative_signals ? ['bullish_momentum'] : [],
+          positive_components: result.active_components,
           computed_at: result.computed_at
         }, { onConflict: 'theme_id' });
 
@@ -894,7 +1153,9 @@ serve(async (req) => {
           metadata: {
             signal_count: result.signal_count,
             coverage_percent: result.coverage_percent,
-            sources: result.sources
+            sources: result.sources,
+            component_scores: result.component_scores,
+            active_components: result.active_components
           }
         })
         .eq('id', result.theme_id);
