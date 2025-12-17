@@ -13,7 +13,7 @@ def test_decay_at_zero():
     assert exponential_decay(0) == 1.0
 
 def test_weights_sum():
-    """Test weights are spec-compliant"""
+    """Test weights are v2.1 spec-compliant (professional hybrid model)"""
     weights = get_weights()
     # Check all required components exist
     required = ["PolicyMomentum", "FlowPressure", "BigMoneyConfirm", 
@@ -22,12 +22,12 @@ def test_weights_sum():
     for comp in required:
         assert comp in weights
     
-    # Check spec values
-    assert weights["PolicyMomentum"] == 1.0
-    assert weights["FlowPressure"] == 1.0
-    assert weights["BigMoneyConfirm"] == 1.0
-    assert weights["InsiderPoliticianConfirm"] == 0.8
-    assert weights["Attention"] == 0.5
-    assert weights["TechEdge"] == 0.4
-    assert weights["RiskFlags"] == -1.0
-    assert weights["CapexMomentum"] == 0.6
+    # Check v2.1 professional hybrid weights
+    assert weights["BigMoneyConfirm"] == 1.5  # Institutional conviction (highest)
+    assert weights["FlowPressure"] == 1.4     # Capital direction
+    assert weights["InsiderPoliticianConfirm"] == 1.2  # Smart money
+    assert weights["CapexMomentum"] == 1.0    # Growth proxy
+    assert weights["PolicyMomentum"] == 0.8   # Policy catalysts
+    assert weights["TechEdge"] == 0.7         # Technical/options
+    assert weights["Attention"] == 0.6        # News/social
+    assert weights["RiskFlags"] == -2.0       # DOUBLED penalty

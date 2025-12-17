@@ -4,9 +4,10 @@ from datetime import datetime, timedelta
 from backend.config import settings
 from backend.models import Signal
 
-# Professional Hybrid Component Weights v2.0
+# Professional Hybrid Component Weights v2.1
 # Based on Morningstar, BlackRock, AQR methodologies
 # Confirmation-first approach: institutional signals carry more weight
+# v2.1: Scoring from available data only - no caps for missing components
 WEIGHTS = {
     # CONFIRMATION FACTORS (60% total)
     "BigMoneyConfirm": 1.5,          # 13F holdings - institutional conviction
