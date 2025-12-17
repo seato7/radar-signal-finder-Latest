@@ -826,32 +826,32 @@ serve(async (req) => {
     console.log(`[THEME-SCORING] Macro regime: rates=${interestRate}%, inflation=${inflationRate}%, employment=${employmentHealth}`);
     console.log(`[THEME-SCORING] Regime flags: highRates=${highRateEnvironment}, elevatedInflation=${elevatedInflation}, consumerStress=${consumerStress}`);
     
-    // SECTOR-SPECIFIC REGIME MODIFIERS
-    // These apply AFTER base scoring to align with analyst consensus
+    // SECTOR-SPECIFIC REGIME MODIFIERS v2.1
+    // DOUBLED penalties for rate/consumer-sensitive sectors per user feedback
     const REGIME_MODIFIERS: Record<string, number> = {
-      // Rate-sensitive sectors (penalized in high-rate environment)
-      "Real Estate & REITs": highRateEnvironment ? -15 : 0,
-      "Banks & Financials": highRateEnvironment ? -5 : (interestRate > 3 ? 5 : 0), // Banks benefit somewhat
+      // Rate-sensitive sectors (DOUBLED penalties in high-rate environment)
+      "Real Estate & REITs": highRateEnvironment ? -30 : 0,  // Was -15
+      "Banks & Financials": highRateEnvironment ? -10 : (interestRate > 3 ? 5 : 0),  // Was -5
       
-      // Consumer-sensitive sectors (penalized in consumer stress)
-      "Retail & E-commerce": consumerStress ? -12 : 0,
-      "Travel & Leisure": consumerStress ? -10 : 0,
+      // Consumer-sensitive sectors (DOUBLED penalties in consumer stress)
+      "Retail & E-commerce": consumerStress ? -24 : 0,  // Was -12
+      "Travel & Leisure": consumerStress ? -20 : 0,  // Was -10
       
       // Defensive/beneficiary sectors
       "Defense & Aerospace": 5, // Government spending insulated
-      "Energy & Oil": elevatedInflation ? 5 : 0, // Inflation hedge
+      "Energy & Oil": elevatedInflation ? 8 : 0, // Inflation hedge (increased)
       "Biotech & Healthcare": 3, // Defensive with growth
       
       // Neutral adjustments
       "AI & Semiconductors": 0,
       "Big Tech & Consumer": 0,
       "Cloud & Cybersecurity": 0,
-      "Clean Energy & EVs": highRateEnvironment ? -5 : 0, // Capital intensive
-      "Commodities & Mining": elevatedInflation ? 8 : 0, // Inflation hedge
+      "Clean Energy & EVs": highRateEnvironment ? -10 : 0, // Capital intensive (doubled)
+      "Commodities & Mining": elevatedInflation ? 10 : 0, // Inflation hedge (increased)
       "Fintech & Crypto": 0,
       "Food & Agriculture": 0,
       "Industrial & Infrastructure": 0,
-      "International & Emerging": highRateEnvironment ? -8 : 0, // Dollar strength
+      "International & Emerging": highRateEnvironment ? -16 : 0, // Dollar strength (doubled)
       "Media & Entertainment": 0,
     };
     
@@ -1212,17 +1212,14 @@ serve(async (req) => {
         score = score * (1 - coveragePenalty);
       }
       
-      // Step 6: PROFESSIONAL SCORE CAPS (alignment with analyst consensus ranges)
-      // BigMoneyConfirm = 0 caps score at 60 (no institutional validation = can't be OUTPERFORM)
-      if (bigMoneyScore < 1 && score > 60) {
-        console.log(`[THEME-SCORING] ${theme.name}: Capping at 60 (no institutional confirmation)`);
-        score = 60;
-      }
+      // Step 6: SCORING FROM AVAILABLE DATA ONLY (no caps for missing data)
+      // v2.1: Removed BigMoneyConfirm cap - score is calculated from ACTIVE components
+      // If we don't have 13F data, we simply don't include it in the calculation
       
-      // Extreme negative ratio override (>50% negative = bearish regardless)
-      if (negativeRatio > 0.5 && score > 45) {
-        console.log(`[THEME-SCORING] ${theme.name}: Bearish override (${(negativeRatio * 100).toFixed(1)}% negative)`);
-        score = Math.min(score, 45);
+      // BEARISH OVERRIDE: >45% negative = bearish regardless (was 50%)
+      if (negativeRatio > 0.45 && score > 40) {
+        console.log(`[THEME-SCORING] ${theme.name}: Bearish override at 40 (${(negativeRatio * 100).toFixed(1)}% negative signals)`);
+        score = 40;
       }
       
       // Final clamp with wider range for professional distribution
