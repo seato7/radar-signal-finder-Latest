@@ -1537,6 +1537,27 @@ export type Database = {
         }
         Relationships: []
       }
+      news_coverage_tracker: {
+        Row: {
+          created_at: string | null
+          last_processed_at: string | null
+          process_count: number | null
+          ticker: string
+        }
+        Insert: {
+          created_at?: string | null
+          last_processed_at?: string | null
+          process_count?: number | null
+          ticker: string
+        }
+        Update: {
+          created_at?: string | null
+          last_processed_at?: string | null
+          process_count?: number | null
+          ticker?: string
+        }
+        Relationships: []
+      }
       news_sentiment_aggregate: {
         Row: {
           asset_id: string | null
