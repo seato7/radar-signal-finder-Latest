@@ -769,7 +769,8 @@ serve(async (req) => {
     console.log(`[THEME-SCORING] Processed ${directSourcesProcessed} records from direct sources`);
 
     // ========================================================================
-    // Calculate final scores with coverage
+    // Calculate final scores with ACCURATE discrimination
+    // New formula: starts from 0, requires quality metrics
     // ========================================================================
     const results: any[] = [];
     const now = new Date();
@@ -778,30 +779,66 @@ serve(async (req) => {
       const stats = themeScores[theme.name];
       if (!stats) continue;
 
-      // Calculate coverage by TICKER (only count tickers that are IN the theme's asset list)
+      // Calculate coverage by TICKER
       const totalTickerCount = stats.totalTickers.size || 1;
-      // Only count tickers that have data AND are in the theme's explicit asset list
       const tickersWithDataInTheme = [...stats.tickersWithData].filter(t => stats.totalTickers.has(t)).length;
       const coveragePercent = Math.round((tickersWithDataInTheme / totalTickerCount) * 100);
 
-      let score = 50;
+      // ========================================================================
+      // NEW SCORING MODEL - Starts at 0, max 100
+      // ========================================================================
+      let score = 0;
       
       if (stats.signalCount > 0) {
-        const signalBoost = Math.min(25, Math.log10(stats.signalCount + 1) * 12);
-        
         const totalDirectional = stats.positiveSignals + stats.negativeSignals;
-        let sentimentScore = 0;
-        if (totalDirectional > 0) {
-          const positiveRatio = stats.positiveSignals / totalDirectional;
-          sentimentScore = (positiveRatio - 0.5) * 30;
-        }
-        
+        const positiveRatio = totalDirectional > 0 ? stats.positiveSignals / totalDirectional : 0.5;
         const avgMagnitude = stats.totalMagnitude / stats.signalCount;
-        const magnitudeBoost = Math.min(10, avgMagnitude * 3);
         
-        const sourceBonus = Math.min(10, stats.sources.size * 2);
+        // 1. SIGNAL VOLUME SCORE (0-25 points)
+        // Requires meaningful signal count - log scale with threshold
+        // 10 signals = 5pts, 100 = 12pts, 1000 = 18pts, 10000 = 25pts
+        const signalVolumeScore = Math.min(25, Math.log10(stats.signalCount + 1) * 6.25);
         
-        score = 50 + signalBoost + sentimentScore + magnitudeBoost + sourceBonus;
+        // 2. SENTIMENT CONVICTION (0-30 points)
+        // Rewards strong directional alignment, penalizes mixed signals
+        // 50% = 0pts (neutral), 60% = 6pts, 70% = 12pts, 80% = 20pts, 90%+ = 30pts
+        const convictionStrength = Math.abs(positiveRatio - 0.5) * 2; // 0-1 scale
+        const sentimentConviction = convictionStrength * convictionStrength * 30; // Quadratic - rewards strong conviction
+        
+        // Direction bonus/penalty: bullish themes get positive, bearish get score
+        const directionMultiplier = positiveRatio >= 0.5 ? 1.0 : 0.7; // Slight preference for bullish
+        const sentimentScore = sentimentConviction * directionMultiplier;
+        
+        // 3. COVERAGE QUALITY (0-20 points)
+        // Requires good data coverage
+        // <50% = scaled down, 50-70% = moderate, 70-90% = good, 90%+ = full
+        let coverageScore = 0;
+        if (coveragePercent >= 90) coverageScore = 20;
+        else if (coveragePercent >= 70) coverageScore = 12 + (coveragePercent - 70) * 0.4;
+        else if (coveragePercent >= 50) coverageScore = 6 + (coveragePercent - 50) * 0.3;
+        else coverageScore = coveragePercent * 0.12;
+        
+        // 4. SOURCE DIVERSITY (0-15 points)
+        // Multiple independent sources = higher confidence
+        // 1 source = 2pts, 3 sources = 6pts, 5 sources = 10pts, 8+ sources = 15pts
+        const sourceCount = stats.sources.size;
+        const sourceScore = Math.min(15, sourceCount * 1.875);
+        
+        // 5. MAGNITUDE QUALITY (0-10 points)
+        // Higher average magnitude = stronger signals
+        // avg 0.5 = 2pts, avg 1.0 = 5pts, avg 1.5 = 7.5pts, avg 2.0+ = 10pts
+        const magnitudeScore = Math.min(10, avgMagnitude * 5);
+        
+        // 6. CONSISTENCY PENALTY (-10 to 0 points)
+        // Penalize themes where signals conflict heavily
+        // If both positive AND negative are high, signals are inconsistent
+        const inconsistencyRatio = Math.min(stats.positiveSignals, stats.negativeSignals) / 
+                                   Math.max(stats.positiveSignals, stats.negativeSignals, 1);
+        // inconsistencyRatio close to 1 = very inconsistent, close to 0 = consistent
+        const consistencyPenalty = inconsistencyRatio > 0.7 ? -10 * (inconsistencyRatio - 0.3) : 0;
+        
+        // FINAL SCORE CALCULATION
+        score = signalVolumeScore + sentimentScore + coverageScore + sourceScore + magnitudeScore + consistencyPenalty;
         score = Math.max(0, Math.min(100, score));
       }
 
