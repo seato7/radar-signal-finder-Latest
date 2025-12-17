@@ -684,7 +684,7 @@ serve(async (req) => {
         let sourceOffset = 0;
         const SOURCE_BATCH = 1000;
         let tableRecordsProcessed = 0;
-        const MAX_BATCHES = 50; // Limit to prevent timeout
+        const MAX_BATCHES = 10; // Limit to 10k records per table to prevent timeout
         let batchCount = 0;
         
         // PAGINATE through records with limit to prevent timeout
