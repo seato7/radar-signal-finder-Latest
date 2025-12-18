@@ -530,17 +530,18 @@ serve(async (req) => {
       
       // Insert holdings with changes
       for (const holding of currentFiling.holdings) {
-        // Map CUSIP to ticker - try multiple methods
+        // Map CUSIP to ticker - CUSIP mapping is authoritative (no validation needed)
         let ticker: string | null = CUSIP_TO_TICKER[holding.cusip] || null;
+        let fromCusip = !!ticker;
         
         if (!ticker) {
-          // Try dynamic name matching
+          // Try dynamic name matching - these need validation
           ticker = findTickerFromName(holding.nameOfIssuer);
-        }
-        
-        // Validate ticker exists in our assets
-        if (ticker && !validTickers.has(ticker.toUpperCase())) {
-          ticker = null;
+          
+          // Only validate ticker from name matching (not CUSIP which is authoritative)
+          if (ticker && !validTickers.has(ticker.toUpperCase())) {
+            ticker = null;
+          }
         }
         
         if (ticker) {
