@@ -36,48 +36,92 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    // Step 1: Search for congressional trading news using Firecrawl
-    console.log('[CONGRESSIONAL] Searching for congressional trades via Firecrawl...');
-    
-    const searchQueries = [
-      'congressional stock trades disclosure 2024',
-      'senate house representative stock purchase sell disclosure',
-      'Pelosi Tuberville stock trade filing'
-    ];
+    // Step 1: Try to scrape official sources directly first
+    console.log('[CONGRESSIONAL] Scraping official sources for congressional trades...');
     
     let allSearchResults: any[] = [];
     
-    for (const query of searchQueries) {
+    // Primary: Try House Stock Watcher (aggregates official disclosures)
+    const primarySources = [
+      'https://housestockwatcher.com/summary_by_rep',
+      'https://senatestockwatcher.com/summary_by_senator'
+    ];
+    
+    for (const sourceUrl of primarySources) {
       try {
-        const searchResponse = await fetch(`${FIRECRAWL_API_URL}/search`, {
+        console.log(`[CONGRESSIONAL] Scraping ${sourceUrl}...`);
+        const scrapeResponse = await fetch(`${FIRECRAWL_API_URL}/scrape`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${firecrawlKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            query,
-            limit: 5,
-            scrapeOptions: { formats: ['markdown'] }
+            url: sourceUrl,
+            formats: ['markdown'],
+            onlyMainContent: true,
+            waitFor: 3000
           }),
         });
 
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          if (searchData.data && Array.isArray(searchData.data)) {
-            allSearchResults.push(...searchData.data);
-            console.log(`[CONGRESSIONAL] Query "${query}" returned ${searchData.data.length} results`);
+        if (scrapeResponse.ok) {
+          const scrapeData = await scrapeResponse.json();
+          if (scrapeData.data?.markdown || scrapeData.markdown) {
+            allSearchResults.push({
+              url: sourceUrl,
+              markdown: scrapeData.data?.markdown || scrapeData.markdown,
+              source: 'official_scrape'
+            });
+            console.log(`[CONGRESSIONAL] Scraped ${sourceUrl} successfully`);
           }
         }
       } catch (err) {
-        console.warn(`[CONGRESSIONAL] Search query failed: ${query}`, err);
+        console.warn(`[CONGRESSIONAL] Scrape failed for ${sourceUrl}:`, err);
+      }
+    }
+    
+    // Fallback: Search for recent congressional trading news
+    if (allSearchResults.length === 0) {
+      console.log('[CONGRESSIONAL] Primary sources failed, searching news...');
+      
+      const searchQueries = [
+        'site:housestockwatcher.com stock trades 2024',
+        'congress stock trades disclosure december 2024',
+        'senator representative stock purchase sell filing'
+      ];
+      
+      for (const query of searchQueries) {
+        try {
+          const searchResponse = await fetch(`${FIRECRAWL_API_URL}/search`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${firecrawlKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              query,
+              limit: 5,
+              scrapeOptions: { formats: ['markdown'] }
+            }),
+          });
+
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            if (searchData.data && Array.isArray(searchData.data)) {
+              allSearchResults.push(...searchData.data);
+              console.log(`[CONGRESSIONAL] Query "${query.substring(0, 30)}..." returned ${searchData.data.length} results`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[CONGRESSIONAL] Search query failed: ${query}`, err);
+        }
       }
     }
 
-    console.log(`[CONGRESSIONAL] Total search results: ${allSearchResults.length}`);
+    console.log(`[CONGRESSIONAL] Total content sources: ${allSearchResults.length}`);
 
     if (allSearchResults.length === 0) {
-      console.log('[CONGRESSIONAL] No search results, returning empty');
+      console.log('[CONGRESSIONAL] No results from any source');
       
       await logHeartbeat(supabase, {
         function_name: 'ingest-congressional-trades',
@@ -89,7 +133,7 @@ serve(async (req) => {
       });
 
       return new Response(
-        JSON.stringify({ success: true, inserted: 0, skipped: 0, message: 'No search results found' }),
+        JSON.stringify({ success: true, inserted: 0, skipped: 0, message: 'No sources available' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
