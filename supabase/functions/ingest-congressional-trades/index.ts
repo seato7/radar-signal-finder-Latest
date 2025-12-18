@@ -8,6 +8,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
+const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -21,162 +24,189 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting congressional trades ingestion...');
+    console.log('[CONGRESSIONAL] Starting congressional trades ingestion with Firecrawl...');
     
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
-
-    if (!perplexityKey) {
-      throw new Error('Perplexity API key not configured');
+    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    
+    if (!firecrawlKey) {
+      throw new Error('FIRECRAWL_API_KEY not configured');
+    }
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    console.log('Fetching recent congressional trades via Perplexity...');
+    // Step 1: Search for congressional trading news using Firecrawl
+    console.log('[CONGRESSIONAL] Searching for congressional trades via Firecrawl...');
     
-    let response;
-    let retries = 0;
-    const maxRetries = 3;
+    const searchQueries = [
+      'congressional stock trades disclosure 2024',
+      'senate house representative stock purchase sell disclosure',
+      'Pelosi Tuberville stock trade filing'
+    ];
     
-    while (retries <= maxRetries) {
+    let allSearchResults: any[] = [];
+    
+    for (const query of searchQueries) {
       try {
-        console.log(`🔄 Fetching congressional trades, attempt ${retries + 1}/${maxRetries + 1}`);
-        response = await fetch('https://api.perplexity.ai/chat/completions', {
+        const searchResponse = await fetch(`${FIRECRAWL_API_URL}/search`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${perplexityKey}`,
+            'Authorization': `Bearer ${firecrawlKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'sonar',
-            messages: [{
-              role: 'system',
-              content: 'You are a congressional trading data provider. Return ONLY structured data in the exact format requested. No explanations.'
-            }, {
-              role: 'user',
-              content: `List the 10 most recent congressional stock trades from official Senate/House financial disclosures (last 30 days). Format each trade EXACTLY like this:
-
-TRADE:
-REPRESENTATIVE: [Full Name]
-TICKER: [Stock Symbol]
-TYPE: [buy/sell]
-DATE: [YYYY-MM-DD]
-AMOUNT_MIN: [number without $ or commas]
-AMOUNT_MAX: [number without $ or commas]
-PARTY: [Democrat/Republican]
-CHAMBER: [Senate/House]
-
-Use real data from official congressional disclosures. Include trades from members like Nancy Pelosi, Tommy Tuberville, Dan Crenshaw, etc.`
-            }],
-            temperature: 0.1,
-            max_tokens: 2000,
+            query,
+            limit: 5,
+            scrapeOptions: { formats: ['markdown'] }
           }),
         });
-        
-        if (response.status === 429) {
-          const backoffMs = Math.min(3000 * Math.pow(2, retries), 30000);
-          console.log(`⚠️ Rate limited, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
-          retries++;
-          if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            continue;
+
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          if (searchData.data && Array.isArray(searchData.data)) {
+            allSearchResults.push(...searchData.data);
+            console.log(`[CONGRESSIONAL] Query "${query}" returned ${searchData.data.length} results`);
           }
-          throw new Error('Rate limit exceeded after retries');
         }
-        
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Unable to read error');
-          console.error(`❌ Perplexity API error: ${response.status} - ${errorText}`);
-          retries++;
-          if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 3000 * retries));
-            continue;
-          }
-          throw new Error(`Perplexity API error: ${response.status}`);
-        }
-        
-        console.log(`✅ Successfully fetched congressional trades`);
-        break;
-        
-      } catch (fetchError) {
-        console.error(`❌ Fetch error:`, fetchError);
-        retries++;
-        if (retries > maxRetries) {
-          throw fetchError;
-        }
-        await new Promise(resolve => setTimeout(resolve, 3000 * retries));
+      } catch (err) {
+        console.warn(`[CONGRESSIONAL] Search query failed: ${query}`, err);
       }
     }
-    
-    if (!response) {
-      throw new Error('Failed to fetch after retries');
-    }
 
-    const records: any[] = [];
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    
-    console.log('Perplexity response received, parsing...');
-    
-    // Parse structured response
-    const tradeBlocks = content.split(/TRADE:/i).filter((b: string) => b.trim());
-    
-    for (const block of tradeBlocks) {
-      const repMatch = block.match(/REPRESENTATIVE:\s*(.+)/i);
-      const tickerMatch = block.match(/TICKER:\s*([A-Z]+)/i);
-      const typeMatch = block.match(/TYPE:\s*(buy|sell)/i);
-      const dateMatch = block.match(/DATE:\s*(\d{4}-\d{2}-\d{2})/i);
-      const minMatch = block.match(/AMOUNT_MIN:\s*\$?([\d,]+)/i);
-      const maxMatch = block.match(/AMOUNT_MAX:\s*\$?([\d,]+)/i);
-      const partyMatch = block.match(/PARTY:\s*(Democrat|Republican)/i);
-      const chamberMatch = block.match(/CHAMBER:\s*(Senate|House)/i);
+    console.log(`[CONGRESSIONAL] Total search results: ${allSearchResults.length}`);
+
+    if (allSearchResults.length === 0) {
+      console.log('[CONGRESSIONAL] No search results, returning empty');
       
-      if (repMatch && tickerMatch) {
-        const transactionDate = dateMatch?.[1] || new Date().toISOString().split('T')[0];
-        
-        records.push({
-          ticker: tickerMatch[1].toUpperCase().substring(0, 20),
-          representative: repMatch[1].trim().substring(0, 100),
-          party: partyMatch?.[1] || 'Unknown',
-          chamber: chamberMatch?.[1] || null,
-          transaction_type: typeMatch?.[1]?.toLowerCase() || 'buy',
-          transaction_date: transactionDate,
-          filed_date: transactionDate,
-          amount_min: minMatch ? parseInt(minMatch[1].replace(/,/g, '')) : null,
-          amount_max: maxMatch ? parseInt(maxMatch[1].replace(/,/g, '')) : null,
-          metadata: {
-            data_source: 'perplexity_congressional',
-            ingested_at: new Date().toISOString(),
-          },
-        });
-      }
-    }
-    
-    console.log(`Parsed ${records.length} congressional trades`);
+      await logHeartbeat(supabase, {
+        function_name: 'ingest-congressional-trades',
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'Firecrawl (no results)',
+      });
 
+      return new Response(
+        JSON.stringify({ success: true, inserted: 0, skipped: 0, message: 'No search results found' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Step 2: Combine content and extract structured data with Lovable AI
+    const combinedContent = allSearchResults
+      .slice(0, 10)
+      .map((r, i) => `[Source ${i + 1}: ${r.url || 'unknown'}]\n${r.markdown || r.description || ''}`)
+      .join('\n\n---\n\n');
+
+    console.log('[CONGRESSIONAL] Extracting trade data with Lovable AI...');
+
+    const aiResponse = await fetch(LOVABLE_AI_URL, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [{
+          role: 'system',
+          content: 'You are a congressional trading data extractor. Extract ONLY verifiable trades mentioned in the content. Return valid JSON array only.'
+        }, {
+          role: 'user',
+          content: `Extract congressional stock trades from this content. Return a JSON array of trades with this exact structure:
+[{
+  "representative": "Full Name",
+  "ticker": "SYMBOL",
+  "transaction_type": "buy" or "sell",
+  "transaction_date": "YYYY-MM-DD",
+  "amount_min": number or null,
+  "amount_max": number or null,
+  "party": "Democrat" or "Republican" or "Unknown",
+  "chamber": "Senate" or "House" or null
+}]
+
+Only include trades you can verify from the content. If no trades are found, return [].
+
+Content:
+${combinedContent.substring(0, 15000)}`
+        }],
+        temperature: 0.1,
+        max_tokens: 3000,
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('[CONGRESSIONAL] AI extraction failed:', aiResponse.status, errorText);
+      throw new Error(`AI extraction failed: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    const aiContent = aiData.choices?.[0]?.message?.content || '[]';
+    
+    // Parse JSON from AI response
+    let trades: any[] = [];
+    try {
+      // Extract JSON from potential markdown code blocks
+      const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        trades = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseError) {
+      console.error('[CONGRESSIONAL] Failed to parse AI response:', parseError);
+      trades = [];
+    }
+
+    console.log(`[CONGRESSIONAL] AI extracted ${trades.length} trades`);
+
+    // Step 3: Insert trades into database
     let inserted = 0;
     let skipped = 0;
 
-    if (records.length > 0) {
-      // Insert with conflict handling
-      for (const record of records) {
-        const { error } = await supabase
-          .from('congressional_trades')
-          .upsert(record, {
-            onConflict: 'representative,ticker,transaction_date',
-            ignoreDuplicates: true
-          });
-
-        if (error) {
-          if (error.code === '23505') {
-            skipped++;
-          } else {
-            console.error('Insert error:', error);
-          }
-        } else {
-          inserted++;
-        }
+    for (const trade of trades) {
+      if (!trade.representative || !trade.ticker) {
+        skipped++;
+        continue;
       }
-      
-      console.log(`Inserted ${inserted} congressional trade records, skipped ${skipped} duplicates`);
+
+      const record = {
+        ticker: String(trade.ticker).toUpperCase().substring(0, 20),
+        representative: String(trade.representative).trim().substring(0, 100),
+        party: trade.party || 'Unknown',
+        chamber: trade.chamber || null,
+        transaction_type: trade.transaction_type || 'buy',
+        transaction_date: trade.transaction_date || new Date().toISOString().split('T')[0],
+        filed_date: trade.transaction_date || new Date().toISOString().split('T')[0],
+        amount_min: typeof trade.amount_min === 'number' ? trade.amount_min : null,
+        amount_max: typeof trade.amount_max === 'number' ? trade.amount_max : null,
+        metadata: {
+          data_source: 'firecrawl_congressional',
+          ingested_at: new Date().toISOString(),
+          sources: allSearchResults.slice(0, 5).map(r => r.url).filter(Boolean),
+        },
+      };
+
+      const { error } = await supabase
+        .from('congressional_trades')
+        .upsert(record, {
+          onConflict: 'representative,ticker,transaction_date',
+          ignoreDuplicates: true
+        });
+
+      if (error) {
+        if (error.code === '23505') {
+          skipped++;
+        } else {
+          console.error('[CONGRESSIONAL] Insert error:', error);
+        }
+      } else {
+        inserted++;
+      }
     }
+
+    console.log(`[CONGRESSIONAL] ✅ Inserted ${inserted}, skipped ${skipped}`);
 
     await logHeartbeat(supabase, {
       function_name: 'ingest-congressional-trades',
@@ -184,7 +214,7 @@ Use real data from official congressional disclosures. Include trades from membe
       rows_inserted: inserted,
       rows_skipped: skipped,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity AI',
+      source_used: 'Firecrawl + Lovable AI',
     });
 
     await slackAlerter.sendLiveAlert({
@@ -193,15 +223,22 @@ Use real data from official congressional disclosures. Include trades from membe
       duration: Date.now() - startTime,
       rowsInserted: inserted,
       rowsSkipped: skipped,
-      sourceUsed: 'Perplexity AI',
+      sourceUsed: 'Firecrawl + Lovable AI',
     });
 
     return new Response(
-      JSON.stringify({ success: true, inserted, skipped }),
+      JSON.stringify({ 
+        success: true, 
+        inserted, 
+        skipped,
+        searchResults: allSearchResults.length,
+        tradesExtracted: trades.length 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error('Error in ingest-congressional-trades:', error);
+    console.error('[CONGRESSIONAL] ❌ Error:', error);
     
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     
@@ -211,7 +248,7 @@ Use real data from official congressional disclosures. Include trades from membe
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity AI',
+      source_used: 'Firecrawl + Lovable AI',
       error_message: error instanceof Error ? error.message : 'Unknown error',
     });
 
