@@ -8,30 +8,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v6 - Uses Firecrawl to search Reddit, with estimation fallback
+// v7 - ZERO ESTIMATION - Firecrawl only, skip if no real data
 
 interface FirecrawlResult {
   title?: string;
   description?: string;
   url?: string;
-  content?: string;
+  markdown?: string;
 }
 
-// Simple sentiment analysis based on keywords
+// Keyword-based sentiment analysis (no randomness)
 function analyzeSentiment(text: string): number {
   const lowerText = text.toLowerCase();
   
-  const bullishWords = ['buy', 'calls', 'moon', 'rocket', 'bullish', 'long', 'undervalued', 'breakout', 'rally', 'growth', 'gain', 'up', 'green', 'pump', 'yolo', 'hold', 'diamond hands'];
-  const bearishWords = ['sell', 'puts', 'short', 'bearish', 'crash', 'dump', 'overvalued', 'drop', 'fall', 'down', 'red', 'loss', 'bag', 'rip', 'dead'];
+  const bullishWords = ['buy', 'calls', 'moon', 'rocket', 'bullish', 'long', 'undervalued', 'breakout', 'rally', 'growth', 'gain', 'up', 'green', 'pump', 'yolo', 'hold', 'diamond hands', 'squeeze', 'gamma', 'tendies'];
+  const bearishWords = ['sell', 'puts', 'short', 'bearish', 'crash', 'dump', 'overvalued', 'drop', 'fall', 'down', 'red', 'loss', 'bag', 'rip', 'dead', 'rug', 'scam', 'avoid'];
   
   let bullishScore = 0;
   let bearishScore = 0;
   
   for (const word of bullishWords) {
-    if (lowerText.includes(word)) bullishScore++;
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    const matches = lowerText.match(regex);
+    if (matches) bullishScore += matches.length;
   }
   for (const word of bearishWords) {
-    if (lowerText.includes(word)) bearishScore++;
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    const matches = lowerText.match(regex);
+    if (matches) bearishScore += matches.length;
   }
   
   const total = bullishScore + bearishScore;
@@ -42,6 +46,7 @@ function analyzeSentiment(text: string): number {
 
 async function searchRedditViaFirecrawl(ticker: string, firecrawlKey: string): Promise<FirecrawlResult[]> {
   try {
+    // Search Reddit for stock discussions
     const response = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: {
@@ -49,8 +54,12 @@ async function searchRedditViaFirecrawl(ticker: string, firecrawlKey: string): P
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        query: `${ticker} stock site:reddit.com/r/wallstreetbets OR site:reddit.com/r/stocks`,
-        limit: 5,
+        query: `${ticker} stock site:reddit.com/r/wallstreetbets OR site:reddit.com/r/stocks OR site:reddit.com/r/investing`,
+        limit: 10,
+        tbs: 'qdr:w', // Last week
+        scrapeOptions: {
+          formats: ['markdown'],
+        },
       }),
     });
     
@@ -60,6 +69,7 @@ async function searchRedditViaFirecrawl(ticker: string, firecrawlKey: string): P
     }
     
     const data = await response.json();
+    console.log(`Firecrawl returned ${data.data?.length || 0} results for ${ticker}`);
     return data.data || [];
     
   } catch (error) {
@@ -83,16 +93,21 @@ serve(async (req) => {
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[v6] Starting Reddit sentiment ingestion...');
+    console.log('[v7] Starting Reddit sentiment ingestion - ZERO ESTIMATION MODE');
     
-    // Popular tickers to track on Reddit
+    if (!firecrawlKey) {
+      console.error('FIRECRAWL_API_KEY not configured - cannot proceed without real data');
+      throw new Error('FIRECRAWL_API_KEY required for Reddit sentiment ingestion');
+    }
+    
+    // Popular tickers to track on Reddit (focus on high-activity stocks)
     const popularTickers = [
       'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'AMD', 'INTC',
       'SPY', 'QQQ', 'GME', 'AMC', 'PLTR', 'NIO', 'SOFI', 'RIVN', 'LCID',
       'BA', 'DIS', 'NFLX', 'PYPL', 'SQ', 'COIN', 'HOOD', 'MARA', 'RIOT'
     ];
     
-    // Get matching assets
+    // Get matching assets from database
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('id, ticker, name')
@@ -100,115 +115,70 @@ serve(async (req) => {
     
     if (assetsError) throw assetsError;
     
-    console.log(`Processing ${assets?.length || 0} tickers for Reddit sentiment`);
+    const validAssets = assets || [];
+    console.log(`Processing ${validAssets.length} tickers for Reddit sentiment via Firecrawl`);
     
     const signals: any[] = [];
-    let realDataCount = 0;
-    let estimatedCount = 0;
+    let skippedCount = 0;
     
-    // Try Firecrawl for top 10 tickers if API key available
-    const topTickers = (assets || []).slice(0, 10);
-    
-    if (firecrawlKey && topTickers.length > 0) {
-      console.log('Using Firecrawl for Reddit search...');
+    // Process each ticker via Firecrawl
+    for (const asset of validAssets) {
+      const results = await searchRedditViaFirecrawl(asset.ticker, firecrawlKey);
       
-      for (const asset of topTickers) {
-        const results = await searchRedditViaFirecrawl(asset.ticker, firecrawlKey);
-        
-        if (results.length > 0) {
-          let totalSentiment = 0;
-          let bullishCount = 0;
-          let bearishCount = 0;
-          
-          for (const result of results) {
-            const text = `${result.title || ''} ${result.description || ''} ${result.content || ''}`;
-            const sentiment = analyzeSentiment(text);
-            totalSentiment += sentiment;
-            
-            if (sentiment > 0.1) bullishCount++;
-            else if (sentiment < -0.1) bearishCount++;
-          }
-          
-          const avgSentiment = totalSentiment / results.length;
-          
-          signals.push({
-            ticker: asset.ticker.substring(0, 10),
-            source: 'reddit',
-            mention_count: results.length,
-            bullish_count: bullishCount,
-            bearish_count: bearishCount,
-            sentiment_score: Math.max(-1, Math.min(1, avgSentiment)),
-            post_volume: results.length,
-            metadata: {
-              estimated: false,
-              source: 'firecrawl_reddit_search',
-              fetched_at: new Date().toISOString(),
-            },
-            created_at: new Date().toISOString(),
-          });
-          
-          realDataCount++;
-          console.log(`${asset.ticker}: ${results.length} results via Firecrawl, sentiment: ${avgSentiment.toFixed(2)}`);
-        }
-        
-        // Rate limit
-        await new Promise(resolve => setTimeout(resolve, 500));
+      if (results.length === 0) {
+        console.log(`${asset.ticker}: No Reddit data found - SKIPPING (no estimation)`);
+        skippedCount++;
+        continue;
       }
-    }
-    
-    // Generate estimation-based data for remaining assets
-    const processedTickers = new Set(signals.map(s => s.ticker));
-    const remainingAssets = (assets || []).filter((a: any) => !processedTickers.has(a.ticker));
-    
-    // Get prices for popularity estimation
-    const { data: prices } = await supabase
-      .from('prices')
-      .select('ticker, close')
-      .in('ticker', remainingAssets.map((a: any) => a.ticker))
-      .order('date', { ascending: false });
-    
-    const priceMap = new Map<string, number>();
-    if (prices) {
-      for (const price of prices) {
-        if (!priceMap.has(price.ticker)) {
-          priceMap.set(price.ticker, price.close);
-        }
+      
+      // Analyze real results
+      let totalSentiment = 0;
+      let bullishCount = 0;
+      let bearishCount = 0;
+      const urls: string[] = [];
+      
+      for (const result of results) {
+        const text = `${result.title || ''} ${result.description || ''} ${result.markdown || ''}`;
+        const sentiment = analyzeSentiment(text);
+        totalSentiment += sentiment;
+        
+        if (sentiment > 0.1) bullishCount++;
+        else if (sentiment < -0.1) bearishCount++;
+        
+        if (result.url) urls.push(result.url);
       }
-    }
-    
-    for (const asset of remainingAssets) {
-      const price = priceMap.get(asset.ticker) || (50 + Math.random() * 200);
       
-      // Estimate Reddit activity based on price (proxy for market cap/popularity)
-      const popularityFactor = price > 200 ? 2.5 : price > 100 ? 1.8 : price > 50 ? 1.2 : 0.7;
-      
-      const bullishCount = Math.floor(Math.random() * 40 * popularityFactor) + 5;
-      const bearishCount = Math.floor(Math.random() * 25 * popularityFactor) + 3;
-      const mentionCount = bullishCount + bearishCount + Math.floor(Math.random() * 20 * popularityFactor);
-      const sentimentScore = (bullishCount - bearishCount) / (mentionCount || 1);
+      const avgSentiment = totalSentiment / results.length;
       
       signals.push({
         ticker: asset.ticker.substring(0, 10),
         source: 'reddit',
-        mention_count: Math.min(mentionCount, 500),
-        bullish_count: Math.min(bullishCount, 250),
-        bearish_count: Math.min(bearishCount, 250),
-        sentiment_score: Math.max(-1, Math.min(1, sentimentScore)),
-        post_volume: Math.min(mentionCount, 500),
+        mention_count: results.length,
+        bullish_count: bullishCount,
+        bearish_count: bearishCount,
+        sentiment_score: Math.max(-1, Math.min(1, avgSentiment)),
+        post_volume: results.length,
         metadata: {
-          estimated: true,
-          source: 'reddit_estimation_engine',
-          popularity_factor: popularityFactor,
+          data_source: 'firecrawl_reddit_search',
+          fetched_at: new Date().toISOString(),
+          sample_urls: urls.slice(0, 3),
+          version: 'v7_zero_estimation',
         },
         created_at: new Date().toISOString(),
       });
       
-      estimatedCount++;
+      console.log(`✅ ${asset.ticker}: ${results.length} posts, sentiment: ${avgSentiment.toFixed(2)} (${bullishCount} bullish, ${bearishCount} bearish)`);
+      
+      // Rate limit - respect Firecrawl limits
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
 
-    console.log(`Generated ${signals.length} Reddit signals (${realDataCount} real, ${estimatedCount} estimated)`);
+    console.log(`\n=== REDDIT SENTIMENT SUMMARY ===`);
+    console.log(`Total signals with REAL data: ${signals.length}`);
+    console.log(`Skipped (no data found): ${skippedCount}`);
+    console.log(`Estimated/fake data: 0 (ZERO ESTIMATION MODE)`);
 
-    // Insert signals
+    // Insert only real signals
     if (signals.length > 0) {
       const { error } = await supabase
         .from('social_signals')
@@ -216,17 +186,18 @@ serve(async (req) => {
 
       if (error) {
         console.error('Insert error:', error.message);
+        throw error;
       }
     }
 
     const durationMs = Date.now() - startTime;
-    const sourceUsed = realDataCount > 0 ? `Firecrawl (${realDataCount}) + Estimation (${estimatedCount})` : 'Estimation Engine';
+    const sourceUsed = 'Firecrawl Reddit Search';
     
     await logHeartbeat(supabase, {
       function_name: 'ingest-reddit-sentiment',
       status: 'success',
       rows_inserted: signals.length,
-      rows_skipped: 0,
+      rows_skipped: skippedCount,
       duration_ms: durationMs,
       source_used: sourceUsed,
     });
@@ -235,7 +206,7 @@ serve(async (req) => {
       etlName: 'ingest-reddit-sentiment',
       status: 'success',
       rowsInserted: signals.length,
-      rowsSkipped: 0,
+      rowsSkipped: skippedCount,
       sourceUsed: sourceUsed,
       duration: durationMs,
     });
@@ -244,9 +215,10 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         count: signals.length,
-        real_data: realDataCount,
-        estimated: estimatedCount,
-        source: sourceUsed
+        skipped: skippedCount,
+        estimated: 0,
+        source: sourceUsed,
+        version: 'v7_zero_estimation',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -260,7 +232,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Reddit Sentiment',
+        source_used: 'Firecrawl Reddit Search',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
