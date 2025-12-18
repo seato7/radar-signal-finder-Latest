@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
 import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
@@ -96,6 +96,13 @@ serve(async (req) => {
     console.log(`Extracted ${shortInterestData.length} short interest records`);
 
     if (shortInterestData.length === 0) {
+      // 🚨 CRITICAL: Send alert if no data was extracted
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-short-interest', {
+        sourcesAttempted: SHORT_INTEREST_SOURCES,
+        contentSizes: [scrapedContent.length],
+        reason: 'AI extraction returned 0 records from scraped short interest content'
+      });
+
       await logHeartbeat(supabase, {
         function_name: 'ingest-short-interest',
         status: 'success',

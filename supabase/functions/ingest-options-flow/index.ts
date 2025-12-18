@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
 import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
@@ -98,6 +98,13 @@ serve(async (req) => {
     console.log(`Extracted ${optionsData.length} options flow records`);
 
     if (optionsData.length === 0) {
+      // 🚨 CRITICAL: Send alert if no data was extracted
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
+        sourcesAttempted: OPTIONS_SOURCES,
+        contentSizes: [scrapedContent.length],
+        reason: 'AI extraction returned 0 records from scraped options content'
+      });
+
       await supabase.from('function_status').insert({
         function_name: 'ingest-options-flow',
         executed_at: new Date().toISOString(),

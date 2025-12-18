@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
 import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
@@ -109,6 +109,15 @@ serve(async (req) => {
     const darkPoolData = extracted.rows || [];
 
     console.log(`Extracted ${darkPoolData.length} dark pool records from scraped content`);
+
+    // 🚨 CRITICAL: Send alert if no data was extracted
+    if (darkPoolData.length === 0) {
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-dark-pool', {
+        sourcesAttempted: DARK_POOL_SOURCES,
+        contentSizes: [scrapedContent.length],
+        reason: 'AI extraction returned 0 records from scraped content'
+      });
+    }
 
     // Map to assets and prepare for insert
     const assetMap = new Map(topAssets.map((a: any) => [a.ticker, a.id]));

@@ -69,10 +69,31 @@ interface SlackAlert {
 }
 
 interface CriticalAlert {
-  type: 'fallback_exceeded' | 'auth_error' | 'orphaned_logs' | 'duplicate_keys' | 'sla_breach' | 'halted' | 'missing_source' | 'empty_table' | 'api_reliability';
+  type: 'fallback_exceeded' | 'auth_error' | 'orphaned_logs' | 'duplicate_keys' | 'sla_breach' | 'halted' | 'missing_source' | 'empty_table' | 'api_reliability' | 'no_data_found';
   etlName?: string;
   message: string;
   details?: Record<string, any>;
+}
+
+/**
+ * Send a "no data found" alert when a function runs but extracts zero records
+ * This is important because these functions should NOT estimate data
+ */
+export async function sendNoDataFoundAlert(
+  alerter: SlackAlerter,
+  functionName: string,
+  details: { sourcesAttempted: string[]; contentSizes?: number[]; reason?: string }
+): Promise<void> {
+  await alerter.sendCriticalAlert({
+    type: 'no_data_found',
+    etlName: functionName,
+    message: `Function completed but extracted 0 records. This may indicate: (1) scraping issues, (2) page structure changed, or (3) data genuinely unavailable. NO ESTIMATION was used.`,
+    details: {
+      sources: details.sourcesAttempted.join(', '),
+      contentSizes: details.contentSizes?.join(', ') || 'unknown',
+      reason: details.reason || 'No extractable data in scraped content'
+    }
+  });
 }
 
 export class SlackAlerter {
