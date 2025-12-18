@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -177,6 +177,14 @@ serve(async (req) => {
     console.log(`Total signals with REAL data: ${signals.length}`);
     console.log(`Skipped (no data found): ${skippedCount}`);
     console.log(`Estimated/fake data: 0 (ZERO ESTIMATION MODE)`);
+
+    // 🚨 CRITICAL: Send alert if no real data was found
+    if (signals.length === 0 && validAssets.length > 0) {
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-reddit-sentiment', {
+        sourcesAttempted: [`Firecrawl Reddit search for ${validAssets.length} tickers`],
+        reason: `All ${skippedCount} tickers returned no Reddit data via Firecrawl`
+      });
+    }
 
     // Insert only real signals
     if (signals.length > 0) {
