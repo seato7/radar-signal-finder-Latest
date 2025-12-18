@@ -118,15 +118,31 @@ async function fetchTradingViewOptions(ticker: string): Promise<any[]> {
 }
 
 // Generate options activity based on price data - GUARANTEED TO WORK
+// FIXED: Only generate for STOCKS (not crypto, forex, or mutual funds)
 async function generateOptionsSignals(supabase: any): Promise<any[]> {
   console.log('Generating options signals from price data...');
   
-  // Get recent price data - be explicit about what we need
+  // Get stock assets only (options only exist for stocks and ETFs)
+  const { data: stockAssets, error: assetError } = await supabase
+    .from('assets')
+    .select('ticker')
+    .in('asset_class', ['stock', 'etf'])
+    .limit(2000);
+  
+  if (assetError) {
+    console.error('Asset query error:', assetError);
+    return [];
+  }
+  
+  const validStockTickers = new Set((stockAssets || []).map((a: any) => a.ticker));
+  console.log(`Found ${validStockTickers.size} valid stock/ETF tickers`);
+  
+  // Get recent price data for stocks only
   const { data: prices, error } = await supabase
     .from('prices')
     .select('ticker, close, date')
     .order('date', { ascending: false })
-    .limit(1000);
+    .limit(5000);
   
   if (error) {
     console.error('Price query error:', error);
@@ -137,7 +153,7 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
   
   if (!prices || prices.length === 0) {
     console.log('No prices found, generating from static tickers');
-    // Fallback: generate for known tickers with estimated prices
+    // Fallback: generate for known stock tickers with estimated prices
     const fallbackTickers = [
       { ticker: 'SPY', price: 475 },
       { ticker: 'QQQ', price: 410 },
@@ -147,6 +163,8 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
       { ticker: 'TSLA', price: 250 },
       { ticker: 'AMD', price: 145 },
       { ticker: 'META', price: 350 },
+      { ticker: 'GOOGL', price: 140 },
+      { ticker: 'AMZN', price: 185 },
     ];
     
     const options: any[] = [];
@@ -158,7 +176,7 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
         option_type: 'call',
         strike_price: Math.round(price * 1.05),
         expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        premium: Math.round(price * 3), // Premium in cents
+        premium: Math.round(price * 3),
         volume: 1000 + Math.round(Math.random() * 5000),
         open_interest: 10000 + Math.round(Math.random() * 50000),
         implied_volatility: 25 + Math.random() * 20,
@@ -173,7 +191,7 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
         option_type: 'put',
         strike_price: Math.round(price * 0.95),
         expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        premium: Math.round(price * 3), // Premium in cents
+        premium: Math.round(price * 3),
         volume: 1000 + Math.round(Math.random() * 5000),
         open_interest: 10000 + Math.round(Math.random() * 50000),
         implied_volatility: 25 + Math.random() * 20,
@@ -188,15 +206,20 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
     return options;
   }
   
-  // Group by ticker and get latest price
+  // Group by ticker and get latest price - ONLY FOR STOCKS
   const tickerPrices = new Map<string, number>();
   for (const p of prices) {
+    // CRITICAL FIX: Only include stocks/ETFs, exclude crypto pairs and mutual funds
+    if (!validStockTickers.has(p.ticker)) continue;
+    if (p.ticker.includes('/')) continue; // Skip crypto pairs like BTC/USD
+    if (p.ticker.match(/[A-Z]{4,5}X$/)) continue; // Skip mutual funds ending in X
+    
     if (!tickerPrices.has(p.ticker)) {
       tickerPrices.set(p.ticker, p.close);
     }
   }
   
-  console.log(`Unique tickers with prices: ${tickerPrices.size}`);
+  console.log(`Unique STOCK tickers with prices: ${tickerPrices.size}`);
   
   const options: any[] = [];
   const today = new Date().toISOString();
@@ -210,7 +233,7 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
       option_type: 'call',
       strike_price: Math.round(price * 1.02 * 100) / 100,
       expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      premium: Math.round(price * 2), // Premium in cents
+      premium: Math.round(price * 2),
       volume: 500 + Math.round(Math.random() * 2000),
       open_interest: 5000 + Math.round(Math.random() * 10000),
       implied_volatility: 25 + Math.random() * 15,
@@ -226,7 +249,7 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
       option_type: 'put',
       strike_price: Math.round(price * 0.98 * 100) / 100,
       expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      premium: Math.round(price * 2), // Premium in cents
+      premium: Math.round(price * 2),
       volume: 500 + Math.round(Math.random() * 2000),
       open_interest: 5000 + Math.round(Math.random() * 10000),
       implied_volatility: 25 + Math.random() * 15,
@@ -237,7 +260,7 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
     });
   }
   
-  console.log(`Generated ${options.length} price-derived options signals`);
+  console.log(`Generated ${options.length} price-derived options signals for STOCKS ONLY`);
   return options;
 }
 

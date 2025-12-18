@@ -31,16 +31,40 @@ const TRACKED_MANAGERS = [
   { cik: '0001656456', name: 'Druckenmiller Family Office' },
 ];
 
-// CUSIP to ticker mapping for common securities
+// Extended CUSIP to ticker mapping for common securities
 const CUSIP_TO_TICKER: Record<string, string> = {
+  // Mega-cap tech
   '037833100': 'AAPL', '594918104': 'MSFT', '02079K107': 'GOOGL', '02079K305': 'GOOG',
   '023135106': 'AMZN', '88160R101': 'TSLA', '30303M102': 'META', '67066G104': 'NVDA',
-  '084670702': 'BRK.B', '478160104': 'JNJ', '92826C839': 'V', '46625H100': 'JPM',
-  '742718109': 'PG', '931142103': 'WMT', '22160K105': 'COST', '172967424': 'C',
+  // Berkshire
+  '084670702': 'BRK.B', '084670108': 'BRK.A',
+  // Financial
+  '478160104': 'JNJ', '92826C839': 'V', '46625H100': 'JPM', '172967424': 'C',
   '38141G104': 'GS', '61746B100': 'MS', '060505104': 'BAC', '949746101': 'WFC',
-  '00206R102': 'T', '92343V104': 'VZ', '30231G102': 'XOM', '166764100': 'CVX',
-  '717081103': 'PFE', '58933Y105': 'MRK', '002824100': 'ABBV', '457030107': 'INTC',
-  '00724F101': 'AMD', '88579Y101': 'TMO', '571903107': 'MA',
+  '571903107': 'MA', '09247X101': 'BLK', '78462F103': 'SPGI',
+  // Consumer
+  '742718109': 'PG', '931142103': 'WMT', '22160K105': 'COST', '617446448': 'MCD',
+  '035229103': 'SBUX', '191216100': 'KO', '713448108': 'PEP', '654106103': 'NKE',
+  // Healthcare
+  '717081103': 'PFE', '58933Y105': 'MRK', '002824100': 'ABBV', '88579Y101': 'TMO',
+  '91324P102': 'UNH', '532457108': 'LLY', '035420403': 'AMGN',
+  // Telecom
+  '00206R102': 'T', '92343V104': 'VZ', '879868103': 'TMUS',
+  // Energy
+  '30231G102': 'XOM', '166764100': 'CVX', '171196107': 'CHK',
+  // Semiconductors
+  '457030107': 'INTC', '00724F101': 'AMD', '79466L302': 'CRM', '007903107': 'AVGO',
+  '87612E106': 'TXN',
+  // Retail & E-commerce
+  '404119109': 'HD', '501044101': 'LOW', '882681109': 'TGT',
+  // Industrial
+  '097023105': 'BA', '149123101': 'CAT', '369604103': 'GE',
+  // Media & Entertainment
+  '254687106': 'DIS', '655844108': 'NFLX',
+  // ETFs
+  '78464A102': 'SPY', '46090E103': 'IWM', '73935A104': 'QQQ',
+  // Additional
+  '931427108': 'WBA', '929160109': 'VOO',
 };
 
 interface Filing13F {
@@ -359,16 +383,30 @@ serve(async (req) => {
         // Map CUSIP to ticker
         let ticker: string | null = CUSIP_TO_TICKER[holding.cusip] || null;
         if (!ticker) {
-          // Try to match by name
+          // Enhanced name matching for common stocks
           const nameUpper = holding.nameOfIssuer.toUpperCase();
-          if (nameUpper.includes('APPLE')) ticker = 'AAPL';
-          else if (nameUpper.includes('MICROSOFT')) ticker = 'MSFT';
-          else if (nameUpper.includes('AMAZON')) ticker = 'AMZN';
-          else if (nameUpper.includes('ALPHABET') || nameUpper.includes('GOOGLE')) ticker = 'GOOGL';
-          else if (nameUpper.includes('TESLA')) ticker = 'TSLA';
-          else if (nameUpper.includes('META') || nameUpper.includes('FACEBOOK')) ticker = 'META';
-          else if (nameUpper.includes('NVIDIA')) ticker = 'NVDA';
-          else if (nameUpper.includes('BERKSHIRE')) ticker = 'BRK.B';
+          const nameMatches: Record<string, string> = {
+            'APPLE': 'AAPL', 'MICROSOFT': 'MSFT', 'AMAZON': 'AMZN', 'ALPHABET': 'GOOGL',
+            'GOOGLE': 'GOOGL', 'TESLA': 'TSLA', 'META': 'META', 'FACEBOOK': 'META',
+            'NVIDIA': 'NVDA', 'BERKSHIRE': 'BRK.B', 'JPMORGAN': 'JPM', 'BANK OF AMERICA': 'BAC',
+            'WELLS FARGO': 'WFC', 'CITIGROUP': 'C', 'GOLDMAN': 'GS', 'MORGAN STANLEY': 'MS',
+            'VISA': 'V', 'MASTERCARD': 'MA', 'PROCTER': 'PG', 'WALMART': 'WMT',
+            'COSTCO': 'COST', 'JOHNSON': 'JNJ', 'PFIZER': 'PFE', 'MERCK': 'MRK',
+            'ABBVIE': 'ABBV', 'INTEL': 'INTC', 'AMD': 'AMD', 'SALESFORCE': 'CRM',
+            'DISNEY': 'DIS', 'NETFLIX': 'NFLX', 'CHEVRON': 'CVX', 'EXXON': 'XOM',
+            'AT&T': 'T', 'VERIZON': 'VZ', 'BOEING': 'BA', 'CATERPILLAR': 'CAT',
+            'HOME DEPOT': 'HD', 'COCA-COLA': 'KO', 'COCA COLA': 'KO', 'PEPSI': 'PEP',
+            'MCDONALD': 'MCD', 'STARBUCKS': 'SBUX', 'NIKE': 'NKE', 'ELI LILLY': 'LLY',
+            'UNITEDHEALTH': 'UNH', 'BROADCOM': 'AVGO', 'ADOBE': 'ADBE', 'ORACLE': 'ORCL',
+            'CISCO': 'CSCO', 'QUALCOMM': 'QCOM', 'PAYPAL': 'PYPL', 'SERVICENOW': 'NOW',
+          };
+          
+          for (const [pattern, symbol] of Object.entries(nameMatches)) {
+            if (nameUpper.includes(pattern)) {
+              ticker = symbol;
+              break;
+            }
+          }
         }
         
         // Validate ticker exists in our assets
