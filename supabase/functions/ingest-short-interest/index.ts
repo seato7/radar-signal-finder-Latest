@@ -134,61 +134,53 @@ serve(async (req) => {
       );
     }
 
-    // Get our tracked tickers
-    const trackedTickers = [...new Set(finraData.slice(0, 5000).map(r => r.ticker))];
-    const { data: assets } = await supabase
-      .from('assets')
-      .select('id, ticker')
-      .in('ticker', trackedTickers.slice(0, 500));
-    
-    const assetMap = new Map((assets || []).map((a: any) => [a.ticker, a.id]));
-    
-    // Prepare records for high-volume tickers we track (use only columns that exist)
-    const shortInterestRecords = finraData
-      .filter(r => assetMap.has(r.ticker) && r.total_volume > 10000)
-      .slice(0, 500)
-      .map(r => ({
-        ticker: r.ticker,
-        report_date: r.date,
-        short_volume: r.short_volume,
-        float_percentage: r.total_volume > 0 ? (r.short_volume / r.total_volume) * 100 : 0,
-        days_to_cover: 1,
-        metadata: {
-          source: 'FINRA_CDN',
-          market: r.market,
-          total_volume: r.total_volume,
-          short_exempt_volume: r.short_exempt_volume,
-          file_url: sourceUrl,
-          data_quality: 'official',
-        },
-        created_at: new Date().toISOString(),
-      }));
+    // Prepare ALL records for insertion (no filtering)
+    const reportDate = finraData[0]?.date;
+    const shortInterestRecords = finraData.map(r => ({
+      ticker: r.ticker,
+      report_date: r.date,
+      short_volume: r.short_volume,
+      float_percentage: r.total_volume > 0 ? (r.short_volume / r.total_volume) * 100 : 0,
+      days_to_cover: r.total_volume > 0 ? r.short_volume / (r.total_volume / 20) : 0, // Assume 20 trading days
+      metadata: {
+        source: 'FINRA_CDN',
+        market: r.market,
+        total_volume: r.total_volume,
+        short_exempt_volume: r.short_exempt_volume,
+        file_url: sourceUrl,
+        data_quality: 'official',
+      },
+      created_at: new Date().toISOString(),
+    }));
 
-    let insertedCount = 0;
-    if (shortInterestRecords.length > 0) {
-      console.log(`Attempting to insert ${shortInterestRecords.length} short interest records`);
-      
-      // Delete existing records for this date first, then insert fresh data
-      const reportDate = shortInterestRecords[0]?.report_date;
-      if (reportDate) {
-        await supabase.from('short_interest').delete().eq('report_date', reportDate);
-      }
-      
-      // Insert in batches of 100
-      for (let i = 0; i < shortInterestRecords.length; i += 100) {
-        const batch = shortInterestRecords.slice(i, i + 100);
-        const { data, error } = await supabase.from('short_interest').insert(batch).select('id');
-        
-        if (error) {
-          console.error(`Batch ${i} insert error:`, error);
-        } else {
-          insertedCount += (data?.length || 0);
-        }
-      }
-      console.log(`✅ Inserted ${insertedCount} short interest records from FINRA`);
-    } else {
-      console.log('⚠️ No tracked tickers matched FINRA data. Assets in filter:', Array.from(assetMap.keys()).slice(0, 10));
+    console.log(`Preparing to insert ${shortInterestRecords.length} short interest records`);
+
+    // Delete existing records for this date first
+    if (reportDate) {
+      const { error: deleteError } = await supabase.from('short_interest').delete().eq('report_date', reportDate);
+      if (deleteError) console.log('Delete error (ok if no existing):', deleteError);
     }
+
+    // Insert in batches of 500 for efficiency
+    let insertedCount = 0;
+    const batchSize = 500;
+    for (let i = 0; i < shortInterestRecords.length; i += batchSize) {
+      const batch = shortInterestRecords.slice(i, i + batchSize);
+      const { data, error } = await supabase.from('short_interest').insert(batch).select('id');
+      
+      if (error) {
+        console.error(`Batch ${Math.floor(i/batchSize)} insert error:`, error.message);
+      } else {
+        insertedCount += (data?.length || 0);
+      }
+      
+      // Progress logging
+      if ((i + batchSize) % 2000 === 0) {
+        console.log(`Progress: ${Math.min(i + batchSize, shortInterestRecords.length)}/${shortInterestRecords.length}`);
+      }
+    }
+    
+    console.log(`✅ Inserted ${insertedCount}/${shortInterestRecords.length} short interest records from FINRA`);
 
     const durationMs = Date.now() - startTime;
     
