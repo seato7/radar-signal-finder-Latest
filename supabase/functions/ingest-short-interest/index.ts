@@ -166,17 +166,28 @@ serve(async (req) => {
 
     let insertedCount = 0;
     if (shortInterestRecords.length > 0) {
-      // Upsert to avoid duplicates
-      const { error } = await supabase
-        .from('short_interest')
-        .upsert(shortInterestRecords, { onConflict: 'ticker,report_date' });
-
-      if (error) {
-        console.error('Insert error:', error);
-      } else {
-        insertedCount = shortInterestRecords.length;
-        console.log(`✅ Inserted ${insertedCount} short interest records from FINRA`);
+      console.log(`Attempting to insert ${shortInterestRecords.length} short interest records`);
+      
+      // Delete existing records for this date first, then insert fresh data
+      const reportDate = shortInterestRecords[0]?.report_date;
+      if (reportDate) {
+        await supabase.from('short_interest').delete().eq('report_date', reportDate);
       }
+      
+      // Insert in batches of 100
+      for (let i = 0; i < shortInterestRecords.length; i += 100) {
+        const batch = shortInterestRecords.slice(i, i + 100);
+        const { data, error } = await supabase.from('short_interest').insert(batch).select('id');
+        
+        if (error) {
+          console.error(`Batch ${i} insert error:`, error);
+        } else {
+          insertedCount += (data?.length || 0);
+        }
+      }
+      console.log(`✅ Inserted ${insertedCount} short interest records from FINRA`);
+    } else {
+      console.log('⚠️ No tracked tickers matched FINRA data. Assets in filter:', Array.from(assetMap.keys()).slice(0, 10));
     }
 
     const durationMs = Date.now() - startTime;
