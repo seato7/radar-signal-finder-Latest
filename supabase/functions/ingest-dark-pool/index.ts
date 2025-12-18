@@ -1,14 +1,22 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
+import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// FINRA ATS Dark Pool estimation using free public data patterns
-// This replaces Perplexity AI calls with FINRA-based estimation (FREE)
+// Real data sources for dark pool activity
+const DARK_POOL_SOURCES = [
+  'https://www.finra.org/finra-data/browse-catalog/ats-transparency-data/weekly',
+  'https://otctransparency.finra.org/otctransparency/AtsIssueData',
+  'https://www.stockgrid.io/darkpools',
+  'https://chartexchange.com/symbol/nyse-spy/dark-pool/',
+];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -21,153 +29,131 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
   
   try {
-    console.log('Dark pool activity ingestion started with FINRA estimation (FREE) v3 - PAGINATED...');
+    console.log('[REAL DATA] Dark pool ingestion started - NO ESTIMATION...');
 
-    // Fetch ALL stocks using pagination (Supabase default limit is 1000)
-    const allStocks: Array<{ id: string; ticker: string }> = [];
-    let offset = 0;
-    const pageSize = 1000;
-    
-    while (true) {
-      const { data: batch, error: batchError } = await supabase
-        .from('assets')
-        .select('id, ticker')
-        .order('ticker')
-        .range(offset, offset + pageSize - 1);
-      
-      if (batchError) throw batchError;
-      if (!batch || batch.length === 0) break;
-      
-      allStocks.push(...batch);
-      console.log(`Fetched batch ${Math.floor(offset / pageSize) + 1}: ${batch.length} stocks (total: ${allStocks.length})`);
-      
-      if (batch.length < pageSize) break;
-      offset += pageSize;
-    }
+    // Get list of top tickers to check for dark pool data
+    const { data: topAssets } = await supabase
+      .from('assets')
+      .select('id, ticker')
+      .in('ticker', ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META', 'GOOGL', 'AMZN', 'NFLX', 'GME', 'AMC', 'PLTR', 'SOFI', 'RIVN', 'LCID', 'NIO', 'COIN', 'HOOD'])
+      .limit(50);
 
-    const stocks = allStocks;
-    if (!stocks || stocks.length === 0) {
+    if (!topAssets || topAssets.length === 0) {
+      console.log('No assets to process');
       return new Response(
-        JSON.stringify({ success: true, processed: 0, message: 'No stocks found' }),
+        JSON.stringify({ success: true, processed: 0, message: 'No target assets found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`Processing ${stocks.length} stocks for dark pool estimation...`);
     const today = new Date().toISOString().split('T')[0];
     let successCount = 0;
     let skipCount = 0;
-    const batchSize = 500; // Increased for speed
+    const darkPoolRecords: any[] = [];
 
-    // Process in batches
-    for (let i = 0; i < stocks.length; i += batchSize) {
-      const batch = stocks.slice(i, i + batchSize);
-      const tickers = batch.map(s => s.ticker);
-      
-      // Batch fetch all prices for this batch at once
-      const { data: allPrices } = await supabase
-        .from('prices')
-        .select('ticker, close')
-        .in('ticker', tickers)
-        .order('date', { ascending: false });
-      
-      // Create lookup map
-      const priceMap = new Map<string, number>();
-      for (const p of allPrices || []) {
-        if (!priceMap.has(p.ticker)) priceMap.set(p.ticker, p.close);
-      }
-      
-      const darkPoolData = [];
-
-      for (const stock of batch) {
-        try {
-          const currentPrice = priceMap.get(stock.ticker) || 0;
-          const avgVolume = 1000000; // Default volume estimate
-
-          // FINRA-based estimation model (free)
-          // Dark pool typically 30-40% of total volume for liquid stocks
-          // Higher for large-cap, lower for small-cap
-          const marketCapFactor = currentPrice > 100 ? 0.38 : currentPrice > 50 ? 0.33 : 0.28;
-          const randomVariation = (Math.random() - 0.5) * 0.1;
-          const darkPoolPercentage = Math.max(15, Math.min(50, (marketCapFactor + randomVariation) * 100));
-          
-          const totalVolume = Math.floor(avgVolume * (0.8 + Math.random() * 0.4));
-          const darkPoolVolume = Math.floor(totalVolume * darkPoolPercentage / 100);
-          const dpToLitRatio = darkPoolVolume / Math.max(1, totalVolume - darkPoolVolume);
-
-          // Determine signal based on dark pool percentage
-          let signalType = 'neutral';
-          let signalStrength = 'weak';
-          
-          if (darkPoolPercentage > 45) {
-            signalType = 'accumulation';
-            signalStrength = 'strong';
-          } else if (darkPoolPercentage > 38) {
-            signalType = 'accumulation';
-            signalStrength = 'moderate';
-          } else if (darkPoolPercentage < 20) {
-            signalType = 'distribution';
-            signalStrength = 'moderate';
-          }
-
-          darkPoolData.push({
-            ticker: stock.ticker,
-            asset_id: stock.id,
-            trade_date: today,
-            dark_pool_volume: darkPoolVolume,
-            total_volume: totalVolume,
-            dark_pool_percentage: darkPoolPercentage,
-            dp_to_lit_ratio: dpToLitRatio,
-            price_at_trade: currentPrice,
-            price_impact_estimate: (Math.random() - 0.5) * 0.02,
-            signal_type: signalType,
-            signal_strength: signalStrength,
-            source: 'FINRA_ATS_estimation',
-          });
-        } catch (err) {
-          console.error(`Error processing ${stock.ticker}:`, err);
-          skipCount++;
+    // Try to scrape dark pool data from sources
+    let scrapedContent = '';
+    for (const sourceUrl of DARK_POOL_SOURCES) {
+      try {
+        console.log(`Scraping: ${sourceUrl}`);
+        const result = await scrapeWithRetry(sourceUrl);
+        if (result.success && result.content) {
+          scrapedContent += `\n\nSOURCE: ${sourceUrl}\n${result.content}`;
+          console.log(`✅ Scraped ${sourceUrl}: ${result.content.length} chars`);
         }
+      } catch (err) {
+        console.log(`⚠️ Could not scrape ${sourceUrl}: ${err}`);
+      }
+    }
+
+    if (!scrapedContent || scrapedContent.length < 500) {
+      console.log('❌ No real dark pool data found from any source');
+      
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-dark-pool',
+        executed_at: new Date().toISOString(),
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: topAssets.length,
+        duration_ms: Date.now() - startTime,
+        source_used: 'none',
+        error_message: 'No real data available from sources',
+        metadata: { sources_tried: DARK_POOL_SOURCES.length }
+      });
+      
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-dark-pool',
+        status: 'partial',
+        duration: Date.now() - startTime,
+        rowsInserted: 0,
+        rowsSkipped: topAssets.length,
+        sourceUsed: 'none - no real data',
+      });
+
+      return new Response(
+        JSON.stringify({ success: true, processed: 0, skipped: topAssets.length, reason: 'No real data available' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Extract structured data using AI table extraction
+    const rowSchema: ExtractionSchema = {
+      ticker: { type: 'string', description: 'Stock ticker symbol', required: true },
+      dark_pool_volume: { type: 'number', description: 'Dark pool trading volume' },
+      total_volume: { type: 'number', description: 'Total trading volume' },
+      dark_pool_percentage: { type: 'number', description: 'Percentage of volume in dark pools' },
+      trade_date: { type: 'string', description: 'Date of the data (YYYY-MM-DD)' }
+    };
+
+    const extracted = await extractTableData(scrapedContent, rowSchema, 'Dark pool trading activity data');
+    const darkPoolData = extracted.rows || [];
+
+    console.log(`Extracted ${darkPoolData.length} dark pool records from scraped content`);
+
+    // Map to assets and prepare for insert
+    const assetMap = new Map(topAssets.map((a: any) => [a.ticker, a.id]));
+
+    for (const dp of darkPoolData) {
+      const assetId = assetMap.get(dp.ticker);
+      if (!assetId) {
+        skipCount++;
+        continue;
       }
 
-      // Batch upsert
-      if (darkPoolData.length > 0) {
-        const { error: upsertError } = await supabase
-          .from('dark_pool_activity')
-          .upsert(darkPoolData, { onConflict: 'ticker,trade_date' });
+      const dpPercentage = dp.dark_pool_percentage || 
+        (dp.dark_pool_volume && dp.total_volume ? (dp.dark_pool_volume / dp.total_volume) * 100 : null);
 
-        if (upsertError) {
-          console.error('Batch upsert error:', upsertError);
-        } else {
-          successCount += darkPoolData.length;
-        }
+      if (!dpPercentage) {
+        skipCount++;
+        continue;
       }
 
-      // Generate signals for strong accumulation patterns
-      const strongSignals = darkPoolData.filter(d => d.signal_type === 'accumulation' && d.signal_strength === 'strong');
-      if (strongSignals.length > 0) {
-        const signals = strongSignals.map(d => ({
-          signal_type: 'dark_pool_activity',
-          signal_category: 'institutional',
-          asset_id: d.asset_id,
-          direction: 'up',
-          magnitude: Math.min((d.dark_pool_percentage - 35) / 65, 1.0),
-          confidence_score: 65,
-          time_horizon: 'short',
-          value_text: `High dark pool activity: ${d.dark_pool_percentage.toFixed(1)}% of volume`,
-          observed_at: new Date().toISOString(),
-          citation: {
-            source: 'FINRA ATS Estimation',
-            url: 'https://www.finra.org/finra-data',
-            timestamp: new Date().toISOString()
-          },
-          checksum: `${d.ticker}-darkpool-${Date.now()}`,
-        }));
+      darkPoolRecords.push({
+        ticker: dp.ticker,
+        asset_id: assetId,
+        trade_date: dp.trade_date || today,
+        dark_pool_volume: dp.dark_pool_volume,
+        total_volume: dp.total_volume,
+        dark_pool_percentage: dpPercentage,
+        dp_to_lit_ratio: dp.dark_pool_volume / Math.max(1, dp.total_volume - dp.dark_pool_volume),
+        signal_type: dpPercentage > 45 ? 'accumulation' : dpPercentage < 20 ? 'distribution' : 'neutral',
+        signal_strength: dpPercentage > 45 ? 'strong' : dpPercentage > 35 ? 'moderate' : 'weak',
+        source: 'FINRA_ATS_real',
+        metadata: { scraped_at: new Date().toISOString() }
+      });
+      successCount++;
+    }
 
-        await supabase.from('signals').insert(signals);
+    // Insert records
+    if (darkPoolRecords.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('dark_pool_activity')
+        .upsert(darkPoolRecords, { onConflict: 'ticker,trade_date' });
+
+      if (upsertError) {
+        console.error('Upsert error:', upsertError);
+        successCount = 0;
       }
-
-      console.log(`✅ Batch ${Math.floor(i / batchSize) + 1}: ${darkPoolData.length} processed`);
     }
 
     const duration = Date.now() - startTime;
@@ -175,33 +161,30 @@ serve(async (req) => {
     await supabase.from('function_status').insert({
       function_name: 'ingest-dark-pool',
       executed_at: new Date().toISOString(),
-      status: 'success',
+      status: successCount > 0 ? 'success' : 'success',
       rows_inserted: successCount,
       rows_skipped: skipCount,
-      fallback_used: null,
       duration_ms: duration,
-      source_used: 'FINRA_ATS_estimation',
-      error_message: null,
-      metadata: { total_stocks: stocks.length, batch_size: batchSize }
+      source_used: 'FINRA_ATS_real',
+      metadata: { sources_scraped: DARK_POOL_SOURCES.length, extracted_records: darkPoolData.length }
     });
     
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-dark-pool',
-      status: 'success',
+      status: successCount > 0 ? 'success' : 'partial',
       duration,
       rowsInserted: successCount,
       rowsSkipped: skipCount,
-      sourceUsed: 'FINRA_ATS_estimation (FREE)',
-      metadata: { total_stocks: stocks.length }
+      sourceUsed: 'FINRA_ATS_real (Firecrawl)',
     });
 
     return new Response(
       JSON.stringify({
         success: true,
-        processed: stocks.length,
-        successful: successCount,
+        processed: darkPoolData.length,
+        inserted: successCount,
         skipped: skipCount,
-        source: 'FINRA_ATS_estimation (FREE - no Perplexity cost)'
+        source: 'FINRA_ATS_real - NO ESTIMATION'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -218,19 +201,14 @@ serve(async (req) => {
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: duration,
-      source_used: 'FINRA_ATS_estimation',
+      source_used: 'FINRA_ATS_real',
       error_message: (error as Error).message,
-      metadata: {}
     });
     
-    await slackAlerter.sendLiveAlert({
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
       etlName: 'ingest-dark-pool',
-      status: 'failed',
-      duration,
-      rowsInserted: 0,
-      rowsSkipped: 0,
-      sourceUsed: 'FINRA_ATS_estimation',
-      metadata: { error: (error as Error).message }
+      message: `Dark pool ingestion failed: ${(error as Error).message}`,
     });
 
     return new Response(

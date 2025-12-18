@@ -1,13 +1,21 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
+import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v4 - Full pagination for all 8201 assets using estimation instead of per-ticker API calls
+// Real options flow data sources
+const OPTIONS_SOURCES = [
+  'https://www.barchart.com/options/unusual-activity/stocks',
+  'https://unusualwhales.com/flow',
+  'https://marketchameleon.com/Reports/UnusualOptionVolumeReport',
+  'https://www.tradingview.com/symbols/SPY/options/',
+];
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -21,149 +29,153 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v4] Starting options flow ingestion with full pagination...');
+    console.log('[REAL DATA] Options flow ingestion - NO ESTIMATION...');
     
-    // Fetch ALL assets with pagination (only stocks have options)
-    const batchSize = 1000;
-    let allAssets: any[] = [];
-    let offset = 0;
+    // Scrape options flow data
+    let scrapedContent = '';
+    let sourceUsed = '';
     
-    while (true) {
-      const { data: batch, error } = await supabase
-        .from('assets')
-        .select('id, ticker, name, asset_class')
-        .range(offset, offset + batchSize - 1);
-      
-      if (error) throw error;
-      if (!batch || batch.length === 0) break;
-      
-      allAssets = allAssets.concat(batch);
-      console.log(`Fetched assets batch: ${offset} to ${offset + batch.length}`);
-      
-      if (batch.length < batchSize) break;
-      offset += batchSize;
-    }
-
-    console.log(`Total assets to process: ${allAssets.length}`);
-
-    // Get all tickers for bulk price fetch
-    const allTickers = allAssets.map(a => a.ticker);
-    
-    // Fetch prices in bulk
-    const priceMap = new Map<string, number>();
-    const priceChunkSize = 500;
-    
-    for (let i = 0; i < allTickers.length; i += priceChunkSize) {
-      const tickerChunk = allTickers.slice(i, i + priceChunkSize);
-      const { data: prices } = await supabase
-        .from('prices')
-        .select('ticker, close')
-        .in('ticker', tickerChunk)
-        .order('date', { ascending: false });
-      
-      if (prices) {
-        for (const price of prices) {
-          if (!priceMap.has(price.ticker)) {
-            priceMap.set(price.ticker, price.close);
-          }
+    for (const sourceUrl of OPTIONS_SOURCES) {
+      try {
+        console.log(`Scraping options: ${sourceUrl}`);
+        const result = await scrapeWithRetry(sourceUrl);
+        if (result.success && result.content && result.content.length > 500) {
+          scrapedContent += `\n\nSOURCE: ${sourceUrl}\n${result.content}`;
+          sourceUsed = sourceUrl;
+          console.log(`✅ Scraped: ${result.content.length} chars`);
         }
-      }
-    }
-    
-    console.log(`Loaded prices for ${priceMap.size} tickers`);
-
-    const optionsFlow: any[] = [];
-    const today = new Date();
-
-    for (const asset of allAssets) {
-      const currentPrice = priceMap.get(asset.ticker) || (50 + Math.random() * 450);
-      
-      // Generate 0-3 options flow entries per asset based on market cap proxy (price)
-      const numOptions = currentPrice > 200 ? 2 + Math.floor(Math.random() * 2) : 
-                         currentPrice > 50 ? 1 + Math.floor(Math.random() * 2) : 
-                         Math.floor(Math.random() * 2);
-      
-      for (let i = 0; i < numOptions; i++) {
-        const isCall = Math.random() > 0.45; // Slight call bias
-        const strikeMultiplier = isCall ? (1 + Math.random() * 0.15) : (1 - Math.random() * 0.15);
-        const strikePrice = Math.round(currentPrice * strikeMultiplier * 100) / 100;
-        
-        // Expiration 7-90 days out
-        const daysToExpiry = 7 + Math.floor(Math.random() * 83);
-        const expirationDate = new Date(today.getTime() + daysToExpiry * 24 * 60 * 60 * 1000);
-        
-        const volume = Math.floor(Math.random() * 5000) + 100;
-        const premium = Math.floor(currentPrice * volume * (0.01 + Math.random() * 0.05));
-        const openInterest = Math.floor(volume * (1 + Math.random() * 3));
-        const impliedVolatility = Math.round((0.15 + Math.random() * 0.6) * 100) / 100;
-        
-        let flowType = 'split';
-        if (premium > 1000000) flowType = 'block';
-        else if (premium > 300000) flowType = 'sweep';
-        
-        const sentiment = isCall ? 'bullish' : 'bearish';
-        
-        optionsFlow.push({
-          ticker: asset.ticker.substring(0, 10),
-          option_type: isCall ? 'call' : 'put',
-          strike_price: strikePrice,
-          expiration_date: expirationDate.toISOString().split('T')[0],
-          premium,
-          volume,
-          open_interest: openInterest,
-          implied_volatility: impliedVolatility,
-          flow_type: flowType,
-          sentiment,
-          trade_date: new Date().toISOString(),
-          metadata: {
-            estimated: true,
-            current_price: currentPrice,
-            data_source: 'options_estimation_engine',
-          },
-        });
+      } catch (err) {
+        console.log(`⚠️ Could not scrape ${sourceUrl}`);
       }
     }
 
-    console.log(`Generated ${optionsFlow.length} options flow records`);
+    if (!scrapedContent || scrapedContent.length < 500) {
+      console.log('❌ No real options flow data available');
+      
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-options-flow',
+        executed_at: new Date().toISOString(),
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'none',
+        error_message: 'No real options data from sources',
+      });
 
-    // Bulk insert in batches
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-options-flow',
+        status: 'partial',
+        rowsInserted: 0,
+        rowsSkipped: 0,
+        sourceUsed: 'none - no real data',
+        duration: Date.now() - startTime,
+      });
+
+      return new Response(
+        JSON.stringify({ success: true, count: 0, reason: 'No real options data available' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Extract structured options data
+    const rowSchema: ExtractionSchema = {
+      ticker: { type: 'string', description: 'Stock ticker symbol', required: true },
+      option_type: { type: 'string', description: 'call or put' },
+      strike_price: { type: 'number', description: 'Strike price', required: true },
+      expiration_date: { type: 'string', description: 'Expiration date (YYYY-MM-DD)' },
+      premium: { type: 'number', description: 'Premium paid in dollars' },
+      volume: { type: 'number', description: 'Number of contracts', required: true },
+      open_interest: { type: 'number', description: 'Open interest' },
+      implied_volatility: { type: 'number', description: 'Implied volatility as decimal' },
+      flow_type: { type: 'string', description: 'sweep, block, or split' },
+      sentiment: { type: 'string', description: 'bullish or bearish' }
+    };
+
+    const extracted = await extractTableData(scrapedContent, rowSchema, 'Unusual options activity and options flow data');
+    const optionsData = extracted.rows || [];
+
+    console.log(`Extracted ${optionsData.length} options flow records`);
+
+    if (optionsData.length === 0) {
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-options-flow',
+        executed_at: new Date().toISOString(),
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: sourceUsed || 'scraped',
+        error_message: 'No extractable options data in content',
+      });
+
+      return new Response(
+        JSON.stringify({ success: true, count: 0, reason: 'No extractable options data' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Prepare records for insert
+    const optionsFlow = optionsData.map((opt: any) => ({
+      ticker: String(opt.ticker).substring(0, 10),
+      option_type: opt.option_type || 'call',
+      strike_price: opt.strike_price,
+      expiration_date: opt.expiration_date,
+      premium: opt.premium || 0,
+      volume: opt.volume,
+      open_interest: opt.open_interest || 0,
+      implied_volatility: opt.implied_volatility || 0,
+      flow_type: opt.flow_type || 'split',
+      sentiment: opt.sentiment || (opt.option_type === 'call' ? 'bullish' : 'bearish'),
+      trade_date: new Date().toISOString(),
+      metadata: {
+        source: sourceUsed,
+        scraped_at: new Date().toISOString(),
+      },
+    }));
+
+    // Insert records
+    let insertedCount = 0;
     if (optionsFlow.length > 0) {
-      const insertBatchSize = 500;
-      for (let i = 0; i < optionsFlow.length; i += insertBatchSize) {
-        const batch = optionsFlow.slice(i, i + insertBatchSize);
-        const { error } = await supabase
-          .from('options_flow')
-          .insert(batch);
+      const { error } = await supabase
+        .from('options_flow')
+        .insert(optionsFlow);
 
-        if (error) {
-          console.error(`Insert error at batch ${i}:`, error.message);
-        }
+      if (error) {
+        console.error('Insert error:', error.message);
+      } else {
+        insertedCount = optionsFlow.length;
       }
     }
 
-    // Log heartbeat
+    const durationMs = Date.now() - startTime;
+
     await supabase.from('function_status').insert({
       function_name: 'ingest-options-flow',
       executed_at: new Date().toISOString(),
       status: 'success',
-      rows_inserted: optionsFlow.length,
-      rows_skipped: 0,
-      duration_ms: Date.now() - startTime,
-      source_used: 'Options Estimation Engine',
-      metadata: { assets_processed: allAssets.length, version: 'v4' }
+      rows_inserted: insertedCount,
+      rows_skipped: optionsData.length - insertedCount,
+      duration_ms: durationMs,
+      source_used: 'Options_flow_real',
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-options-flow',
-      status: 'success',
-      rowsInserted: optionsFlow.length,
-      rowsSkipped: 0,
-      sourceUsed: 'Options Estimation Engine',
-      duration: Date.now() - startTime,
+      status: insertedCount > 0 ? 'success' : 'partial',
+      rowsInserted: insertedCount,
+      rowsSkipped: optionsData.length - insertedCount,
+      sourceUsed: 'Options_flow_real (Firecrawl)',
+      duration: durationMs,
     });
 
     return new Response(
-      JSON.stringify({ success: true, count: optionsFlow.length, assets_processed: allAssets.length }),
+      JSON.stringify({ 
+        success: true, 
+        count: insertedCount, 
+        extracted: optionsData.length,
+        source: 'Options_flow_real - NO ESTIMATION' 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
