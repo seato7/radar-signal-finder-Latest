@@ -323,17 +323,131 @@ serve(async (req) => {
   );
 
   try {
-    // Load valid tickers
+    // Load ALL assets with name and ticker for dynamic matching
     const { data: assets } = await supabase
       .from('assets')
-      .select('ticker')
-      .limit(30000);
+      .select('ticker, name')
+      .limit(50000);
     
     const validTickers = new Set((assets || []).map(a => a.ticker.toUpperCase()));
+    
+    // Build name-to-ticker lookup (normalize names for matching)
+    const nameToTicker = new Map<string, string>();
+    const wordToTickers = new Map<string, string[]>();
+    
+    for (const asset of (assets || [])) {
+      const name = asset.name?.toUpperCase() || '';
+      const ticker = asset.ticker.toUpperCase();
+      
+      // Exact name match
+      nameToTicker.set(name, ticker);
+      
+      // Also index by significant words (3+ chars, not common words)
+      const words = name.split(/[\s,.-]+/).filter((w: string) => 
+        w.length >= 3 && !['INC', 'CORP', 'LTD', 'LLC', 'PLC', 'THE', 'AND', 'COM', 'CLASS'].includes(w)
+      );
+      for (const word of words) {
+        if (!wordToTickers.has(word)) {
+          wordToTickers.set(word, []);
+        }
+        wordToTickers.get(word)!.push(ticker);
+      }
+    }
+    
+    console.log(`Loaded ${validTickers.size} tickers and ${nameToTicker.size} name mappings`);
+    
+    // Function to find ticker from company name
+    function findTickerFromName(issuerName: string): string | null {
+      const nameUpper = issuerName.toUpperCase().trim();
+      
+      // 1. Try CUSIP mapping first
+      // (handled before this function is called)
+      
+      // 2. Try exact name match
+      if (nameToTicker.has(nameUpper)) {
+        return nameToTicker.get(nameUpper)!;
+      }
+      
+      // 3. Try common variations (remove INC, CORP, etc.)
+      const cleanName = nameUpper
+        .replace(/\s+(INC|CORP|CORPORATION|LTD|LIMITED|PLC|LLC|CO|COMPANY|HOLDINGS?|GROUP|ENTERPRISES?)\.?$/i, '')
+        .replace(/,\s*(INC|CORP|LTD)\.?$/i, '')
+        .trim();
+      
+      if (nameToTicker.has(cleanName)) {
+        return nameToTicker.get(cleanName)!;
+      }
+      
+      // 4. Try first significant word match (for unique company names)
+      const words = cleanName.split(/[\s,.-]+/).filter((w: string) => 
+        w.length >= 4 && !['INC', 'CORP', 'LTD', 'LLC', 'PLC', 'THE', 'AND', 'COM', 'CLASS', 'COMMON', 'STOCK'].includes(w)
+      );
+      
+      if (words.length > 0) {
+        const firstWord = words[0];
+        const matches = wordToTickers.get(firstWord);
+        if (matches && matches.length === 1) {
+          // Only return if unambiguous match
+          return matches[0];
+        }
+        // Try first two words for more unique matching
+        if (words.length >= 2) {
+          const twoWordMatches = wordToTickers.get(words[0])?.filter(t => {
+            const assetName = [...nameToTicker.entries()].find(([_, v]) => v === t)?.[0] || '';
+            return assetName.includes(words[1]);
+          });
+          if (twoWordMatches && twoWordMatches.length === 1) {
+            return twoWordMatches[0];
+          }
+        }
+      }
+      
+      // 5. Hardcoded common name patterns (fallback)
+      const nameMatches: Record<string, string> = {
+        'APPLE': 'AAPL', 'MICROSOFT': 'MSFT', 'AMAZON': 'AMZN', 'ALPHABET': 'GOOGL',
+        'GOOGLE': 'GOOGL', 'TESLA': 'TSLA', 'META PLATFORMS': 'META', 'FACEBOOK': 'META',
+        'NVIDIA': 'NVDA', 'BERKSHIRE': 'BRK.B', 'JPMORGAN': 'JPM', 'BANK OF AMERICA': 'BAC',
+        'WELLS FARGO': 'WFC', 'CITIGROUP': 'C', 'GOLDMAN SACHS': 'GS', 'MORGAN STANLEY': 'MS',
+        'VISA INC': 'V', 'MASTERCARD': 'MA', 'PROCTER': 'PG', 'WALMART': 'WMT',
+        'COSTCO': 'COST', 'JOHNSON & JOHNSON': 'JNJ', 'PFIZER': 'PFE', 'MERCK': 'MRK',
+        'ABBVIE': 'ABBV', 'INTEL CORP': 'INTC', 'ADVANCED MICRO': 'AMD', 'SALESFORCE': 'CRM',
+        'DISNEY': 'DIS', 'NETFLIX': 'NFLX', 'CHEVRON': 'CVX', 'EXXON': 'XOM',
+        'AT&T': 'T', 'VERIZON': 'VZ', 'BOEING': 'BA', 'CATERPILLAR': 'CAT',
+        'HOME DEPOT': 'HD', 'COCA-COLA': 'KO', 'COCA COLA': 'KO', 'PEPSICO': 'PEP',
+        'MCDONALD': 'MCD', 'STARBUCKS': 'SBUX', 'NIKE': 'NKE', 'ELI LILLY': 'LLY',
+        'UNITEDHEALTH': 'UNH', 'BROADCOM': 'AVGO', 'ADOBE': 'ADBE', 'ORACLE': 'ORCL',
+        'CISCO': 'CSCO', 'QUALCOMM': 'QCOM', 'PAYPAL': 'PYPL', 'SERVICENOW': 'NOW',
+        'SNOWFLAKE': 'SNOW', 'UBER': 'UBER', 'AIRBNB': 'ABNB', 'PALANTIR': 'PLTR',
+        'CROWDSTRIKE': 'CRWD', 'DATADOG': 'DDOG', 'SHOPIFY': 'SHOP', 'SQUARE': 'SQ',
+        'BLOCK INC': 'SQ', 'SPOTIFY': 'SPOT', 'ZOOM VIDEO': 'ZM', 'DOCUSIGN': 'DOCU',
+        'TWILIO': 'TWLO', 'OKTA': 'OKTA', 'SPLUNK': 'SPLK', 'PALO ALTO': 'PANW',
+        'FORTINET': 'FTNT', 'ZSCALER': 'ZS', 'CLOUDFLARE': 'NET', 'MONGODB': 'MDB',
+        'ELASTIC': 'ESTC', 'CONFLUENT': 'CFLT', 'HASHICORP': 'HCP', 'GITLAB': 'GTLB',
+        'COINBASE': 'COIN', 'ROBINHOOD': 'HOOD', 'SOFI': 'SOFI', 'AFFIRM': 'AFRM',
+        'DOORDASH': 'DASH', 'INSTACART': 'CART', 'RIVIAN': 'RIVN', 'LUCID': 'LCID',
+        'NIO': 'NIO', 'XPENG': 'XPEV', 'LI AUTO': 'LI', 'GENERAL MOTORS': 'GM',
+        'FORD MOTOR': 'F', 'STELLANTIS': 'STLA', 'TOYOTA': 'TM', 'HONDA': 'HMC',
+        'TAIWAN SEMI': 'TSM', 'ASML': 'ASML', 'APPLIED MATERIAL': 'AMAT', 'LAM RESEARCH': 'LRCX',
+        'KLA CORP': 'KLAC', 'SYNOPSYS': 'SNPS', 'CADENCE': 'CDNS', 'MARVELL': 'MRVL',
+        'MICRON': 'MU', 'WESTERN DIGITAL': 'WDC', 'SEAGATE': 'STX', 'NETAPP': 'NTAP',
+      };
+      
+      for (const [pattern, symbol] of Object.entries(nameMatches)) {
+        if (nameUpper.includes(pattern)) {
+          if (validTickers.has(symbol)) {
+            return symbol;
+          }
+        }
+      }
+      
+      return null;
+    }
     
     let totalInserted = 0;
     let totalSkipped = 0;
     let managersProcessed = 0;
+    let tickersMatched = 0;
+    let tickersUnmatched = 0;
     const signalsGenerated: Array<{
       ticker: string;
       manager: string;
@@ -380,38 +494,27 @@ serve(async (req) => {
       
       // Insert holdings with changes
       for (const holding of currentFiling.holdings) {
-        // Map CUSIP to ticker
+        // Map CUSIP to ticker - try multiple methods
         let ticker: string | null = CUSIP_TO_TICKER[holding.cusip] || null;
+        
         if (!ticker) {
-          // Enhanced name matching for common stocks
-          const nameUpper = holding.nameOfIssuer.toUpperCase();
-          const nameMatches: Record<string, string> = {
-            'APPLE': 'AAPL', 'MICROSOFT': 'MSFT', 'AMAZON': 'AMZN', 'ALPHABET': 'GOOGL',
-            'GOOGLE': 'GOOGL', 'TESLA': 'TSLA', 'META': 'META', 'FACEBOOK': 'META',
-            'NVIDIA': 'NVDA', 'BERKSHIRE': 'BRK.B', 'JPMORGAN': 'JPM', 'BANK OF AMERICA': 'BAC',
-            'WELLS FARGO': 'WFC', 'CITIGROUP': 'C', 'GOLDMAN': 'GS', 'MORGAN STANLEY': 'MS',
-            'VISA': 'V', 'MASTERCARD': 'MA', 'PROCTER': 'PG', 'WALMART': 'WMT',
-            'COSTCO': 'COST', 'JOHNSON': 'JNJ', 'PFIZER': 'PFE', 'MERCK': 'MRK',
-            'ABBVIE': 'ABBV', 'INTEL': 'INTC', 'AMD': 'AMD', 'SALESFORCE': 'CRM',
-            'DISNEY': 'DIS', 'NETFLIX': 'NFLX', 'CHEVRON': 'CVX', 'EXXON': 'XOM',
-            'AT&T': 'T', 'VERIZON': 'VZ', 'BOEING': 'BA', 'CATERPILLAR': 'CAT',
-            'HOME DEPOT': 'HD', 'COCA-COLA': 'KO', 'COCA COLA': 'KO', 'PEPSI': 'PEP',
-            'MCDONALD': 'MCD', 'STARBUCKS': 'SBUX', 'NIKE': 'NKE', 'ELI LILLY': 'LLY',
-            'UNITEDHEALTH': 'UNH', 'BROADCOM': 'AVGO', 'ADOBE': 'ADBE', 'ORACLE': 'ORCL',
-            'CISCO': 'CSCO', 'QUALCOMM': 'QCOM', 'PAYPAL': 'PYPL', 'SERVICENOW': 'NOW',
-          };
-          
-          for (const [pattern, symbol] of Object.entries(nameMatches)) {
-            if (nameUpper.includes(pattern)) {
-              ticker = symbol;
-              break;
-            }
-          }
+          // Try dynamic name matching
+          ticker = findTickerFromName(holding.nameOfIssuer);
         }
         
         // Validate ticker exists in our assets
-        if (ticker && !validTickers.has(ticker)) {
+        if (ticker && !validTickers.has(ticker.toUpperCase())) {
           ticker = null;
+        }
+        
+        if (ticker) {
+          tickersMatched++;
+        } else {
+          tickersUnmatched++;
+          // Log unmatched for debugging (sample only)
+          if (tickersUnmatched <= 20) {
+            console.log(`Unmatched: ${holding.nameOfIssuer} (CUSIP: ${holding.cusip})`);
+          }
         }
         
         const change = changes.get(holding.cusip);
@@ -509,6 +612,11 @@ serve(async (req) => {
     }
 
     const duration = Date.now() - startTime;
+    const matchRate = tickersMatched + tickersUnmatched > 0 
+      ? Math.round((tickersMatched / (tickersMatched + tickersUnmatched)) * 100) 
+      : 0;
+    
+    console.log(`Ticker matching: ${tickersMatched} matched, ${tickersUnmatched} unmatched (${matchRate}% match rate)`);
 
     // Log ingestion
     await supabase.from('ingest_logs').insert({
@@ -524,6 +632,9 @@ serve(async (req) => {
         managers_processed: managersProcessed,
         signals_generated: signalsGenerated.length,
         tracked_managers: TRACKED_MANAGERS.length,
+        tickers_matched: tickersMatched,
+        tickers_unmatched: tickersUnmatched,
+        match_rate_pct: matchRate,
       }
     });
 
@@ -533,6 +644,9 @@ serve(async (req) => {
       holdings_inserted: totalInserted,
       holdings_skipped: totalSkipped,
       signals_generated: signalsGenerated.length,
+      tickers_matched: tickersMatched,
+      tickers_unmatched: tickersUnmatched,
+      match_rate_pct: matchRate,
       duration_ms: duration,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
