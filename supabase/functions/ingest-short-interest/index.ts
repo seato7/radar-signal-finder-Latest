@@ -2,14 +2,23 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
+import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// FINRA Short Interest estimation using free public data patterns
-// This replaces Perplexity AI calls (saves ~$1.35/month)
+// Real short interest data sources
+const SHORT_INTEREST_SOURCES = [
+  'https://www.finra.org/finra-data/short-sale-volume-daily',
+  'https://www.nasdaqtrader.com/trader.aspx?id=shortinterest',
+  'https://www.highshortinterest.com/',
+  'https://fintel.io/ss/us/gme',
+  'https://shortsqueeze.com/',
+];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -24,152 +33,143 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting short interest ingestion with FINRA estimation (FREE) v3 - PAGINATED...');
+    console.log('[REAL DATA] Short interest ingestion - NO ESTIMATION...');
 
-    // Fetch ALL stocks using pagination (Supabase default limit is 1000)
-    const allAssets: Array<{ id: string; ticker: string }> = [];
-    let offset = 0;
-    const pageSize = 1000;
+    // Scrape short interest data
+    let scrapedContent = '';
+    let sourceUsed = '';
     
-    while (true) {
-      const { data: batch, error: batchError } = await supabase
-        .from('assets')
-        .select('id, ticker')
-        .order('ticker')
-        .range(offset, offset + pageSize - 1);
-      
-      if (batchError) throw batchError;
-      if (!batch || batch.length === 0) break;
-      
-      allAssets.push(...batch);
-      console.log(`Fetched batch ${Math.floor(offset / pageSize) + 1}: ${batch.length} stocks (total: ${allAssets.length})`);
-      
-      if (batch.length < pageSize) break;
-      offset += pageSize;
+    for (const sourceUrl of SHORT_INTEREST_SOURCES) {
+      try {
+        console.log(`Scraping short interest: ${sourceUrl}`);
+        const result = await scrapeWithRetry(sourceUrl);
+        if (result.success && result.content && result.content.length > 300) {
+          scrapedContent += `\n\nSOURCE: ${sourceUrl}\n${result.content}`;
+          sourceUsed = sourceUrl;
+          console.log(`✅ Scraped: ${result.content.length} chars`);
+        }
+      } catch (err) {
+        console.log(`⚠️ Could not scrape ${sourceUrl}`);
+      }
     }
 
-    const assets = allAssets;
-    if (!assets || assets.length === 0) {
+    if (!scrapedContent || scrapedContent.length < 500) {
+      console.log('❌ No real short interest data available');
+      
+      await logHeartbeat(supabase, {
+        function_name: 'ingest-short-interest',
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'none',
+        error_message: 'No real data from short interest sources',
+      });
+
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-short-interest',
+        status: 'partial',
+        duration: Date.now() - startTime,
+        rowsInserted: 0,
+        rowsSkipped: 0,
+        sourceUsed: 'none - no real data',
+      });
+
       return new Response(
-        JSON.stringify({ success: true, count: 0, message: 'No stocks found' }),
+        JSON.stringify({ success: true, count: 0, reason: 'No real short interest data available' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`Processing ${assets.length} stocks for short interest...`);
-    const shortData = [];
+    // Extract structured short interest data
+    const rowSchema: ExtractionSchema = {
+      ticker: { type: 'string', description: 'Stock ticker symbol', required: true },
+      short_volume: { type: 'number', description: 'Short interest volume (number of shares short)' },
+      float_percentage: { type: 'number', description: 'Short interest as percentage of float' },
+      days_to_cover: { type: 'number', description: 'Days to cover ratio' },
+      report_date: { type: 'string', description: 'Date of the data (YYYY-MM-DD)' }
+    };
+
+    const extracted = await extractTableData(scrapedContent, rowSchema, 'Short interest and short sale data');
+    const shortInterestData = extracted.rows || [];
+
+    console.log(`Extracted ${shortInterestData.length} short interest records`);
+
+    if (shortInterestData.length === 0) {
+      await logHeartbeat(supabase, {
+        function_name: 'ingest-short-interest',
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: sourceUsed || 'scraped',
+        error_message: 'No extractable short interest data in content',
+      });
+
+      return new Response(
+        JSON.stringify({ success: true, count: 0, reason: 'No extractable short interest data' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const today = new Date().toISOString().split('T')[0];
-    const batchSize = 500; // Increased for speed
+    
+    // Prepare records for insert
+    const shortData = shortInterestData.map((si: any) => ({
+      ticker: si.ticker,
+      report_date: si.report_date || today,
+      short_volume: si.short_volume,
+      float_percentage: si.float_percentage || 0,
+      days_to_cover: si.days_to_cover || 0,
+      metadata: {
+        source: sourceUsed,
+        data_quality: 'real',
+        scraped_at: new Date().toISOString(),
+      },
+      created_at: new Date().toISOString(),
+    }));
 
-    // Get all prices in one query for efficiency
-    const { data: allPrices } = await supabase
-      .from('prices')
-      .select('ticker, close, date')
-      .order('date', { ascending: false });
-
-    // Group prices by ticker
-    const pricesByTicker = new Map<string, any[]>();
-    if (allPrices) {
-      for (const p of allPrices) {
-        if (!pricesByTicker.has(p.ticker)) {
-          pricesByTicker.set(p.ticker, []);
-        }
-        const prices = pricesByTicker.get(p.ticker)!;
-        if (prices.length < 5) {
-          prices.push(p);
-        }
-      }
-    }
-
-    console.log(`Found price data for ${pricesByTicker.size} tickers`);
-
-    for (let i = 0; i < assets.length; i += batchSize) {
-      const batch = assets.slice(i, i + batchSize);
-      
-      for (const asset of batch) {
-        try {
-          const priceData = pricesByTicker.get(asset.ticker);
-
-          const avgPrice = priceData?.[0]?.close || 100;
-          const avgVolume = 1000000; // Default volume
-
-          // FINRA-based short interest estimation model (FREE)
-          // Typical short float: 2-8% for most stocks, up to 20%+ for heavily shorted
-          // Higher volatility = higher short interest tendency
-          const priceVolatility = priceData && priceData.length > 1 
-            ? Math.abs(priceData[0].close - priceData[priceData.length - 1].close) / priceData[0].close 
-            : 0.05;
-          
-          const baseShortFloat = 3 + Math.random() * 5; // 3-8% base
-          const volatilityBonus = priceVolatility * 50; // Higher volatility = more shorts
-          const floatPercentage = Math.min(35, Math.max(1, baseShortFloat + volatilityBonus));
-          
-          // Estimate short volume and days to cover
-          const estimatedFloat = avgVolume * 20; // Approximate float shares
-          const shortVolume = Math.floor(estimatedFloat * floatPercentage / 100);
-          const daysToCover = shortVolume / Math.max(1, avgVolume);
-
-          shortData.push({
-            ticker: asset.ticker,
-            report_date: today,
-            short_volume: shortVolume,
-            float_percentage: floatPercentage,
-            days_to_cover: Math.min(15, Math.max(0.5, daysToCover)),
-            metadata: {
-              source: 'FINRA_estimation',
-              data_quality: 'estimated',
-              avg_volume: avgVolume,
-              price_at_report: avgPrice,
-            },
-            created_at: new Date().toISOString(),
-          });
-        } catch (err) {
-          console.error(`Error processing ${asset.ticker}:`, err);
-        }
-      }
-
-      console.log(`✅ Batch ${Math.floor(i / batchSize) + 1}: ${batch.length} processed`);
-    }
-
+    // Insert records
+    let insertedCount = 0;
     if (shortData.length > 0) {
-      // Batch insert in chunks of 500
-      for (let i = 0; i < shortData.length; i += 500) {
-        const chunk = shortData.slice(i, i + 500);
-        const { error } = await supabase
-          .from('short_interest')
-          .insert(chunk);
+      const { error } = await supabase
+        .from('short_interest')
+        .insert(shortData);
 
-        if (error) {
-          console.error('Batch insert error:', error);
-        }
+      if (error) {
+        console.error('Insert error:', error);
+      } else {
+        insertedCount = shortData.length;
+        console.log(`Inserted ${insertedCount} short interest records`);
       }
-      console.log(`Inserted ${shortData.length} short interest records`);
     }
 
     const durationMs = Date.now() - startTime;
+    
     await logHeartbeat(supabase, {
       function_name: 'ingest-short-interest',
       status: 'success',
-      rows_inserted: shortData.length,
-      rows_skipped: assets.length - shortData.length,
+      rows_inserted: insertedCount,
+      rows_skipped: shortInterestData.length - insertedCount,
       duration_ms: durationMs,
-      source_used: 'FINRA_estimation (FREE)',
+      source_used: 'Short_interest_real',
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-short-interest',
-      status: 'success',
+      status: insertedCount > 0 ? 'success' : 'partial',
       duration: durationMs,
-      rowsInserted: shortData.length,
-      rowsSkipped: assets.length - shortData.length,
-      sourceUsed: 'FINRA_estimation (FREE)',
+      rowsInserted: insertedCount,
+      rowsSkipped: shortInterestData.length - insertedCount,
+      sourceUsed: 'Short_interest_real (Firecrawl)',
     });
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        count: shortData.length,
-        source: 'FINRA_estimation (FREE - no Perplexity cost)' 
+        count: insertedCount,
+        extracted: shortInterestData.length,
+        source: 'Short_interest_real - NO ESTIMATION' 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -182,7 +182,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'FINRA_estimation',
+        source_used: 'Short_interest_real',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
