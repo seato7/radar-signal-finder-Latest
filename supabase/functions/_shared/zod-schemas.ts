@@ -81,21 +81,21 @@ export const YahooResponseSchema = z.object({
   }),
 });
 
-// ============= PERPLEXITY / AI SCHEMAS =============
+// ============= LLM / AI SCHEMAS =============
 
-export const PerplexityMessageSchema = z.object({
+export const LLMMessageSchema = z.object({
   content: SanitizedString(10000), // Strict limit on AI responses
   role: z.enum(['assistant', 'user', 'system']).optional(),
 });
 
-export const PerplexityChoiceSchema = z.object({
-  message: PerplexityMessageSchema,
+export const LLMChoiceSchema = z.object({
+  message: LLMMessageSchema,
   finish_reason: z.string().optional(),
   index: z.number().optional(),
 });
 
-export const PerplexityResponseSchema = z.object({
-  choices: z.array(PerplexityChoiceSchema).min(1, 'At least one choice required'),
+export const LLMResponseSchema = z.object({
+  choices: z.array(LLMChoiceSchema).min(1, 'At least one choice required'),
   id: z.string().optional(),
   model: z.string().optional(),
   usage: z.any().optional(),

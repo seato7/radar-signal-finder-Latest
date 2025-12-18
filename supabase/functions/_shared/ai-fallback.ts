@@ -1,6 +1,7 @@
 /**
  * AI Fallback Utility
- * Provides Perplexity and Gemini fallbacks for data ingestion
+ * Provides Lovable AI (Gemini) fallback for data ingestion
+ * NOTE: Perplexity has been removed - use Firecrawl + Lovable AI instead
  */
 
 export async function fetchWithAIFallback(options: {
@@ -8,11 +9,10 @@ export async function fetchWithAIFallback(options: {
   dataType: string;
   primaryFetch: () => Promise<any>;
   promptTemplate: string;
-  perplexityApiKey?: string;
   lovableApiKey?: string;
   maxRetries?: number;
 }): Promise<any> {
-  const { ticker, dataType, primaryFetch, promptTemplate, perplexityApiKey, lovableApiKey, maxRetries = 3 } = options;
+  const { ticker, dataType, primaryFetch, promptTemplate, lovableApiKey, maxRetries = 3 } = options;
 
   try {
     // Try primary source first
@@ -26,31 +26,17 @@ export async function fetchWithAIFallback(options: {
     console.error(`❌ Primary fetch failed for ${ticker}:`, error);
   }
 
-  // Try Perplexity fallback
-  if (perplexityApiKey) {
-    try {
-      console.log(`🔄 Trying Perplexity fallback for ${ticker}...`);
-      const data = await fetchFromPerplexity(ticker, promptTemplate, perplexityApiKey);
-      if (data) {
-        console.log(`✅ Perplexity fallback successful for ${ticker}`);
-        return { success: true, data, source: 'perplexity' };
-      }
-    } catch (error) {
-      console.error(`❌ Perplexity fallback failed for ${ticker}:`, error);
-    }
-  }
-
-  // Try Gemini fallback
+  // Try Lovable AI (Gemini) fallback
   if (lovableApiKey) {
     try {
-      console.log(`🔄 Trying Gemini fallback for ${ticker}...`);
-      const data = await fetchFromGemini(ticker, promptTemplate, lovableApiKey);
+      console.log(`🔄 Trying Lovable AI fallback for ${ticker}...`);
+      const data = await fetchFromLovableAI(ticker, promptTemplate, lovableApiKey);
       if (data) {
-        console.log(`✅ Gemini fallback successful for ${ticker}`);
-        return { success: true, data, source: 'gemini' };
+        console.log(`✅ Lovable AI fallback successful for ${ticker}`);
+        return { success: true, data, source: 'lovable_ai' };
       }
     } catch (error) {
-      console.error(`❌ Gemini fallback failed for ${ticker}:`, error);
+      console.error(`❌ Lovable AI fallback failed for ${ticker}:`, error);
     }
   }
 
@@ -58,32 +44,7 @@ export async function fetchWithAIFallback(options: {
   return { success: false, data: null, source: 'none' };
 }
 
-async function fetchFromPerplexity(ticker: string, promptTemplate: string, apiKey: string, retryCount = 0, maxRetries = 3): Promise<any> {
-  console.log(`Attempting Perplexity for ${ticker} (attempt ${retryCount + 1}/${maxRetries})`);
-  
-  // Use centralized Perplexity client with proper headers and HTML detection
-  const { callPerplexity } = await import('./perplexity-client.ts');
-  
-  try {
-    const content = await callPerplexity(
-      [{ role: 'user', content: promptTemplate.replace('{{ticker}}', ticker) }],
-      {
-        apiKey,
-        model: 'sonar',
-        temperature: 0.2,
-        maxTokens: 500,
-        maxRetries
-      }
-    );
-    
-    return content;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    throw new Error(`Perplexity API error for ${ticker}: ${err.message}`);
-  }
-}
-
-async function fetchFromGemini(ticker: string, promptTemplate: string, apiKey: string): Promise<any> {
+async function fetchFromLovableAI(ticker: string, promptTemplate: string, apiKey: string): Promise<any> {
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -101,7 +62,7 @@ async function fetchFromGemini(ticker: string, promptTemplate: string, apiKey: s
   });
 
   if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`);
+    throw new Error(`Lovable AI API error: ${response.status}`);
   }
 
   const data = await response.json();
