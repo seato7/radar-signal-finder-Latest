@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Top institutional filers to track (by CIK)
+// Top institutional filers to track (by CIK) - Top 10 most important
 const TRACKED_MANAGERS = [
   { cik: '0001067983', name: 'Berkshire Hathaway' },
   { cik: '0001336528', name: 'Bridgewater Associates' },
@@ -15,20 +15,10 @@ const TRACKED_MANAGERS = [
   { cik: '0001350694', name: 'Renaissance Technologies' },
   { cik: '0001056831', name: 'Two Sigma Investments' },
   { cik: '0001029160', name: 'DE Shaw' },
-  { cik: '0001061768', name: 'Millennium Management' },
-  { cik: '0001037389', name: 'AQR Capital' },
   { cik: '0001568820', name: 'Point72 Asset Management' },
   { cik: '0001167483', name: 'Elliott Investment Management' },
   { cik: '0001040273', name: 'Tiger Global Management' },
   { cik: '0001423053', name: 'Coatue Management' },
-  { cik: '0001336528', name: 'Pershing Square' },
-  { cik: '0001079114', name: 'Viking Global Investors' },
-  { cik: '0000902219', name: 'ValueAct Capital' },
-  { cik: '0001336528', name: 'Third Point' },
-  { cik: '0001273087', name: 'Baupost Group' },
-  { cik: '0001167557', name: 'Lone Pine Capital' },
-  { cik: '0001510387', name: 'Appaloosa Management' },
-  { cik: '0001656456', name: 'Druckenmiller Family Office' },
 ];
 
 // Extended CUSIP to ticker mapping for common securities
@@ -323,19 +313,38 @@ serve(async (req) => {
   );
 
   try {
-    // Load ALL assets with name and ticker for dynamic matching
-    const { data: assets } = await supabase
-      .from('assets')
-      .select('ticker, name')
-      .limit(50000);
+    // Load ALL assets with name and ticker for dynamic matching (paginated)
+    let allAssets: Array<{ticker: string, name: string}> = [];
+    let offset = 0;
+    const pageSize = 10000;
     
-    const validTickers = new Set((assets || []).map(a => a.ticker.toUpperCase()));
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('assets')
+        .select('ticker, name')
+        .range(offset, offset + pageSize - 1);
+      
+      if (error) {
+        console.error('Asset fetch error:', error);
+        break;
+      }
+      
+      if (!page || page.length === 0) break;
+      allAssets = allAssets.concat(page);
+      offset += pageSize;
+      
+      if (page.length < pageSize) break;
+    }
+    
+    console.log(`Loaded ${allAssets.length} total assets`);
+    
+    const validTickers = new Set(allAssets.map(a => a.ticker.toUpperCase()));
     
     // Build name-to-ticker lookup (normalize names for matching)
     const nameToTicker = new Map<string, string>();
     const wordToTickers = new Map<string, string[]>();
     
-    for (const asset of (assets || [])) {
+    for (const asset of allAssets) {
       const name = asset.name?.toUpperCase() || '';
       const ticker = asset.ticker.toUpperCase();
       
