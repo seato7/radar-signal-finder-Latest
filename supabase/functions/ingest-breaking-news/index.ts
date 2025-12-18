@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { redisCache } from "../_shared/redis-cache.ts";
-import { withRetry } from "../_shared/retry-wrapper.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { searchWeb } from "../_shared/firecrawl-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,45 +34,15 @@ interface NewsHeadline {
   headline: string;
   summary: string;
   source: string;
+  url: string;
   sentiment: number;
   tickers_mentioned: string[];
   companies_mentioned: string[];
   sectors_mentioned: string[];
 }
 
-// Build search terms for each asset for matching
-function buildAssetSearchTerms(asset: Asset): string[] {
-  const terms: string[] = [];
-  
-  // Ticker symbol (exact match)
-  terms.push(asset.ticker.toUpperCase());
-  
-  // Company name and variations
-  if (asset.name) {
-    terms.push(asset.name.toLowerCase());
-    // Add significant words from company name (>3 chars, not common words)
-    const commonWords = ['inc', 'corp', 'ltd', 'llc', 'company', 'the', 'and', 'etf', 'fund', 'trust', 'class'];
-    const nameWords = asset.name.toLowerCase().split(/\s+/)
-      .filter(w => w.length > 3 && !commonWords.includes(w));
-    terms.push(...nameWords);
-  }
-  
-  // Sector and industry keywords
-  if (asset.metadata?.sector) {
-    terms.push(asset.metadata.sector.toLowerCase());
-  }
-  if (asset.metadata?.industry) {
-    terms.push(asset.metadata.industry.toLowerCase());
-  }
-  
-  return terms.filter(t => t.length > 0);
-}
-
 // Match a headline to assets based on content
-function matchHeadlineToAssets(
-  headline: NewsHeadline, 
-  assets: Asset[]
-): Asset[] {
+function matchHeadlineToAssets(headline: NewsHeadline, assets: Asset[]): Asset[] {
   const matchedAssets: Asset[] = [];
   const headlineText = `${headline.headline} ${headline.summary}`.toLowerCase();
   const mentionedTickers = headline.tickers_mentioned.map(t => t.toUpperCase());
@@ -104,7 +74,7 @@ function matchHeadlineToAssets(
       }
     }
     
-    // Sector/industry match (lower priority - broad matching)
+    // Sector/industry match (lower priority)
     if (asset.metadata?.sector && mentionedSectors.some(s => 
       s.includes(asset.metadata!.sector!.toLowerCase()) || 
       asset.metadata!.sector!.toLowerCase().includes(s)
@@ -118,7 +88,7 @@ function matchHeadlineToAssets(
       score += 15;
     }
     
-    // Only include if score > 50 (direct ticker or strong company match)
+    // Only include if score >= 50 (direct ticker or strong company match)
     if (score >= 50) {
       matchedAssets.push(asset);
     }
@@ -127,133 +97,158 @@ function matchHeadlineToAssets(
   return matchedAssets;
 }
 
-// Fetch general market headlines (1 API call)
-async function fetchMarketHeadlines(
-  perplexityKey: string, 
-  supabase: any
+// Use Lovable AI to analyze news content and extract structured data
+async function analyzeNewsWithAI(
+  searchResults: Array<{ title: string; description: string; url: string; markdown?: string }>,
+  lovableApiKey: string
 ): Promise<NewsHeadline[]> {
-  const headers = {
-    'Authorization': `Bearer ${perplexityKey}`,
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'User-Agent': 'InsiderPulseBot/1.0'
-  };
-  
-  const payload = {
-    model: 'sonar',
-    messages: [
-      {
-        role: 'system',
-        content: `You are a financial news aggregator. Return structured data about recent market news.
-For each news item, extract:
-- The headline
-- A brief summary
-- The source
-- Sentiment score (-1 to 1)
-- Any ticker symbols mentioned
-- Any company names mentioned
-- Any sectors/industries mentioned`
-      },
-      {
-        role: 'user',
-        content: `List the 15 most important financial market news headlines from the last 24 hours.
-Include news about stocks, crypto, ETFs, commodities, and major market movements.
-
-For EACH headline, provide this EXACT format:
-HEADLINE: [the headline]
-SUMMARY: [one sentence summary]
-SOURCE: [news source name]
-SENTIMENT: [number from -1 to 1]
-TICKERS: [comma-separated list of any stock/crypto tickers mentioned, or "none"]
-COMPANIES: [comma-separated list of company names mentioned]
-SECTORS: [comma-separated list of sectors/industries mentioned, e.g. "technology, healthcare, energy"]
----
-
-Separate each news item with "---".`
-      }
-    ],
-    temperature: 0.2,
-    max_tokens: 4000,
-  };
-  
-  const result = await withRetry(
-    async () => {
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-      
-      const contentType = response.headers.get('content-type');
-      const responseText = await response.text();
-      
-      if (contentType?.includes('text/html') || responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
-        console.log('⚠️ Rate limit HTML page received - will retry');
-        throw new Error('RATE_LIMIT_HTML');
-      }
-      
-      if (response.status === 401) {
-        throw new Error('AUTH_ERROR');
-      }
-      
-      if (response.status === 429) {
-        throw new Error('RATE_LIMIT_429');
-      }
-      
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-      
-      const data = JSON.parse(responseText);
-      return { response, data };
-    },
-    {
-      maxRetries: 5,
-      initialDelayMs: 2000,
-      maxDelayMs: 30000,
-      onRetry: (attempt, error) => {
-        console.log(`⏳ Retry ${attempt}/5: ${error.message}`);
-      }
-    }
-  );
-  
-  const content = result.data.choices?.[0]?.message?.content || '';
   const headlines: NewsHeadline[] = [];
   
-  const newsBlocks = content.split('---').filter((block: string) => block.trim());
+  // Prepare content for AI analysis
+  const newsContent = searchResults.slice(0, 15).map((r, i) => 
+    `[${i + 1}] Title: ${r.title}\nDescription: ${r.description || 'N/A'}\nURL: ${r.url}\nContent: ${(r.markdown || '').substring(0, 500)}`
+  ).join('\n\n---\n\n');
   
-  for (const block of newsBlocks) {
-    const headlineMatch = block.match(/HEADLINE:\s*(.+?)(?=SUMMARY:|$)/s);
-    const summaryMatch = block.match(/SUMMARY:\s*(.+?)(?=SOURCE:|$)/s);
-    const sourceMatch = block.match(/SOURCE:\s*(.+?)(?=SENTIMENT:|$)/s);
-    const sentimentMatch = block.match(/SENTIMENT:\s*(-?\d+\.?\d*)/);
-    const tickersMatch = block.match(/TICKERS:\s*(.+?)(?=COMPANIES:|$)/s);
-    const companiesMatch = block.match(/COMPANIES:\s*(.+?)(?=SECTORS:|$)/s);
-    const sectorsMatch = block.match(/SECTORS:\s*(.+?)(?=---|$)/s);
+  const prompt = `Analyze these financial news articles and extract structured data for each.
+
+NEWS ARTICLES:
+${newsContent}
+
+For each article, provide:
+1. A clean headline
+2. A one-sentence summary
+3. The source name (extract from URL domain)
+4. Sentiment score (-1 to 1, where -1 is very negative, 0 is neutral, 1 is very positive)
+5. Any stock/crypto tickers mentioned (e.g., AAPL, NVDA, BTC)
+6. Any company names mentioned
+7. Any sectors mentioned (e.g., technology, healthcare, energy, cryptocurrency)
+
+Return as JSON array:
+[
+  {
+    "headline": "string",
+    "summary": "string",
+    "source": "string",
+    "url": "string",
+    "sentiment": number,
+    "tickers": ["string"],
+    "companies": ["string"],
+    "sectors": ["string"]
+  }
+]
+
+Only return the JSON array, no other text.`;
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: 'You are a financial news analyst. Extract structured data from news articles. Always return valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.2,
+        max_tokens: 4000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Lovable AI error:', response.status, await response.text());
+      return [];
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
     
-    if (headlineMatch) {
-      const tickersRaw = tickersMatch?.[1]?.trim() || '';
-      const companiesRaw = companiesMatch?.[1]?.trim() || '';
-      const sectorsRaw = sectorsMatch?.[1]?.trim() || '';
-      
-      const parsedTickers = tickersRaw.toLowerCase() === 'none' ? [] : 
-        tickersRaw.split(',').map((t: string) => t.trim().toUpperCase()).filter((t: string) => t.length > 0 && t.length <= 6);
-      const parsedCompanies = companiesRaw.split(',').map((c: string) => c.trim()).filter((c: string) => c.length > 0);
-      const parsedSectors = sectorsRaw.split(',').map((s: string) => s.trim().toLowerCase()).filter((s: string) => s.length > 0);
-      
-      headlines.push({
-        headline: headlineMatch[1].trim(),
-        summary: summaryMatch?.[1]?.trim() || '',
-        source: sourceMatch?.[1]?.trim() || 'Perplexity',
-        sentiment: sentimentMatch ? validateSentiment(parseFloat(sentimentMatch[1])) : 0,
-        tickers_mentioned: parsedTickers,
-        companies_mentioned: parsedCompanies,
-        sectors_mentioned: parsedSectors,
+    // Parse JSON from response
+    let parsed: any[];
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      } else {
+        parsed = JSON.parse(content);
+      }
+    } catch (parseError) {
+      console.error('Failed to parse AI response as JSON:', parseError);
+      console.log('Raw response:', content.substring(0, 500));
+      return [];
+    }
+    
+    for (const item of parsed) {
+      if (item.headline) {
+        headlines.push({
+          headline: item.headline.substring(0, 500),
+          summary: (item.summary || '').substring(0, 1000),
+          source: item.source || 'Unknown',
+          url: item.url || '',
+          sentiment: validateSentiment(item.sentiment || 0),
+          tickers_mentioned: (item.tickers || []).map((t: string) => t.toUpperCase()).filter((t: string) => t.length <= 6),
+          companies_mentioned: item.companies || [],
+          sectors_mentioned: (item.sectors || []).map((s: string) => s.toLowerCase()),
+        });
+      }
+    }
+    
+    console.log(`🤖 AI extracted ${headlines.length} structured headlines`);
+  } catch (error) {
+    console.error('AI analysis error:', error);
+  }
+  
+  return headlines;
+}
+
+// Fetch news using Firecrawl Search
+async function fetchMarketHeadlines(firecrawlKey: string, lovableApiKey: string): Promise<NewsHeadline[]> {
+  console.log('🔥 Fetching market news with Firecrawl Search...');
+  
+  // Search for recent financial news
+  const searchQueries = [
+    'stock market news today site:cnbc.com OR site:bloomberg.com OR site:reuters.com',
+    'cryptocurrency bitcoin ethereum news today',
+    'earnings report stock market breaking news',
+  ];
+  
+  const allResults: Array<{ title: string; description: string; url: string; markdown?: string }> = [];
+  
+  for (const query of searchQueries) {
+    try {
+      const result = await searchWeb(query, {
+        limit: 5,
+        scrapeOptions: { formats: ['markdown'] }
       });
+      
+      if (result.success && result.data) {
+        console.log(`  → Query "${query.substring(0, 40)}..." returned ${result.data.length} results`);
+        for (const item of result.data) {
+          allResults.push({
+            title: item.title || '',
+            description: item.description || '',
+            url: item.url || '',
+            markdown: item.markdown || '',
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`Search query failed: ${query}`, error);
     }
   }
   
-  console.log(`📰 Parsed ${headlines.length} headlines from Perplexity`);
+  console.log(`📰 Total search results: ${allResults.length}`);
+  
+  if (allResults.length === 0) {
+    return [];
+  }
+  
+  // Use Lovable AI to analyze and structure the results
+  const headlines = await analyzeNewsWithAI(allResults, lovableApiKey);
+  
   return headlines;
 }
 
@@ -274,16 +269,17 @@ serve(async (req) => {
     etl_name: 'ingest-breaking-news',
     status: 'running',
     started_at: new Date().toISOString(),
-    source_used: 'Perplexity API',
+    source_used: 'Firecrawl Search',
     cache_hit: false,
     fallback_count: 0,
     latency_ms: 0,
   });
 
   try {
-    console.log('Starting efficient breaking news ingestion (scrape once, map to all tickers)...');
+    console.log('Starting breaking news ingestion with Firecrawl...');
     
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
+    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     
     // Fetch ALL assets with metadata for matching
     const { data: allAssets, error: assetsError } = await supabase
@@ -296,7 +292,7 @@ serve(async (req) => {
     console.log(`📊 Loaded ${assets.length} assets for matching`);
     
     let newsItems: any[] = [];
-    let sourceUsed = 'Perplexity API';
+    let sourceUsed = 'Firecrawl Search';
     let cacheHit = false;
     let fallbackUsed = false;
     const fetchStartTime = Date.now();
@@ -307,9 +303,9 @@ serve(async (req) => {
       console.log(`✅ Cache HIT for breaking-news:global (${cacheResult.age_seconds?.toFixed(1)}s old)`);
       cacheHit = true;
       newsItems = cacheResult.data;
-    } else if (!perplexityKey) {
-      // No API key - use sample data
-      console.log('⚠️ No Perplexity API key, using sample news data');
+    } else if (!firecrawlKey || !lovableApiKey) {
+      // No API keys - use sample data
+      console.log('⚠️ Missing API keys, using sample news data');
       sourceUsed = 'Simulated';
       fallbackUsed = true;
       
@@ -322,7 +318,6 @@ serve(async (req) => {
       ];
       
       for (const sample of sampleHeadlines) {
-        // Match to assets by sector
         const matchedAssets = assets.filter(a => 
           sample.sectors.some(s => 
             a.metadata?.sector?.toLowerCase().includes(s) ||
@@ -346,10 +341,10 @@ serve(async (req) => {
         }
       }
     } else {
-      // Make 1 API call for all headlines
-      console.log('🔍 Fetching market headlines with single Perplexity API call...');
+      // Use Firecrawl Search + Lovable AI
+      console.log('🔍 Fetching market headlines with Firecrawl Search...');
       
-      const headlines = await fetchMarketHeadlines(perplexityKey, supabase);
+      const headlines = await fetchMarketHeadlines(firecrawlKey, lovableApiKey);
       
       if (headlines.length === 0) {
         console.log('⚠️ No headlines fetched, using fallback');
@@ -371,7 +366,7 @@ serve(async (req) => {
               headline: headline.headline.substring(0, 500),
               summary: headline.summary.substring(0, 1000) || 'No summary available',
               source: headline.source.substring(0, 200),
-              url: null,
+              url: headline.url || null,
               published_at: new Date().toISOString(),
               sentiment_score: headline.sentiment,
               relevance_score: 0.8,
@@ -393,14 +388,13 @@ serve(async (req) => {
         
         // Cache the results
         if (newsItems.length > 0) {
-          await redisCache.set('breaking-news:global', newsItems, 'Perplexity API');
+          await redisCache.set('breaking-news:global', newsItems, 'Firecrawl Search');
         }
       }
     }
 
     // Insert news items (deduplicate by ticker+headline)
     if (newsItems.length > 0) {
-      // Deduplicate
       const seen = new Set<string>();
       const uniqueItems = newsItems.filter(item => {
         const key = `${item.ticker}:${item.headline.substring(0, 100)}`;
@@ -430,9 +424,9 @@ serve(async (req) => {
       cache_hit: cacheHit,
       latency_ms: latency,
       metadata: { 
-        headlines_fetched: cacheHit ? 'cached' : 'api',
+        headlines_fetched: cacheHit ? 'cached' : 'firecrawl',
         unique_tickers: new Set(newsItems.map(n => n.ticker)).size,
-        api_calls: cacheHit ? 0 : 1
+        api_calls: cacheHit ? 0 : 3
       },
     }).eq('id', logId);
     
@@ -447,7 +441,7 @@ serve(async (req) => {
       source_used: sourceUsed,
       error_message: null,
       metadata: { 
-        api_calls: cacheHit ? 0 : 1,
+        api_calls: cacheHit ? 0 : 3,
         cache_hit: cacheHit,
         unique_tickers: new Set(newsItems.map(n => n.ticker)).size
       }
@@ -461,7 +455,7 @@ serve(async (req) => {
       sourceUsed,
       fallbackRatio: fallbackUsed ? 1 : 0,
       rowsInserted: newsItems.length,
-      metadata: { api_calls: cacheHit ? 0 : 1, cache_hit: cacheHit }
+      metadata: { api_calls: cacheHit ? 0 : 3, cache_hit: cacheHit }
     });
 
     return new Response(
@@ -470,7 +464,7 @@ serve(async (req) => {
         count: newsItems.length,
         unique_tickers: new Set(newsItems.map(n => n.ticker)).size,
         source: sourceUsed,
-        api_calls: cacheHit ? 0 : 1,
+        api_calls: cacheHit ? 0 : 3,
         duration_seconds: durationSeconds,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -485,31 +479,37 @@ serve(async (req) => {
       status: 'failed',
       completed_at: new Date().toISOString(),
       duration_seconds: durationSeconds,
-      error_message: errorMessage,
+      error_message: errorMessage.substring(0, 1000),
     }).eq('id', logId);
     
     await supabase.from('function_status').insert({
       function_name: 'ingest-breaking-news',
       executed_at: new Date().toISOString(),
-      status: 'failure',
+      status: 'failed',
       rows_inserted: 0,
       rows_skipped: 0,
-      fallback_used: null,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity API',
-      error_message: errorMessage,
-      metadata: {}
+      source_used: 'error',
+      error_message: errorMessage.substring(0, 1000),
     });
     
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-breaking-news',
       status: 'failed',
       duration: durationSeconds,
-      errorMessage
+      latencyMs: 0,
+      sourceUsed: 'error',
+      fallbackRatio: 0,
+      rowsInserted: 0,
+      errorMessage: errorMessage.substring(0, 200),
     });
 
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ 
+        success: false, 
+        error: errorMessage,
+        duration_seconds: durationSeconds,
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
