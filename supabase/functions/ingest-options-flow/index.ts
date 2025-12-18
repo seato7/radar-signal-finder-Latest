@@ -122,27 +122,14 @@ async function fetchTradingViewOptions(ticker: string): Promise<any[]> {
 async function generateOptionsSignals(supabase: any): Promise<any[]> {
   console.log('Generating options signals from price data...');
   
-  // Get stock assets only (options only exist for stocks and ETFs)
-  const { data: stockAssets, error: assetError } = await supabase
-    .from('assets')
-    .select('ticker')
-    .in('asset_class', ['stock', 'etf'])
-    .limit(2000);
-  
-  if (assetError) {
-    console.error('Asset query error:', assetError);
-    return [];
-  }
-  
-  const validStockTickers = new Set((stockAssets || []).map((a: any) => a.ticker));
-  console.log(`Found ${validStockTickers.size} valid stock/ETF tickers`);
-  
-  // Get recent price data for stocks only
+  // Get unique tickers from prices that look like stocks
+  // Exclude forex pairs (contain /) and typical mutual fund patterns
   const { data: prices, error } = await supabase
     .from('prices')
     .select('ticker, close, date')
+    .not('ticker', 'like', '%/%')  // Exclude forex pairs
     .order('date', { ascending: false })
-    .limit(5000);
+    .limit(50000);  // Get more records to cover more tickers
   
   if (error) {
     console.error('Price query error:', error);
@@ -206,20 +193,28 @@ async function generateOptionsSignals(supabase: any): Promise<any[]> {
     return options;
   }
   
-  // Group by ticker and get latest price - ONLY FOR STOCKS
+  // Group by ticker and get latest price - Filter out non-stocks
   const tickerPrices = new Map<string, number>();
   for (const p of prices) {
-    // CRITICAL FIX: Only include stocks/ETFs, exclude crypto pairs and mutual funds
-    if (!validStockTickers.has(p.ticker)) continue;
-    if (p.ticker.includes('/')) continue; // Skip crypto pairs like BTC/USD
-    if (p.ticker.match(/[A-Z]{4,5}X$/)) continue; // Skip mutual funds ending in X
+    // Skip if already have this ticker
+    if (tickerPrices.has(p.ticker)) continue;
     
-    if (!tickerPrices.has(p.ticker)) {
-      tickerPrices.set(p.ticker, p.close);
+    // Skip forex pairs (should already be filtered, but double check)
+    if (p.ticker.includes('/')) continue;
+    
+    // Skip obvious mutual funds (5-letter ending in X, but not common ETFs like ARKX)
+    if (p.ticker.length === 5 && p.ticker.endsWith('X') && !['SOXXX', 'ARKXX'].includes(p.ticker)) {
+      // Additional check: mutual funds often have patterns like VFIAX, FXAIX
+      if (/^[A-Z]{4}X$/.test(p.ticker)) continue;
     }
+    
+    // Skip if price is invalid
+    if (!p.close || p.close <= 0) continue;
+    
+    tickerPrices.set(p.ticker, p.close);
   }
   
-  console.log(`Unique STOCK tickers with prices: ${tickerPrices.size}`);
+  console.log(`Unique tickers for options: ${tickerPrices.size}`);
   
   const options: any[] = [];
   const today = new Date().toISOString();
