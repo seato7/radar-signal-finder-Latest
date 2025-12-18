@@ -33,8 +33,6 @@ verify_jwt = false
 [functions.ingest-etf-flows]
 verify_jwt = false
 
-[functions.ingest-13f-holdings]
-verify_jwt = false
 
 [functions.ingest-prices-csv]
 verify_jwt = false
