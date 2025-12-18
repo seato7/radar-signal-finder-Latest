@@ -158,9 +158,9 @@ export async function validateAuthResponse(
 }
 
 /**
- * Zod schema for validating Perplexity API responses
+ * Zod schema for validating LLM API responses (OpenAI-compatible format)
  */
-export const PerplexityAuthResponseSchema = z.object({
+export const LLMAuthResponseSchema = z.object({
   choices: z.array(z.object({
     message: z.object({
       content: z.string()
@@ -174,9 +174,9 @@ export const PerplexityAuthResponseSchema = z.object({
 });
 
 /**
- * Validate Perplexity API request structure
+ * Validate LLM API request structure (OpenAI-compatible format)
  */
-export function validatePerplexityRequest(payload: any): AuthValidationResult {
+export function validateLLMRequest(payload: any): AuthValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 

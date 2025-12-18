@@ -29,7 +29,7 @@ serve(async (req) => {
         `*What to do:*\n` +
         `1. Visit SEC EDGAR: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=13F-HR&dateb=&owner=include&count=40\n` +
         `2. Download latest 13F-HR filings (XML format)\n` +
-        `3. Upload via \`ingest-13f-holdings\` endpoint\n\n` +
+        `3. Upload via \`ingest-sec-13f-edgar\` endpoint\n\n` +
         `*🎯 Priority Filers (by AUM):*\n` +
         `• Vanguard Group - CIK: 0001067983\n` +
         `• BlackRock - CIK: 0001364742\n` +
@@ -48,7 +48,7 @@ serve(async (req) => {
       message = `*🔔 WEEKLY ETF FLOWS DATA CHECK* 📊\n\n` +
         `Time to verify ETF flows data is current!\n\n` +
         `*Auto-ingestion Status:*\n` +
-        `The \`ingest-etf-flows\` function now runs automatically using Perplexity AI.\n\n` +
+        `The \`ingest-etf-flows\` function now runs automatically using Firecrawl + Lovable AI.\n\n` +
         `*Manual Check:*\n` +
         `If you have premium ETF flow data sources, you can supplement:\n` +
         `• ETF.com Premium Data\n` +
@@ -72,7 +72,7 @@ serve(async (req) => {
         `• Theme scores are updating\n\n` +
         `*Common Issues to Watch:*\n` +
         `• API rate limits hit\n` +
-        `• Perplexity key expiration\n` +
+        `• Firecrawl/Lovable AI errors\n` +
         `• Database connection issues\n` +
         `• Duplicate key errors`;
     } else if (reminderType === 'monthly-review') {
@@ -81,13 +81,13 @@ serve(async (req) => {
         `Time for comprehensive monthly review!\n\n` +
         `*Review Checklist:*\n` +
         `□ Check all 34 ingestion functions running\n` +
-        `□ Review Perplexity API usage/costs\n` +
+        `□ Review Firecrawl API usage/costs\n` +
         `□ Verify Twelve Data price ingestion\n` +
         `□ Check database storage usage\n` +
         `□ Review signal generation quality\n` +
         `□ Audit alert delivery logs\n\n` +
         `*Data Sources Health:*\n` +
-        `• Perplexity AI (12 functions)\n` +
+        `• Firecrawl + Lovable AI (12 functions)\n` +
         `• SEC EDGAR (2 functions)\n` +
         `• Alpha Vantage (1 function)\n` +
         `• Reddit API (1 function)\n` +
