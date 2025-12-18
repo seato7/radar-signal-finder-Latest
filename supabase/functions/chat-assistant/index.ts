@@ -8,37 +8,48 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Web search function using Perplexity with proper client
+// Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
-  const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY');
-  if (!PERPLEXITY_API_KEY) {
-    return '[Web search unavailable - API key not configured]';
+  const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY');
+  if (!FIRECRAWL_API_KEY) {
+    return '[Web search unavailable - Firecrawl API key not configured]';
   }
 
   try {
-    console.log('Performing web search for:', query);
+    console.log('Performing web search via Firecrawl for:', query);
     
-    // Use centralized Perplexity client with proper headers and HTML detection
-    const { queryPerplexity } = await import('../_shared/perplexity-client.ts');
-    
-    const result = await queryPerplexity(query, PERPLEXITY_API_KEY, {
-      model: 'sonar',
-      maxTokens: 1000
+    const response = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        limit: 5,
+        scrapeOptions: { formats: ['markdown'] }
+      }),
     });
+
+    if (!response.ok) {
+      console.error('Firecrawl search error:', response.status);
+      return '[Web search temporarily unavailable]';
+    }
+
+    const data = await response.json();
+    const results = data.data || [];
     
-    return result || '[No results found]';
+    if (results.length === 0) {
+      return '[No search results found]';
+    }
+
+    // Format results for the chat context
+    return results.map((r: any, i: number) => 
+      `[${i + 1}] ${r.title || 'Untitled'}\nURL: ${r.url || 'N/A'}\n${(r.markdown || r.description || '').substring(0, 500)}`
+    ).join('\n\n');
+    
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error('Web search error:', err.message);
-    
-    // Provide helpful error messages
-    if (err.message.includes('HTML_MASQUERADE')) {
-      return '[Web search temporarily unavailable - API configuration issue]';
-    }
-    if (err.message.includes('authentication failed')) {
-      return '[Web search unavailable - authentication error]';
-    }
-    
+    console.error('Web search error:', error);
     return '[Web search error]';
   }
 }

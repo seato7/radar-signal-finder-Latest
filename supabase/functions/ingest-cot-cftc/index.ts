@@ -8,6 +8,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
+const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+
 // Commodity mapping for tickers
 const commodityMap: Record<string, string> = {
   '067651': 'GC=F',  // Gold
@@ -27,10 +30,10 @@ const commodityMap: Record<string, string> = {
 async function fetchCFTCData(): Promise<any[]> {
   const cotUrl = 'https://publicreporting.cftc.gov/resource/jun7-fc8e.json?$limit=1000&$order=report_date_as_yyyy_mm_dd%20DESC';
   
-  console.log('Attempting CFTC API with browser-like headers...');
+  console.log('[COT] Attempting CFTC API with browser-like headers...');
   const response = await fetch(cotUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': 'application/json, text/plain, */*',
       'Accept-Encoding': 'gzip, deflate, br',
       'Accept-Language': 'en-US,en;q=0.9',
@@ -46,33 +49,82 @@ async function fetchCFTCData(): Promise<any[]> {
   return await response.json();
 }
 
-async function fetchCOTFallback(perplexityKey: string): Promise<any[]> {
-  console.log('Using AI fallback for COT data...');
+async function fetchCOTFallback(firecrawlKey: string, lovableApiKey: string): Promise<any[]> {
+  console.log('[COT] Using Firecrawl + AI fallback for COT data...');
   
-  const prompt = `Fetch the latest Commitments of Traders (COT) report data from CFTC for major commodities and currencies. Return JSON array with fields: cftc_contract_market_code, market_and_exchange_names, report_date_as_yyyy_mm_dd, noncomm_positions_long_all, noncomm_positions_short_all, comm_positions_long_all, comm_positions_short_all, open_interest_all. Include data for Gold (067651), Silver (088691), Crude Oil (067411), Copper (088661), EUR/USD (099741). Use latest available data.`;
-  
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
+  // Search for recent COT reports
+  const searchResponse = await fetch(`${FIRECRAWL_API_URL}/search`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${perplexityKey}`,
-      'Content-Type': 'application/json'
+      'Authorization': `Bearer ${firecrawlKey}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'sonar',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      max_tokens: 2000
-    })
+      query: 'CFTC Commitments of Traders report gold silver crude oil forex positioning',
+      limit: 10,
+      scrapeOptions: { formats: ['markdown'] }
+    }),
   });
-  
-  if (!response.ok) {
-    throw new Error('Perplexity fallback failed');
+
+  if (!searchResponse.ok) {
+    throw new Error('Firecrawl search failed');
   }
+
+  const searchData = await searchResponse.json();
+  const results = searchData.data || [];
   
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '[]';
+  if (results.length === 0) {
+    return [];
+  }
+
+  const combinedContent = results
+    .slice(0, 5)
+    .map((r: any) => `[${r.url}]\n${r.markdown || r.description || ''}`)
+    .join('\n\n---\n\n');
+
+  // Use Lovable AI to extract structured COT data
+  const aiResponse = await fetch(LOVABLE_AI_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${lovableApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash',
+      messages: [{
+        role: 'system',
+        content: 'Extract COT positioning data. Return valid JSON array only.'
+      }, {
+        role: 'user',
+        content: `Extract Commitments of Traders data from this content. Return JSON array:
+[{
+  "cftc_contract_market_code": "code",
+  "market_and_exchange_names": "name",
+  "report_date_as_yyyy_mm_dd": "YYYY-MM-DD",
+  "noncomm_positions_long_all": number,
+  "noncomm_positions_short_all": number,
+  "comm_positions_long_all": number,
+  "comm_positions_short_all": number,
+  "open_interest_all": number
+}]
+
+Include Gold (067651), Silver (088691), Crude Oil (067411), Copper (088661), EUR/USD (099741) if found.
+
+Content:
+${combinedContent.substring(0, 10000)}`
+      }],
+      temperature: 0.1,
+      max_tokens: 2000,
+    }),
+  });
+
+  if (!aiResponse.ok) {
+    throw new Error('AI extraction failed');
+  }
+
+  const aiData = await aiResponse.json();
+  const content = aiData.choices?.[0]?.message?.content || '[]';
   
-  // Try to extract JSON from the response
   const jsonMatch = content.match(/\[[\s\S]*\]/);
   if (jsonMatch) {
     return JSON.parse(jsonMatch[0]);
@@ -96,34 +148,35 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
+    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    console.log('Starting CFTC COT reports ingestion...');
+    console.log('[COT] Starting CFTC COT reports ingestion...');
     
     let cotData: any[];
     
     try {
       cotData = await fetchCFTCData();
-      console.log(`✅ Primary CFTC API successful: ${cotData.length} records`);
+      console.log(`[COT] ✅ Primary CFTC API successful: ${cotData.length} records`);
     } catch (primaryError) {
-      console.error(`❌ Primary CFTC API failed:`, primaryError);
+      console.error(`[COT] ❌ Primary CFTC API failed:`, primaryError);
       
-      if (perplexityKey) {
+      if (firecrawlKey && lovableApiKey) {
         try {
-          cotData = await fetchCOTFallback(perplexityKey);
+          cotData = await fetchCOTFallback(firecrawlKey, lovableApiKey);
           fallbackUsed = true;
-          console.log(`✅ Fallback successful: ${cotData.length} records`);
+          console.log(`[COT] ✅ Fallback successful: ${cotData.length} records`);
         } catch (fallbackError) {
-          console.error(`❌ Fallback failed:`, fallbackError);
+          console.error(`[COT] ❌ Fallback failed:`, fallbackError);
           throw new Error('Both primary and fallback failed');
         }
       } else {
         throw primaryError;
       }
     }
-    console.log(`Processing ${cotData.length} COT records...`);
+    console.log(`[COT] Processing ${cotData.length} COT records...`);
     
     for (const record of cotData) {
       try {
@@ -135,7 +188,6 @@ Deno.serve(async (req) => {
           continue;
         }
         
-        // Look up asset_id using Supabase client
         const { data: assets } = await supabase
           .from('assets')
           .select('id')
@@ -178,7 +230,6 @@ Deno.serve(async (req) => {
           }
         };
         
-        // Upsert using Supabase client
         const { error: upsertError } = await supabase
           .from('cot_reports')
           .upsert(cotRecord, {
@@ -189,7 +240,6 @@ Deno.serve(async (req) => {
         if (!upsertError) {
           inserted++;
           
-          // Generate signal if net position is extreme
           if (Math.abs(net_position) > 50000) {
             const checksumBuffer = await crypto.subtle.digest(
               'SHA-256',
@@ -216,59 +266,52 @@ Deno.serve(async (req) => {
             
             await supabase
               .from('signals')
-              .upsert(signal, {
-                onConflict: 'checksum',
-                ignoreDuplicates: true
-              });
+              .upsert(signal, { onConflict: 'checksum', ignoreDuplicates: true });
           }
         } else {
-          console.error('Upsert error:', upsertError);
+          console.error('[COT] Upsert error:', upsertError);
           skipped++;
         }
         
       } catch (err) {
-        console.error('Error processing COT record:', err);
+        console.error('[COT] Error processing record:', err);
         skipped++;
       }
     }
     
-    // Log heartbeat to function_status
     const durationMs = Date.now() - startTime;
+    const sourceUsed = fallbackUsed ? 'Firecrawl + Lovable AI' : 'CFTC API';
+    
     await logHeartbeat(supabase, {
       function_name: 'ingest-cot-cftc',
       status: 'success',
       rows_inserted: inserted,
       rows_skipped: skipped,
-      fallback_used: fallbackUsed ? 'Perplexity AI' : null,
+      fallback_used: fallbackUsed ? 'Firecrawl + Lovable AI' : null,
       duration_ms: durationMs,
-      source_used: fallbackUsed ? 'Perplexity AI' : 'CFTC API',
-      metadata: {
-        total_processed: cotData.length,
-        commodities_mapped: Object.keys(commodityMap).length
-      }
+      source_used: sourceUsed,
+      metadata: { total_processed: cotData.length, commodities_mapped: Object.keys(commodityMap).length }
     });
 
-    // Send Slack success alert
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-cot-cftc',
       status: 'success',
       duration: durationMs,
       rowsInserted: inserted,
       rowsSkipped: skipped,
-      sourceUsed: fallbackUsed ? 'Perplexity AI' : 'CFTC API',
+      sourceUsed,
     });
     
-    console.log(`✅ COT ingestion complete: ${inserted} inserted, ${skipped} skipped, ${durationMs}ms`);
+    console.log(`[COT] ✅ Complete: ${inserted} inserted, ${skipped} skipped, ${durationMs}ms`);
     
     return new Response(JSON.stringify({
       success: true,
-      source: fallbackUsed ? 'Perplexity AI (fallback)' : 'CFTC API',
+      source: sourceUsed,
       processed: cotData.length,
       inserted,
       skipped,
       fallbackUsed,
       durationMs,
-      note: 'COT data updated weekly on Fridays'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -276,30 +319,25 @@ Deno.serve(async (req) => {
   } catch (error) {
     const durationMs = Date.now() - startTime;
     errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('Fatal error:', errorMessage);
+    console.error('[COT] ❌ Fatal error:', errorMessage);
     
-    // Log failure heartbeat
     try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
+      const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       
       await logHeartbeat(supabase, {
         function_name: 'ingest-cot-cftc',
         status: 'failure',
         rows_inserted: inserted,
         rows_skipped: skipped,
-        fallback_used: fallbackUsed ? 'Perplexity AI' : null,
+        fallback_used: fallbackUsed ? 'Firecrawl + Lovable AI' : null,
         duration_ms: durationMs,
-        source_used: fallbackUsed ? 'Perplexity AI' : 'CFTC API',
+        source_used: fallbackUsed ? 'Firecrawl + Lovable AI' : 'CFTC API',
         error_message: errorMessage,
-        metadata: { errorDetails: errorMessage }
       });
     } catch (logError) {
-      console.error('Failed to log heartbeat:', logError);
+      console.error('[COT] Failed to log heartbeat:', logError);
     }
     
-    // Send Slack failure alert
     await slackAlerter.sendCriticalAlert({
       type: 'auth_error',
       etlName: 'ingest-cot-cftc',

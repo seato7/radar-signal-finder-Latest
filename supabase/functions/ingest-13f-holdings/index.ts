@@ -8,10 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Disable JWT verification for automated ingestion
-export const config = {
-  verify_jwt: false
-};
+const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
+const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
 // Major hedge fund managers to track
 const TRACKED_MANAGERS = [
@@ -40,175 +38,195 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY');
+    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     
-    if (!perplexityKey) {
-      throw new Error('Perplexity API key not configured');
+    if (!firecrawlKey) {
+      throw new Error('FIRECRAWL_API_KEY not configured');
+    }
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    console.log('🏦 Starting 13F holdings ingestion via Perplexity...');
+    console.log('[13F] 🏦 Starting 13F holdings ingestion via Firecrawl...');
     
-    let response;
-    let retries = 0;
-    const maxRetries = 3;
+    // Search for recent 13F filings news
+    const searchQueries = [
+      '13F SEC filing hedge fund holdings 2024',
+      `${TRACKED_MANAGERS.slice(0, 3).join(' ')} stock holdings quarterly`,
+      'institutional investor portfolio changes SEC'
+    ];
     
-    while (retries <= maxRetries) {
+    let allResults: any[] = [];
+    
+    for (const query of searchQueries) {
       try {
-        console.log(`🔄 Fetching 13F holdings, attempt ${retries + 1}/${maxRetries + 1}`);
-        
-        response = await fetch('https://api.perplexity.ai/chat/completions', {
+        const searchResponse = await fetch(`${FIRECRAWL_API_URL}/search`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${perplexityKey}`,
+            'Authorization': `Bearer ${firecrawlKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'sonar',
-            messages: [{
-              role: 'system',
-              content: 'You are a financial data provider specializing in SEC 13F filings. Return ONLY structured data in the exact format requested. No explanations or commentary.'
-            }, {
-              role: 'user',
-              content: `List the most recent significant 13F holdings changes from major hedge funds (last filing period). Include holdings from: ${TRACKED_MANAGERS.join(', ')}.
-
-For each holding provide EXACTLY this format:
-
-HOLDING:
-MANAGER: [Fund Name]
-TICKER: [Stock Symbol]
-SHARES: [Number of shares]
-VALUE: [Value in thousands USD]
-CHANGE: [new/increase/decrease/unchanged]
-CHANGE_PCT: [Percentage change from prior quarter]
-PERIOD: [Filing period YYYY-MM-DD]
-
-List at least 15 significant holdings with real data from the most recent 13F filings.`
-            }],
-            temperature: 0.1,
-            max_tokens: 3000,
+            query,
+            limit: 5,
+            scrapeOptions: { formats: ['markdown'] }
           }),
         });
-        
-        if (response.status === 429) {
-          const backoffMs = Math.min(3000 * Math.pow(2, retries), 30000);
-          console.log(`⚠️ Rate limited, retry ${retries + 1}/${maxRetries + 1} in ${backoffMs}ms`);
-          retries++;
-          if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            continue;
+
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          if (searchData.data && Array.isArray(searchData.data)) {
+            allResults.push(...searchData.data);
+            console.log(`[13F] Query "${query.substring(0, 30)}..." returned ${searchData.data.length} results`);
           }
-          throw new Error('Rate limit exceeded after retries');
         }
-        
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Unable to read error');
-          console.error(`❌ Perplexity API error: ${response.status} - ${errorText}`);
-          retries++;
-          if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 3000 * retries));
-            continue;
-          }
-          throw new Error(`Perplexity API error: ${response.status}`);
-        }
-        
-        console.log(`✅ Successfully fetched 13F holdings data`);
-        break;
-        
-      } catch (fetchError) {
-        console.error(`❌ Fetch error:`, fetchError);
-        retries++;
-        if (retries > maxRetries) {
-          throw fetchError;
-        }
-        await new Promise(resolve => setTimeout(resolve, 3000 * retries));
+      } catch (err) {
+        console.warn(`[13F] Search query failed: ${query}`, err);
       }
-    }
-    
-    if (!response) {
-      throw new Error('Failed to fetch after retries');
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    console.log(`[13F] Total search results: ${allResults.length}`);
+
+    if (allResults.length === 0) {
+      await logHeartbeat(supabaseClient, {
+        function_name: 'ingest-13f-holdings',
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'Firecrawl (no results)',
+      });
+
+      return new Response(JSON.stringify({ success: true, inserted: 0, skipped: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const combinedContent = allResults
+      .slice(0, 10)
+      .map((r, i) => `[Source ${i + 1}: ${r.url || 'unknown'}]\n${r.markdown || r.description || ''}`)
+      .join('\n\n---\n\n');
+
+    console.log('[13F] Extracting holdings data with Lovable AI...');
+
+    const aiResponse = await fetch(LOVABLE_AI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [{
+          role: 'system',
+          content: 'Extract 13F holdings data. Return valid JSON array only.'
+        }, {
+          role: 'user',
+          content: `Extract 13F hedge fund holdings from this content. Return JSON array:
+[{
+  "manager": "Fund Name",
+  "ticker": "SYMBOL",
+  "shares": number,
+  "value": number (in thousands USD),
+  "change": "new" or "increase" or "decrease" or "unchanged",
+  "change_pct": number,
+  "period": "YYYY-MM-DD"
+}]
+
+Look for holdings from: ${TRACKED_MANAGERS.join(', ')}
+Only include holdings you can verify from the content. If none found, return [].
+
+Content:
+${combinedContent.substring(0, 15000)}`
+        }],
+        temperature: 0.1,
+        max_tokens: 3000,
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      throw new Error(`AI extraction failed: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    const aiContent = aiData.choices?.[0]?.message?.content || '[]';
     
-    console.log('Parsing 13F holdings response...');
+    let holdings: any[] = [];
+    try {
+      const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        holdings = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseError) {
+      console.error('[13F] Failed to parse AI response:', parseError);
+    }
+
+    console.log(`[13F] AI extracted ${holdings.length} holdings`);
     
-    // Parse holdings from response
-    const holdingBlocks = content.split(/HOLDING:/i).filter((b: string) => b.trim());
     const signals: any[] = [];
     
-    for (const block of holdingBlocks) {
-      const managerMatch = block.match(/MANAGER:\s*(.+)/i);
-      const tickerMatch = block.match(/TICKER:\s*([A-Z]+)/i);
-      const sharesMatch = block.match(/SHARES:\s*([\d,]+)/i);
-      const valueMatch = block.match(/VALUE:\s*\$?([\d,]+)/i);
-      const changeMatch = block.match(/CHANGE:\s*(new|increase|decrease|unchanged)/i);
-      const changePctMatch = block.match(/CHANGE_PCT:\s*([-+]?[\d.]+)/i);
-      const periodMatch = block.match(/PERIOD:\s*(\d{4}-\d{2}-\d{2})/i);
+    for (const holding of holdings) {
+      if (!holding.manager || !holding.ticker) continue;
       
-      if (managerMatch && tickerMatch) {
-        const manager = managerMatch[1].trim();
-        const ticker = tickerMatch[1].toUpperCase();
-        const shares = sharesMatch ? parseInt(sharesMatch[1].replace(/,/g, '')) : 0;
-        const value = valueMatch ? parseInt(valueMatch[1].replace(/,/g, '')) : 0;
-        const change = changeMatch?.[1]?.toLowerCase() || 'unchanged';
-        const changePct = changePctMatch ? parseFloat(changePctMatch[1]) : 0;
-        const period = periodMatch?.[1] || new Date().toISOString().split('T')[0];
-        
-        // Determine signal type and direction
-        let signalType = 'bigmoney_hold';
-        let direction = 'neutral';
-        
-        if (change === 'new') {
-          signalType = 'bigmoney_hold_new';
-          direction = 'up';
-        } else if (change === 'increase') {
-          signalType = 'bigmoney_hold_increase';
-          direction = 'up';
-        } else if (change === 'decrease') {
-          signalType = 'bigmoney_hold_decrease';
-          direction = 'down';
-        }
-        
-        // Generate checksum for deduplication
-        const checksumData = JSON.stringify({ manager, period, ticker, value });
-        const encoder = new TextEncoder();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(checksumData));
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        signals.push({
-          signal_type: signalType,
-          value_text: `${manager} - ${ticker}`,
-          direction,
-          magnitude: value / 1000.0,
-          observed_at: new Date(period).toISOString(),
-          raw: {
-            manager,
-            ticker,
-            value,
-            shares,
-            period_ended: period,
-            change_type: change,
-            change_pct: changePct,
-          },
-          citation: {
-            source: `SEC 13F-HR: ${manager}`,
-            url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(manager)}&type=13F`,
-            timestamp: period
-          },
-          checksum
-        });
+      const manager = String(holding.manager).trim();
+      const ticker = String(holding.ticker).toUpperCase();
+      const shares = typeof holding.shares === 'number' ? holding.shares : 0;
+      const value = typeof holding.value === 'number' ? holding.value : 0;
+      const change = holding.change || 'unchanged';
+      const changePct = typeof holding.change_pct === 'number' ? holding.change_pct : 0;
+      const period = holding.period || new Date().toISOString().split('T')[0];
+      
+      let signalType = 'bigmoney_hold';
+      let direction = 'neutral';
+      
+      if (change === 'new') {
+        signalType = 'bigmoney_hold_new';
+        direction = 'up';
+      } else if (change === 'increase') {
+        signalType = 'bigmoney_hold_increase';
+        direction = 'up';
+      } else if (change === 'decrease') {
+        signalType = 'bigmoney_hold_decrease';
+        direction = 'down';
       }
+      
+      const checksumData = JSON.stringify({ manager, period, ticker, value });
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(checksumData));
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      signals.push({
+        signal_type: signalType,
+        value_text: `${manager} - ${ticker}`,
+        direction,
+        magnitude: value / 1000.0,
+        observed_at: new Date(period).toISOString(),
+        raw: {
+          manager,
+          ticker,
+          value,
+          shares,
+          period_ended: period,
+          change_type: change,
+          change_pct: changePct,
+        },
+        citation: {
+          source: `SEC 13F-HR: ${manager}`,
+          url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(manager)}&type=13F`,
+          timestamp: period
+        },
+        checksum
+      });
     }
     
-    console.log(`Parsed ${signals.length} 13F holdings signals`);
+    console.log(`[13F] Created ${signals.length} signals`);
     
     let inserted = 0;
     let skipped = 0;
     
     for (const signal of signals) {
-      // Check for duplicates by checksum
       const { data: existing } = await supabaseClient
         .from('signals')
         .select('id')
@@ -228,41 +246,46 @@ List at least 15 significant holdings with real data from the most recent 13F fi
         if (error.code === '23505') {
           skipped++;
         } else {
-          console.error('Insert error:', error);
+          console.error('[13F] Insert error:', error);
         }
       } else {
         inserted++;
       }
     }
 
+    const durationMs = Date.now() - startTime;
+
     await logHeartbeat(supabaseClient, {
       function_name: 'ingest-13f-holdings',
       status: 'success',
       rows_inserted: inserted,
       rows_skipped: skipped,
-      duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity AI',
+      duration_ms: durationMs,
+      source_used: 'Firecrawl + Lovable AI',
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-13f-holdings',
       status: 'success',
-      duration: Date.now() - startTime,
+      duration: durationMs,
       rowsInserted: inserted,
       rowsSkipped: skipped,
-      sourceUsed: 'Perplexity AI',
+      sourceUsed: 'Firecrawl + Lovable AI',
     });
+
+    console.log(`[13F] ✅ Complete: ${inserted} inserted, ${skipped} skipped`);
 
     return new Response(JSON.stringify({
       success: true,
       inserted,
       skipped,
-      total_parsed: signals.length
+      total_parsed: signals.length,
+      searchResults: allResults.length
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error in ingest-13f-holdings:', error);
+    console.error('[13F] ❌ Error:', error);
     
     await logHeartbeat(supabaseClient, {
       function_name: 'ingest-13f-holdings',
@@ -270,7 +293,7 @@ List at least 15 significant holdings with real data from the most recent 13F fi
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'Perplexity AI',
+      source_used: 'Firecrawl + Lovable AI',
       error_message: error instanceof Error ? error.message : 'Unknown error',
     });
 
