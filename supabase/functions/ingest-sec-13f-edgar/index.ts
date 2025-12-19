@@ -324,6 +324,117 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  // Check for resolve_pending mode
+  const url = new URL(req.url);
+  const resolvePending = url.searchParams.get('resolve_pending') === 'true';
+  const batchLimit = parseInt(url.searchParams.get('limit') || '100');
+  const markUnmappable = url.searchParams.get('mark_unmappable') === 'true';
+
+  if (resolvePending) {
+    // RESOLVE PENDING CUSIPS MODE
+    try {
+      console.log(`Resolve pending mode: limit=${batchLimit}, markUnmappable=${markUnmappable}`);
+      
+      const { data: pendingCusips, error: fetchError } = await supabase
+        .from('cusip_mappings')
+        .select('cusip, company_name')
+        .is('ticker', null)
+        .limit(batchLimit);
+      
+      if (fetchError) throw new Error(`Fetch error: ${fetchError.message}`);
+      
+      if (!pendingCusips || pendingCusips.length === 0) {
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'No pending CUSIPs to resolve',
+          stats: { pending: 0, resolved: 0 }
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      
+      console.log(`Found ${pendingCusips.length} pending CUSIPs`);
+      
+      const cusipList = pendingCusips.map(p => p.cusip);
+      const figiResults = await lookupOpenFIGI(cusipList, 10);
+      
+      let resolved = 0;
+      let unresolvable = 0;
+      const updates: Array<{ cusip: string; ticker: string | null; company_name: string | null; source: string; verified: boolean }> = [];
+      
+      for (const pending of pendingCusips) {
+        const ticker = figiResults.get(pending.cusip) || null;
+        
+        if (ticker) {
+          updates.push({
+            cusip: pending.cusip,
+            ticker,
+            company_name: pending.company_name,
+            source: 'openfigi',
+            verified: true,
+          });
+          resolved++;
+        } else if (markUnmappable) {
+          updates.push({
+            cusip: pending.cusip,
+            ticker: 'UNMAPPED',
+            company_name: pending.company_name,
+            source: 'unmappable',
+            verified: false,
+          });
+          unresolvable++;
+        }
+      }
+      
+      if (updates.length > 0) {
+        const { error } = await supabase
+          .from('cusip_mappings')
+          .upsert(updates, { onConflict: 'cusip' });
+        if (error) console.error('Update error:', error.message);
+      }
+      
+      const { count: remainingCount } = await supabase
+        .from('cusip_mappings')
+        .select('*', { count: 'exact', head: true })
+        .is('ticker', null);
+      
+      const { count: totalMapped } = await supabase
+        .from('cusip_mappings')
+        .select('*', { count: 'exact', head: true })
+        .not('ticker', 'is', null)
+        .neq('ticker', 'UNMAPPED');
+      
+      await supabase.from('ingest_logs').insert({
+        etl_name: 'resolve-pending-cusips',
+        status: 'success',
+        started_at: new Date(startTime).toISOString(),
+        completed_at: new Date().toISOString(),
+        duration_seconds: Math.round((Date.now() - startTime) / 1000),
+        rows_inserted: resolved,
+        rows_updated: unresolvable,
+        source_used: 'openfigi',
+        metadata: { remaining: remainingCount, total_mapped: totalMapped }
+      });
+      
+      return new Response(JSON.stringify({
+        success: true,
+        processed: pendingCusips.length,
+        resolved,
+        unresolvable: markUnmappable ? unresolvable : 0,
+        remaining: remainingCount,
+        totalMapped,
+        duration_ms: Date.now() - startTime,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Resolve pending error:', msg);
+      return new Response(JSON.stringify({ success: false, error: msg }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
+  // NORMAL 13F INGESTION MODE
   try {
     // Load CUSIP mappings WITH tickers from database (cached lookups)
     const { data: existingMappings, error: mappingError } = await supabase
