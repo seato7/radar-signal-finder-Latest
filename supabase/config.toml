@@ -192,3 +192,6 @@ verify_jwt = false
 
 [functions.firecrawl-crawl]
 verify_jwt = false
+
+[functions.resolve-pending-cusips]
+verify_jwt = false
