@@ -1,4 +1,4 @@
-// CUSIP Resolution Edge Function v1.2 - Auto resolver
+// CUSIP Resolver v1.0 - Resolves pending CUSIPs via OpenFIGI API
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
@@ -44,7 +44,6 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, { ticker: s
       
       if (!response.ok) {
         console.log(`OpenFIGI API error: ${response.status}`);
-        // Still mark these as attempted
         for (const cusip of batch) {
           results.set(cusip, { ticker: null, name: null });
         }
@@ -58,7 +57,6 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, { ticker: s
         const mapping = data[i];
         
         if (mapping.data && mapping.data.length > 0) {
-          // Prioritize common stock, then any equity
           const bestMatch = mapping.data.find((d: any) => 
             d.securityType === 'Common Stock' || d.securityType === 'EQS'
           ) || mapping.data.find((d: any) => 
@@ -81,12 +79,11 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, { ticker: s
         }
       }
       
-      // Rate limit: 2.5s between requests (25 requests/min max)
+      // Rate limit: 2.5s between requests
       await new Promise(r => setTimeout(r, 2500));
       
     } catch (e) {
       console.error('OpenFIGI lookup error:', e);
-      // Mark batch as attempted
       for (const cusip of batch) {
         results.set(cusip, { ticker: null, name: null });
       }
@@ -109,14 +106,12 @@ serve(async (req) => {
   );
 
   try {
-    // Parse optional parameters
     const url = new URL(req.url);
     const batchLimit = parseInt(url.searchParams.get('limit') || '100');
     const markUnmappable = url.searchParams.get('mark_unmappable') === 'true';
     
     console.log(`Starting CUSIP resolution: limit=${batchLimit}, markUnmappable=${markUnmappable}`);
     
-    // Fetch pending CUSIPs (those with NULL ticker)
     const { data: pendingCusips, error: fetchError } = await supabase
       .from('cusip_mappings')
       .select('cusip, company_name')
@@ -139,11 +134,9 @@ serve(async (req) => {
     
     console.log(`Found ${pendingCusips.length} pending CUSIPs`);
     
-    // Lookup via OpenFIGI
     const cusipList = pendingCusips.map(p => p.cusip);
     const figiResults = await lookupOpenFIGI(cusipList);
     
-    // Prepare updates
     let resolved = 0;
     let unresolvable = 0;
     const updates: Array<{ cusip: string; ticker: string | null; company_name: string | null; source: string; verified: boolean }> = [];
@@ -152,7 +145,6 @@ serve(async (req) => {
       const result = figiResults.get(pending.cusip);
       
       if (result?.ticker) {
-        // Successfully resolved
         updates.push({
           cusip: pending.cusip,
           ticker: result.ticker,
@@ -162,7 +154,6 @@ serve(async (req) => {
         });
         resolved++;
       } else if (markUnmappable) {
-        // Mark as unmappable with UNKNOWN ticker
         updates.push({
           cusip: pending.cusip,
           ticker: 'UNMAPPED',
@@ -172,10 +163,8 @@ serve(async (req) => {
         });
         unresolvable++;
       }
-      // If not markUnmappable, leave as NULL for future retry
     }
     
-    // Batch update
     if (updates.length > 0) {
       const chunkSize = 500;
       for (let i = 0; i < updates.length; i += chunkSize) {
@@ -190,7 +179,6 @@ serve(async (req) => {
       }
     }
     
-    // Get remaining stats
     const { count: remainingCount } = await supabase
       .from('cusip_mappings')
       .select('*', { count: 'exact', head: true })
@@ -204,9 +192,8 @@ serve(async (req) => {
     
     const duration = Date.now() - startTime;
     
-    // Log the run
     await supabase.from('ingest_logs').insert({
-      etl_name: 'resolve-pending-cusips',
+      etl_name: 'cusip-resolver',
       status: 'success',
       started_at: new Date(startTime).toISOString(),
       completed_at: new Date().toISOString(),
@@ -244,7 +231,7 @@ serve(async (req) => {
     console.error('Error:', errorMessage);
     
     await supabase.from('ingest_logs').insert({
-      etl_name: 'resolve-pending-cusips',
+      etl_name: 'cusip-resolver',
       status: 'error',
       started_at: new Date(startTime).toISOString(),
       completed_at: new Date().toISOString(),
