@@ -38,31 +38,32 @@ interface Holding {
   putCall?: string;
 }
 
-interface CusipMapping {
-  cusip: string;
-  ticker: string | null;
-  company_name: string | null;
-  source: string;
-}
-
-// OpenFIGI API for dynamic CUSIP resolution (free, no API key required)
-async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, string>> {
+// OpenFIGI API for dynamic CUSIP resolution (free, max 10 items per request, 25 req/min)
+async function lookupOpenFIGI(cusips: string[], maxBatches: number = 5): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   
   if (cusips.length === 0) return results;
   
-  // OpenFIGI allows batch of up to 100 at a time
+  // OpenFIGI allows max 10 items per request for unauthenticated
+  const batchSize = 10;
   const batches: string[][] = [];
-  for (let i = 0; i < cusips.length; i += 100) {
-    batches.push(cusips.slice(i, i + 100));
+  for (let i = 0; i < cusips.length; i += batchSize) {
+    batches.push(cusips.slice(i, i + batchSize));
   }
   
-  for (const batch of batches) {
+  // Limit number of batches to avoid timeout (each batch takes ~3s with rate limiting)
+  const batchesToProcess = batches.slice(0, maxBatches);
+  console.log(`Processing ${batchesToProcess.length} of ${batches.length} OpenFIGI batches`);
+  
+  let rateLimited = false;
+  
+  for (const batch of batchesToProcess) {
+    if (rateLimited) break;
+    
     try {
       const requestBody = batch.map(cusip => ({
         idType: 'ID_CUSIP',
         idValue: cusip,
-        exchCode: 'US'
       }));
       
       const response = await fetch('https://api.openfigi.com/v3/mapping', {
@@ -73,6 +74,12 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, string>> {
         body: JSON.stringify(requestBody),
       });
       
+      if (response.status === 429) {
+        console.log('OpenFIGI rate limited, stopping lookups');
+        rateLimited = true;
+        break;
+      }
+      
       if (!response.ok) {
         console.log(`OpenFIGI API error: ${response.status}`);
         continue;
@@ -80,13 +87,11 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, string>> {
       
       const data = await response.json();
       
-      // Parse results
       for (let i = 0; i < data.length; i++) {
         const cusip = batch[i];
         const mapping = data[i];
         
         if (mapping.data && mapping.data.length > 0) {
-          // Find the best ticker (prefer common stock)
           const bestMatch = mapping.data.find((d: any) => 
             d.securityType === 'Common Stock' || d.securityType === 'EQS'
           ) || mapping.data[0];
@@ -97,7 +102,7 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, string>> {
         }
       }
       
-      // Rate limit: OpenFIGI allows 25 requests/min for unauthenticated
+      // Rate limit: 2.5s between requests (25 requests/min max)
       await new Promise(r => setTimeout(r, 2500));
       
     } catch (e) {
@@ -326,10 +331,10 @@ serve(async (req) => {
   );
 
   try {
-    // Load existing CUSIP mappings from database (cached lookups)
+    // Load ALL existing CUSIP mappings from database (cached lookups)
     const { data: existingMappings, error: mappingError } = await supabase
       .from('cusip_mappings')
-      .select('cusip, ticker, company_name, source');
+      .select('cusip, ticker');
     
     if (mappingError) {
       console.error('Error loading CUSIP mappings:', mappingError);
@@ -341,7 +346,7 @@ serve(async (req) => {
     }
     console.log(`Loaded ${cusipCache.size} cached CUSIP mappings`);
     
-    // Collect all holdings from all managers first
+    // Collect all holdings from all managers
     const allHoldings: Array<{
       holding: Holding;
       manager: typeof TRACKED_MANAGERS[0];
@@ -351,9 +356,9 @@ serve(async (req) => {
     
     let managersProcessed = 0;
     
-    // Phase 1: Collect all holdings from all managers
+    // Phase 1: Collect all holdings
     for (const manager of TRACKED_MANAGERS) {
-      console.log(`Fetching ${manager.name} (CIK: ${manager.cik})...`);
+      console.log(`Fetching ${manager.name}...`);
       
       const accessionNumbers = await fetchRecentFilings(manager.cik);
       if (accessionNumbers.length === 0) {
@@ -394,62 +399,69 @@ serve(async (req) => {
       }
       
       managersProcessed++;
-      await new Promise(r => setTimeout(r, 200)); // SEC rate limiting
+      await new Promise(r => setTimeout(r, 200));
     }
     
-    console.log(`Collected ${allHoldings.length} total holdings from ${managersProcessed} managers`);
+    console.log(`Collected ${allHoldings.length} holdings from ${managersProcessed} managers`);
     
-    // Phase 2: Identify unknown CUSIPs that need OpenFIGI lookup
-    const unknownCusips = new Set<string>();
-    const cusipToName = new Map<string, string>();
+    // Phase 2: Identify unknown CUSIPs - prioritize by frequency/value
+    const cusipStats = new Map<string, { count: number; totalValue: number; name: string }>();
     
     for (const { holding } of allHoldings) {
       if (!cusipCache.has(holding.cusip)) {
-        unknownCusips.add(holding.cusip);
-        cusipToName.set(holding.cusip, holding.nameOfIssuer);
+        const existing = cusipStats.get(holding.cusip) || { count: 0, totalValue: 0, name: holding.nameOfIssuer };
+        existing.count++;
+        existing.totalValue += holding.value;
+        cusipStats.set(holding.cusip, existing);
       }
     }
     
-    console.log(`Found ${unknownCusips.size} unknown CUSIPs, looking up via OpenFIGI...`);
+    // Sort by value (most valuable first) for OpenFIGI lookup
+    const sortedUnknown = [...cusipStats.entries()]
+      .sort((a, b) => b[1].totalValue - a[1].totalValue)
+      .slice(0, 50) // Only lookup top 50 most valuable unknown CUSIPs per run
+      .map(([cusip]) => cusip);
     
-    // Phase 3: Batch lookup unknown CUSIPs via OpenFIGI
-    if (unknownCusips.size > 0) {
-      const figiResults = await lookupOpenFIGI([...unknownCusips]);
+    console.log(`Found ${cusipStats.size} unknown CUSIPs, looking up top ${sortedUnknown.length} via OpenFIGI...`);
+    
+    // Phase 3: Batch lookup via OpenFIGI (limited to avoid timeouts)
+    if (sortedUnknown.length > 0) {
+      const figiResults = await lookupOpenFIGI(sortedUnknown, 5);
       console.log(`OpenFIGI resolved ${figiResults.size} tickers`);
       
-      // Save new mappings to database for future use
-      const newMappings: CusipMapping[] = [];
+      // Save ALL new mappings (including failed lookups to avoid re-trying)
+      const newMappings: Array<{ cusip: string; ticker: string | null; company_name: string | null; source: string }> = [];
       
-      for (const cusip of unknownCusips) {
-        const ticker = figiResults.get(cusip) || null;
-        const companyName = cusipToName.get(cusip) || null;
-        
-        newMappings.push({
-          cusip,
-          ticker,
-          company_name: companyName,
-          source: ticker ? 'openfigi' : 'openfigi_notfound',
-        });
-        
-        // Update local cache
-        cusipCache.set(cusip, ticker);
-      }
-      
-      // Batch upsert new mappings
-      if (newMappings.length > 0) {
-        const { error: upsertError } = await supabase
-          .from('cusip_mappings')
-          .upsert(newMappings, { onConflict: 'cusip' });
-        
-        if (upsertError) {
-          console.error('Error saving CUSIP mappings:', upsertError);
-        } else {
-          console.log(`Cached ${newMappings.length} new CUSIP mappings`);
+      for (const [cusip, stats] of cusipStats) {
+        if (!cusipCache.has(cusip)) {
+          const ticker = figiResults.get(cusip) || null;
+          newMappings.push({
+            cusip,
+            ticker,
+            company_name: stats.name,
+            source: ticker ? 'openfigi' : 'pending',
+          });
+          cusipCache.set(cusip, ticker);
         }
       }
+      
+      // Batch upsert in chunks
+      const chunkSize = 500;
+      for (let i = 0; i < newMappings.length; i += chunkSize) {
+        const chunk = newMappings.slice(i, i + chunkSize);
+        const { error } = await supabase
+          .from('cusip_mappings')
+          .upsert(chunk, { onConflict: 'cusip' });
+        
+        if (error) {
+          console.error('Error saving CUSIP mappings chunk:', error.message);
+        }
+      }
+      
+      console.log(`Cached ${newMappings.length} CUSIP mappings`);
     }
     
-    // Phase 4: Insert all holdings with resolved tickers
+    // Phase 4: Insert all holdings
     let totalInserted = 0;
     let totalSkipped = 0;
     let tickersMatched = 0;
@@ -468,9 +480,6 @@ serve(async (req) => {
         tickersMatched++;
       } else {
         tickersUnmatched++;
-        if (tickersUnmatched <= 10) {
-          console.log(`Still unmatched: ${holding.nameOfIssuer} (CUSIP: ${holding.cusip})`);
-        }
       }
       
       const checksum = await generateChecksum({
@@ -563,8 +572,8 @@ serve(async (req) => {
       ? Math.round((tickersMatched / (tickersMatched + tickersUnmatched)) * 100) 
       : 0;
     
-    console.log(`Ticker matching: ${tickersMatched} matched, ${tickersUnmatched} unmatched (${matchRate}% match rate)`);
-    console.log(`CUSIP cache now has ${cusipCache.size} entries`);
+    console.log(`Matching: ${tickersMatched}/${tickersMatched + tickersUnmatched} (${matchRate}%)`);
+    console.log(`Cache: ${cusipCache.size} entries, Pending lookups: ${[...cusipStats.values()].length - sortedUnknown.length}`);
 
     await supabase.from('ingest_logs').insert({
       etl_name: 'ingest-sec-13f-edgar',
@@ -578,11 +587,11 @@ serve(async (req) => {
       metadata: {
         managers_processed: managersProcessed,
         signals_generated: signalsGenerated.length,
-        tracked_managers: TRACKED_MANAGERS.length,
         tickers_matched: tickersMatched,
         tickers_unmatched: tickersUnmatched,
         match_rate_pct: matchRate,
         cusip_cache_size: cusipCache.size,
+        unknown_cusips: cusipStats.size,
       }
     });
 
