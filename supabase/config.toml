@@ -195,3 +195,6 @@ verify_jwt = false
 
 [functions.cusip-resolver]
 verify_jwt = false
+
+[functions.generate-signals-from-13f]
+verify_jwt = false
