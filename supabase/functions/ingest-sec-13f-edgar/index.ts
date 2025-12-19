@@ -455,9 +455,7 @@ serve(async (req) => {
       console.log(`Cached ${newMappings.length} CUSIP mappings`);
     }
     
-    // Phase 4: Insert all holdings
-    let totalInserted = 0;
-    let totalSkipped = 0;
+    // Phase 4: Batch insert all holdings
     let tickersMatched = 0;
     let tickersUnmatched = 0;
     const signalsGenerated: Array<{
@@ -466,6 +464,9 @@ serve(async (req) => {
       changeType: string;
       changePct: number;
     }> = [];
+    
+    // Prepare all records with checksums
+    const holdingsToInsert: Array<Record<string, unknown>> = [];
     
     for (const { holding, manager, filing, change } of allHoldings) {
       const ticker = cusipCache.get(holding.cusip) || null;
@@ -482,44 +483,54 @@ serve(async (req) => {
         period: filing.periodOfReport,
       });
       
-      const { error } = await supabase
-        .from('holdings_13f')
-        .upsert({
-          manager_cik: manager.cik,
-          manager_name: manager.name,
-          ticker,
-          cusip: holding.cusip,
-          company_name: holding.nameOfIssuer,
-          shares: holding.shares,
-          value: holding.value,
-          filing_date: filing.filingDate,
-          period_of_report: filing.periodOfReport,
-          change_type: change?.changeType || 'unknown',
-          change_shares: change?.changeShares || 0,
-          change_pct: change?.changePct || 0,
-          previous_shares: change?.prevShares || null,
-          previous_value: change?.prevValue || null,
-          source_url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${manager.cik}&type=13F`,
-          checksum,
-        }, { onConflict: 'checksum' });
+      holdingsToInsert.push({
+        manager_cik: manager.cik,
+        manager_name: manager.name,
+        ticker,
+        cusip: holding.cusip,
+        company_name: holding.nameOfIssuer,
+        shares: holding.shares,
+        value: holding.value,
+        filing_date: filing.filingDate,
+        period_of_report: filing.periodOfReport,
+        change_type: change?.changeType || 'unknown',
+        change_shares: change?.changeShares || 0,
+        change_pct: change?.changePct || 0,
+        previous_shares: change?.prevShares || null,
+        previous_value: change?.prevValue || null,
+        source_url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${manager.cik}&type=13F`,
+        checksum,
+      });
       
-      if (error && error.code !== '23505') {
-        console.error('Insert error:', error);
-      } else if (!error) {
-        totalInserted++;
-        
-        if (ticker && change && ['new', 'increase', 'decrease', 'exit'].includes(change.changeType)) {
-          signalsGenerated.push({
-            ticker,
-            manager: manager.name,
-            changeType: change.changeType,
-            changePct: change.changePct,
-          });
-        }
-      } else {
-        totalSkipped++;
+      if (ticker && change && ['new', 'increase', 'decrease', 'exit'].includes(change.changeType)) {
+        signalsGenerated.push({
+          ticker,
+          manager: manager.name,
+          changeType: change.changeType,
+          changePct: change.changePct,
+        });
       }
     }
+    
+    // Batch upsert holdings in chunks of 200
+    let totalInserted = 0;
+    let totalSkipped = 0;
+    const holdingsChunkSize = 200;
+    
+    for (let i = 0; i < holdingsToInsert.length; i += holdingsChunkSize) {
+      const chunk = holdingsToInsert.slice(i, i + holdingsChunkSize);
+      const { error, count } = await supabase
+        .from('holdings_13f')
+        .upsert(chunk, { onConflict: 'checksum', ignoreDuplicates: true, count: 'exact' });
+      
+      if (error) {
+        console.error(`Batch insert error at ${i}:`, error.message);
+      } else {
+        totalInserted += count || chunk.length;
+      }
+    }
+    
+    console.log(`Inserted ${totalInserted} holdings`);
     
     // Phase 5: Generate signals
     for (const signal of signalsGenerated) {
