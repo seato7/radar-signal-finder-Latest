@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Top institutional filers to track (by CIK) - Top 10 most important
+// Top institutional filers to track (by CIK)
 const TRACKED_MANAGERS = [
   { cik: '0001067983', name: 'Berkshire Hathaway' },
   { cik: '0001336528', name: 'Bridgewater Associates' },
@@ -21,69 +21,6 @@ const TRACKED_MANAGERS = [
   { cik: '0001423053', name: 'Coatue Management' },
 ];
 
-// Extended CUSIP to ticker mapping for common securities (150+ stocks)
-const CUSIP_TO_TICKER: Record<string, string> = {
-  // Mega-cap tech
-  '037833100': 'AAPL', '594918104': 'MSFT', '02079K107': 'GOOGL', '02079K305': 'GOOG',
-  '023135106': 'AMZN', '88160R101': 'TSLA', '30303M102': 'META', '67066G104': 'NVDA',
-  // Berkshire
-  '084670702': 'BRK.B', '084670108': 'BRK.A',
-  // Financial - Major Banks
-  '92826C839': 'V', '46625H100': 'JPM', '172967424': 'C',
-  '38141G104': 'GS', '61746B100': 'MS', '060505104': 'BAC', '949746101': 'WFC',
-  '571903107': 'MA', '09247X101': 'BLK', '78462F103': 'SPGI',
-  '02005N100': 'ALLY', '075887109': 'BK', '1248572D9': 'COF', '29976E109': 'ETFC',
-  '78486Q101': 'SCHW', '816851109': 'STT', '844741108': 'USB',
-  // Consumer
-  '742718109': 'PG', '931142103': 'WMT', '22160K105': 'COST', '617446448': 'MCD',
-  '035229103': 'SBUX', '191216100': 'KO', '713448108': 'PEP', '654106103': 'NKE',
-  '532716109': 'LMT', '169656105': 'CMG', '550021109': 'LULU', '886547108': 'TJX',
-  '743315103': 'DHI', '531229102': 'LEN', '723787107': 'PM', '01609W102': 'MO',
-  // Healthcare
-  '717081103': 'PFE', '58933Y105': 'MRK', '00287Y109': 'ABBV', '88579Y101': 'TMO',
-  '91324P102': 'UNH', '532457108': 'LLY', '035420403': 'AMGN', '002824100': 'ABT',
-  '075896300': 'BMY', '449903206': 'IDXX', '45168D104': 'ISRG', '60855R100': 'MOH',
-  '458140100': 'INTU', '882568103': 'TDG', '478160104': 'JNJ',
-  // Telecom
-  '00206R102': 'T', '92343V104': 'VZ', '879868103': 'TMUS', '17275R102': 'CSCO',
-  // Energy
-  '30231G102': 'XOM', '166764100': 'CVX', '171196107': 'CHK', '20825C104': 'COP',
-  '29379V107': 'EPD', '674599105': 'OXY', '759509102': 'SLB', '91911N102': 'VLO',
-  // Semiconductors
-  '457030107': 'INTC', '00724F101': 'AMD', '79466L302': 'CRM', '007903107': 'AVGO',
-  '87612E106': 'TXN', '00826F306': 'ADI', '595017104': 'MU', '55354G100': 'MRVL',
-  '883556102': 'TSM', '04364L108': 'ARM', '034435108': 'ANET', '53814L108': 'LRCX',
-  '482740100': 'KLAC', '871503108': 'SNPS', '127387108': 'CDNS', '007924106': 'AMAT',
-  // Retail & E-commerce
-  '404119109': 'HD', '501044101': 'LOW', '882681109': 'TGT',
-  '29355A107': 'EBAY', '81762P102': 'SHOP', '01917E109': 'BABA', '37045V100': 'GM',
-  // Industrial
-  '097023105': 'BA', '149123101': 'CAT', '369604103': 'GE', '438516106': 'HON',
-  '912810RL8': 'UNP', '20030N101': 'CME', '260543103': 'DOW', '231021106': 'DE',
-  '443320106': 'HUM', '345370860': 'F', '29273V100': 'ETN',
-  // Media & Entertainment
-  '254687106': 'DIS', '655844108': 'NFLX', '92556H206': 'VIAC', '29444U700': 'EA',
-  '025816109': 'ATVI', '16411R208': 'CHTR', '20030J109': 'CMCSA', '87936R104': 'TTWO',
-  // Tech Growth
-  '69608A108': 'PLTR', '90353T100': 'UBER', '00971T101': 'ABNB', '12468P104': 'CRWD',
-  '23804L103': 'DDOG', '60937P106': 'MDB', '233377602': 'DASH', '831659108': 'SNOW',
-  '852234103': 'SQ', '98980F104': 'ZM', '833131107': 'SPOT', '256677105': 'DOCU',
-  '18915M107': 'COIN', '78267T109': 'ROKU', '09075V102': 'BKR',
-  // ETFs
-  '78464A102': 'SPY', '46090E103': 'IWM', '73935A104': 'QQQ', '78468R663': 'XLF',
-  '78468R689': 'XLE', '78468R671': 'XLK', '464287804': 'IVV', '922908363': 'VTI',
-  '922908769': 'VOO', '46434V407': 'EFA', '78463V103': 'GLD',
-  // Real Estate
-  '756109104': 'AMT', '29444U502': 'EQIX', '74340W103': 'PLD', '835898102': 'O',
-  '29261A100': 'EXR', '03027X100': 'AMH',
-  // Insurance & Financial Services
-  '053611109': 'AXP', '125896100': 'CB', '008479108': 'AFL', '628298103': 'NCR',
-  '701094104': 'PAYX', '59156R108': 'MET', '715826109': 'AON',
-  // Additional common holdings
-  '406216101': 'HAL', '116794207': 'BRK', '42806J700': 'HTZ', '11271J107': 'BN',
-  '43300A203': 'HLT', '44267T102': 'HHC', '76131D103': 'QSR', '812215200': 'SEG',
-};
-
 interface Filing13F {
   cik: string;
   managerName: string;
@@ -96,9 +33,79 @@ interface Holding {
   cusip: string;
   nameOfIssuer: string;
   titleOfClass: string;
-  value: number; // in thousands
+  value: number;
   shares: number;
   putCall?: string;
+}
+
+interface CusipMapping {
+  cusip: string;
+  ticker: string | null;
+  company_name: string | null;
+  source: string;
+}
+
+// OpenFIGI API for dynamic CUSIP resolution (free, no API key required)
+async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, string>> {
+  const results = new Map<string, string>();
+  
+  if (cusips.length === 0) return results;
+  
+  // OpenFIGI allows batch of up to 100 at a time
+  const batches: string[][] = [];
+  for (let i = 0; i < cusips.length; i += 100) {
+    batches.push(cusips.slice(i, i + 100));
+  }
+  
+  for (const batch of batches) {
+    try {
+      const requestBody = batch.map(cusip => ({
+        idType: 'ID_CUSIP',
+        idValue: cusip,
+        exchCode: 'US'
+      }));
+      
+      const response = await fetch('https://api.openfigi.com/v3/mapping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      if (!response.ok) {
+        console.log(`OpenFIGI API error: ${response.status}`);
+        continue;
+      }
+      
+      const data = await response.json();
+      
+      // Parse results
+      for (let i = 0; i < data.length; i++) {
+        const cusip = batch[i];
+        const mapping = data[i];
+        
+        if (mapping.data && mapping.data.length > 0) {
+          // Find the best ticker (prefer common stock)
+          const bestMatch = mapping.data.find((d: any) => 
+            d.securityType === 'Common Stock' || d.securityType === 'EQS'
+          ) || mapping.data[0];
+          
+          if (bestMatch.ticker) {
+            results.set(cusip, bestMatch.ticker);
+          }
+        }
+      }
+      
+      // Rate limit: OpenFIGI allows 25 requests/min for unauthenticated
+      await new Promise(r => setTimeout(r, 2500));
+      
+    } catch (e) {
+      console.error('OpenFIGI lookup error:', e);
+    }
+  }
+  
+  return results;
 }
 
 async function generateChecksum(data: Record<string, unknown>): Promise<string> {
@@ -111,7 +118,6 @@ async function generateChecksum(data: Record<string, unknown>): Promise<string> 
 }
 
 async function fetchRecentFilings(cik: string): Promise<string[]> {
-  // Fetch recent 13F-HR filings from SEC EDGAR
   const paddedCik = cik.replace(/^0+/, '').padStart(10, '0');
   const url = `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
   
@@ -132,7 +138,6 @@ async function fetchRecentFilings(cik: string): Promise<string[]> {
     const filings = data.filings?.recent || {};
     const accessionNumbers: string[] = [];
     
-    // Find 13F-HR filings from the last 6 months
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     
@@ -145,7 +150,7 @@ async function fetchRecentFilings(cik: string): Promise<string[]> {
       }
     }
     
-    return accessionNumbers.slice(0, 2); // Get most recent 2 filings for comparison
+    return accessionNumbers.slice(0, 2);
   } catch (e) {
     console.error(`Error fetching filings for CIK ${cik}:`, e);
     return [];
@@ -155,12 +160,9 @@ async function fetchRecentFilings(cik: string): Promise<string[]> {
 async function parse13FHoldings(cik: string, accessionNumber: string, managerName: string): Promise<Filing13F | null> {
   const accessionFormatted = accessionNumber.replace(/-/g, '');
   const paddedCik = cik.replace(/^0+/, '').padStart(10, '0');
-  
-  // Try to fetch the infotable.xml file
   const baseUrl = `https://www.sec.gov/Archives/edgar/data/${paddedCik}/${accessionFormatted}`;
   
   try {
-    // First, get the index to find the correct file
     const indexUrl = `${baseUrl}/index.json`;
     const indexResponse = await fetch(indexUrl, {
       headers: { 'User-Agent': 'InvestmentResearch admin@example.com' }
@@ -174,13 +176,11 @@ async function parse13FHoldings(cik: string, accessionNumber: string, managerNam
     const indexData = await indexResponse.json();
     const items = indexData.directory?.item || [];
     
-    // Find the infotable file
     let infotableFile = items.find((f: any) => 
       f.name?.toLowerCase().includes('infotable') && f.name?.endsWith('.xml')
     );
     
     if (!infotableFile) {
-      // Try alternative naming
       infotableFile = items.find((f: any) => 
         f.name?.includes('13F') && f.name?.endsWith('.xml')
       );
@@ -191,7 +191,6 @@ async function parse13FHoldings(cik: string, accessionNumber: string, managerNam
       return null;
     }
     
-    // Fetch the infotable XML
     const xmlUrl = `${baseUrl}/${infotableFile.name}`;
     const xmlResponse = await fetch(xmlUrl, {
       headers: { 'User-Agent': 'InvestmentResearch admin@example.com' }
@@ -203,11 +202,8 @@ async function parse13FHoldings(cik: string, accessionNumber: string, managerNam
     }
     
     const xml = await xmlResponse.text();
-    
-    // Parse the XML
     const holdings: Holding[] = [];
     
-    // Extract info table entries
     const infoTableRegex = /<infoTable[^>]*>([\s\S]*?)<\/infoTable>/gi;
     const nameRegex = /<nameOfIssuer>([\s\S]*?)<\/nameOfIssuer>/i;
     const titleRegex = /<titleOfClass>([\s\S]*?)<\/titleOfClass>/i;
@@ -239,7 +235,6 @@ async function parse13FHoldings(cik: string, accessionNumber: string, managerNam
       }
     }
     
-    // Extract filing date and period from primary doc
     const primaryUrl = `${baseUrl}/primary_doc.xml`;
     let filingDate = new Date().toISOString().split('T')[0];
     let periodOfReport = filingDate;
@@ -259,13 +254,7 @@ async function parse13FHoldings(cik: string, accessionNumber: string, managerNam
       console.log('Could not fetch primary doc');
     }
     
-    return {
-      cik,
-      managerName,
-      filingDate,
-      periodOfReport,
-      holdings,
-    };
+    return { cik, managerName, filingDate, periodOfReport, holdings };
     
   } catch (e) {
     console.error(`Error parsing 13F for ${accessionNumber}:`, e);
@@ -279,12 +268,10 @@ function computeChanges(
 ): Map<string, { changeType: string; changeShares: number; changePct: number; prevShares: number; prevValue: number }> {
   const changes = new Map();
   
-  // Check current holdings against previous
   for (const [cusip, current] of currentHoldings) {
     const prev = previousHoldings.get(cusip);
     
     if (!prev) {
-      // New position
       changes.set(cusip, {
         changeType: 'new',
         changeShares: current.shares,
@@ -312,7 +299,6 @@ function computeChanges(
     }
   }
   
-  // Check for exits (in previous but not in current)
   for (const [cusip, prev] of previousHoldings) {
     if (!currentHoldings.has(cusip)) {
       changes.set(cusip, {
@@ -340,160 +326,34 @@ serve(async (req) => {
   );
 
   try {
-    // Load ALL assets with name and ticker for dynamic matching (paginated)
-    let allAssets: Array<{ticker: string, name: string}> = [];
-    let offset = 0;
-    const pageSize = 10000;
+    // Load existing CUSIP mappings from database (cached lookups)
+    const { data: existingMappings, error: mappingError } = await supabase
+      .from('cusip_mappings')
+      .select('cusip, ticker, company_name, source');
     
-    while (true) {
-      const { data: page, error } = await supabase
-        .from('assets')
-        .select('ticker, name')
-        .range(offset, offset + pageSize - 1);
-      
-      if (error) {
-        console.error('Asset fetch error:', error);
-        break;
-      }
-      
-      if (!page || page.length === 0) break;
-      allAssets = allAssets.concat(page);
-      offset += pageSize;
-      
-      if (page.length < pageSize) break;
+    if (mappingError) {
+      console.error('Error loading CUSIP mappings:', mappingError);
     }
     
-    console.log(`Loaded ${allAssets.length} total assets`);
-    
-    const validTickers = new Set(allAssets.map(a => a.ticker.toUpperCase()));
-    
-    // Build name-to-ticker lookup (normalize names for matching)
-    const nameToTicker = new Map<string, string>();
-    const wordToTickers = new Map<string, string[]>();
-    
-    for (const asset of allAssets) {
-      const name = asset.name?.toUpperCase() || '';
-      const ticker = asset.ticker.toUpperCase();
-      
-      // Exact name match
-      nameToTicker.set(name, ticker);
-      
-      // Also index by significant words (3+ chars, not common words)
-      const words = name.split(/[\s,.-]+/).filter((w: string) => 
-        w.length >= 3 && !['INC', 'CORP', 'LTD', 'LLC', 'PLC', 'THE', 'AND', 'COM', 'CLASS'].includes(w)
-      );
-      for (const word of words) {
-        if (!wordToTickers.has(word)) {
-          wordToTickers.set(word, []);
-        }
-        wordToTickers.get(word)!.push(ticker);
-      }
+    const cusipCache = new Map<string, string | null>();
+    for (const mapping of existingMappings || []) {
+      cusipCache.set(mapping.cusip, mapping.ticker);
     }
+    console.log(`Loaded ${cusipCache.size} cached CUSIP mappings`);
     
-    console.log(`Loaded ${validTickers.size} tickers and ${nameToTicker.size} name mappings`);
-    
-    // Function to find ticker from company name
-    function findTickerFromName(issuerName: string): string | null {
-      const nameUpper = issuerName.toUpperCase().trim();
-      
-      // 1. Try CUSIP mapping first
-      // (handled before this function is called)
-      
-      // 2. Try exact name match
-      if (nameToTicker.has(nameUpper)) {
-        return nameToTicker.get(nameUpper)!;
-      }
-      
-      // 3. Try common variations (remove INC, CORP, etc.)
-      const cleanName = nameUpper
-        .replace(/\s+(INC|CORP|CORPORATION|LTD|LIMITED|PLC|LLC|CO|COMPANY|HOLDINGS?|GROUP|ENTERPRISES?)\.?$/i, '')
-        .replace(/,\s*(INC|CORP|LTD)\.?$/i, '')
-        .trim();
-      
-      if (nameToTicker.has(cleanName)) {
-        return nameToTicker.get(cleanName)!;
-      }
-      
-      // 4. Try first significant word match (for unique company names)
-      const words = cleanName.split(/[\s,.-]+/).filter((w: string) => 
-        w.length >= 4 && !['INC', 'CORP', 'LTD', 'LLC', 'PLC', 'THE', 'AND', 'COM', 'CLASS', 'COMMON', 'STOCK'].includes(w)
-      );
-      
-      if (words.length > 0) {
-        const firstWord = words[0];
-        const matches = wordToTickers.get(firstWord);
-        if (matches && matches.length === 1) {
-          // Only return if unambiguous match
-          return matches[0];
-        }
-        // Try first two words for more unique matching
-        if (words.length >= 2) {
-          const twoWordMatches = wordToTickers.get(words[0])?.filter(t => {
-            const assetName = [...nameToTicker.entries()].find(([_, v]) => v === t)?.[0] || '';
-            return assetName.includes(words[1]);
-          });
-          if (twoWordMatches && twoWordMatches.length === 1) {
-            return twoWordMatches[0];
-          }
-        }
-      }
-      
-      // 5. Hardcoded common name patterns (fallback)
-      const nameMatches: Record<string, string> = {
-        'APPLE': 'AAPL', 'MICROSOFT': 'MSFT', 'AMAZON': 'AMZN', 'ALPHABET': 'GOOGL',
-        'GOOGLE': 'GOOGL', 'TESLA': 'TSLA', 'META PLATFORMS': 'META', 'FACEBOOK': 'META',
-        'NVIDIA': 'NVDA', 'BERKSHIRE': 'BRK.B', 'JPMORGAN': 'JPM', 'BANK OF AMERICA': 'BAC',
-        'WELLS FARGO': 'WFC', 'CITIGROUP': 'C', 'GOLDMAN SACHS': 'GS', 'MORGAN STANLEY': 'MS',
-        'VISA INC': 'V', 'MASTERCARD': 'MA', 'PROCTER': 'PG', 'WALMART': 'WMT',
-        'COSTCO': 'COST', 'JOHNSON & JOHNSON': 'JNJ', 'PFIZER': 'PFE', 'MERCK': 'MRK',
-        'ABBVIE': 'ABBV', 'INTEL CORP': 'INTC', 'ADVANCED MICRO': 'AMD', 'SALESFORCE': 'CRM',
-        'DISNEY': 'DIS', 'NETFLIX': 'NFLX', 'CHEVRON': 'CVX', 'EXXON': 'XOM',
-        'AT&T': 'T', 'VERIZON': 'VZ', 'BOEING': 'BA', 'CATERPILLAR': 'CAT',
-        'HOME DEPOT': 'HD', 'COCA-COLA': 'KO', 'COCA COLA': 'KO', 'PEPSICO': 'PEP',
-        'MCDONALD': 'MCD', 'STARBUCKS': 'SBUX', 'NIKE': 'NKE', 'ELI LILLY': 'LLY',
-        'UNITEDHEALTH': 'UNH', 'BROADCOM': 'AVGO', 'ADOBE': 'ADBE', 'ORACLE': 'ORCL',
-        'CISCO': 'CSCO', 'QUALCOMM': 'QCOM', 'PAYPAL': 'PYPL', 'SERVICENOW': 'NOW',
-        'SNOWFLAKE': 'SNOW', 'UBER': 'UBER', 'AIRBNB': 'ABNB', 'PALANTIR': 'PLTR',
-        'CROWDSTRIKE': 'CRWD', 'DATADOG': 'DDOG', 'SHOPIFY': 'SHOP', 'SQUARE': 'SQ',
-        'BLOCK INC': 'SQ', 'SPOTIFY': 'SPOT', 'ZOOM VIDEO': 'ZM', 'DOCUSIGN': 'DOCU',
-        'TWILIO': 'TWLO', 'OKTA': 'OKTA', 'SPLUNK': 'SPLK', 'PALO ALTO': 'PANW',
-        'FORTINET': 'FTNT', 'ZSCALER': 'ZS', 'CLOUDFLARE': 'NET', 'MONGODB': 'MDB',
-        'ELASTIC': 'ESTC', 'CONFLUENT': 'CFLT', 'HASHICORP': 'HCP', 'GITLAB': 'GTLB',
-        'COINBASE': 'COIN', 'ROBINHOOD': 'HOOD', 'SOFI': 'SOFI', 'AFFIRM': 'AFRM',
-        'DOORDASH': 'DASH', 'INSTACART': 'CART', 'RIVIAN': 'RIVN', 'LUCID': 'LCID',
-        'NIO': 'NIO', 'XPENG': 'XPEV', 'LI AUTO': 'LI', 'GENERAL MOTORS': 'GM',
-        'FORD MOTOR': 'F', 'STELLANTIS': 'STLA', 'TOYOTA': 'TM', 'HONDA': 'HMC',
-        'TAIWAN SEMI': 'TSM', 'ASML': 'ASML', 'APPLIED MATERIAL': 'AMAT', 'LAM RESEARCH': 'LRCX',
-        'KLA CORP': 'KLAC', 'SYNOPSYS': 'SNPS', 'CADENCE': 'CDNS', 'MARVELL': 'MRVL',
-        'MICRON': 'MU', 'WESTERN DIGITAL': 'WDC', 'SEAGATE': 'STX', 'NETAPP': 'NTAP',
-      };
-      
-      for (const [pattern, symbol] of Object.entries(nameMatches)) {
-        if (nameUpper.includes(pattern)) {
-          if (validTickers.has(symbol)) {
-            return symbol;
-          }
-        }
-      }
-      
-      return null;
-    }
-    
-    let totalInserted = 0;
-    let totalSkipped = 0;
-    let managersProcessed = 0;
-    let tickersMatched = 0;
-    let tickersUnmatched = 0;
-    const signalsGenerated: Array<{
-      ticker: string;
-      manager: string;
-      changeType: string;
-      changePct: number;
+    // Collect all holdings from all managers first
+    const allHoldings: Array<{
+      holding: Holding;
+      manager: typeof TRACKED_MANAGERS[0];
+      filing: Filing13F;
+      change: { changeType: string; changeShares: number; changePct: number; prevShares: number; prevValue: number } | undefined;
     }> = [];
-
-    // Process each tracked manager
+    
+    let managersProcessed = 0;
+    
+    // Phase 1: Collect all holdings from all managers
     for (const manager of TRACKED_MANAGERS) {
-      console.log(`Processing ${manager.name} (CIK: ${manager.cik})...`);
+      console.log(`Fetching ${manager.name} (CIK: ${manager.cik})...`);
       
       const accessionNumbers = await fetchRecentFilings(manager.cik);
       if (accessionNumbers.length === 0) {
@@ -501,14 +361,12 @@ serve(async (req) => {
         continue;
       }
       
-      // Parse most recent filing
       const currentFiling = await parse13FHoldings(manager.cik, accessionNumbers[0], manager.name);
       if (!currentFiling || currentFiling.holdings.length === 0) {
         console.log(`Could not parse filing for ${manager.name}`);
         continue;
       }
       
-      // Parse previous filing if available for change calculation
       let previousHoldings = new Map<string, { shares: number; value: number }>();
       if (accessionNumbers.length > 1) {
         const prevFiling = await parse13FHoldings(manager.cik, accessionNumbers[1], manager.name);
@@ -519,96 +377,148 @@ serve(async (req) => {
         }
       }
       
-      // Build current holdings map
       const currentHoldingsMap = new Map<string, { shares: number; value: number }>();
       for (const h of currentFiling.holdings) {
         currentHoldingsMap.set(h.cusip, { shares: h.shares, value: h.value });
       }
       
-      // Compute changes
       const changes = computeChanges(currentHoldingsMap, previousHoldings);
       
-      // Insert holdings with changes
       for (const holding of currentFiling.holdings) {
-        // Map CUSIP to ticker - CUSIP mapping is authoritative (no validation needed)
-        let ticker: string | null = CUSIP_TO_TICKER[holding.cusip] || null;
-        let fromCusip = !!ticker;
-        
-        if (!ticker) {
-          // Try dynamic name matching - these need validation
-          ticker = findTickerFromName(holding.nameOfIssuer);
-          
-          // Only validate ticker from name matching (not CUSIP which is authoritative)
-          if (ticker && !validTickers.has(ticker.toUpperCase())) {
-            ticker = null;
-          }
-        }
-        
-        if (ticker) {
-          tickersMatched++;
-        } else {
-          tickersUnmatched++;
-          // Log unmatched for debugging (sample only)
-          if (tickersUnmatched <= 20) {
-            console.log(`Unmatched: ${holding.nameOfIssuer} (CUSIP: ${holding.cusip})`);
-          }
-        }
-        
-        const change = changes.get(holding.cusip);
-        
-        const checksum = await generateChecksum({
-          cik: manager.cik,
-          cusip: holding.cusip,
-          period: currentFiling.periodOfReport,
+        allHoldings.push({
+          holding,
+          manager,
+          filing: currentFiling,
+          change: changes.get(holding.cusip),
         });
-        
-        const { error } = await supabase
-          .from('holdings_13f')
-          .upsert({
-            manager_cik: manager.cik,
-            manager_name: manager.name,
-            ticker,
-            cusip: holding.cusip,
-            company_name: holding.nameOfIssuer,
-            shares: holding.shares,
-            value: holding.value,
-            filing_date: currentFiling.filingDate,
-            period_of_report: currentFiling.periodOfReport,
-            change_type: change?.changeType || 'unknown',
-            change_shares: change?.changeShares || 0,
-            change_pct: change?.changePct || 0,
-            previous_shares: change?.prevShares || null,
-            previous_value: change?.prevValue || null,
-            source_url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${manager.cik}&type=13F`,
-            checksum,
-          }, { onConflict: 'checksum' });
-        
-        if (error && error.code !== '23505') {
-          console.error('Insert error:', error);
-        } else if (!error) {
-          totalInserted++;
-          
-          // Track significant changes for signal generation
-          if (ticker && change && ['new', 'increase', 'decrease', 'exit'].includes(change.changeType)) {
-            signalsGenerated.push({
-              ticker,
-              manager: manager.name,
-              changeType: change.changeType,
-              changePct: change.changePct,
-            });
-          }
-        } else {
-          totalSkipped++;
-        }
       }
       
       managersProcessed++;
-      
-      // Rate limiting for SEC API
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 200)); // SEC rate limiting
     }
-
-    // Generate signals for significant changes
+    
+    console.log(`Collected ${allHoldings.length} total holdings from ${managersProcessed} managers`);
+    
+    // Phase 2: Identify unknown CUSIPs that need OpenFIGI lookup
+    const unknownCusips = new Set<string>();
+    const cusipToName = new Map<string, string>();
+    
+    for (const { holding } of allHoldings) {
+      if (!cusipCache.has(holding.cusip)) {
+        unknownCusips.add(holding.cusip);
+        cusipToName.set(holding.cusip, holding.nameOfIssuer);
+      }
+    }
+    
+    console.log(`Found ${unknownCusips.size} unknown CUSIPs, looking up via OpenFIGI...`);
+    
+    // Phase 3: Batch lookup unknown CUSIPs via OpenFIGI
+    if (unknownCusips.size > 0) {
+      const figiResults = await lookupOpenFIGI([...unknownCusips]);
+      console.log(`OpenFIGI resolved ${figiResults.size} tickers`);
+      
+      // Save new mappings to database for future use
+      const newMappings: CusipMapping[] = [];
+      
+      for (const cusip of unknownCusips) {
+        const ticker = figiResults.get(cusip) || null;
+        const companyName = cusipToName.get(cusip) || null;
+        
+        newMappings.push({
+          cusip,
+          ticker,
+          company_name: companyName,
+          source: ticker ? 'openfigi' : 'openfigi_notfound',
+        });
+        
+        // Update local cache
+        cusipCache.set(cusip, ticker);
+      }
+      
+      // Batch upsert new mappings
+      if (newMappings.length > 0) {
+        const { error: upsertError } = await supabase
+          .from('cusip_mappings')
+          .upsert(newMappings, { onConflict: 'cusip' });
+        
+        if (upsertError) {
+          console.error('Error saving CUSIP mappings:', upsertError);
+        } else {
+          console.log(`Cached ${newMappings.length} new CUSIP mappings`);
+        }
+      }
+    }
+    
+    // Phase 4: Insert all holdings with resolved tickers
+    let totalInserted = 0;
+    let totalSkipped = 0;
+    let tickersMatched = 0;
+    let tickersUnmatched = 0;
+    const signalsGenerated: Array<{
+      ticker: string;
+      manager: string;
+      changeType: string;
+      changePct: number;
+    }> = [];
+    
+    for (const { holding, manager, filing, change } of allHoldings) {
+      const ticker = cusipCache.get(holding.cusip) || null;
+      
+      if (ticker) {
+        tickersMatched++;
+      } else {
+        tickersUnmatched++;
+        if (tickersUnmatched <= 10) {
+          console.log(`Still unmatched: ${holding.nameOfIssuer} (CUSIP: ${holding.cusip})`);
+        }
+      }
+      
+      const checksum = await generateChecksum({
+        cik: manager.cik,
+        cusip: holding.cusip,
+        period: filing.periodOfReport,
+      });
+      
+      const { error } = await supabase
+        .from('holdings_13f')
+        .upsert({
+          manager_cik: manager.cik,
+          manager_name: manager.name,
+          ticker,
+          cusip: holding.cusip,
+          company_name: holding.nameOfIssuer,
+          shares: holding.shares,
+          value: holding.value,
+          filing_date: filing.filingDate,
+          period_of_report: filing.periodOfReport,
+          change_type: change?.changeType || 'unknown',
+          change_shares: change?.changeShares || 0,
+          change_pct: change?.changePct || 0,
+          previous_shares: change?.prevShares || null,
+          previous_value: change?.prevValue || null,
+          source_url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${manager.cik}&type=13F`,
+          checksum,
+        }, { onConflict: 'checksum' });
+      
+      if (error && error.code !== '23505') {
+        console.error('Insert error:', error);
+      } else if (!error) {
+        totalInserted++;
+        
+        if (ticker && change && ['new', 'increase', 'decrease', 'exit'].includes(change.changeType)) {
+          signalsGenerated.push({
+            ticker,
+            manager: manager.name,
+            changeType: change.changeType,
+            changePct: change.changePct,
+          });
+        }
+      } else {
+        totalSkipped++;
+      }
+    }
+    
+    // Phase 5: Generate signals
     for (const signal of signalsGenerated) {
       const signalType = signal.changeType === 'new' ? 'bigmoney_new_position'
         : signal.changeType === 'increase' ? 'bigmoney_increase'
@@ -629,7 +539,7 @@ serve(async (req) => {
       
       await supabase.from('signals').upsert({
         signal_type: signalType,
-        asset_id: null, // Will be linked later
+        asset_id: null,
         direction,
         magnitude: Math.abs(signal.changePct) / 100,
         observed_at: new Date().toISOString(),
@@ -654,8 +564,8 @@ serve(async (req) => {
       : 0;
     
     console.log(`Ticker matching: ${tickersMatched} matched, ${tickersUnmatched} unmatched (${matchRate}% match rate)`);
+    console.log(`CUSIP cache now has ${cusipCache.size} entries`);
 
-    // Log ingestion
     await supabase.from('ingest_logs').insert({
       etl_name: 'ingest-sec-13f-edgar',
       status: 'success',
@@ -664,7 +574,7 @@ serve(async (req) => {
       duration_seconds: Math.round(duration / 1000),
       rows_inserted: totalInserted,
       rows_skipped: totalSkipped,
-      source_used: 'SEC EDGAR',
+      source_used: 'SEC EDGAR + OpenFIGI',
       metadata: {
         managers_processed: managersProcessed,
         signals_generated: signalsGenerated.length,
@@ -672,6 +582,7 @@ serve(async (req) => {
         tickers_matched: tickersMatched,
         tickers_unmatched: tickersUnmatched,
         match_rate_pct: matchRate,
+        cusip_cache_size: cusipCache.size,
       }
     });
 
@@ -684,6 +595,7 @@ serve(async (req) => {
       tickers_matched: tickersMatched,
       tickers_unmatched: tickersUnmatched,
       match_rate_pct: matchRate,
+      cusip_cache_size: cusipCache.size,
       duration_ms: duration,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -699,7 +611,7 @@ serve(async (req) => {
       started_at: new Date(startTime).toISOString(),
       completed_at: new Date().toISOString(),
       error_message: errorMessage,
-      source_used: 'SEC EDGAR',
+      source_used: 'SEC EDGAR + OpenFIGI',
     });
 
     return new Response(JSON.stringify({ error: errorMessage }), {
