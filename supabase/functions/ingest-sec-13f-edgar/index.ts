@@ -325,20 +325,33 @@ serve(async (req) => {
   );
 
   try {
-    // Load ALL existing CUSIP mappings from database (cached lookups)
+    // Load CUSIP mappings WITH tickers from database (cached lookups)
     const { data: existingMappings, error: mappingError } = await supabase
       .from('cusip_mappings')
-      .select('cusip, ticker');
+      .select('cusip, ticker')
+      .not('ticker', 'is', null)
+      .limit(5000);
     
     if (mappingError) {
       console.error('Error loading CUSIP mappings:', mappingError);
     }
     
+    // Also load pending CUSIPs to avoid re-looking them up
+    const { data: pendingMappings } = await supabase
+      .from('cusip_mappings')
+      .select('cusip')
+      .is('ticker', null)
+      .limit(10000);
+    
     const cusipCache = new Map<string, string | null>();
     for (const mapping of existingMappings || []) {
       cusipCache.set(mapping.cusip, mapping.ticker);
     }
-    console.log(`Loaded ${cusipCache.size} cached CUSIP mappings`);
+    // Mark pending as known (null) to avoid re-lookup
+    for (const mapping of pendingMappings || []) {
+      cusipCache.set(mapping.cusip, null);
+    }
+    console.log(`Loaded ${existingMappings?.length || 0} mappings with tickers, ${pendingMappings?.length || 0} pending`);
     
     // Collect all holdings from all managers
     const allHoldings: Array<{
