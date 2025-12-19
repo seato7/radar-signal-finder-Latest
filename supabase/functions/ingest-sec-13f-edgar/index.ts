@@ -7,18 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Top institutional filers to track (by CIK)
+// Top institutional filers to track (by CIK) - Limited to avoid timeout
 const TRACKED_MANAGERS = [
   { cik: '0001067983', name: 'Berkshire Hathaway' },
-  { cik: '0001336528', name: 'Bridgewater Associates' },
   { cik: '0001649339', name: 'Citadel Advisors' },
   { cik: '0001350694', name: 'Renaissance Technologies' },
   { cik: '0001056831', name: 'Two Sigma Investments' },
-  { cik: '0001029160', name: 'DE Shaw' },
-  { cik: '0001568820', name: 'Point72 Asset Management' },
-  { cik: '0001167483', name: 'Elliott Investment Management' },
-  { cik: '0001040273', name: 'Tiger Global Management' },
-  { cik: '0001423053', name: 'Coatue Management' },
 ];
 
 interface Filing13F {
