@@ -994,6 +994,36 @@ export type Database = {
           },
         ]
       }
+      cusip_mappings: {
+        Row: {
+          company_name: string | null
+          created_at: string | null
+          cusip: string
+          source: string
+          ticker: string | null
+          updated_at: string | null
+          verified: boolean | null
+        }
+        Insert: {
+          company_name?: string | null
+          created_at?: string | null
+          cusip: string
+          source?: string
+          ticker?: string | null
+          updated_at?: string | null
+          verified?: boolean | null
+        }
+        Update: {
+          company_name?: string | null
+          created_at?: string | null
+          cusip?: string
+          source?: string
+          ticker?: string | null
+          updated_at?: string | null
+          verified?: boolean | null
+        }
+        Relationships: []
+      }
       dark_pool_activity: {
         Row: {
           asset_id: string | null
