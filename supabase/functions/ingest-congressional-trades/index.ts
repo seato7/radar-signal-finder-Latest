@@ -420,12 +420,25 @@ ${combinedContent.substring(0, 20000)}`
 
       const txDate = trade.transaction_date || new Date().toISOString().split('T')[0];
       
+      // Chamber must be lowercase ('house' or 'senate') to match DB check constraint
+      let chamber: string | null = null;
+      if (trade.chamber) {
+        const chamberLower = trade.chamber.toLowerCase();
+        if (chamberLower === 'house' || chamberLower === 'senate') {
+          chamber = chamberLower;
+        }
+      }
+      
+      const txType = (trade.transaction_type || 'buy').toLowerCase();
+      // Transaction type must be 'buy', 'sell', or 'exchange' to match DB check constraint
+      const validTxType = ['buy', 'sell', 'exchange'].includes(txType) ? txType : 'buy';
+      
       const record = {
         ticker: normalizedTicker,
         representative: String(trade.representative).trim().substring(0, 100),
         party: trade.party || 'Unknown',
-        chamber: trade.chamber || null,
-        transaction_type: (trade.transaction_type || 'buy').toLowerCase(),
+        chamber,
+        transaction_type: validTxType,
         transaction_date: txDate,
         filed_date: txDate,
         amount_min: typeof trade.amount_min === 'number' ? trade.amount_min : null,
@@ -440,7 +453,7 @@ ${combinedContent.substring(0, 20000)}`
       const { error } = await supabase
         .from('congressional_trades')
         .upsert(record, {
-          onConflict: 'representative,ticker,transaction_date',
+          onConflict: 'representative,ticker,transaction_date,transaction_type',
           ignoreDuplicates: true
         });
 
