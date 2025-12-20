@@ -204,52 +204,132 @@ Only return the JSON array, no other text.`;
   return headlines;
 }
 
-// Fetch news using Firecrawl Search
-async function fetchMarketHeadlines(firecrawlKey: string, lovableApiKey: string): Promise<NewsHeadline[]> {
-  console.log('🔥 Fetching market news with Firecrawl Search...');
+// Build comprehensive search queries for broad coverage
+function buildSearchQueries(topTickers: string[]): string[] {
+  const queries: string[] = [];
   
-  // Search for recent financial news
-  const searchQueries = [
-    'stock market news today site:cnbc.com OR site:bloomberg.com OR site:reuters.com',
-    'cryptocurrency bitcoin ethereum news today',
-    'earnings report stock market breaking news',
+  // 1. General market news from major sources
+  queries.push('stock market news today site:cnbc.com OR site:bloomberg.com OR site:reuters.com');
+  queries.push('breaking financial news stocks site:marketwatch.com OR site:wsj.com OR site:ft.com');
+  
+  // 2. Sector-specific searches for broader coverage
+  const sectors = [
+    'technology stocks NVIDIA AMD Intel Microsoft Apple news',
+    'healthcare pharma biotech stocks FDA news',
+    'energy oil gas renewable stocks news',
+    'financial banking stocks JPMorgan Goldman news',
+    'retail consumer stocks Amazon Walmart Target news',
+    'industrial manufacturing stocks Boeing Caterpillar news',
+    'semiconductor chip stocks TSMC Qualcomm Broadcom news',
+    'automotive EV stocks Tesla Ford GM Rivian news',
+    'aerospace defense stocks Lockheed Raytheon news',
+    'real estate REIT stocks news',
   ];
+  queries.push(...sectors.map(s => `${s} today`));
+  
+  // 3. Crypto and forex
+  queries.push('cryptocurrency bitcoin ethereum solana news today');
+  queries.push('forex currency dollar euro yen news');
+  
+  // 4. Small/mid-cap focused
+  queries.push('small cap stocks news breakout');
+  queries.push('mid cap stocks earnings growth news');
+  queries.push('penny stocks news movers');
+  
+  // 5. High-priority tickers from watchlists (batch into groups of 5)
+  if (topTickers.length > 0) {
+    for (let i = 0; i < Math.min(topTickers.length, 50); i += 5) {
+      const tickerGroup = topTickers.slice(i, i + 5).join(' OR ');
+      queries.push(`${tickerGroup} stock news today`);
+    }
+  }
+  
+  // 6. ETF and index news
+  queries.push('SPY QQQ ETF index fund news');
+  queries.push('ARK ETF Cathie Wood stocks news');
+  
+  // 7. Commodities
+  queries.push('gold silver commodity prices news');
+  queries.push('oil crude natural gas energy commodity news');
+  
+  return queries;
+}
+
+// Fetch news using Firecrawl Search with expanded coverage
+async function fetchMarketHeadlines(
+  firecrawlKey: string, 
+  lovableApiKey: string,
+  topTickers: string[] = []
+): Promise<NewsHeadline[]> {
+  console.log('🔥 Fetching market news with EXPANDED Firecrawl Search...');
+  
+  const searchQueries = buildSearchQueries(topTickers);
+  console.log(`📋 Running ${searchQueries.length} search queries for broad coverage...`);
   
   const allResults: Array<{ title: string; description: string; url: string; markdown?: string }> = [];
+  const seenUrls = new Set<string>();
   
-  for (const query of searchQueries) {
-    try {
-      const result = await searchWeb(query, {
-        limit: 5,
-        scrapeOptions: { formats: ['markdown'] }
-      });
-      
-      if (result.success && result.data) {
-        console.log(`  → Query "${query.substring(0, 40)}..." returned ${result.data.length} results`);
-        for (const item of result.data) {
-          allResults.push({
+  // Run queries in batches of 3 to avoid rate limits
+  for (let i = 0; i < searchQueries.length; i += 3) {
+    const batch = searchQueries.slice(i, i + 3);
+    
+    const batchPromises = batch.map(async (query) => {
+      try {
+        const result = await searchWeb(query, {
+          limit: 5,
+          scrapeOptions: { formats: ['markdown'] }
+        });
+        
+        if (result.success && result.data) {
+          console.log(`  → "${query.substring(0, 35)}..." → ${result.data.length} results`);
+          return result.data.map((item: any) => ({
             title: item.title || '',
             description: item.description || '',
             url: item.url || '',
             markdown: item.markdown || '',
-          });
+          }));
+        }
+        return [];
+      } catch (error) {
+        console.error(`Query failed: ${query.substring(0, 30)}...`, error);
+        return [];
+      }
+    });
+    
+    const batchResults = await Promise.all(batchPromises);
+    
+    for (const results of batchResults) {
+      for (const item of results) {
+        // Deduplicate by URL
+        if (item.url && !seenUrls.has(item.url)) {
+          seenUrls.add(item.url);
+          allResults.push(item);
         }
       }
-    } catch (error) {
-      console.error(`Search query failed: ${query}`, error);
+    }
+    
+    // Small delay between batches to avoid rate limits
+    if (i + 3 < searchQueries.length) {
+      await new Promise(r => setTimeout(r, 500));
     }
   }
   
-  console.log(`📰 Total search results: ${allResults.length}`);
+  console.log(`📰 Total unique search results: ${allResults.length}`);
   
   if (allResults.length === 0) {
     return [];
   }
   
-  // Use Lovable AI to analyze and structure the results
-  const headlines = await analyzeNewsWithAI(allResults, lovableApiKey);
+  // Process in chunks of 15 for AI analysis (API token limits)
+  const allHeadlines: NewsHeadline[] = [];
+  for (let i = 0; i < allResults.length; i += 15) {
+    const chunk = allResults.slice(i, i + 15);
+    const headlines = await analyzeNewsWithAI(chunk, lovableApiKey);
+    allHeadlines.push(...headlines);
+  }
   
-  return headlines;
+  console.log(`🎯 Total structured headlines: ${allHeadlines.length}`);
+  return allHeadlines;
 }
 
 serve(async (req) => {
@@ -341,10 +421,34 @@ serve(async (req) => {
         }
       }
     } else {
-      // Use Firecrawl Search + Lovable AI
-      console.log('🔍 Fetching market headlines with Firecrawl Search...');
+      // Fetch top watchlisted tickers for targeted searches
+      const { data: watchlistData } = await supabase
+        .from('watchlist')
+        .select('tickers')
+        .limit(100);
       
-      const headlines = await fetchMarketHeadlines(firecrawlKey, lovableApiKey);
+      const topTickers: string[] = [];
+      const tickerCounts: Record<string, number> = {};
+      
+      for (const wl of (watchlistData || [])) {
+        for (const t of (wl.tickers || [])) {
+          tickerCounts[t] = (tickerCounts[t] || 0) + 1;
+        }
+      }
+      
+      // Get most watchlisted tickers
+      const sortedTickers = Object.entries(tickerCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 50)
+        .map(([t]) => t);
+      
+      topTickers.push(...sortedTickers);
+      console.log(`📌 Top watchlisted tickers for targeted search: ${topTickers.slice(0, 10).join(', ')}...`);
+      
+      // Use Firecrawl Search + Lovable AI with expanded coverage
+      console.log('🔍 Fetching market headlines with EXPANDED coverage...');
+      
+      const headlines = await fetchMarketHeadlines(firecrawlKey, lovableApiKey, topTickers);
       
       if (headlines.length === 0) {
         console.log('⚠️ No headlines fetched, using fallback');
