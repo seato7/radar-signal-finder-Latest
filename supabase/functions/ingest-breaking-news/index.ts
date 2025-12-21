@@ -1,335 +1,174 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { redisCache } from "../_shared/redis-cache.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
-import { searchWeb } from "../_shared/firecrawl-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const validateSentiment = (score: number): number => {
-  if (isNaN(score) || !isFinite(score)) return 0;
-  return Math.max(-1, Math.min(1, score));
+// v5 - Optimized: Uses RSS feeds like ingest-news-rss, no Firecrawl, no AI - fast and reliable
+
+// High-volume financial news RSS feeds
+const NEWS_RSS_FEEDS = [
+  // Primary news sources - high reliability
+  { name: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline', priority: 1 },
+  { name: 'MarketWatch Top Stories', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', priority: 1 },
+  { name: 'CNBC Top News', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', priority: 1 },
+  
+  // Tech and market news
+  { name: 'Reuters Business', url: 'https://feeds.reuters.com/reuters/businessNews', priority: 1 },
+  { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', priority: 2 },
+  { name: 'Benzinga', url: 'https://www.benzinga.com/feed/', priority: 2 },
+  
+  // Sector-specific
+  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', priority: 2 },
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', priority: 2 },
+];
+
+// Ticker patterns for extraction
+const TICKER_PATTERNS = [
+  /\$([A-Z]{1,5})\b/g,
+  /\(([A-Z]{2,5})\)/g,
+  /\bNASDAQ:\s*([A-Z]{1,5})\b/gi,
+  /\bNYSE:\s*([A-Z]{1,5})\b/gi,
+];
+
+// Company to ticker mappings
+const COMPANY_MAPPINGS: Record<string, string> = {
+  'Apple': 'AAPL', 'Microsoft': 'MSFT', 'Google': 'GOOGL', 'Alphabet': 'GOOGL', 'Amazon': 'AMZN',
+  'Tesla': 'TSLA', 'Meta': 'META', 'Netflix': 'NFLX', 'Nvidia': 'NVDA', 'AMD': 'AMD',
+  'Intel': 'INTC', 'Disney': 'DIS', 'Boeing': 'BA', 'Nike': 'NKE', 'JPMorgan': 'JPM',
+  'Goldman Sachs': 'GS', 'Bank of America': 'BAC', 'Visa': 'V', 'Mastercard': 'MA',
+  'PayPal': 'PYPL', 'Coinbase': 'COIN', 'Walmart': 'WMT', 'Target': 'TGT', 'Costco': 'COST',
+  'Home Depot': 'HD', 'Coca-Cola': 'KO', 'Pepsi': 'PEP', 'Starbucks': 'SBUX',
+  'Exxon': 'XOM', 'Chevron': 'CVX', 'Pfizer': 'PFE', 'Moderna': 'MRNA', 'Johnson & Johnson': 'JNJ',
+  'UnitedHealth': 'UNH', 'Salesforce': 'CRM', 'Adobe': 'ADBE', 'Oracle': 'ORCL',
+  'Qualcomm': 'QCOM', 'Broadcom': 'AVGO', 'Micron': 'MU', 'Palantir': 'PLTR', 'CrowdStrike': 'CRWD',
+  'Rivian': 'RIVN', 'Lucid': 'LCID', 'NIO': 'NIO', 'Ford': 'F', 'GM': 'GM',
+  'Snap': 'SNAP', 'Spotify': 'SPOT', 'Roku': 'ROKU', 'Roblox': 'RBLX',
+  'GameStop': 'GME', 'AMC': 'AMC', 'Delta': 'DAL', 'United Airlines': 'UAL',
+  'Caterpillar': 'CAT', 'Lockheed Martin': 'LMT', 'AT&T': 'T', 'Verizon': 'VZ',
+  'ASML': 'ASML', 'Taiwan Semiconductor': 'TSM', 'TSMC': 'TSM', 'Uber': 'UBER',
+  'Airbnb': 'ABNB', 'Snowflake': 'SNOW', 'Datadog': 'DDOG', 'Cloudflare': 'NET',
+  'Bitcoin': 'BTC', 'Ethereum': 'ETH', 'Solana': 'SOL', 'XRP': 'XRP', 'Dogecoin': 'DOGE',
+  'Apple Inc': 'AAPL', 'Microsoft Corp': 'MSFT', 'Amazon.com': 'AMZN',
 };
 
-const sanitizeTicker = (ticker: string): string => {
-  return ticker.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10);
-};
-
-interface Asset {
-  ticker: string;
-  name: string;
-  asset_class: string;
-  metadata: {
-    industry?: string;
-    sector?: string;
-    country?: string;
-    type?: string;
-  } | null;
-}
-
-interface NewsHeadline {
-  headline: string;
-  summary: string;
+interface RSSItem {
+  title: string;
+  link: string;
+  pubDate?: string;
+  description?: string;
   source: string;
-  url: string;
-  sentiment: number;
-  tickers_mentioned: string[];
-  companies_mentioned: string[];
-  sectors_mentioned: string[];
 }
 
-// Match a headline to assets based on content
-function matchHeadlineToAssets(headline: NewsHeadline, assets: Asset[]): Asset[] {
-  const matchedAssets: Asset[] = [];
-  const headlineText = `${headline.headline} ${headline.summary}`.toLowerCase();
-  const mentionedTickers = headline.tickers_mentioned.map(t => t.toUpperCase());
-  const mentionedCompanies = headline.companies_mentioned.map(c => c.toLowerCase());
-  const mentionedSectors = headline.sectors_mentioned.map(s => s.toLowerCase());
+async function generateChecksum(data: Record<string, unknown>): Promise<string> {
+  const content = JSON.stringify(data, Object.keys(data).sort());
+  const encoder = new TextEncoder();
+  const dataBytes = encoder.encode(content);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", dataBytes);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function extractTickers(text: string, validTickers: Set<string>): string[] {
+  const tickers = new Set<string>();
   
-  for (const asset of assets) {
-    let score = 0;
-    
-    // Direct ticker mention (highest priority)
-    if (mentionedTickers.includes(asset.ticker.toUpperCase())) {
-      score += 100;
-    }
-    
-    // Ticker appears in headline text
-    const tickerRegex = new RegExp(`\\b${asset.ticker}\\b`, 'i');
-    if (tickerRegex.test(headlineText)) {
-      score += 80;
-    }
-    
-    // Company name mentioned
-    if (asset.name) {
-      const nameWords = asset.name.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-      const significantMatches = nameWords.filter(word => 
-        mentionedCompanies.some(c => c.includes(word)) || headlineText.includes(word)
-      );
-      if (significantMatches.length >= 2 || (nameWords.length === 1 && significantMatches.length === 1)) {
-        score += 60;
+  // Pattern-based extraction
+  for (const pattern of TICKER_PATTERNS) {
+    const regex = new RegExp(pattern.source, pattern.flags);
+    const matches = text.matchAll(regex);
+    for (const match of matches) {
+      const ticker = match[1].toUpperCase();
+      if (validTickers.has(ticker)) {
+        tickers.add(ticker);
       }
     }
-    
-    // Sector/industry match (lower priority)
-    if (asset.metadata?.sector && mentionedSectors.some(s => 
-      s.includes(asset.metadata!.sector!.toLowerCase()) || 
-      asset.metadata!.sector!.toLowerCase().includes(s)
-    )) {
-      score += 20;
-    }
-    if (asset.metadata?.industry && mentionedSectors.some(s => 
-      s.includes(asset.metadata!.industry!.toLowerCase()) || 
-      asset.metadata!.industry!.toLowerCase().includes(s)
-    )) {
-      score += 15;
-    }
-    
-    // Only include if score >= 50 (direct ticker or strong company match)
-    if (score >= 50) {
-      matchedAssets.push(asset);
+  }
+  
+  // Company name matching
+  const textLower = text.toLowerCase();
+  for (const [company, ticker] of Object.entries(COMPANY_MAPPINGS)) {
+    if (textLower.includes(company.toLowerCase()) && validTickers.has(ticker)) {
+      tickers.add(ticker);
     }
   }
   
-  return matchedAssets;
+  return Array.from(tickers);
 }
 
-// Use Lovable AI to analyze news content and extract structured data
-async function analyzeNewsWithAI(
-  searchResults: Array<{ title: string; description: string; url: string; markdown?: string }>,
-  lovableApiKey: string
-): Promise<NewsHeadline[]> {
-  const headlines: NewsHeadline[] = [];
+function safeParseDate(dateStr: string | undefined): string | null {
+  if (!dateStr) return null;
   
-  // Prepare content for AI analysis
-  const newsContent = searchResults.slice(0, 15).map((r, i) => 
-    `[${i + 1}] Title: ${r.title}\nDescription: ${r.description || 'N/A'}\nURL: ${r.url}\nContent: ${(r.markdown || '').substring(0, 500)}`
-  ).join('\n\n---\n\n');
-  
-  const prompt = `Analyze these financial news articles and extract structured data for each.
-
-NEWS ARTICLES:
-${newsContent}
-
-For each article, provide:
-1. A clean headline
-2. A one-sentence summary
-3. The source name (extract from URL domain)
-4. Sentiment score (-1 to 1, where -1 is very negative, 0 is neutral, 1 is very positive)
-5. Any stock/crypto tickers mentioned (e.g., AAPL, NVDA, BTC)
-6. Any company names mentioned
-7. Any sectors mentioned (e.g., technology, healthcare, energy, cryptocurrency)
-
-Return as JSON array:
-[
-  {
-    "headline": "string",
-    "summary": "string",
-    "source": "string",
-    "url": "string",
-    "sentiment": number,
-    "tickers": ["string"],
-    "companies": ["string"],
-    "sectors": ["string"]
-  }
-]
-
-Only return the JSON array, no other text.`;
-
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: 'You are a financial news analyst. Extract structured data from news articles. Always return valid JSON.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.2,
-        max_tokens: 4000,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error('Lovable AI error:', response.status, await response.text());
-      return [];
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
     
-    // Parse JSON from response
-    let parsed: any[];
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      } else {
-        parsed = JSON.parse(content);
-      }
-    } catch (parseError) {
-      console.error('Failed to parse AI response as JSON:', parseError);
-      console.log('Raw response:', content.substring(0, 500));
-      return [];
+    // Check if date is reasonable
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneHourFuture = new Date(now.getTime() + 60 * 60 * 1000);
+    
+    if (date < oneWeekAgo || date > oneHourFuture) {
+      return null;
     }
     
-    for (const item of parsed) {
-      if (item.headline) {
-        headlines.push({
-          headline: item.headline.substring(0, 500),
-          summary: (item.summary || '').substring(0, 1000),
-          source: item.source || 'Unknown',
-          url: item.url || '',
-          sentiment: validateSentiment(item.sentiment || 0),
-          tickers_mentioned: (item.tickers || []).map((t: string) => t.toUpperCase()).filter((t: string) => t.length <= 6),
-          companies_mentioned: item.companies || [],
-          sectors_mentioned: (item.sectors || []).map((s: string) => s.toLowerCase()),
-        });
-      }
-    }
-    
-    console.log(`🤖 AI extracted ${headlines.length} structured headlines`);
-  } catch (error) {
-    console.error('AI analysis error:', error);
+    return date.toISOString();
+  } catch {
+    return null;
   }
-  
-  return headlines;
 }
 
-// Build comprehensive search queries for broad coverage
-function buildSearchQueries(topTickers: string[]): string[] {
-  const queries: string[] = [];
+function parseRSSXml(xml: string, sourceName: string): RSSItem[] {
+  const items: RSSItem[] = [];
   
-  // 1. General market news from major sources
-  queries.push('stock market news today site:cnbc.com OR site:bloomberg.com OR site:reuters.com');
-  queries.push('breaking financial news stocks site:marketwatch.com OR site:wsj.com OR site:ft.com');
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  const titleRegex = /<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i;
+  const linkRegex = /<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i;
+  const pubDateRegex = /<pubDate>([\s\S]*?)<\/pubDate>/i;
+  const descRegex = /<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i;
   
-  // 2. Sector-specific searches for broader coverage
-  const sectors = [
-    'technology stocks NVIDIA AMD Intel Microsoft Apple news',
-    'healthcare pharma biotech stocks FDA news',
-    'energy oil gas renewable stocks news',
-    'financial banking stocks JPMorgan Goldman news',
-    'retail consumer stocks Amazon Walmart Target news',
-    'industrial manufacturing stocks Boeing Caterpillar news',
-    'semiconductor chip stocks TSMC Qualcomm Broadcom news',
-    'automotive EV stocks Tesla Ford GM Rivian news',
-    'aerospace defense stocks Lockheed Raytheon news',
-    'real estate REIT stocks news',
-  ];
-  queries.push(...sectors.map(s => `${s} today`));
-  
-  // 3. Crypto and forex
-  queries.push('cryptocurrency bitcoin ethereum solana news today');
-  queries.push('forex currency dollar euro yen news');
-  
-  // 4. Small/mid-cap focused
-  queries.push('small cap stocks news breakout');
-  queries.push('mid cap stocks earnings growth news');
-  queries.push('penny stocks news movers');
-  
-  // 5. High-priority tickers from watchlists (batch into groups of 5)
-  if (topTickers.length > 0) {
-    for (let i = 0; i < Math.min(topTickers.length, 50); i += 5) {
-      const tickerGroup = topTickers.slice(i, i + 5).join(' OR ');
-      queries.push(`${tickerGroup} stock news today`);
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const itemXml = match[1];
+    
+    const titleMatch = itemXml.match(titleRegex);
+    const linkMatch = itemXml.match(linkRegex);
+    const pubDateMatch = itemXml.match(pubDateRegex);
+    const descMatch = itemXml.match(descRegex);
+    
+    if (titleMatch) {
+      items.push({
+        title: titleMatch[1].trim().replace(/<[^>]+>/g, ''),
+        link: linkMatch ? linkMatch[1].trim() : '',
+        pubDate: pubDateMatch ? pubDateMatch[1].trim() : undefined,
+        description: descMatch ? descMatch[1].trim().replace(/<[^>]+>/g, '').substring(0, 500) : undefined,
+        source: sourceName,
+      });
     }
   }
   
-  // 6. ETF and index news
-  queries.push('SPY QQQ ETF index fund news');
-  queries.push('ARK ETF Cathie Wood stocks news');
-  
-  // 7. Commodities
-  queries.push('gold silver commodity prices news');
-  queries.push('oil crude natural gas energy commodity news');
-  
-  return queries;
+  return items;
 }
 
-// Fetch news using Firecrawl Search with expanded coverage
-async function fetchMarketHeadlines(
-  firecrawlKey: string, 
-  lovableApiKey: string,
-  topTickers: string[] = []
-): Promise<NewsHeadline[]> {
-  console.log('🔥 Fetching market news with EXPANDED Firecrawl Search...');
+function estimateSentiment(text: string): number {
+  const textLower = text.toLowerCase();
+  let score = 0;
   
-  const searchQueries = buildSearchQueries(topTickers);
-  console.log(`📋 Running ${searchQueries.length} search queries for broad coverage...`);
+  const positiveWords = ['surge', 'soar', 'rally', 'gain', 'jump', 'rise', 'boost', 'record', 'beat', 'outperform', 'upgrade', 'bullish', 'growth', 'profit'];
+  const negativeWords = ['crash', 'plunge', 'drop', 'fall', 'decline', 'slump', 'loss', 'miss', 'downgrade', 'bearish', 'warning', 'concern', 'risk', 'cut'];
   
-  const allResults: Array<{ title: string; description: string; url: string; markdown?: string }> = [];
-  const seenUrls = new Set<string>();
-  
-  // Run queries in batches of 3 to avoid rate limits
-  for (let i = 0; i < searchQueries.length; i += 3) {
-    const batch = searchQueries.slice(i, i + 3);
-    
-    const batchPromises = batch.map(async (query) => {
-      try {
-        const result = await searchWeb(query, {
-          limit: 5,
-          scrapeOptions: { formats: ['markdown'] }
-        });
-        
-        if (result.success && result.data) {
-          console.log(`  → "${query.substring(0, 35)}..." → ${result.data.length} results`);
-          return result.data.map((item: any) => ({
-            title: item.title || '',
-            description: item.description || '',
-            url: item.url || '',
-            markdown: item.markdown || '',
-          }));
-        }
-        return [];
-      } catch (error) {
-        console.error(`Query failed: ${query.substring(0, 30)}...`, error);
-        return [];
-      }
-    });
-    
-    const batchResults = await Promise.all(batchPromises);
-    
-    for (const results of batchResults) {
-      for (const item of results) {
-        // Deduplicate by URL
-        if (item.url && !seenUrls.has(item.url)) {
-          seenUrls.add(item.url);
-          allResults.push(item);
-        }
-      }
-    }
-    
-    // Small delay between batches to avoid rate limits
-    if (i + 3 < searchQueries.length) {
-      await new Promise(r => setTimeout(r, 500));
-    }
+  for (const word of positiveWords) {
+    if (textLower.includes(word)) score += 0.15;
+  }
+  for (const word of negativeWords) {
+    if (textLower.includes(word)) score -= 0.15;
   }
   
-  console.log(`📰 Total unique search results: ${allResults.length}`);
-  
-  if (allResults.length === 0) {
-    return [];
-  }
-  
-  // Process in chunks of 15 for AI analysis (API token limits)
-  const allHeadlines: NewsHeadline[] = [];
-  for (let i = 0; i < allResults.length; i += 15) {
-    const chunk = allResults.slice(i, i + 15);
-    const headlines = await analyzeNewsWithAI(chunk, lovableApiKey);
-    allHeadlines.push(...headlines);
-  }
-  
-  console.log(`🎯 Total structured headlines: ${allHeadlines.length}`);
-  return allHeadlines;
+  return Math.max(-1, Math.min(1, score));
 }
 
 serve(async (req) => {
@@ -338,282 +177,224 @@ serve(async (req) => {
   }
 
   const startTime = Date.now();
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
   const slackAlerter = new SlackAlerter();
-
-  const logId = crypto.randomUUID();
-  await supabase.from('ingest_logs').insert({
-    id: logId,
-    etl_name: 'ingest-breaking-news',
-    status: 'running',
-    started_at: new Date().toISOString(),
-    source_used: 'Firecrawl Search',
-    cache_hit: false,
-    fallback_count: 0,
-    latency_ms: 0,
-  });
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
 
   try {
-    console.log('Starting breaking news ingestion with Firecrawl...');
+    console.log('[v5] Starting optimized breaking news ingestion via RSS...');
     
-    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    // Load valid tickers - limit to 500 most relevant
+    const validTickers = new Set<string>();
     
-    // Fetch ALL assets with metadata for matching
-    const { data: allAssets, error: assetsError } = await supabase
+    // Get popular tickers
+    const { data: popularAssets } = await supabase
       .from('assets')
-      .select('ticker, name, asset_class, metadata')
-      .in('asset_class', ['stock', 'crypto', 'etf', 'forex', 'commodity']);
+      .select('ticker')
+      .in('ticker', [
+        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD', 'INTC', 'NFLX',
+        'DIS', 'BA', 'NKE', 'JPM', 'GS', 'MS', 'BAC', 'WFC', 'C', 'V', 'MA', 'PYPL',
+        'COIN', 'HOOD', 'WMT', 'TGT', 'COST', 'HD', 'LOW', 'CVS', 'WBA', 'KR',
+        'KO', 'PEP', 'PG', 'MCD', 'SBUX', 'CMG', 'XOM', 'CVX', 'COP', 'OXY',
+        'PFE', 'MRNA', 'JNJ', 'UNH', 'ABBV', 'MRK', 'LLY', 'BMY', 'AMGN', 'GILD',
+        'CRM', 'ADBE', 'ORCL', 'IBM', 'CSCO', 'QCOM', 'AVGO', 'TXN', 'MU', 'NOW',
+        'PLTR', 'CRWD', 'DDOG', 'ZS', 'NET', 'RIVN', 'LCID', 'NIO', 'F', 'GM',
+        'SNAP', 'SPOT', 'ROKU', 'RBLX', 'GME', 'AMC', 'DAL', 'UAL', 'AAL', 'LUV',
+        'CAT', 'LMT', 'RTX', 'GE', 'T', 'VZ', 'UBER', 'ABNB', 'SPY', 'QQQ',
+        'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'LINK', 'AVAX', 'MATIC',
+      ]);
     
-    if (assetsError) throw assetsError;
-    const assets: Asset[] = allAssets || [];
-    console.log(`📊 Loaded ${assets.length} assets for matching`);
+    if (popularAssets) {
+      for (const asset of popularAssets) {
+        validTickers.add(asset.ticker.toUpperCase());
+      }
+    }
     
-    let newsItems: any[] = [];
-    let sourceUsed = 'Firecrawl Search';
-    let cacheHit = false;
-    let fallbackUsed = false;
-    const fetchStartTime = Date.now();
+    // Add watchlist tickers
+    const { data: watchlistItems } = await supabase
+      .from('watchlist')
+      .select('ticker')
+      .limit(200);
     
-    // Check cache first
-    const cacheResult = await redisCache.get('breaking-news:global');
-    if (cacheResult.hit && cacheResult.data) {
-      console.log(`✅ Cache HIT for breaking-news:global (${cacheResult.age_seconds?.toFixed(1)}s old)`);
-      cacheHit = true;
-      newsItems = cacheResult.data;
-    } else if (!firecrawlKey || !lovableApiKey) {
-      // No API keys - use sample data
-      console.log('⚠️ Missing API keys, using sample news data');
-      sourceUsed = 'Simulated';
-      fallbackUsed = true;
-      
-      const sampleHeadlines = [
-        { headline: 'Tech stocks rally on strong earnings reports', sectors: ['technology'], sentiment: 0.7 },
-        { headline: 'Federal Reserve signals interest rate decision', sectors: ['financial services', 'banking'], sentiment: 0.1 },
-        { headline: 'Healthcare sector sees gains after FDA approval', sectors: ['healthcare'], sentiment: 0.6 },
-        { headline: 'Energy prices surge amid supply concerns', sectors: ['energy'], sentiment: -0.2 },
-        { headline: 'Crypto market rebounds following regulatory clarity', sectors: ['cryptocurrency'], sentiment: 0.5 },
-      ];
-      
-      for (const sample of sampleHeadlines) {
-        const matchedAssets = assets.filter(a => 
-          sample.sectors.some(s => 
-            a.metadata?.sector?.toLowerCase().includes(s) ||
-            a.metadata?.industry?.toLowerCase().includes(s)
-          )
-        ).slice(0, 20);
-        
-        for (const asset of matchedAssets) {
-          newsItems.push({
-            ticker: asset.ticker,
-            headline: sample.headline,
-            summary: 'Sample breaking news for demonstration.',
-            source: 'Market Wire',
-            url: null,
-            published_at: new Date(Date.now() - Math.random() * 12 * 60 * 60 * 1000).toISOString(),
-            sentiment_score: sample.sentiment,
-            relevance_score: 0.6,
-            metadata: { sample: true, matched_by: 'sector' },
-            created_at: new Date().toISOString(),
-          });
+    if (watchlistItems) {
+      for (const item of watchlistItems) {
+        validTickers.add(item.ticker.toUpperCase());
+      }
+    }
+    
+    // Add more assets to reach 500
+    const { data: moreAssets } = await supabase
+      .from('assets')
+      .select('ticker')
+      .limit(400);
+    
+    if (moreAssets) {
+      for (const asset of moreAssets) {
+        if (validTickers.size < 500) {
+          validTickers.add(asset.ticker.toUpperCase());
         }
       }
-    } else {
-      // Fetch top watchlisted tickers for targeted searches
-      const { data: watchlistData } = await supabase
-        .from('watchlist')
-        .select('tickers')
-        .limit(100);
-      
-      const topTickers: string[] = [];
-      const tickerCounts: Record<string, number> = {};
-      
-      for (const wl of (watchlistData || [])) {
-        for (const t of (wl.tickers || [])) {
-          tickerCounts[t] = (tickerCounts[t] || 0) + 1;
+    }
+    
+    console.log(`Loaded ${validTickers.size} tickers for matching`);
+
+    const allNews: Array<{
+      ticker: string;
+      headline: string;
+      summary: string | null;
+      source: string;
+      url: string | null;
+      published_at: string | null;
+      sentiment_score: number;
+      relevance_score: number;
+      metadata: Record<string, unknown>;
+    }> = [];
+
+    let feedsProcessed = 0;
+    let feedsFailed = 0;
+    const seenUrls = new Set<string>();
+    
+    // Process all feeds (fast RSS parsing)
+    for (const feed of NEWS_RSS_FEEDS) {
+      try {
+        console.log(`Fetching ${feed.name}...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
+        
+        const response = await fetch(feed.url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/2.0)' },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          console.log(`Feed failed: ${feed.name} (${response.status})`);
+          feedsFailed++;
+          continue;
         }
-      }
-      
-      // Get most watchlisted tickers
-      const sortedTickers = Object.entries(tickerCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 50)
-        .map(([t]) => t);
-      
-      topTickers.push(...sortedTickers);
-      console.log(`📌 Top watchlisted tickers for targeted search: ${topTickers.slice(0, 10).join(', ')}...`);
-      
-      // Use Firecrawl Search + Lovable AI with expanded coverage
-      console.log('🔍 Fetching market headlines with EXPANDED coverage...');
-      
-      const headlines = await fetchMarketHeadlines(firecrawlKey, lovableApiKey, topTickers);
-      
-      if (headlines.length === 0) {
-        console.log('⚠️ No headlines fetched, using fallback');
-        fallbackUsed = true;
-        sourceUsed = 'Simulated';
-      } else {
-        console.log(`🎯 Matching ${headlines.length} headlines to ${assets.length} assets...`);
         
-        let totalMatches = 0;
+        const xml = await response.text();
+        const items = parseRSSXml(xml, feed.name);
+        console.log(`Parsed ${items.length} items from ${feed.name}`);
+        feedsProcessed++;
         
-        for (const headline of headlines) {
-          const matchedAssets = matchHeadlineToAssets(headline, assets);
+        // Process items
+        for (const item of items) {
+          // Skip duplicates
+          if (item.link && seenUrls.has(item.link)) continue;
+          if (item.link) seenUrls.add(item.link);
           
-          console.log(`  → "${headline.headline.substring(0, 50)}..." matched to ${matchedAssets.length} assets`);
+          const fullText = `${item.title} ${item.description || ''}`;
+          const tickers = extractTickers(fullText, validTickers);
           
-          for (const asset of matchedAssets) {
-            newsItems.push({
-              ticker: sanitizeTicker(asset.ticker),
-              headline: headline.headline.substring(0, 500),
-              summary: headline.summary.substring(0, 1000) || 'No summary available',
-              source: headline.source.substring(0, 200),
-              url: headline.url || null,
-              published_at: new Date().toISOString(),
-              sentiment_score: headline.sentiment,
+          // Create news entry for each matched ticker
+          for (const ticker of tickers) {
+            const sentiment = estimateSentiment(fullText);
+            
+            allNews.push({
+              ticker,
+              headline: item.title.substring(0, 500),
+              summary: item.description?.substring(0, 1000) || null,
+              source: item.source,
+              url: item.link || null,
+              published_at: safeParseDate(item.pubDate),
+              sentiment_score: sentiment,
               relevance_score: 0.8,
-              metadata: { 
-                source_used: sourceUsed,
-                tickers_in_headline: headline.tickers_mentioned,
-                companies_in_headline: headline.companies_mentioned,
-                sectors_in_headline: headline.sectors_mentioned,
-                matched_by: headline.tickers_mentioned.includes(asset.ticker) ? 'ticker' : 
-                           headline.companies_mentioned.some(c => asset.name.toLowerCase().includes(c.toLowerCase())) ? 'company' : 'sector'
-              },
-              created_at: new Date().toISOString(),
+              metadata: { matched_by: 'ticker_extraction' },
             });
-            totalMatches++;
           }
         }
         
-        console.log(`📈 Total matches: ${totalMatches} news items across ${new Set(newsItems.map(n => n.ticker)).size} unique tickers`);
-        
-        // Cache the results
-        if (newsItems.length > 0) {
-          await redisCache.set('breaking-news:global', newsItems, 'Firecrawl Search');
-        }
+      } catch (e) {
+        console.error(`Error fetching ${feed.name}:`, e);
+        feedsFailed++;
       }
     }
 
-    // Insert news items (deduplicate by ticker+headline)
-    if (newsItems.length > 0) {
-      const seen = new Set<string>();
-      const uniqueItems = newsItems.filter(item => {
-        const key = `${item.ticker}:${item.headline.substring(0, 100)}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+    console.log(`Feeds: ${feedsProcessed} ok, ${feedsFailed} failed`);
+    console.log(`Total news items before dedup: ${allNews.length}`);
+
+    // Deduplicate by headline+ticker
+    const uniqueNews = Array.from(
+      new Map(allNews.map(n => [`${n.ticker}:${n.headline}`, n])).values()
+    );
+    console.log(`Unique news items: ${uniqueNews.length}`);
+
+    // Insert in batches
+    let inserted = 0;
+    const insertBatchSize = 50;
+    
+    for (let i = 0; i < uniqueNews.length; i += insertBatchSize) {
+      const batch = uniqueNews.slice(i, i + insertBatchSize);
       
-      const { error } = await supabase.from('breaking_news').insert(uniqueItems);
+      const { error } = await supabase
+        .from('breaking_news')
+        .insert(batch);
+      
       if (error) {
-        console.error('❌ Supabase insert error:', error);
-        throw new Error(`Database insert failed: ${error.message}`);
+        console.error(`Insert batch ${i} error:`, error.message);
+      } else {
+        inserted += batch.length;
       }
-      console.log(`✅ Inserted ${uniqueItems.length} breaking news items`);
     }
 
-    const latency = Date.now() - fetchStartTime;
-    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    
-    await supabase.from('ingest_logs').update({
-      status: 'success',
-      completed_at: new Date().toISOString(),
-      duration_seconds: durationSeconds,
-      rows_inserted: newsItems.length,
-      source_used: sourceUsed,
-      fallback_count: fallbackUsed ? 1 : 0,
-      cache_hit: cacheHit,
-      latency_ms: latency,
-      metadata: { 
-        headlines_fetched: cacheHit ? 'cached' : 'firecrawl',
-        unique_tickers: new Set(newsItems.map(n => n.ticker)).size,
-        api_calls: cacheHit ? 0 : 3
-      },
-    }).eq('id', logId);
-    
-    await supabase.from('function_status').insert({
+    const duration = Date.now() - startTime;
+    console.log(`✅ Breaking news complete: ${inserted} inserted in ${duration}ms`);
+
+    await logHeartbeat(supabase, {
       function_name: 'ingest-breaking-news',
-      executed_at: new Date().toISOString(),
       status: 'success',
-      rows_inserted: newsItems.length,
-      rows_skipped: 0,
-      fallback_used: fallbackUsed ? sourceUsed : null,
-      duration_ms: Date.now() - startTime,
-      source_used: sourceUsed,
-      error_message: null,
-      metadata: { 
-        api_calls: cacheHit ? 0 : 3,
-        cache_hit: cacheHit,
-        unique_tickers: new Set(newsItems.map(n => n.ticker)).size
-      }
+      rows_inserted: inserted,
+      rows_skipped: uniqueNews.length - inserted,
+      duration_ms: duration,
+      source_used: 'RSS Feeds',
     });
-    
+
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-breaking-news',
-      status: fallbackUsed ? 'partial' : 'success',
-      duration: durationSeconds,
-      latencyMs: latency,
-      sourceUsed,
-      fallbackRatio: fallbackUsed ? 1 : 0,
-      rowsInserted: newsItems.length,
-      metadata: { api_calls: cacheHit ? 0 : 3, cache_hit: cacheHit }
+      status: 'success',
+      rowsInserted: inserted,
+      rowsSkipped: uniqueNews.length - inserted,
+      duration: duration,
+      sourceUsed: 'RSS Feeds',
     });
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        count: newsItems.length,
-        unique_tickers: new Set(newsItems.map(n => n.ticker)).size,
-        source: sourceUsed,
-        api_calls: cacheHit ? 0 : 3,
-        duration_seconds: durationSeconds,
+      JSON.stringify({
+        success: true,
+        inserted,
+        unique_items: uniqueNews.length,
+        tickers_matched: new Set(uniqueNews.map(n => n.ticker)).size,
+        feeds_processed: feedsProcessed,
+        feeds_failed: feedsFailed,
+        duration_ms: duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error('❌ FATAL ERROR in ingest-breaking-news:', error);
+    console.error('Fatal error:', error);
     
-    const durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-    
-    await supabase.from('ingest_logs').update({
-      status: 'failed',
-      completed_at: new Date().toISOString(),
-      duration_seconds: durationSeconds,
-      error_message: errorMessage.substring(0, 1000),
-    }).eq('id', logId);
-    
-    await supabase.from('function_status').insert({
+    await logHeartbeat(supabase, {
       function_name: 'ingest-breaking-news',
-      executed_at: new Date().toISOString(),
-      status: 'failed',
+      status: 'failure',
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'error',
-      error_message: errorMessage.substring(0, 1000),
+      source_used: 'RSS Feeds',
+      error_message: error instanceof Error ? error.message : 'Unknown error',
     });
-    
-    await slackAlerter.sendLiveAlert({
+
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
       etlName: 'ingest-breaking-news',
-      status: 'failed',
-      duration: durationSeconds,
-      latencyMs: 0,
-      sourceUsed: 'error',
-      fallbackRatio: 0,
-      rowsInserted: 0,
-      errorMessage: errorMessage.substring(0, 200),
+      message: `Breaking news failed: ${error instanceof Error ? error.message : 'Unknown'}`,
     });
 
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: errorMessage,
-        duration_seconds: durationSeconds,
-      }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
