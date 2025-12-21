@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v5 - Fixed: Uses upsert, proper timestamp handling, batch processing
+// v6 - Full coverage: Fetches ALL assets using pagination (no 2,000 limit)
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,13 +25,26 @@ serve(async (req) => {
   try {
     console.log('[v5] Smart money flow ingestion started...');
 
-    // Fetch assets in batches (limit to 2000 to avoid timeout)
-    const { data: allAssets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker, asset_class')
-      .limit(2000);
+    // Fetch ALL assets using pagination (no limit)
+    const allAssets: Array<{ id: string; ticker: string; asset_class: string }> = [];
+    const pageSize = 5000;
+    let offset = 0;
     
-    if (assetsError) throw assetsError;
+    while (true) {
+      const { data: batch, error: assetsError } = await supabase
+        .from('assets')
+        .select('id, ticker, asset_class')
+        .range(offset, offset + pageSize - 1);
+      
+      if (assetsError) throw assetsError;
+      if (!batch || batch.length === 0) break;
+      
+      allAssets.push(...batch);
+      console.log(`Fetched assets ${offset + 1} to ${offset + batch.length}`);
+      
+      if (batch.length < pageSize) break;
+      offset += pageSize;
+    }
     
     if (!allAssets || allAssets.length === 0) {
       console.log('No assets found');
