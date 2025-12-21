@@ -8,28 +8,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v5 - Real supply chain news via Firecrawl search (no synthetic data)
+// v6 - Supply chain news via RSS feeds (more reliable than Firecrawl search)
+// If Firecrawl isn't working, we use RSS feeds as primary source
 
-interface FirecrawlResult {
-  title?: string;
+interface RSSItem {
+  title: string;
+  link: string;
+  pubDate?: string;
   description?: string;
-  url?: string;
-  markdown?: string;
+  source: string;
 }
 
-// Supply chain related search queries
-const SUPPLY_CHAIN_QUERIES = [
-  'supply chain disruption stocks',
-  'shipping delays manufacturing stocks',
-  'semiconductor shortage companies',
-  'port congestion impact stocks',
-  'logistics crisis companies',
-  'raw material shortage stocks',
-  'inventory shortage retail',
-  'supply chain crisis earnings',
-  'manufacturing delays automotive',
-  'chip shortage technology stocks',
+// Supply chain related RSS feeds
+const SUPPLY_CHAIN_RSS_FEEDS = [
+  { name: 'FreightWaves', url: 'https://www.freightwaves.com/feed', type: 'logistics' },
+  { name: 'Supply Chain Dive', url: 'https://www.supplychaindive.com/feeds/news/', type: 'supply_chain' },
+  { name: 'Logistics Management', url: 'https://www.logisticsmgmt.com/rss/lm_news.xml', type: 'logistics' },
+  { name: 'DC Velocity', url: 'https://www.dcvelocity.com/rss/news.xml', type: 'logistics' },
+  { name: 'Reuters Supply Chain', url: 'https://www.reuters.com/business/autos-transportation/', type: 'general' },
 ];
+
+// Company mappings for supply chain companies
+const SUPPLY_CHAIN_COMPANIES: Record<string, string> = {
+  'FedEx': 'FDX', 'UPS': 'UPS', 'Amazon': 'AMZN', 'Walmart': 'WMT', 'Target': 'TGT',
+  'Costco': 'COST', 'Home Depot': 'HD', "Lowe's": 'LOW', 'Nike': 'NKE',
+  'Intel': 'INTC', 'AMD': 'AMD', 'Nvidia': 'NVDA', 'TSMC': 'TSM', 'Qualcomm': 'QCOM',
+  'Broadcom': 'AVGO', 'Micron': 'MU', 'Applied Materials': 'AMAT',
+  'Ford': 'F', 'GM': 'GM', 'Tesla': 'TSLA', 'Toyota': 'TM', 'Honda': 'HMC',
+  'Apple': 'AAPL', 'Caterpillar': 'CAT', 'Deere': 'DE', '3M': 'MMM',
+  'Boeing': 'BA', 'Lockheed': 'LMT', 'Norfolk Southern': 'NSC', 'Union Pacific': 'UNP',
+  'CSX': 'CSX', 'XPO Logistics': 'XPO', 'CH Robinson': 'CHRW', 'JB Hunt': 'JBHT',
+  'Old Dominion': 'ODFL', 'Expeditors': 'EXPD', 'Ryder': 'R', 'Werner': 'WERN',
+};
 
 // Extract tickers from content
 function extractTickersFromContent(content: string, validTickers: Set<string>): string[] {
@@ -52,20 +62,8 @@ function extractTickersFromContent(content: string, validTickers: Set<string>): 
     }
   }
   
-  // Company name mappings for supply chain related companies
-  const supplyChainCompanies: Record<string, string> = {
-    'FedEx': 'FDX', 'UPS': 'UPS', 'Amazon': 'AMZN', 'Walmart': 'WMT', 'Target': 'TGT',
-    'Costco': 'COST', 'Home Depot': 'HD', "Lowe's": 'LOW', 'Nike': 'NKE',
-    'Intel': 'INTC', 'AMD': 'AMD', 'Nvidia': 'NVDA', 'TSMC': 'TSM', 'Qualcomm': 'QCOM',
-    'Broadcom': 'AVGO', 'Micron': 'MU', 'Applied Materials': 'AMAT',
-    'Ford': 'F', 'GM': 'GM', 'Tesla': 'TSLA', 'Toyota': 'TM', 'Honda': 'HMC',
-    'Apple': 'AAPL', 'Caterpillar': 'CAT', 'Deere': 'DE', '3M': 'MMM',
-    'Boeing': 'BA', 'Lockheed': 'LMT', 'Norfolk Southern': 'NSC', 'Union Pacific': 'UNP',
-    'CSX': 'CSX', 'Maersk': 'AMKBY', 'XPO Logistics': 'XPO', 'CH Robinson': 'CHRW',
-  };
-  
   const contentLower = content.toLowerCase();
-  for (const [company, ticker] of Object.entries(supplyChainCompanies)) {
+  for (const [company, ticker] of Object.entries(SUPPLY_CHAIN_COMPANIES)) {
     if (contentLower.includes(company.toLowerCase()) && validTickers.has(ticker)) {
       found.add(ticker);
     }
@@ -81,52 +79,49 @@ function categorizeSignal(content: string): { type: string; indicator: string } 
   if (contentLower.includes('shipping') || contentLower.includes('port') || contentLower.includes('freight')) {
     return { type: 'shipping', indicator: contentLower.includes('delay') || contentLower.includes('congestion') ? 'bearish' : 'neutral' };
   }
-  if (contentLower.includes('semiconductor') || contentLower.includes('chip shortage')) {
+  if (contentLower.includes('semiconductor') || contentLower.includes('chip')) {
     return { type: 'production', indicator: contentLower.includes('shortage') ? 'bearish' : 'neutral' };
   }
-  if (contentLower.includes('inventory') || contentLower.includes('stock')) {
+  if (contentLower.includes('inventory') || contentLower.includes('warehouse')) {
     return { type: 'inventory', indicator: contentLower.includes('shortage') || contentLower.includes('low') ? 'bearish' : 'bullish' };
   }
-  if (contentLower.includes('supplier') || contentLower.includes('vendor')) {
-    return { type: 'supplier', indicator: 'neutral' };
-  }
-  if (contentLower.includes('logistics') || contentLower.includes('transportation')) {
+  if (contentLower.includes('truck') || contentLower.includes('rail') || contentLower.includes('transportation')) {
     return { type: 'logistics', indicator: 'neutral' };
   }
   
   return { type: 'general', indicator: 'neutral' };
 }
 
-async function searchSupplyChainNews(query: string, firecrawlKey: string): Promise<FirecrawlResult[]> {
-  try {
-    const response = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${firecrawlKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: query,
-        limit: 10,
-        tbs: 'qdr:w', // Last week
-        scrapeOptions: {
-          formats: ['markdown'],
-        },
-      }),
-    });
+function parseRSSXml(xml: string, sourceName: string): RSSItem[] {
+  const items: RSSItem[] = [];
+  
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  const titleRegex = /<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i;
+  const linkRegex = /<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i;
+  const pubDateRegex = /<pubDate>([\s\S]*?)<\/pubDate>/i;
+  const descRegex = /<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i;
+  
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const itemXml = match[1];
     
-    if (!response.ok) {
-      console.log(`Firecrawl returned ${response.status} for query: ${query}`);
-      return [];
+    const titleMatch = itemXml.match(titleRegex);
+    const linkMatch = itemXml.match(linkRegex);
+    const pubDateMatch = itemXml.match(pubDateRegex);
+    const descMatch = itemXml.match(descRegex);
+    
+    if (titleMatch) {
+      items.push({
+        title: titleMatch[1].trim(),
+        link: linkMatch ? linkMatch[1].trim() : '',
+        pubDate: pubDateMatch ? pubDateMatch[1].trim() : undefined,
+        description: descMatch ? descMatch[1].trim().substring(0, 500) : undefined,
+        source: sourceName,
+      });
     }
-    
-    const data = await response.json();
-    return data.data || [];
-    
-  } catch (error) {
-    console.error(`Firecrawl error for query ${query}:`, error);
-    return [];
   }
+  
+  return items;
 }
 
 serve(async (req) => {
@@ -136,126 +131,129 @@ serve(async (req) => {
 
   const startTime = Date.now();
   const slackAlerter = new SlackAlerter();
-  let supabase: any;
+  let supabase: ReturnType<typeof createClient>;
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[v5] Starting supply chain signals ingestion with REAL DATA ONLY');
+    console.log('[v6] Starting supply chain signals ingestion via RSS feeds');
     
-    if (!firecrawlKey) {
-      console.warn('FIRECRAWL_API_KEY not configured - supply chain ingestion will return 0 rows');
-      
-      await logHeartbeat(supabase, {
-        function_name: 'ingest-supply-chain',
-        status: 'success',
-        rows_inserted: 0,
-        rows_skipped: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: 'No API key - skipped',
-      });
-      
-      return new Response(
-        JSON.stringify({ success: true, count: 0, message: 'No FIRECRAWL_API_KEY configured' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // Load valid tickers
+    // Load valid tickers (limit to 500 for performance)
     const validTickers = new Set<string>();
-    let offset = 0;
-    const batchSize = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('assets')
-        .select('ticker')
-        .range(offset, offset + batchSize - 1);
-      
-      if (error) throw error;
-      if (!data || data.length === 0) break;
-      
-      for (const asset of data) {
+    const { data: assets } = await supabase
+      .from('assets')
+      .select('ticker')
+      .limit(500);
+    
+    if (assets && Array.isArray(assets)) {
+      for (const asset of assets as { ticker: string }[]) {
         validTickers.add(asset.ticker.toUpperCase());
       }
-      
-      if (data.length < batchSize) break;
-      offset += batchSize;
     }
-    console.log(`Loaded ${validTickers.size} valid tickers from database`);
+    console.log(`Loaded ${validTickers.size} valid tickers`);
     
-    const signals: any[] = [];
+    const signals: Array<{
+      ticker: string;
+      signal_type: string;
+      metric_name: string;
+      metric_value: number;
+      change_percentage: number;
+      indicator: string;
+      report_date: string;
+      metadata: Record<string, unknown>;
+    }> = [];
+    
     const processedUrls = new Set<string>();
     const today = new Date().toISOString().split('T')[0];
     
-    // Search for supply chain news using various queries
-    for (const query of SUPPLY_CHAIN_QUERIES) {
-      console.log(`Searching: ${query}`);
-      const results = await searchSupplyChainNews(query, firecrawlKey);
-      
-      for (const result of results) {
-        // Skip duplicates
-        if (result.url && processedUrls.has(result.url)) continue;
-        if (result.url) processedUrls.add(result.url);
+    // Fetch RSS feeds
+    let feedsProcessed = 0;
+    let feedsFailed = 0;
+    
+    for (const feed of SUPPLY_CHAIN_RSS_FEEDS) {
+      try {
+        console.log(`Fetching ${feed.name}...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         
-        const content = `${result.title || ''} ${result.description || ''} ${result.markdown || ''}`;
+        const response = await fetch(feed.url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SupplyChainBot/2.0)' },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
         
-        // Extract tickers mentioned
-        const tickers = extractTickersFromContent(content, validTickers);
-        
-        if (tickers.length === 0) continue;
-        
-        // Categorize the signal
-        const { type, indicator } = categorizeSignal(content);
-        
-        // Create signal for each ticker mentioned
-        for (const ticker of tickers) {
-          signals.push({
-            ticker: ticker.substring(0, 10),
-            signal_type: type.substring(0, 20),
-            metric_name: (result.title || 'Supply Chain Update').substring(0, 50),
-            metric_value: 0, // No specific metric value for news-based signals
-            change_percentage: 0,
-            indicator: indicator.substring(0, 20),
-            report_date: today,
-            metadata: {
-              source: 'firecrawl_news_search',
-              query: query,
-              url: result.url || null,
-              title: result.title || null,
-              version: 'v5_real_data_only',
-            },
-          });
+        if (!response.ok) {
+          console.log(`Failed: ${feed.name} (${response.status})`);
+          feedsFailed++;
+          continue;
         }
+        
+        const xml = await response.text();
+        const items = parseRSSXml(xml, feed.name);
+        console.log(`Parsed ${items.length} items from ${feed.name}`);
+        feedsProcessed++;
+        
+        for (const item of items) {
+          if (item.link && processedUrls.has(item.link)) continue;
+          if (item.link) processedUrls.add(item.link);
+          
+          const content = `${item.title} ${item.description || ''}`;
+          const tickers = extractTickersFromContent(content, validTickers);
+          
+          if (tickers.length === 0) continue;
+          
+          const { type, indicator } = categorizeSignal(content);
+          
+          for (const ticker of tickers) {
+            signals.push({
+              ticker: ticker.substring(0, 10),
+              signal_type: type.substring(0, 20),
+              metric_name: item.title.substring(0, 50),
+              metric_value: 0,
+              change_percentage: 0,
+              indicator: indicator.substring(0, 20),
+              report_date: today,
+              metadata: {
+                source: 'rss_supply_chain',
+                feed: feed.name,
+                url: item.link || null,
+                title: item.title,
+                version: 'v6_rss_based',
+              },
+            });
+          }
+        }
+        
+      } catch (e) {
+        console.error(`Error: ${feed.name}:`, e);
+        feedsFailed++;
       }
-      
-      // Rate limit between searches
-      await new Promise(resolve => setTimeout(resolve, 800));
     }
 
     console.log(`\n=== SUPPLY CHAIN SUMMARY ===`);
-    console.log(`Total signals with REAL data: ${signals.length}`);
-    console.log(`Unique news sources: ${processedUrls.size}`);
-    console.log(`Estimated/fake data: 0 (REAL DATA ONLY)`);
+    console.log(`Feeds: ${feedsProcessed} ok, ${feedsFailed} failed`);
+    console.log(`Total signals: ${signals.length}`);
+    console.log(`Unique sources: ${processedUrls.size}`);
 
-    // Deduplicate signals by ticker + signal_type + report_date
+    // Deduplicate signals
     const uniqueSignals = Array.from(
       new Map(signals.map(s => [`${s.ticker}-${s.signal_type}-${s.report_date}`, s])).values()
     );
-    console.log(`Unique signals after dedup: ${uniqueSignals.length}`);
+    console.log(`Unique signals: ${uniqueSignals.length}`);
 
-    // Insert signals in batches
+    // Insert signals
     let insertedCount = 0;
     if (uniqueSignals.length > 0) {
-      const insertBatchSize = 100;
-      for (let i = 0; i < uniqueSignals.length; i += insertBatchSize) {
-        const batch = uniqueSignals.slice(i, i + insertBatchSize);
-        const { error } = await supabase.from('supply_chain_signals').insert(batch);
+      const batchSize = 50;
+      for (let i = 0; i < uniqueSignals.length; i += batchSize) {
+        const batch = uniqueSignals.slice(i, i + batchSize);
+        // Use explicit any type to bypass strict table typing
+        const { error } = await (supabase.from('supply_chain_signals') as any).insert(batch);
         
         if (error) {
-          console.error(`Insert error at batch ${i}:`, error.message);
+          console.error(`Insert error:`, error.message);
         } else {
           insertedCount += batch.length;
         }
@@ -270,39 +268,43 @@ serve(async (req) => {
       rows_inserted: insertedCount,
       rows_skipped: signals.length - insertedCount,
       duration_ms: durationMs,
-      source_used: 'Firecrawl Supply Chain News',
+      source_used: 'RSS Supply Chain Feeds',
     });
 
-    await slackAlerter.sendLiveAlert({
-      etlName: 'ingest-supply-chain',
-      status: 'success',
-      duration: durationMs,
-      rowsInserted: insertedCount,
-      rowsSkipped: 0,
-      sourceUsed: 'Firecrawl Supply Chain News',
-    });
+    if (insertedCount > 0) {
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-supply-chain',
+        status: 'success',
+        duration: durationMs,
+        rowsInserted: insertedCount,
+        rowsSkipped: 0,
+        sourceUsed: 'RSS Supply Chain Feeds',
+      });
+    }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        count: insertedCount,
+        inserted: insertedCount,
+        feeds_processed: feedsProcessed,
+        feeds_failed: feedsFailed,
         news_sources: processedUrls.size,
-        queries_run: SUPPLY_CHAIN_QUERIES.length,
-        version: 'v5_real_data_only',
+        version: 'v6_rss_based',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
-    console.error('Error in ingest-supply-chain:', error);
     
-    if (supabase) {
+  } catch (error) {
+    console.error('Error:', error);
+    
+    if (supabase!) {
       await logHeartbeat(supabase, {
         function_name: 'ingest-supply-chain',
         status: 'failure',
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl Supply Chain News',
+        source_used: 'RSS Supply Chain Feeds',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -310,7 +312,7 @@ serve(async (req) => {
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'ingest-supply-chain',
-      message: `Supply chain ingestion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `Supply chain ingestion failed: ${error instanceof Error ? error.message : 'Unknown'}`,
     });
     
     return new Response(
