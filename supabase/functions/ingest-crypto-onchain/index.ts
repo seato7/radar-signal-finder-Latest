@@ -7,7 +7,176 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const BATCH_SIZE = 500;
+// v2 - Uses Firecrawl to scrape real on-chain data from CoinGecko, with estimated fallback
+
+const BATCH_SIZE = 100;
+const FIRECRAWL_API = 'https://api.firecrawl.dev/v1';
+
+// Major crypto tickers to prioritize for real data
+const MAJOR_CRYPTOS = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'SOL', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'LTC', 'ETC'];
+
+interface OnchainData {
+  activeAddresses?: number;
+  transactionCount?: number;
+  whaleTransactions?: number;
+  exchangeInflow?: number;
+  exchangeOutflow?: number;
+  fearGreedIndex?: number;
+  hashRate?: number;
+  source: string;
+}
+
+async function scrapeOnchainDataWithFirecrawl(ticker: string, firecrawlApiKey: string): Promise<OnchainData | null> {
+  try {
+    // Extract base ticker (e.g., 'BTC' from 'BTC/USD')
+    const baseTicker = ticker.split('/')[0].toLowerCase();
+    
+    // Try CoinGecko page for on-chain data
+    const coinGeckoUrl = `https://www.coingecko.com/en/coins/${baseTicker}`;
+    
+    const response = await fetch(`${FIRECRAWL_API}/scrape`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: coinGeckoUrl,
+        formats: ['markdown'],
+        onlyMainContent: true,
+        waitFor: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.log(`Firecrawl scrape failed for ${ticker}: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const markdown = data.data?.markdown || data.markdown || '';
+    
+    if (!markdown || markdown.length < 100) {
+      return null;
+    }
+
+    // Parse on-chain metrics from the scraped content
+    const metrics = parseOnchainMetrics(markdown, ticker);
+    return metrics;
+
+  } catch (error) {
+    console.error(`Firecrawl error for ${ticker}:`, error);
+    return null;
+  }
+}
+
+function parseOnchainMetrics(markdown: string, ticker: string): OnchainData | null {
+  try {
+    const content = markdown.toLowerCase();
+    
+    // Try to extract active addresses
+    let activeAddresses: number | undefined;
+    const addressMatch = content.match(/active\s*address(?:es)?[\s:]*([0-9,]+)/i) ||
+                         content.match(/([0-9,]+)\s*active\s*address/i);
+    if (addressMatch) {
+      activeAddresses = parseInt(addressMatch[1].replace(/,/g, ''));
+    }
+
+    // Try to extract transaction count
+    let transactionCount: number | undefined;
+    const txMatch = content.match(/transactions?[\s:]*([0-9,]+)/i) ||
+                    content.match(/([0-9,]+)\s*transactions?/i) ||
+                    content.match(/tx\s*count[\s:]*([0-9,]+)/i);
+    if (txMatch) {
+      transactionCount = parseInt(txMatch[1].replace(/,/g, ''));
+    }
+
+    // Try to extract whale/large transactions
+    let whaleTransactions: number | undefined;
+    const whaleMatch = content.match(/whale\s*transaction[s]?[\s:]*([0-9,]+)/i) ||
+                       content.match(/large\s*transaction[s]?[\s:]*([0-9,]+)/i);
+    if (whaleMatch) {
+      whaleTransactions = parseInt(whaleMatch[1].replace(/,/g, ''));
+    }
+
+    // Try to extract exchange flow data
+    let exchangeInflow: number | undefined;
+    let exchangeOutflow: number | undefined;
+    const inflowMatch = content.match(/exchange\s*inflow[\s:]*\$?([0-9,.]+)([kmb])?/i);
+    const outflowMatch = content.match(/exchange\s*outflow[\s:]*\$?([0-9,.]+)([kmb])?/i);
+    
+    if (inflowMatch) {
+      exchangeInflow = parseNumberWithSuffix(inflowMatch[1], inflowMatch[2]);
+    }
+    if (outflowMatch) {
+      exchangeOutflow = parseNumberWithSuffix(outflowMatch[1], outflowMatch[2]);
+    }
+
+    // Try to extract Fear & Greed Index
+    let fearGreedIndex: number | undefined;
+    const fgMatch = content.match(/fear\s*(?:&|and)?\s*greed[\s:]*(\d+)/i) ||
+                    content.match(/(\d+)\s*fear\s*(?:&|and)?\s*greed/i);
+    if (fgMatch) {
+      fearGreedIndex = parseInt(fgMatch[1]);
+    }
+
+    // Try to extract hash rate (for PoW coins)
+    let hashRate: number | undefined;
+    const hashMatch = content.match(/hash\s*rate[\s:]*([0-9,.]+)\s*(eh|ph|th|gh)/i);
+    if (hashMatch) {
+      const value = parseFloat(hashMatch[1].replace(/,/g, ''));
+      const unit = hashMatch[2].toLowerCase();
+      const multipliers: Record<string, number> = { 'gh': 1e9, 'th': 1e12, 'ph': 1e15, 'eh': 1e18 };
+      hashRate = value * (multipliers[unit] || 1);
+    }
+
+    // Only return if we found some actual data
+    if (activeAddresses || transactionCount || whaleTransactions || exchangeInflow || fearGreedIndex || hashRate) {
+      return {
+        activeAddresses,
+        transactionCount,
+        whaleTransactions,
+        exchangeInflow,
+        exchangeOutflow,
+        fearGreedIndex,
+        hashRate,
+        source: 'Firecrawl (CoinGecko)',
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error parsing metrics for ${ticker}:`, error);
+    return null;
+  }
+}
+
+function parseNumberWithSuffix(value: string, suffix?: string): number {
+  const num = parseFloat(value.replace(/,/g, ''));
+  if (!suffix) return num;
+  
+  const multipliers: Record<string, number> = { 'k': 1000, 'm': 1000000, 'b': 1000000000 };
+  return num * (multipliers[suffix.toLowerCase()] || 1);
+}
+
+function generateEstimatedMetrics(ticker: string, currentPrice: number, volatility: number): OnchainData {
+  const baseTicker = ticker.split('/')[0];
+  const isMajorCrypto = MAJOR_CRYPTOS.includes(baseTicker);
+  
+  // Scale metrics by market cap proxy
+  const scaleFactor = isMajorCrypto ? 1000 : Math.max(1, Math.log10(currentPrice) * 10);
+  
+  return {
+    activeAddresses: Math.floor((50000 + Math.random() * 200000) * scaleFactor / 100),
+    transactionCount: Math.floor((100000 + Math.random() * 500000) * scaleFactor / 100),
+    whaleTransactions: Math.floor((50 + Math.random() * 200) * (isMajorCrypto ? 10 : 1)),
+    exchangeInflow: Math.floor((1000 + Math.random() * 5000) * scaleFactor / 10),
+    exchangeOutflow: Math.floor((1000 + Math.random() * 5000) * scaleFactor / 10),
+    fearGreedIndex: Math.floor(30 + Math.random() * 40 + (volatility > 0.05 ? -10 : 10)),
+    hashRate: isMajorCrypto && baseTicker === 'BTC' ? 500000000 + Math.random() * 100000000 : undefined,
+    source: 'Estimated from market data',
+  };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -20,9 +189,11 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY') ?? '';
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('🔗 Starting crypto on-chain metrics ingestion for ALL crypto assets...');
+    console.log('🔗 [v2] Starting crypto on-chain metrics ingestion with Firecrawl...');
+    console.log(`Firecrawl API key available: ${!!firecrawlApiKey}`);
 
     // Get ALL crypto assets with pagination
     let allCryptoAssets: any[] = [];
@@ -53,6 +224,16 @@ serve(async (req) => {
       );
     }
 
+    // Prioritize major cryptos for Firecrawl scraping
+    const majorAssets = allCryptoAssets.filter(a => {
+      const baseTicker = a.ticker.split('/')[0];
+      return MAJOR_CRYPTOS.includes(baseTicker);
+    });
+    const otherAssets = allCryptoAssets.filter(a => {
+      const baseTicker = a.ticker.split('/')[0];
+      return !MAJOR_CRYPTOS.includes(baseTicker);
+    });
+
     // Bulk fetch recent prices
     const tickers = allCryptoAssets.map(a => a.ticker);
     const { data: priceData } = await supabaseClient
@@ -74,10 +255,34 @@ serve(async (req) => {
 
     let successCount = 0;
     let errorCount = 0;
+    let firecrawlCount = 0;
+    let estimatedCount = 0;
 
-    // Process in batches
-    for (let i = 0; i < allCryptoAssets.length; i += BATCH_SIZE) {
-      const batch = allCryptoAssets.slice(i, i + BATCH_SIZE);
+    // Scrape major cryptos with Firecrawl first (limit to avoid rate limits)
+    const firecrawlCache: Record<string, OnchainData | null> = {};
+    
+    if (firecrawlApiKey) {
+      console.log(`🔥 Scraping ${Math.min(majorAssets.length, 15)} major cryptos with Firecrawl...`);
+      
+      for (const asset of majorAssets.slice(0, 15)) {
+        const scrapedData = await scrapeOnchainDataWithFirecrawl(asset.ticker, firecrawlApiKey);
+        firecrawlCache[asset.ticker] = scrapedData;
+        
+        if (scrapedData) {
+          console.log(`✅ Firecrawl success for ${asset.ticker}`);
+          firecrawlCount++;
+        }
+        
+        // Small delay to avoid rate limits
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    // Process all assets in batches
+    const sortedAssets = [...majorAssets, ...otherAssets];
+    
+    for (let i = 0; i < sortedAssets.length; i += BATCH_SIZE) {
+      const batch = sortedAssets.slice(i, i + BATCH_SIZE);
       const insertData: any[] = [];
 
       for (const asset of batch) {
@@ -96,54 +301,51 @@ serve(async (req) => {
             volatility = changes.reduce((a, b) => a + b, 0) / changes.length;
           }
 
-          // Estimate on-chain metrics based on market cap proxy (price)
-          const marketCapProxy = currentPrice;
-          const isMajorCrypto = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'SOL', 'DOGE'].includes(asset.ticker.split('/')[0]);
+          // Use Firecrawl data if available, otherwise estimate
+          const firecrawlData = firecrawlCache[asset.ticker];
+          const metrics = firecrawlData || generateEstimatedMetrics(asset.ticker, currentPrice, volatility);
+          
+          if (!firecrawlData) {
+            estimatedCount++;
+          }
 
-          // Scale metrics by market cap
-          const scaleFactor = isMajorCrypto ? 1000 : Math.max(1, Math.log10(marketCapProxy) * 10);
-
-          const activeAddresses = Math.floor((50000 + Math.random() * 200000) * scaleFactor / 100);
-          const transactionCount = Math.floor((100000 + Math.random() * 500000) * scaleFactor / 100);
-          const whaleTransactionCount = Math.floor((50 + Math.random() * 200) * (isMajorCrypto ? 10 : 1));
-
-          // Exchange flow based on volatility
-          const exchangeInflow = Math.floor((1000 + Math.random() * 5000) * scaleFactor / 10);
-          const exchangeOutflow = Math.floor((1000 + Math.random() * 5000) * scaleFactor / 10);
-          const exchangeNetFlow = exchangeOutflow - exchangeInflow;
+          const exchangeNetFlow = (metrics.exchangeOutflow || 0) - (metrics.exchangeInflow || 0);
 
           // Determine signals
           let whaleSignal = 'neutral';
-          if (whaleTransactionCount > 150) whaleSignal = 'accumulating';
-          else if (whaleTransactionCount < 80) whaleSignal = 'distributing';
+          if ((metrics.whaleTransactions || 0) > 150) whaleSignal = 'accumulating';
+          else if ((metrics.whaleTransactions || 0) < 80) whaleSignal = 'distributing';
 
           let exchangeFlowSignal = 'neutral';
           if (exchangeNetFlow > 1000) exchangeFlowSignal = 'bullish_outflow';
           else if (exchangeNetFlow < -1000) exchangeFlowSignal = 'bearish_inflow';
 
-          const fearGreedIndex = Math.floor(30 + Math.random() * 40 + (volatility > 0.05 ? -10 : 10));
-
           insertData.push({
             ticker: asset.ticker,
             asset_id: asset.id,
-            active_addresses: activeAddresses,
+            active_addresses: metrics.activeAddresses,
             active_addresses_change_pct: (Math.random() * 20 - 10),
-            transaction_count: transactionCount,
+            transaction_count: metrics.transactionCount,
             transaction_count_change_pct: (Math.random() * 30 - 15),
-            whale_transaction_count: whaleTransactionCount,
-            large_transaction_volume: whaleTransactionCount * currentPrice * 100,
+            whale_transaction_count: metrics.whaleTransactions,
+            large_transaction_volume: (metrics.whaleTransactions || 0) * currentPrice * 100,
             whale_signal: whaleSignal,
-            exchange_inflow: exchangeInflow,
-            exchange_outflow: exchangeOutflow,
+            exchange_inflow: metrics.exchangeInflow,
+            exchange_outflow: metrics.exchangeOutflow,
             exchange_net_flow: exchangeNetFlow,
             exchange_flow_signal: exchangeFlowSignal,
             supply_on_exchanges_pct: 10 + Math.random() * 15,
             long_term_holder_supply_pct: 50 + Math.random() * 20,
-            hash_rate: isMajorCrypto && asset.ticker.includes('BTC') ? 500000000 + Math.random() * 100000000 : null,
+            hash_rate: metrics.hashRate,
             hash_rate_change_pct: Math.random() * 10 - 5,
-            fear_greed_index: fearGreedIndex,
-            source: 'Estimated from market data',
-            metadata: { volatility, isMajorCrypto, batch: Math.floor(i / BATCH_SIZE) + 1 }
+            fear_greed_index: metrics.fearGreedIndex,
+            source: metrics.source,
+            metadata: { 
+              volatility, 
+              isMajorCrypto: MAJOR_CRYPTOS.includes(asset.ticker.split('/')[0]),
+              batch: Math.floor(i / BATCH_SIZE) + 1,
+              scrapedWithFirecrawl: !!firecrawlData
+            }
           });
 
           successCount++;
@@ -164,10 +366,11 @@ serve(async (req) => {
         }
       }
 
-      console.log(`✅ Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(allCryptoAssets.length / BATCH_SIZE)}`);
+      console.log(`✅ Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(sortedAssets.length / BATCH_SIZE)}`);
     }
 
     const duration = Date.now() - startTime;
+    const sourceUsed = firecrawlCount > 0 ? `Firecrawl (${firecrawlCount}) + Estimated (${estimatedCount})` : 'Estimated from market data';
 
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-crypto-onchain',
@@ -176,8 +379,13 @@ serve(async (req) => {
       rows_inserted: successCount,
       rows_skipped: errorCount,
       duration_ms: duration,
-      source_used: 'Estimated from market data',
-      metadata: { total_crypto_assets: allCryptoAssets.length }
+      source_used: sourceUsed,
+      metadata: { 
+        total_crypto_assets: allCryptoAssets.length,
+        firecrawl_scraped: firecrawlCount,
+        estimated_fallback: estimatedCount,
+        version: 'v2'
+      }
     });
 
     await slackAlerter.sendLiveAlert({
@@ -186,8 +394,10 @@ serve(async (req) => {
       duration,
       rowsInserted: successCount,
       rowsSkipped: errorCount,
-      sourceUsed: 'Estimated from market data',
+      sourceUsed,
     });
+
+    console.log(`🎉 Complete! Firecrawl: ${firecrawlCount}, Estimated: ${estimatedCount}`);
 
     return new Response(
       JSON.stringify({
@@ -195,6 +405,9 @@ serve(async (req) => {
         processed: allCryptoAssets.length,
         successful: successCount,
         errors: errorCount,
+        firecrawlScraped: firecrawlCount,
+        estimatedFallback: estimatedCount,
+        source: sourceUsed,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
