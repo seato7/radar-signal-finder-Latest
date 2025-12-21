@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v6 - ZERO ESTIMATION - Firecrawl scraping of StockTwits, skip if no real data
+// v7 - Dynamic ticker loading from database + batch processing
 
 interface FirecrawlResult {
   title?: string;
@@ -21,9 +21,8 @@ interface FirecrawlResult {
 function extractSentimentFromContent(markdown: string): { bullish: number; bearish: number; neutral: number; total: number } {
   const lowerContent = markdown.toLowerCase();
   
-  // Look for sentiment indicators in scraped content
-  const bullishPatterns = ['bullish', '🐂', '📈', 'buy', 'long', 'calls', 'moon', 'rocket', '🚀', 'green'];
-  const bearishPatterns = ['bearish', '🐻', '📉', 'sell', 'short', 'puts', 'crash', 'dump', 'red'];
+  const bullishPatterns = ['bullish', '🐂', '📈', 'buy', 'long', 'calls', 'moon', 'rocket', '🚀', 'green', 'bull', 'rip', 'send'];
+  const bearishPatterns = ['bearish', '🐻', '📉', 'sell', 'short', 'puts', 'crash', 'dump', 'red', 'bear', 'fade', 'tank'];
   
   let bullish = 0;
   let bearish = 0;
@@ -40,9 +39,8 @@ function extractSentimentFromContent(markdown: string): { bullish: number; beari
     if (matches) bearish += matches.length;
   }
   
-  // Count message indicators (typically shown as numbers in StockTwits)
   const messageCountMatch = markdown.match(/(\d+)\s*messages?/i);
-  const total = messageCountMatch ? parseInt(messageCountMatch[1]) : (bullish + bearish + 5);
+  const total = messageCountMatch ? parseInt(messageCountMatch[1]) : Math.max(bullish + bearish, 5);
   
   return {
     bullish,
@@ -54,7 +52,6 @@ function extractSentimentFromContent(markdown: string): { bullish: number; beari
 
 async function scrapeStockTwitsViaFirecrawl(ticker: string, firecrawlKey: string): Promise<{ success: boolean; data?: FirecrawlResult }> {
   try {
-    // Scrape StockTwits symbol page
     const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
@@ -65,19 +62,17 @@ async function scrapeStockTwitsViaFirecrawl(ticker: string, firecrawlKey: string
         url: `https://stocktwits.com/symbol/${ticker}`,
         formats: ['markdown'],
         onlyMainContent: true,
-        waitFor: 2000, // Wait for dynamic content
+        waitFor: 2000,
       }),
     });
     
     if (!response.ok) {
-      console.log(`Firecrawl scrape returned ${response.status} for ${ticker}`);
       return { success: false };
     }
     
     const data = await response.json();
     
     if (!data.success || !data.data?.markdown) {
-      console.log(`No content scraped for ${ticker}`);
       return { success: false };
     }
     
@@ -89,7 +84,6 @@ async function scrapeStockTwitsViaFirecrawl(ticker: string, firecrawlKey: string
   }
 }
 
-// Fallback: Search StockTwits via Firecrawl search
 async function searchStockTwitsViaFirecrawl(ticker: string, firecrawlKey: string): Promise<FirecrawlResult[]> {
   try {
     const response = await fetch('https://api.firecrawl.dev/v1/search', {
@@ -99,9 +93,9 @@ async function searchStockTwitsViaFirecrawl(ticker: string, firecrawlKey: string
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        query: `${ticker} site:stocktwits.com`,
+        query: `$${ticker} site:stocktwits.com`,
         limit: 5,
-        tbs: 'qdr:d', // Last day
+        tbs: 'qdr:d',
         scrapeOptions: {
           formats: ['markdown'],
         },
@@ -116,7 +110,6 @@ async function searchStockTwitsViaFirecrawl(ticker: string, firecrawlKey: string
     return data.data || [];
     
   } catch (error) {
-    console.error(`Firecrawl search error for ${ticker}:`, error);
     return [];
   }
 }
@@ -136,38 +129,91 @@ serve(async (req) => {
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[v6] Starting StockTwits sentiment ingestion - ZERO ESTIMATION MODE');
+    console.log('[v7] Starting StockTwits sentiment ingestion with DYNAMIC TICKER LOADING');
 
     if (!firecrawlKey) {
-      console.error('FIRECRAWL_API_KEY not configured - cannot proceed without real data');
       throw new Error('FIRECRAWL_API_KEY required for StockTwits sentiment ingestion');
     }
 
-    // Popular tickers to fetch
-    const popularTickers = [
+    // Load valid tickers from database
+    const allValidTickers = new Set<string>();
+    let offset = 0;
+    const batchSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('ticker')
+        .range(offset, offset + batchSize - 1);
+      
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      
+      for (const asset of data) {
+        allValidTickers.add(asset.ticker.toUpperCase());
+      }
+      
+      if (data.length < batchSize) break;
+      offset += batchSize;
+    }
+    console.log(`Loaded ${allValidTickers.size} valid tickers from database`);
+
+    // Build list of tickers to process
+    const tickersToProcess = new Set<string>();
+    
+    // Always include popular stocks
+    const alwaysInclude = [
       'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'AMD', 'INTC',
       'SPY', 'QQQ', 'GME', 'AMC', 'PLTR', 'NIO', 'SOFI', 'RIVN', 'LCID',
-      'BA', 'DIS', 'NFLX', 'PYPL', 'SQ', 'COIN', 'HOOD', 'MARA', 'RIOT'
+      'BA', 'DIS', 'NFLX', 'PYPL', 'SQ', 'COIN', 'HOOD', 'MARA', 'RIOT',
+      'IWM', 'XLF', 'XLE', 'XLK', 'ARKK', 'SOXL', 'TQQQ',
+      'JPM', 'BAC', 'GS', 'V', 'MA', 'WMT', 'TGT', 'COST',
+      'PFE', 'MRNA', 'JNJ', 'UNH', 'LLY', 'ABBV',
+      'XOM', 'CVX', 'COP', 'OXY', 'SLB',
+      'F', 'GM', 'UBER', 'LYFT', 'ABNB',
     ];
-
-    // Get matching assets
-    const { data: assets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker, name')
-      .in('ticker', popularTickers);
     
-    if (assetsError) throw assetsError;
+    for (const t of alwaysInclude) {
+      if (allValidTickers.has(t)) tickersToProcess.add(t);
+    }
     
-    const validAssets = assets || [];
-    console.log(`Processing ${validAssets.length} tickers for StockTwits sentiment via Firecrawl`);
+    // Add tickers from user watchlists
+    const { data: watchlistItems } = await supabase
+      .from('watchlist')
+      .select('ticker')
+      .limit(100);
+    
+    if (watchlistItems) {
+      for (const item of watchlistItems) {
+        if (allValidTickers.has(item.ticker)) tickersToProcess.add(item.ticker);
+      }
+    }
+    
+    // Add tickers with recent breaking news (active stocks)
+    const { data: recentNews } = await supabase
+      .from('breaking_news')
+      .select('ticker')
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(50);
+    
+    if (recentNews) {
+      for (const news of recentNews) {
+        if (allValidTickers.has(news.ticker)) tickersToProcess.add(news.ticker);
+      }
+    }
+    
+    // Limit to 100 tickers per run
+    const tickerList = Array.from(tickersToProcess).slice(0, 100);
+    console.log(`Processing ${tickerList.length} tickers for StockTwits sentiment`);
     
     const signals: any[] = [];
     let skippedCount = 0;
     
-    // Process each ticker
-    for (const asset of validAssets) {
+    // Process tickers in batches
+    for (let i = 0; i < tickerList.length; i++) {
+      const ticker = tickerList[i];
+      
       // Try direct scrape first
-      let scrapeResult = await scrapeStockTwitsViaFirecrawl(asset.ticker, firecrawlKey);
+      let scrapeResult = await scrapeStockTwitsViaFirecrawl(ticker, firecrawlKey);
       
       let content = '';
       let sourceMethod = 'scrape';
@@ -176,7 +222,7 @@ serve(async (req) => {
         content = scrapeResult.data.markdown;
       } else {
         // Fallback to search
-        const searchResults = await searchStockTwitsViaFirecrawl(asset.ticker, firecrawlKey);
+        const searchResults = await searchStockTwitsViaFirecrawl(ticker, firecrawlKey);
         if (searchResults.length > 0) {
           content = searchResults.map(r => `${r.title || ''} ${r.description || ''} ${r.markdown || ''}`).join(' ');
           sourceMethod = 'search';
@@ -184,19 +230,18 @@ serve(async (req) => {
       }
       
       if (!content || content.length < 50) {
-        console.log(`${asset.ticker}: No StockTwits data found - SKIPPING (no estimation)`);
+        console.log(`${ticker}: No StockTwits data found - SKIPPING`);
         skippedCount++;
         continue;
       }
       
-      // Extract sentiment from real content
       const sentiment = extractSentimentFromContent(content);
       const sentimentScore = sentiment.total > 0 
         ? (sentiment.bullish - sentiment.bearish) / sentiment.total 
         : 0;
       
       signals.push({
-        ticker: asset.ticker.substring(0, 10),
+        ticker: ticker.substring(0, 10),
         source: 'stocktwits',
         mention_count: sentiment.total,
         bullish_count: sentiment.bullish,
@@ -207,44 +252,46 @@ serve(async (req) => {
           data_source: `firecrawl_stocktwits_${sourceMethod}`,
           fetched_at: new Date().toISOString(),
           content_length: content.length,
-          version: 'v6_zero_estimation',
+          version: 'v7_dynamic_tickers',
         },
         created_at: new Date().toISOString(),
       });
       
-      console.log(`✅ ${asset.ticker}: ${sentiment.total} signals via ${sourceMethod}, sentiment: ${sentimentScore.toFixed(2)}`);
+      console.log(`✅ ${ticker}: ${sentiment.total} signals via ${sourceMethod}, sentiment: ${sentimentScore.toFixed(2)}`);
       
-      // Rate limit
+      // Rate limit - 1 second between requests
       await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Progress log every 20 tickers
+      if ((i + 1) % 20 === 0) {
+        console.log(`Progress: ${i + 1}/${tickerList.length} tickers processed`);
+      }
     }
 
     console.log(`\n=== STOCKTWITS SENTIMENT SUMMARY ===`);
     console.log(`Total signals with REAL data: ${signals.length}`);
     console.log(`Skipped (no data found): ${skippedCount}`);
-    console.log(`Estimated/fake data: 0 (ZERO ESTIMATION MODE)`);
 
-    // 🚨 CRITICAL: Send alert if no real data was found
-    if (signals.length === 0 && validAssets.length > 0) {
+    if (signals.length === 0 && tickerList.length > 0) {
       await sendNoDataFoundAlert(slackAlerter, 'ingest-stocktwits', {
-        sourcesAttempted: [`Firecrawl StockTwits scrape/search for ${validAssets.length} tickers`],
-        reason: `All ${skippedCount} tickers returned no StockTwits data via Firecrawl`
+        sourcesAttempted: [`Firecrawl StockTwits for ${tickerList.length} tickers`],
+        reason: `All ${skippedCount} tickers returned no StockTwits data`
       });
     }
 
-    // Insert only real signals
+    // Insert signals in batches
     if (signals.length > 0) {
-      const { error } = await supabase
-        .from('social_signals')
-        .insert(signals);
-
-      if (error) {
-        console.error('Insert error:', error.message);
-        throw error;
+      const insertBatchSize = 100;
+      for (let i = 0; i < signals.length; i += insertBatchSize) {
+        const batch = signals.slice(i, i + insertBatchSize);
+        const { error } = await supabase.from('social_signals').insert(batch);
+        if (error) {
+          console.error('Insert error:', error.message);
+        }
       }
     }
 
     const durationMs = Date.now() - startTime;
-    const sourceUsed = 'Firecrawl StockTwits Scrape/Search';
     
     await logHeartbeat(supabase, {
       function_name: 'ingest-stocktwits',
@@ -252,7 +299,7 @@ serve(async (req) => {
       rows_inserted: signals.length,
       rows_skipped: skippedCount,
       duration_ms: durationMs,
-      source_used: sourceUsed,
+      source_used: 'Firecrawl StockTwits Dynamic',
     });
 
     await slackAlerter.sendLiveAlert({
@@ -261,17 +308,17 @@ serve(async (req) => {
       duration: durationMs,
       rowsInserted: signals.length,
       rowsSkipped: skippedCount,
-      sourceUsed: sourceUsed,
+      sourceUsed: 'Firecrawl StockTwits Dynamic',
     });
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         count: signals.length,
+        tickers_processed: tickerList.length,
         skipped: skippedCount,
-        estimated: 0,
-        source: sourceUsed,
-        version: 'v6_zero_estimation',
+        source: 'Firecrawl StockTwits Dynamic',
+        version: 'v7_dynamic_tickers',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -284,7 +331,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl StockTwits',
+        source_used: 'Firecrawl StockTwits Dynamic',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }

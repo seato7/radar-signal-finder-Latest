@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v7 - ZERO ESTIMATION - Firecrawl only, skip if no real data
+// v8 - Dynamic ticker loading from database + sector-based discovery
 
 interface FirecrawlResult {
   title?: string;
@@ -17,12 +17,12 @@ interface FirecrawlResult {
   markdown?: string;
 }
 
-// Keyword-based sentiment analysis (no randomness)
+// Keyword-based sentiment analysis
 function analyzeSentiment(text: string): number {
   const lowerText = text.toLowerCase();
   
-  const bullishWords = ['buy', 'calls', 'moon', 'rocket', 'bullish', 'long', 'undervalued', 'breakout', 'rally', 'growth', 'gain', 'up', 'green', 'pump', 'yolo', 'hold', 'diamond hands', 'squeeze', 'gamma', 'tendies'];
-  const bearishWords = ['sell', 'puts', 'short', 'bearish', 'crash', 'dump', 'overvalued', 'drop', 'fall', 'down', 'red', 'loss', 'bag', 'rip', 'dead', 'rug', 'scam', 'avoid'];
+  const bullishWords = ['buy', 'calls', 'moon', 'rocket', 'bullish', 'long', 'undervalued', 'breakout', 'rally', 'growth', 'gain', 'up', 'green', 'pump', 'yolo', 'hold', 'diamond hands', 'squeeze', 'gamma', 'tendies', 'bull', 'rip', 'send', 'print'];
+  const bearishWords = ['sell', 'puts', 'short', 'bearish', 'crash', 'dump', 'overvalued', 'drop', 'fall', 'down', 'red', 'loss', 'bag', 'dead', 'rug', 'scam', 'avoid', 'bear', 'fade', 'tank'];
   
   let bullishScore = 0;
   let bearishScore = 0;
@@ -44,9 +44,30 @@ function analyzeSentiment(text: string): number {
   return (bullishScore - bearishScore) / total;
 }
 
-async function searchRedditViaFirecrawl(ticker: string, firecrawlKey: string): Promise<FirecrawlResult[]> {
+// Extract tickers mentioned in content
+function extractTickersFromContent(content: string, validTickers: Set<string>): string[] {
+  const found = new Set<string>();
+  const patterns = [
+    /\$([A-Z]{1,5})\b/g,
+    /\b([A-Z]{2,5})\b/g,
+  ];
+  
+  for (const pattern of patterns) {
+    const regex = new RegExp(pattern.source, pattern.flags);
+    const matches = content.matchAll(regex);
+    for (const match of matches) {
+      const ticker = match[1].toUpperCase();
+      if (validTickers.has(ticker) && ticker.length >= 2) {
+        found.add(ticker);
+      }
+    }
+  }
+  
+  return Array.from(found);
+}
+
+async function searchRedditViaFirecrawl(query: string, firecrawlKey: string): Promise<FirecrawlResult[]> {
   try {
-    // Search Reddit for stock discussions
     const response = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: {
@@ -54,9 +75,9 @@ async function searchRedditViaFirecrawl(ticker: string, firecrawlKey: string): P
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        query: `${ticker} stock site:reddit.com/r/wallstreetbets OR site:reddit.com/r/stocks OR site:reddit.com/r/investing`,
-        limit: 10,
-        tbs: 'qdr:w', // Last week
+        query: `${query} site:reddit.com/r/wallstreetbets OR site:reddit.com/r/stocks OR site:reddit.com/r/investing OR site:reddit.com/r/options`,
+        limit: 15,
+        tbs: 'qdr:w',
         scrapeOptions: {
           formats: ['markdown'],
         },
@@ -64,16 +85,15 @@ async function searchRedditViaFirecrawl(ticker: string, firecrawlKey: string): P
     });
     
     if (!response.ok) {
-      console.log(`Firecrawl returned ${response.status} for ${ticker}`);
+      console.log(`Firecrawl returned ${response.status} for query: ${query}`);
       return [];
     }
     
     const data = await response.json();
-    console.log(`Firecrawl returned ${data.data?.length || 0} results for ${ticker}`);
     return data.data || [];
     
   } catch (error) {
-    console.error(`Firecrawl error for ${ticker}:`, error);
+    console.error(`Firecrawl error for query ${query}:`, error);
     return [];
   }
 }
@@ -93,45 +113,95 @@ serve(async (req) => {
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[v7] Starting Reddit sentiment ingestion - ZERO ESTIMATION MODE');
+    console.log('[v8] Starting Reddit sentiment ingestion with DYNAMIC TICKER LOADING');
     
     if (!firecrawlKey) {
-      console.error('FIRECRAWL_API_KEY not configured - cannot proceed without real data');
       throw new Error('FIRECRAWL_API_KEY required for Reddit sentiment ingestion');
     }
     
-    // Popular tickers to track on Reddit (focus on high-activity stocks)
-    const popularTickers = [
-      'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'AMD', 'INTC',
-      'SPY', 'QQQ', 'GME', 'AMC', 'PLTR', 'NIO', 'SOFI', 'RIVN', 'LCID',
-      'BA', 'DIS', 'NFLX', 'PYPL', 'SQ', 'COIN', 'HOOD', 'MARA', 'RIOT'
-    ];
+    // Load ALL valid tickers from database for validation
+    const allValidTickers = new Set<string>();
+    let offset = 0;
+    const batchSize = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('ticker')
+        .range(offset, offset + batchSize - 1);
+      
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      
+      for (const asset of data) {
+        allValidTickers.add(asset.ticker.toUpperCase());
+      }
+      
+      if (data.length < batchSize) break;
+      offset += batchSize;
+    }
+    console.log(`Loaded ${allValidTickers.size} valid tickers from database`);
     
-    // Get matching assets from database
-    const { data: assets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker, name')
-      .in('ticker', popularTickers);
+    // Get top tickers from multiple sources:
+    // 1. User watchlists
+    // 2. Most traded (from dark pool activity)
+    // 3. Recent signal activity
+    // 4. Always-popular tickers
     
-    if (assetsError) throw assetsError;
+    const tickersToProcess = new Set<string>();
     
-    const validAssets = assets || [];
-    console.log(`Processing ${validAssets.length} tickers for Reddit sentiment via Firecrawl`);
+    // Always include popular meme/social stocks
+    const alwaysInclude = ['GME', 'AMC', 'TSLA', 'NVDA', 'AMD', 'AAPL', 'MSFT', 'META', 'GOOGL', 'AMZN', 
+                           'PLTR', 'SOFI', 'RIVN', 'LCID', 'NIO', 'COIN', 'HOOD', 'MARA', 'RIOT',
+                           'SPY', 'QQQ', 'IWM', 'INTC', 'BA', 'DIS', 'NFLX', 'PYPL', 'SQ'];
+    for (const t of alwaysInclude) {
+      if (allValidTickers.has(t)) tickersToProcess.add(t);
+    }
+    
+    // Get tickers from user watchlists
+    const { data: watchlistItems } = await supabase
+      .from('watchlist')
+      .select('ticker')
+      .limit(100);
+    
+    if (watchlistItems) {
+      for (const item of watchlistItems) {
+        if (allValidTickers.has(item.ticker)) tickersToProcess.add(item.ticker);
+      }
+    }
+    
+    // Get tickers with recent signals
+    const { data: recentSignals } = await supabase
+      .from('signals')
+      .select('ticker')
+      .gte('observed_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .limit(200);
+    
+    if (recentSignals) {
+      for (const signal of recentSignals) {
+        if (allValidTickers.has(signal.ticker)) tickersToProcess.add(signal.ticker);
+      }
+    }
+    
+    // Limit to 150 tickers max per run to stay within rate limits
+    const tickerList = Array.from(tickersToProcess).slice(0, 150);
+    console.log(`Processing ${tickerList.length} tickers for Reddit sentiment`);
     
     const signals: any[] = [];
     let skippedCount = 0;
+    const processedTickers = new Set<string>();
     
-    // Process each ticker via Firecrawl
-    for (const asset of validAssets) {
-      const results = await searchRedditViaFirecrawl(asset.ticker, firecrawlKey);
+    // Strategy 1: Search for specific high-priority tickers
+    const priorityTickers = tickerList.slice(0, 50);
+    console.log(`\n--- Strategy 1: Direct ticker search (${priorityTickers.length} tickers) ---`);
+    
+    for (const ticker of priorityTickers) {
+      const results = await searchRedditViaFirecrawl(`$${ticker} stock`, firecrawlKey);
       
       if (results.length === 0) {
-        console.log(`${asset.ticker}: No Reddit data found - SKIPPING (no estimation)`);
         skippedCount++;
         continue;
       }
       
-      // Analyze real results
       let totalSentiment = 0;
       let bullishCount = 0;
       let bearishCount = 0;
@@ -151,7 +221,7 @@ serve(async (req) => {
       const avgSentiment = totalSentiment / results.length;
       
       signals.push({
-        ticker: asset.ticker.substring(0, 10),
+        ticker: ticker.substring(0, 10),
         source: 'reddit',
         mention_count: results.length,
         bullish_count: bullishCount,
@@ -162,44 +232,98 @@ serve(async (req) => {
           data_source: 'firecrawl_reddit_search',
           fetched_at: new Date().toISOString(),
           sample_urls: urls.slice(0, 3),
-          version: 'v7_zero_estimation',
+          version: 'v8_dynamic_tickers',
+          strategy: 'direct_search',
         },
         created_at: new Date().toISOString(),
       });
       
-      console.log(`✅ ${asset.ticker}: ${results.length} posts, sentiment: ${avgSentiment.toFixed(2)} (${bullishCount} bullish, ${bearishCount} bearish)`);
+      processedTickers.add(ticker);
+      console.log(`✅ ${ticker}: ${results.length} posts, sentiment: ${avgSentiment.toFixed(2)}`);
       
-      // Rate limit - respect Firecrawl limits
+      // Rate limit
+      await new Promise(resolve => setTimeout(resolve, 600));
+    }
+    
+    // Strategy 2: Sector/theme-based searches to discover more tickers
+    console.log(`\n--- Strategy 2: Sector-based discovery ---`);
+    const sectorQueries = [
+      'AI stocks artificial intelligence',
+      'EV electric vehicle stocks',
+      'semiconductor chip stocks',
+      'meme stocks wallstreetbets',
+      'tech stocks FAANG',
+      'biotech pharma stocks',
+      'energy oil gas stocks',
+      'crypto bitcoin stocks',
+    ];
+    
+    for (const query of sectorQueries) {
+      const results = await searchRedditViaFirecrawl(query, firecrawlKey);
+      
+      // Extract tickers mentioned in results
+      for (const result of results) {
+        const content = `${result.title || ''} ${result.description || ''} ${result.markdown || ''}`;
+        const mentionedTickers = extractTickersFromContent(content, allValidTickers);
+        
+        for (const ticker of mentionedTickers) {
+          if (processedTickers.has(ticker)) continue;
+          
+          const sentiment = analyzeSentiment(content);
+          
+          // Only add if we have meaningful content
+          if (content.length > 50) {
+            signals.push({
+              ticker: ticker.substring(0, 10),
+              source: 'reddit',
+              mention_count: 1,
+              bullish_count: sentiment > 0.1 ? 1 : 0,
+              bearish_count: sentiment < -0.1 ? 1 : 0,
+              sentiment_score: Math.max(-1, Math.min(1, sentiment)),
+              post_volume: 1,
+              metadata: {
+                data_source: 'firecrawl_reddit_sector_discovery',
+                fetched_at: new Date().toISOString(),
+                discovery_query: query,
+                version: 'v8_dynamic_tickers',
+                strategy: 'sector_discovery',
+              },
+              created_at: new Date().toISOString(),
+            });
+            processedTickers.add(ticker);
+          }
+        }
+      }
+      
+      // Rate limit between sector searches
       await new Promise(resolve => setTimeout(resolve, 800));
     }
 
     console.log(`\n=== REDDIT SENTIMENT SUMMARY ===`);
     console.log(`Total signals with REAL data: ${signals.length}`);
-    console.log(`Skipped (no data found): ${skippedCount}`);
-    console.log(`Estimated/fake data: 0 (ZERO ESTIMATION MODE)`);
+    console.log(`Unique tickers processed: ${processedTickers.size}`);
+    console.log(`Skipped (no data): ${skippedCount}`);
 
-    // 🚨 CRITICAL: Send alert if no real data was found
-    if (signals.length === 0 && validAssets.length > 0) {
+    if (signals.length === 0 && tickerList.length > 0) {
       await sendNoDataFoundAlert(slackAlerter, 'ingest-reddit-sentiment', {
-        sourcesAttempted: [`Firecrawl Reddit search for ${validAssets.length} tickers`],
-        reason: `All ${skippedCount} tickers returned no Reddit data via Firecrawl`
+        sourcesAttempted: [`Firecrawl Reddit search for ${tickerList.length} tickers`],
+        reason: `All searches returned no Reddit data via Firecrawl`
       });
     }
 
-    // Insert only real signals
+    // Insert signals in batches
     if (signals.length > 0) {
-      const { error } = await supabase
-        .from('social_signals')
-        .insert(signals);
-
-      if (error) {
-        console.error('Insert error:', error.message);
-        throw error;
+      const insertBatchSize = 100;
+      for (let i = 0; i < signals.length; i += insertBatchSize) {
+        const batch = signals.slice(i, i + insertBatchSize);
+        const { error } = await supabase.from('social_signals').insert(batch);
+        if (error) {
+          console.error('Insert error:', error.message);
+        }
       }
     }
 
     const durationMs = Date.now() - startTime;
-    const sourceUsed = 'Firecrawl Reddit Search';
     
     await logHeartbeat(supabase, {
       function_name: 'ingest-reddit-sentiment',
@@ -207,7 +331,7 @@ serve(async (req) => {
       rows_inserted: signals.length,
       rows_skipped: skippedCount,
       duration_ms: durationMs,
-      source_used: sourceUsed,
+      source_used: 'Firecrawl Reddit Dynamic',
     });
 
     await slackAlerter.sendLiveAlert({
@@ -215,7 +339,7 @@ serve(async (req) => {
       status: 'success',
       rowsInserted: signals.length,
       rowsSkipped: skippedCount,
-      sourceUsed: sourceUsed,
+      sourceUsed: 'Firecrawl Reddit Dynamic',
       duration: durationMs,
     });
 
@@ -223,10 +347,10 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         count: signals.length,
+        unique_tickers: processedTickers.size,
         skipped: skippedCount,
-        estimated: 0,
-        source: sourceUsed,
-        version: 'v7_zero_estimation',
+        source: 'Firecrawl Reddit Dynamic',
+        version: 'v8_dynamic_tickers',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -240,7 +364,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl Reddit Search',
+        source_used: 'Firecrawl Reddit Dynamic',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
