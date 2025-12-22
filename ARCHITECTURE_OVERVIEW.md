@@ -1,5 +1,13 @@
 # Opportunity Radar - Architecture Overview
 
+## ⚠️ Data Integrity Policy
+
+**As of December 2025, this project uses ONLY REAL data. No estimation, synthetic, or AI-generated data is used as a substitute for real market data.**
+
+All ingestion functions follow a strict policy: Real data or nothing.
+
+---
+
 ## System Architecture
 
 ```

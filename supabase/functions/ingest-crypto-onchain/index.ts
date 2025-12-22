@@ -209,13 +209,14 @@ serve(async (req) => {
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
     // Prepare insert data - REAL DATA ONLY
+    // Note: transaction_count is bigint in DB, but we cap values to prevent overflow issues
     const insertData = allOnchainData
       .filter(d => tickerToAssetId.has(d.ticker))
       .map(d => ({
         ticker: d.ticker,
         asset_id: tickerToAssetId.get(d.ticker),
-        active_addresses: d.activeAddresses || null,
-        transaction_count: d.transactionCount || null,
+        active_addresses: d.activeAddresses ? Math.min(d.activeAddresses, 2147483647) : null,
+        transaction_count: d.transactionCount ? BigInt(d.transactionCount).toString() : null,
         hash_rate: d.hashRate || null,
         source: d.source,
         metadata: { 
