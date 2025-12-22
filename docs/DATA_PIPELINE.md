@@ -20,7 +20,7 @@ All data flows into **Supabase PostgreSQL** as the single source of truth.
 - If real data is NOT available → Insert NOTHING (return 0 records)
 - NO synthetic data, NO estimation, NO AI fallbacks for market data
 
-All functions log `version: 'v3_no_estimation'` to confirm compliance.
+All functions log `version: 'v5_no_estimation'` (or similar) to confirm compliance.
 
 ---
 
@@ -68,6 +68,7 @@ All functions log `version: 'v3_no_estimation'` to confirm compliance.
 | `ingest-cot-reports` | CFTC Socrata | Weekly | Real data only, no fallback |
 | `ingest-job-postings` | Adzuna API | Daily | Real data only, no fallback |
 | `ingest-patents` | USPTO/Firecrawl | Weekly | Real data only, no fallback |
+| `ingest-pattern-recognition` | Price analysis | Daily | Real price data only, no fake patterns |
 
 ---
 
