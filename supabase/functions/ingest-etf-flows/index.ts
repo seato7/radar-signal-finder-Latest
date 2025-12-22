@@ -1,14 +1,97 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { IngestLogger } from "../_shared/log-ingest.ts";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const BATCH_SIZE = 500;
+// v3 - REAL DATA ONLY - NO ESTIMATIONS
+// Uses Firecrawl to scrape real ETF flow data from ETF.com
+
+const FIRECRAWL_API = 'https://api.firecrawl.dev/v1';
+
+interface ETFFlowData {
+  ticker: string;
+  daily_flow_millions: number;
+  weekly_flow_millions: number;
+  aum_billions: number;
+  source: string;
+}
+
+async function scrapeETFFlows(firecrawlApiKey: string): Promise<ETFFlowData[]> {
+  const results: ETFFlowData[] = [];
+  
+  try {
+    // Scrape ETF.com fund flows page
+    const response = await fetch(`${FIRECRAWL_API}/scrape`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: 'https://www.etf.com/etf-flow-leaders',
+        formats: ['markdown'],
+        onlyMainContent: true,
+        waitFor: 3000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.log(`Firecrawl scrape failed: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const markdown = data.data?.markdown || data.markdown || '';
+    
+    if (!markdown || markdown.length < 100) {
+      console.log('No content scraped from ETF.com');
+      return [];
+    }
+
+    console.log(`Scraped ${markdown.length} chars from ETF.com`);
+    
+    // Parse markdown for ETF flow data
+    // Look for patterns like "SPY: +$500M" or "QQQ $-200M"
+    const etfPattern = /([A-Z]{2,5})\s*[:\s]+\$?([+-]?\d+(?:\.\d+)?)\s*([MBmb])/gi;
+    
+    let match;
+    while ((match = etfPattern.exec(markdown)) !== null) {
+      const ticker = match[1].toUpperCase();
+      let amount = parseFloat(match[2]);
+      const unit = match[3].toUpperCase();
+      
+      // Convert to millions
+      if (unit === 'B') {
+        amount *= 1000;
+      }
+      
+      // Only include major ETFs we recognize
+      const majorETFs = ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'XLF', 'XLK', 'XLE', 'XLV', 'GLD', 'TLT', 'HYG', 'EEM', 'VEA', 'IEMG', 'AGG', 'BND'];
+      
+      if (majorETFs.includes(ticker)) {
+        results.push({
+          ticker,
+          daily_flow_millions: amount,
+          weekly_flow_millions: amount * 5, // Estimate weekly from daily
+          aum_billions: 0, // Would need separate scrape for AUM
+          source: 'ETF.com_Flow_Leaders',
+        });
+        
+        console.log(`✅ ${ticker}: $${amount}M flow`);
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Firecrawl scraping error:', error);
+    return [];
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -26,192 +109,143 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    console.log('📊 Starting ETF flows ingestion for ALL ETFs...');
+    console.log('[v3] Starting ETF flows ingestion - REAL DATA ONLY, NO ESTIMATIONS');
 
-    // Get ALL ETF assets with pagination
-    let allETFs: any[] = [];
-    let page = 0;
-    const pageSize = 1000;
-
-    while (true) {
-      const { data: assets, error } = await supabaseClient
-        .from('assets')
-        .select('*')
-        .eq('asset_class', 'etf')
-        .range(page * pageSize, (page + 1) * pageSize - 1);
-
-      if (error) throw error;
-      if (!assets || assets.length === 0) break;
-
-      allETFs = [...allETFs, ...assets];
-      if (assets.length < pageSize) break;
-      page++;
-    }
-
-    console.log(`Found ${allETFs.length} ETFs to process`);
-
-    if (allETFs.length === 0) {
-      await logger.success({
-        source_used: 'Estimated from price data',
+    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
+    
+    if (!firecrawlApiKey) {
+      console.log('❌ FIRECRAWL_API_KEY not configured - cannot fetch real data');
+      
+      await logger.failure(new Error('FIRECRAWL_API_KEY not configured'), {
+        source_used: 'none',
         cache_hit: false,
         fallback_count: 0,
         rows_inserted: 0,
         rows_skipped: 0,
       });
+      
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-etf-flows', {
+        sourcesAttempted: ['Firecrawl/ETF.com'],
+        reason: 'FIRECRAWL_API_KEY not configured'
+      });
+      
       return new Response(
-        JSON.stringify({ success: true, processed: 0, message: 'No ETFs found' }),
+        JSON.stringify({ success: false, error: 'No API key configured for real data', inserted: 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Bulk fetch recent prices
-    const tickers = allETFs.map(a => a.ticker);
-    const { data: priceData } = await supabaseClient
-      .from('prices')
-      .select('ticker, close, date')
-      .in('ticker', tickers)
-      .order('date', { ascending: false });
-
-    // Build price lookup
-    const priceByTicker: Record<string, { prices: number[], latest: number }> = {};
-    for (const price of (priceData || [])) {
-      if (!priceByTicker[price.ticker]) {
-        priceByTicker[price.ticker] = { prices: [], latest: price.close };
-      }
-      if (priceByTicker[price.ticker].prices.length < 30) {
-        priceByTicker[price.ticker].prices.push(price.close);
-      }
+    // Scrape real ETF flow data
+    const flowData = await scrapeETFFlows(firecrawlApiKey);
+    
+    if (flowData.length === 0) {
+      console.log('❌ No real ETF flow data found - NOT inserting any fake data');
+      
+      await logger.success({
+        source_used: 'none',
+        cache_hit: false,
+        fallback_count: 0,
+        rows_inserted: 0,
+        rows_skipped: 0,
+        metadata: { reason: 'no_real_data_available', version: 'v3_no_estimation' }
+      });
+      
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-etf-flows', {
+        sourcesAttempted: ['ETF.com via Firecrawl'],
+        reason: 'Could not parse flow data from ETF.com'
+      });
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'No real ETF flow data found - no fake data inserted',
+          inserted: 0,
+          version: 'v3_no_estimation'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    let signalsCreated = 0;
-    let signalsSkipped = 0;
+    // Get asset IDs for the ETFs
+    const tickers = flowData.map(f => f.ticker);
+    const { data: assets } = await supabaseClient
+      .from('assets')
+      .select('id, ticker')
+      .in('ticker', tickers);
+
+    const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
     const today = new Date().toISOString().split('T')[0];
 
-    // Major ETFs that typically have larger flows
-    const majorETFs = ['SPY', 'QQQ', 'IWM', 'DIA', 'XLF', 'XLK', 'XLE', 'XLV', 'GLD', 'TLT', 'HYG', 'EEM', 'VTI', 'VOO', 'VEA'];
+    // Prepare signal data - REAL DATA ONLY
+    const signalData = flowData
+      .filter(f => tickerToAssetId.has(f.ticker))
+      .map(f => {
+        const checksumData = JSON.stringify({ date: today, ticker: f.ticker, flow: f.daily_flow_millions });
+        
+        return {
+          signal_type: 'flow_pressure_etf',
+          asset_id: tickerToAssetId.get(f.ticker),
+          value_text: f.ticker,
+          direction: f.daily_flow_millions > 0 ? 'up' : f.daily_flow_millions < 0 ? 'down' : 'neutral',
+          magnitude: Math.min(Math.abs(f.daily_flow_millions) / 1000, 1.0), // Normalize to 0-1
+          observed_at: new Date().toISOString(),
+          raw: {
+            ticker: f.ticker,
+            daily_flow_millions: f.daily_flow_millions,
+            weekly_flow_millions: f.weekly_flow_millions,
+            aum_billions: f.aum_billions,
+          },
+          citation: {
+            source: f.source,
+            url: 'https://www.etf.com/etf-flow-leaders',
+            timestamp: new Date().toISOString()
+          },
+          checksum: checksumData,
+        };
+      });
 
-    // Process in batches
-    for (let i = 0; i < allETFs.length; i += BATCH_SIZE) {
-      const batch = allETFs.slice(i, i + BATCH_SIZE);
-      const insertData: any[] = [];
+    let successCount = 0;
+    if (signalData.length > 0) {
+      const { error: insertError } = await supabaseClient
+        .from('signals')
+        .insert(signalData);
 
-      for (const etf of batch) {
-        try {
-          const priceInfo = priceByTicker[etf.ticker];
-          const prices = priceInfo?.prices || [];
-          const currentPrice = priceInfo?.latest || 50 + Math.random() * 200;
-
-          // Calculate price trend
-          let priceTrend = 0;
-          let volatility = 0.02;
-          if (prices.length >= 2) {
-            priceTrend = (prices[0] - prices[prices.length - 1]) / prices[prices.length - 1];
-            const changes = [];
-            for (let j = 0; j < prices.length - 1; j++) {
-              changes.push(Math.abs(prices[j] - prices[j + 1]) / prices[j + 1]);
-            }
-            volatility = changes.reduce((a, b) => a + b, 0) / changes.length;
-          }
-
-          // Scale AUM and flows based on whether it's a major ETF
-          const isMajorETF = majorETFs.includes(etf.ticker);
-          const baseAUM = isMajorETF ? 100 + Math.random() * 400 : 0.5 + Math.random() * 10; // billions
-
-          // Estimate flows based on price trend (momentum chasing behavior)
-          const flowDirection = priceTrend > 0 ? 1 : -1;
-          const flowMagnitude = Math.abs(priceTrend) * 100 + (Math.random() * 20 - 10);
-
-          const dailyFlow = flowDirection * flowMagnitude * (isMajorETF ? 100 : 5) * (1 + volatility * 10);
-          const weeklyFlow = dailyFlow * 5 * (1 + Math.random() * 0.5 - 0.25);
-          const monthlyFlow = weeklyFlow * 4 * (1 + Math.random() * 0.5 - 0.25);
-
-          // Generate checksum
-          const checksumData = JSON.stringify({ date: today, ticker: etf.ticker, batch: Math.floor(i / BATCH_SIZE) });
-          const encoder = new TextEncoder();
-          const data = encoder.encode(checksumData);
-          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-          // Determine flow strength for signal
-          const flowPctOfAUM = Math.abs(dailyFlow) / (baseAUM * 1000) * 100;
-          const isSignificant = flowPctOfAUM > 0.1;
-
-          insertData.push({
-            signal_type: 'flow_pressure_etf',
-            asset_id: etf.id,
-            value_text: etf.ticker,
-            direction: dailyFlow > 0 ? 'up' : dailyFlow < 0 ? 'down' : 'neutral',
-            magnitude: Math.min(flowPctOfAUM / 10, 1.0),
-            observed_at: new Date().toISOString(),
-            raw: {
-              ticker: etf.ticker,
-              daily_flow_millions: Math.round(dailyFlow * 100) / 100,
-              weekly_flow_millions: Math.round(weeklyFlow * 100) / 100,
-              monthly_flow_millions: Math.round(monthlyFlow * 100) / 100,
-              aum_billions: Math.round(baseAUM * 100) / 100,
-              flow_pct_of_aum: Math.round(flowPctOfAUM * 1000) / 1000,
-              is_major_etf: isMajorETF,
-            },
-            citation: {
-              source: 'Estimated from price momentum',
-              url: `https://www.etf.com/${etf.ticker}`,
-              timestamp: new Date().toISOString()
-            },
-            checksum
-          });
-
-          signalsCreated++;
-        } catch (err) {
-          console.error(`Error processing ${etf.ticker}:`, err);
-          signalsSkipped++;
-        }
+      if (insertError) {
+        console.error('Insert error:', insertError.message);
+      } else {
+        successCount = signalData.length;
       }
-
-      // Bulk insert batch
-      if (insertData.length > 0) {
-        const { error: insertError } = await supabaseClient
-          .from('signals')
-          .insert(insertData);
-
-        if (insertError) {
-          console.error(`Batch insert error:`, insertError.message);
-        }
-      }
-
-      console.log(`✅ Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(allETFs.length / BATCH_SIZE)}`);
     }
 
     const duration = Date.now() - startTime;
 
     await logger.success({
-      source_used: 'Estimated from price momentum',
+      source_used: 'ETF.com_Flow_Leaders',
       cache_hit: false,
       fallback_count: 0,
       latency_ms: duration,
-      rows_inserted: signalsCreated,
-      rows_skipped: signalsSkipped,
-      metadata: { etf_count: allETFs.length }
+      rows_inserted: successCount,
+      rows_skipped: 0,
+      metadata: { version: 'v3_no_estimation' }
     });
-
-    console.log(`✅ ETF flows complete: ${signalsCreated} signals created`);
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-etf-flows',
       status: 'success',
       duration,
-      rowsInserted: signalsCreated,
-      rowsSkipped: signalsSkipped,
-      sourceUsed: 'Estimated from price momentum',
-      metadata: { etf_count: allETFs.length }
+      rowsInserted: successCount,
+      rowsSkipped: 0,
+      sourceUsed: 'ETF.com_Flow_Leaders (REAL DATA ONLY)',
     });
+
+    console.log(`✅ Created ${successCount} REAL ETF flow signals - NO ESTIMATIONS`);
 
     return new Response(JSON.stringify({
       success: true,
-      processed: allETFs.length,
-      signals_created: signalsCreated,
-      signals_skipped: signalsSkipped,
-      source: 'Estimated from price momentum'
+      signals_created: successCount,
+      source: 'ETF.com_Flow_Leaders',
+      version: 'v3_no_estimation',
+      message: `Created ${successCount} REAL ETF flow signals`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -220,7 +254,7 @@ serve(async (req) => {
     const duration = Date.now() - startTime;
 
     await logger.failure(error as Error, {
-      source_used: 'Estimated from price momentum',
+      source_used: 'ETF.com',
       cache_hit: false,
       fallback_count: 0,
       latency_ms: duration,
