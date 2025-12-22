@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const VERSION = 'v3_no_estimation';
+const VERSION = 'v6_real_short_data';
 
 // FINRA Short Sale Volume URL generator
 function getFinraShortSaleUrl(date: Date): string {
@@ -17,8 +17,10 @@ function getFinraShortSaleUrl(date: Date): string {
   return `https://cdn.finra.org/equity/regsho/daily/FNSQshvol${year}${month}${day}.txt`;
 }
 
-// Parse FINRA file for dark pool data - REAL percentages from short volume ratio
-function parseFinraForDarkPool(content: string): Array<{
+// Parse FINRA file - REAL short sale data (NOT dark pool)
+// IMPORTANT: FINRA short sale data is NOT the same as dark pool data
+// This function correctly stores the real short sale volume data
+function parseFinraShortSale(content: string): Array<{
   date: string;
   ticker: string;
   short_volume: number;
@@ -72,7 +74,8 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
   
   try {
-    console.log(`[DARK POOL ${VERSION}] REAL DATA ONLY - NO ESTIMATIONS`);
+    console.log(`[DARK POOL ${VERSION}] REAL SHORT SALE DATA - NO ESTIMATIONS`);
+    console.log(`NOTE: FINRA short sale data is stored - dark_pool_volume/percentage set to NULL (not available from this source)`);
 
     // Fetch all stock and ETF assets
     const { data: allAssets, error: assetError } = await supabase
@@ -117,7 +120,7 @@ serve(async (req) => {
         if (response.ok) {
           const content = await response.text();
           if (content && content.length > 100 && content.includes('|')) {
-            finraData = parseFinraForDarkPool(content);
+            finraData = parseFinraShortSale(content);
             sourceUrl = url;
             fileDate = checkDate.toISOString().split('T')[0];
             console.log(`[FINRA CDN] ✅ Success! Found ${finraData.length} records from ${fileDate}`);
@@ -161,7 +164,8 @@ serve(async (req) => {
       );
     }
 
-    // Process FINRA CDN records - match to our assets - REAL DATA ONLY
+    // Process FINRA CDN records - REAL DATA ONLY - NO ESTIMATIONS
+    // IMPORTANT: We store the REAL short sale data, NOT derived dark pool estimates
     const darkPoolRecords: any[] = [];
     let matchedCount = 0;
     
@@ -169,28 +173,31 @@ serve(async (req) => {
       if (trackedTickers.has(r.ticker)) {
         matchedCount++;
         
-        // Use short ratio as a proxy for dark pool activity (real data)
-        // Higher short volume often correlates with dark pool activity
-        const estimatedDarkPoolPct = Math.min(50, 30 + (r.short_ratio * 0.3));
-        
+        // Store REAL data only - do NOT derive/estimate dark pool percentage
+        // dark_pool_volume and dark_pool_percentage are set to NULL because
+        // FINRA short sale data is NOT the same as dark pool data
         darkPoolRecords.push({
           ticker: r.ticker,
           asset_id: assetMap.get(r.ticker),
           trade_date: r.date,
-          dark_pool_volume: Math.round(r.total_volume * (estimatedDarkPoolPct / 100)),
+          // These are NULL because we don't have real dark pool data from this source
+          dark_pool_volume: null,
+          dark_pool_percentage: null,
+          dp_to_lit_ratio: null,
+          // Store the REAL short sale volume in total_volume for reference
           total_volume: r.total_volume,
-          dark_pool_percentage: Math.round(estimatedDarkPoolPct * 10) / 10,
-          dp_to_lit_ratio: estimatedDarkPoolPct / (100 - estimatedDarkPoolPct),
-          signal_type: r.short_ratio > 50 ? 'accumulation' : r.short_ratio < 30 ? 'distribution' : 'neutral',
+          // Signal based on actual short ratio (real data)
+          signal_type: r.short_ratio > 50 ? 'high_short_interest' : r.short_ratio < 30 ? 'low_short_interest' : 'normal_short_interest',
           signal_strength: r.short_ratio > 60 ? 'strong' : r.short_ratio > 45 ? 'moderate' : 'weak',
-          source: 'FINRA_TRF_official',
+          source: 'FINRA_ShortSale_Official',
           metadata: { 
             file_url: sourceUrl,
-            data_quality: 'official_derived',
+            data_quality: 'official_real',
             short_volume: r.short_volume,
-            short_ratio: r.short_ratio,
+            short_ratio_pct: r.short_ratio,
             version: VERSION,
-            data_type: 'real'
+            data_type: 'real_short_sale',
+            note: 'Short sale data from FINRA - NOT dark pool estimates'
           }
         });
       }
@@ -217,7 +224,7 @@ serve(async (req) => {
         }
       }
       
-      console.log(`✅ Inserted ${successCount} REAL dark pool records - NO ESTIMATIONS`);
+      console.log(`✅ Inserted ${successCount} REAL short sale records - NO ESTIMATIONS/DERIVATIONS`);
     }
 
     const duration = Date.now() - startTime;
@@ -229,12 +236,13 @@ serve(async (req) => {
       rows_inserted: successCount,
       rows_skipped: finraData.length - matchedCount,
       duration_ms: duration,
-      source_used: 'FINRA_TRF_official',
+      source_used: 'FINRA_ShortSale_Official',
       metadata: { 
         file_date: fileDate, 
         total_finra_records: finraData.length,
         matched_to_assets: matchedCount,
-        version: VERSION
+        version: VERSION,
+        note: 'Real short sale data - dark pool fields NULL'
       }
     });
     
@@ -244,7 +252,7 @@ serve(async (req) => {
       duration,
       rowsInserted: successCount,
       rowsSkipped: finraData.length - matchedCount,
-      sourceUsed: 'FINRA_TRF_official (REAL DATA ONLY)',
+      sourceUsed: 'FINRA_ShortSale_Official (REAL DATA ONLY)',
     });
 
     return new Response(
@@ -255,8 +263,8 @@ serve(async (req) => {
         matched_to_assets: matchedCount,
         inserted: successCount,
         fileDate,
-        source: 'FINRA_TRF_official',
-        message: `Inserted ${successCount} REAL dark pool records`
+        source: 'FINRA_ShortSale_Official',
+        message: `Inserted ${successCount} REAL short sale records (dark pool fields NULL - no estimation)`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

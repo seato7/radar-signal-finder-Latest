@@ -8,10 +8,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v5 - REAL DATA ONLY - NO ESTIMATIONS
-// Uses Firecrawl to scrape real patent data from USPTO or Google Patents
+// v6 - REAL DATA ONLY - NO ESTIMATIONS
+// Uses USPTO PatentsView API (free, no key required) for real patent data
 
-const FIRECRAWL_API = 'https://api.firecrawl.dev/v1';
+const VERSION = 'v6_patentsview_api';
+const PATENTSVIEW_API = 'https://api.patentsview.org/patents/query';
 
 interface PatentData {
   ticker: string;
@@ -23,75 +24,114 @@ interface PatentData {
   source: string;
 }
 
-async function scrapeUSPTOPatents(company: string, ticker: string, firecrawlApiKey: string): Promise<PatentData[]> {
+// Company to ticker mapping for patent searches
+const COMPANY_MAPPINGS: Record<string, { name: string; variations: string[] }> = {
+  'AAPL': { name: 'Apple Inc.', variations: ['Apple Inc', 'Apple, Inc'] },
+  'MSFT': { name: 'Microsoft Corporation', variations: ['Microsoft Corp', 'Microsoft Technology'] },
+  'GOOGL': { name: 'Google LLC', variations: ['Google Inc', 'Alphabet Inc'] },
+  'AMZN': { name: 'Amazon Technologies', variations: ['Amazon.com', 'Amazon Inc'] },
+  'META': { name: 'Meta Platforms', variations: ['Facebook Inc', 'Facebook, Inc'] },
+  'NVDA': { name: 'NVIDIA Corporation', variations: ['Nvidia Corp'] },
+  'IBM': { name: 'International Business Machines', variations: ['IBM Corp'] },
+  'INTC': { name: 'Intel Corporation', variations: ['Intel Corp'] },
+  'QCOM': { name: 'Qualcomm Incorporated', variations: ['Qualcomm Inc'] },
+  'AMD': { name: 'Advanced Micro Devices', variations: ['AMD Inc'] },
+  'TSLA': { name: 'Tesla, Inc.', variations: ['Tesla Inc', 'Tesla Motors'] },
+  'CRM': { name: 'Salesforce, Inc.', variations: ['Salesforce.com'] },
+  'ORCL': { name: 'Oracle Corporation', variations: ['Oracle Corp', 'Oracle International'] },
+};
+
+// Fetch patents from PatentsView API
+async function fetchPatentsFromAPI(assignee: string, ticker: string): Promise<PatentData[]> {
   const results: PatentData[] = [];
   
   try {
-    // Search USPTO for recent patents by company
-    const searchUrl = `https://patft.uspto.gov/netacgi/nph-Parser?Sect1=PTO2&Sect2=HITOFF&u=%2Fnetahtml%2FPTO%2Fsearch-adv.htm&r=0&f=S&l=50&d=PTXT&RS=AN%2F${encodeURIComponent(company)}&Query=AN%2F${encodeURIComponent(company)}`;
+    // Get patents from the last year
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const dateStr = oneYearAgo.toISOString().split('T')[0];
     
-    const response = await fetch(`${FIRECRAWL_API}/scrape`, {
-      method: 'POST',
+    // PatentsView API query
+    const query = {
+      _and: [
+        { _contains: { assignee_organization: assignee } },
+        { _gte: { patent_date: dateStr } }
+      ]
+    };
+    
+    const fields = [
+      'patent_number',
+      'patent_title',
+      'patent_date',
+      'patent_type',
+      'assignee_organization'
+    ];
+    
+    const requestBody = {
+      q: JSON.stringify(query),
+      f: JSON.stringify(fields),
+      o: JSON.stringify({ per_page: 25 })
+    };
+    
+    const params = new URLSearchParams(requestBody);
+    
+    console.log(`[PatentsView] Fetching patents for ${assignee}...`);
+    
+    const response = await fetch(`${PATENTSVIEW_API}?${params.toString()}`, {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${firecrawlApiKey}`,
-        'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        url: searchUrl,
-        formats: ['markdown'],
-        onlyMainContent: true,
-        waitFor: 3000,
-      }),
     });
 
     if (!response.ok) {
-      console.log(`Firecrawl scrape failed for ${company}: ${response.status}`);
+      console.log(`[PatentsView] API error for ${assignee}: ${response.status}`);
       return [];
     }
 
     const data = await response.json();
-    const markdown = data.data?.markdown || data.markdown || '';
+    const patents = data.patents || [];
     
-    if (!markdown || markdown.length < 100) {
-      return [];
-    }
-
-    // Parse patent numbers and titles from USPTO results
-    // Format: US12345678 - Patent Title Here
-    const patentPattern = /US(\d{7,8})[^\n]*?([A-Z][^\n]{10,100})/gi;
+    console.log(`[PatentsView] Found ${patents.length} patents for ${assignee}`);
     
-    let match;
-    let count = 0;
-    while ((match = patentPattern.exec(markdown)) !== null && count < 5) {
-      const patentNumber = `US${match[1]}`;
-      const patentTitle = match[2].trim().substring(0, 200);
+    for (const patent of patents) {
+      const title = patent.patent_title || '';
       
-      // Try to determine technology category from title
+      // Categorize based on title keywords
       let category = 'General';
-      const titleLower = patentTitle.toLowerCase();
-      if (titleLower.includes('artificial') || titleLower.includes('machine learning') || titleLower.includes('neural')) category = 'AI/ML';
-      else if (titleLower.includes('semiconductor') || titleLower.includes('chip') || titleLower.includes('transistor')) category = 'Semiconductor';
-      else if (titleLower.includes('cloud') || titleLower.includes('server') || titleLower.includes('network')) category = 'Cloud Computing';
-      else if (titleLower.includes('software') || titleLower.includes('computer') || titleLower.includes('system')) category = 'Software';
-      else if (titleLower.includes('medical') || titleLower.includes('health') || titleLower.includes('therapeutic')) category = 'Medical';
-      else if (titleLower.includes('battery') || titleLower.includes('solar') || titleLower.includes('energy')) category = 'Clean Energy';
+      const titleLower = title.toLowerCase();
+      if (titleLower.includes('artificial') || titleLower.includes('machine learning') || titleLower.includes('neural') || titleLower.includes('deep learning')) {
+        category = 'AI/ML';
+      } else if (titleLower.includes('semiconductor') || titleLower.includes('chip') || titleLower.includes('transistor') || titleLower.includes('integrated circuit')) {
+        category = 'Semiconductor';
+      } else if (titleLower.includes('cloud') || titleLower.includes('server') || titleLower.includes('distributed')) {
+        category = 'Cloud Computing';
+      } else if (titleLower.includes('software') || titleLower.includes('computer') || titleLower.includes('method') || titleLower.includes('system')) {
+        category = 'Software';
+      } else if (titleLower.includes('medical') || titleLower.includes('health') || titleLower.includes('therapeutic') || titleLower.includes('diagnostic')) {
+        category = 'Medical';
+      } else if (titleLower.includes('battery') || titleLower.includes('solar') || titleLower.includes('energy') || titleLower.includes('electric vehicle')) {
+        category = 'Clean Energy';
+      } else if (titleLower.includes('wireless') || titleLower.includes('antenna') || titleLower.includes('communication') || titleLower.includes('5g')) {
+        category = 'Wireless/Communications';
+      } else if (titleLower.includes('display') || titleLower.includes('screen') || titleLower.includes('pixel')) {
+        category = 'Display Technology';
+      }
       
       results.push({
         ticker,
-        company,
-        patent_number: patentNumber,
-        patent_title: patentTitle,
-        filing_date: new Date().toISOString().split('T')[0], // Would need additional scraping for actual date
+        company: assignee,
+        patent_number: patent.patent_number || '',
+        patent_title: (title || '').substring(0, 200),
+        filing_date: patent.patent_date || new Date().toISOString().split('T')[0],
         technology_category: category,
-        source: 'USPTO_Official',
+        source: 'USPTO_PatentsView_API',
       });
-      
-      count++;
     }
     
     return results;
   } catch (error) {
-    console.error(`USPTO scraping error for ${company}:`, error);
+    console.error(`[PatentsView] Error fetching for ${assignee}:`, error);
     return [];
   }
 }
@@ -108,62 +148,32 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[v5] Starting patent filings ingestion - REAL DATA ONLY, NO ESTIMATIONS');
+    console.log(`[${VERSION}] Starting patent filings ingestion - REAL DATA ONLY via PatentsView API`);
     
-    if (!firecrawlApiKey) {
-      console.log('❌ FIRECRAWL_API_KEY not configured - cannot fetch real patent data');
-      
-      await logHeartbeat(supabase, {
-        function_name: 'ingest-patents',
-        status: 'success',
-        rows_inserted: 0,
-        rows_skipped: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: 'none',
-        error_message: 'FIRECRAWL_API_KEY not configured',
-      });
-      
-      await sendNoDataFoundAlert(slackAlerter, 'ingest-patents', {
-        sourcesAttempted: ['USPTO via Firecrawl'],
-        reason: 'FIRECRAWL_API_KEY not configured'
-      });
-      
-      return new Response(
-        JSON.stringify({ success: false, error: 'No API key configured for real data', inserted: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Only process major tech companies that have significant patent activity
-    const majorCompanies = [
-      { ticker: 'AAPL', company: 'Apple' },
-      { ticker: 'MSFT', company: 'Microsoft' },
-      { ticker: 'GOOGL', company: 'Google' },
-      { ticker: 'AMZN', company: 'Amazon' },
-      { ticker: 'META', company: 'Meta' },
-      { ticker: 'NVDA', company: 'NVIDIA' },
-      { ticker: 'IBM', company: 'IBM' },
-      { ticker: 'INTC', company: 'Intel' },
-      { ticker: 'QCOM', company: 'Qualcomm' },
-      { ticker: 'AMD', company: 'AMD' },
-    ];
-
     const allPatents: PatentData[] = [];
     
-    for (const { ticker, company } of majorCompanies) {
-      console.log(`Scraping USPTO for ${company} (${ticker})...`);
-      const patents = await scrapeUSPTOPatents(company, ticker, firecrawlApiKey);
-      allPatents.push(...patents);
+    // Fetch patents for each company
+    for (const [ticker, { name, variations }] of Object.entries(COMPANY_MAPPINGS)) {
+      // Try main company name first
+      let patents = await fetchPatentsFromAPI(name, ticker);
+      
+      // If no results, try variations
+      if (patents.length === 0) {
+        for (const variation of variations) {
+          patents = await fetchPatentsFromAPI(variation, ticker);
+          if (patents.length > 0) break;
+        }
+      }
       
       if (patents.length > 0) {
-        console.log(`✅ Found ${patents.length} patents for ${ticker}`);
+        allPatents.push(...patents);
+        console.log(`✅ ${ticker}: ${patents.length} patents`);
       }
       
       // Rate limit between requests
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 500));
     }
 
     console.log(`Total real patents found: ${allPatents.length}`);
@@ -177,13 +187,13 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'USPTO_Official',
-        metadata: { reason: 'no_real_data_available', version: 'v5_no_estimation' }
+        source_used: 'USPTO_PatentsView_API',
+        metadata: { reason: 'no_real_data_available', version: VERSION }
       });
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-patents', {
-        sourcesAttempted: ['USPTO via Firecrawl'],
-        reason: 'Could not scrape patent data from USPTO'
+        sourcesAttempted: ['USPTO PatentsView API'],
+        reason: 'No patents found for tracked companies in the last year'
       });
       
       return new Response(
@@ -191,14 +201,19 @@ serve(async (req) => {
           success: true, 
           message: 'No real patent data found - no fake data inserted',
           inserted: 0,
-          version: 'v5_no_estimation'
+          version: VERSION
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    // Deduplicate by patent number
+    const uniquePatents = Array.from(
+      new Map(allPatents.map(p => [p.patent_number, p])).values()
+    );
+
     // Insert real patent data
-    const insertData = allPatents.map(p => ({
+    const insertData = uniquePatents.map(p => ({
       ticker: p.ticker.substring(0, 10),
       company: p.company.substring(0, 100),
       patent_number: p.patent_number.substring(0, 20),
@@ -208,20 +223,32 @@ serve(async (req) => {
       metadata: {
         source: p.source,
         data_type: 'real',
-        version: 'v5_no_estimation',
+        version: VERSION,
       },
     }));
 
     let insertedCount = 0;
     const insertBatchSize = 100;
+    
     for (let i = 0; i < insertData.length; i += insertBatchSize) {
       const batch = insertData.slice(i, i + insertBatchSize);
+      
+      // Upsert to avoid duplicates
       const { error } = await supabase
         .from('patent_filings')
-        .insert(batch);
+        .upsert(batch, { onConflict: 'patent_number' });
 
       if (error) {
-        console.error(`Insert error at batch ${i}:`, error.message);
+        // If upsert fails (no unique constraint), try insert
+        const { error: insertError } = await supabase
+          .from('patent_filings')
+          .insert(batch);
+          
+        if (insertError) {
+          console.error(`Insert error at batch ${i}:`, insertError.message);
+        } else {
+          insertedCount += batch.length;
+        }
       } else {
         insertedCount += batch.length;
       }
@@ -233,8 +260,12 @@ serve(async (req) => {
       rows_inserted: insertedCount,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'USPTO_Official',
-      metadata: { version: 'v5_no_estimation' }
+      source_used: 'USPTO_PatentsView_API',
+      metadata: { 
+        version: VERSION,
+        companies_processed: Object.keys(COMPANY_MAPPINGS).length,
+        unique_patents: uniquePatents.length
+      }
     });
     
     await slackAlerter.sendLiveAlert({
@@ -242,7 +273,7 @@ serve(async (req) => {
       status: 'success',
       rowsInserted: insertedCount,
       rowsSkipped: 0,
-      sourceUsed: 'USPTO_Official (REAL DATA ONLY)',
+      sourceUsed: 'USPTO_PatentsView_API (REAL DATA ONLY)',
       duration: Date.now() - startTime,
     });
 
@@ -252,8 +283,9 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         count: insertedCount, 
-        source: 'USPTO_Official',
-        version: 'v5_no_estimation',
+        source: 'USPTO_PatentsView_API',
+        version: VERSION,
+        companies_processed: Object.keys(COMPANY_MAPPINGS).length,
         message: `Inserted ${insertedCount} REAL patent records`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -269,7 +301,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'USPTO_Official',
+        source_used: 'USPTO_PatentsView_API',
         error_message: errorMsg,
       });
     }
