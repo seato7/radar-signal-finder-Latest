@@ -84,10 +84,6 @@ export default function APIUsage() {
     cost: Number(api.estimated_cost)
   })) || [];
 
-  // Check for alerts
-  const perplexityUsage = usageSummary?.find(api => api.api_name === 'Perplexity');
-  const perplexityAlert = perplexityUsage && Number(perplexityUsage.total_calls) > (timeRange === 24 ? 200 : 200 * (timeRange / 24));
-
   // Calculate daily estimates based on current architecture
   const dailyEstimate = {
     twelveData: {
@@ -98,11 +94,11 @@ export default function APIUsage() {
         return this.monthlyFixed / 30;
       }
     },
-    perplexity: {
-      daily: 12, // various jobs fallback
-      weekly: 2, // weekly jobs fallback
-      total: 14,
-      cost: 14 * 0.005 // $0.005 per request
+    firecrawl: {
+      daily: 50, // RSS feeds and web scraping
+      weekly: 100, // Weekly deep scrapes
+      total: 150,
+      cost: 0.002 * 50 // ~$0.002 per scrape, ~50/day
     },
     lovableAI: {
       weekly: 20, // AI research reports
@@ -113,10 +109,10 @@ export default function APIUsage() {
       }
     },
     get totalDaily() {
-      return this.twelveData.daily + this.perplexity.cost + this.lovableAI.cost;
+      return this.twelveData.daily + this.firecrawl.cost + this.lovableAI.cost;
     },
     get monthlyProjection() {
-      return this.twelveData.monthlyFixed + (this.perplexity.cost + this.lovableAI.cost) * 30;
+      return this.twelveData.monthlyFixed + (this.firecrawl.cost + this.lovableAI.cost) * 30;
     }
   };
 
@@ -136,15 +132,6 @@ export default function APIUsage() {
         </AlertDescription>
       </Alert>
 
-      {perplexityAlert && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Perplexity Usage Alert:</strong> {perplexityUsage.total_calls} calls in last {timeRange}h exceeds recommended limit.
-            Daily projection: ~{Math.round(Number(perplexityUsage.total_calls) / timeRange * 24)} calls/day (target: {'<'}200/day)
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Daily Cost Estimate Card */}
       <Card className="md:col-span-2 lg:col-span-4">
@@ -167,13 +154,13 @@ export default function APIUsage() {
               </div>
             </div>
             <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Perplexity (Fallback)</div>
-              <div className="text-2xl font-bold">${(dailyEstimate.perplexity.cost * 30).toFixed(2)}/mo</div>
+              <div className="text-sm font-medium text-muted-foreground">Firecrawl (Scraping)</div>
+              <div className="text-2xl font-bold">${(dailyEstimate.firecrawl.cost * 30).toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
-                ~{dailyEstimate.perplexity.total} calls/day
+                ~{dailyEstimate.firecrawl.total} scrapes/day
                 <div className="mt-1 space-y-0.5">
-                  <div>• Daily jobs: {dailyEstimate.perplexity.daily} calls</div>
-                  <div>• Weekly jobs: {dailyEstimate.perplexity.weekly} calls</div>
+                  <div>• RSS feeds: {dailyEstimate.firecrawl.daily} scrapes</div>
+                  <div>• Deep scrapes: {dailyEstimate.firecrawl.weekly}/week</div>
                 </div>
               </div>
             </div>
