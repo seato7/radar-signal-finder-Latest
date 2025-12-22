@@ -162,7 +162,7 @@ const Home = () => {
               <li>• <strong>Search Trends</strong>: Google search volume changes</li>
               <li>• <strong>Short Interest</strong>: Short squeeze potential indicators</li>
               <li>• <strong>Earnings Sentiment</strong>: Post-earnings reaction analysis</li>
-              <li>• <strong>Breaking News</strong>: Real-time web search via Perplexity AI</li>
+              <li>• <strong>Breaking News</strong>: Real-time RSS feeds and web scraping via Firecrawl</li>
             </ul>
           </div>
 
