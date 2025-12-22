@@ -3,9 +3,8 @@
  * Focused on clear cron completion notifications for all 31 functions
  */
 
-// 19 functions that process ALL 8201 assets
+// 18 functions that process ALL 8201 assets
 const FULL_SCOPE_FUNCTIONS = [
-  'ingest-google-trends',
   'ingest-news-sentiment', 
   'ingest-options-flow',
   'ingest-dark-pool',
@@ -28,7 +27,7 @@ const FULL_SCOPE_FUNCTIONS = [
 
 // 12 event-based/feed-based functions
 const EVENT_BASED_FUNCTIONS = [
-  'ingest-13f-holdings',
+  'ingest-sec-13f-edgar',
   'ingest-form4',
   'ingest-breaking-news',
   'ingest-ai-research',
