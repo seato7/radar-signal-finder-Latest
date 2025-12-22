@@ -409,19 +409,22 @@ Deno.serve(async (req) => {
     let skipped = 0;
 
     if (reports.length > 0) {
-      // Insert in batches of 25 to avoid payload limits
+      // Upsert in batches of 25 - replaces old reports for same ticker+report_type
       for (let i = 0; i < reports.length; i += 25) {
         const batch = reports.slice(i, i + 25);
-        const { error: insertError, data: insertData } = await supabaseClient
+        const { error: upsertError, data: upsertData } = await supabaseClient
           .from('ai_research_reports')
-          .insert(batch)
+          .upsert(batch, { 
+            onConflict: 'ticker,report_type',
+            ignoreDuplicates: false 
+          })
           .select('id');
 
-        if (insertError) {
-          console.error(`Batch insert error: ${insertError.message}`);
+        if (upsertError) {
+          console.error(`Batch upsert error: ${upsertError.message}`);
           skipped += batch.length;
         } else {
-          inserted += insertData?.length || batch.length;
+          inserted += upsertData?.length || batch.length;
         }
       }
     }
