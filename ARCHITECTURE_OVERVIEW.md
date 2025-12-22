@@ -1,482 +1,407 @@
-# Opportunity Radar - Backend Architecture Overview
+# Opportunity Radar - Architecture Overview
 
 ## System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         USER INTERFACE                           │
-│                  (React Frontend - Vite/TypeScript)              │
+│                      FRONTEND (Lovable Cloud)                     │
+│               React + Vite + TypeScript + Tailwind                │
+│                                                                   │
+│  Pages: Home, Radar, Themes, Alerts, Bots, Assistant, Settings   │
 └─────────────────────────────────────────────────────────────────┘
                                 │
+                                │ HTTPS
                     ┌───────────┴───────────┐
                     │                       │
                     ▼                       ▼
-        ┌───────────────────┐   ┌──────────────────┐
-        │  Backend API      │   │  Supabase Edge   │
-        │  (FastAPI/Python) │   │  Functions       │
-        │  Railway          │   │  (Lovable AI)    │
-        └───────────────────┘   └──────────────────┘
+        ┌───────────────────┐   ┌───────────────────────┐
+        │  Railway Backend  │   │  Supabase Edge        │
+        │  (Python/FastAPI) │   │  Functions (90+)      │
+        │                   │   │                       │
+        │  Responsibilities:│   │  Responsibilities:    │
+        │  • TwelveData     │   │  • AI Features        │
+        │    Price Ingest   │   │  • Data Ingestion     │
+        │  • Bot Engine     │   │  • User-facing APIs   │
+        │  • Broker Adapter │   │  • Payments/Stripe    │
+        │  • Signal Storage │   │  • Alert Generation   │
+        └───────────────────┘   └───────────────────────┘
                     │                       │
-                    ▼                       │
-        ┌───────────────────┐              │
-        │  PostgreSQL DB    │◄─────────────┘
-        │  (Railway)        │
-        └───────────────────┘
-                    ▲
-                    │
-        ┌───────────┴───────────┐
-        │   ETL Pipelines       │
-        │   (Data Ingestion)    │
-        └───────────────────────┘
-                    ▲
-                    │
-    ┌───────────────┼───────────────┐
-    │               │               │
-    ▼               ▼               ▼
-┌────────┐    ┌─────────┐    ┌──────────┐
-│ SEC    │    │ Policy  │    │ Market   │
-│ Filings│    │ Feeds   │    │ Data     │
-└────────┘    └─────────┘    └──────────┘
+                    │                       │
+        ┌───────────┴───────────┬───────────┴───────────┐
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌───────────────┐   ┌───────────────────┐   ┌───────────────────┐
+│    MongoDB    │   │     PostgreSQL    │   │   Upstash Redis   │
+│   (Railway)   │   │    (Supabase)     │   │    (Caching)      │
+│               │   │                   │   │                   │
+│  • signals    │   │  • prices         │   │  • rate limits    │
+│  • assets     │   │  • ingest_logs    │   │  • session cache  │
+│  • themes     │   │  • function_status│   │  • API cache      │
+│  • users      │   │  • holdings_13f   │   │                   │
+│  • api_keys   │   │  • signals        │   │                   │
+│  • bots       │   │  • all other data │   │                   │
+└───────────────┘   └───────────────────┘   └───────────────────┘
 ```
 
 ---
 
-## Data Flow: How Investment Advice Reaches Users
+## Data Flow: Complete Picture
 
-### 1. **Data Ingestion (ETL Pipelines)**
+### 1. Price Data Flow (Railway Backend)
 
-**Location:** `backend/etl/`
+```
+TwelveData API
+      │
+      ▼ (55 credits/min budget)
+┌─────────────────────────────────┐
+│  Railway Python Backend         │
+│  backend/services/price_scheduler.py │
+│                                 │
+│  Tiered Scheduling:             │
+│  • Hot assets: every 5 min      │
+│  • Active assets: every 30 min  │
+│  • Standard: every 24 hours     │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  backend/services/supabase_sync.py │
+│  Syncs prices to PostgreSQL     │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Supabase PostgreSQL            │
+│  Table: prices                  │
+│  (ticker, date, close, checksum)│
+└─────────────────────────────────┘
+```
 
-**What Happens:**
-- **SEC 13F Holdings** (`sec_13f_holdings.py`): Scrapes institutional investor holdings from SEC filings
-- **SEC Form 4** (`sec_form4.py`): Tracks insider buying/selling transactions
-- **Policy Feeds** (`policy_feeds.py`): Monitors government policy changes (infrastructure bills, regulations, etc.)
-- **ETF Flows** (`etf_flows.py`): Tracks capital flows into/out of ETFs
-- **Price Data** (`prices_csv.py`): Imports historical price data
+### 2. Signal Ingestion Flow (Edge Functions)
 
-**Output:** Raw signals stored in PostgreSQL database
+```
+External Data Sources
+      │
+      ├─── SEC EDGAR (13F, Form 4)
+      ├─── FINRA (Dark Pool)
+      ├─── Reddit API
+      ├─── StockTwits API
+      ├─── RSS Feeds (Policy, News)
+      ├─── FRED (Economic Data)
+      ├─── Adzuna (Job Postings)
+      ├─── Firecrawl (Web Scraping)
+      │
+      ▼
+┌─────────────────────────────────┐
+│  90+ Supabase Edge Functions    │
+│                                 │
+│  Scheduled via pg_cron:         │
+│  • Every 5 min: breaking news   │
+│  • Every 15 min: prices, flows  │
+│  • Every hour: sentiment, tech  │
+│  • Every 6 hrs: 13F, Form 4     │
+│  • Daily: COT, patents, jobs    │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Signal Generation Functions    │
+│  generate-signals-from-*        │
+│                                 │
+│  Creates signals with:          │
+│  • signal_type                  │
+│  • direction (up/down/neutral)  │
+│  • magnitude                    │
+│  • citation                     │
+│  • checksum (idempotency)       │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  PostgreSQL: signals table      │
+│  + MongoDB: signals collection  │
+└─────────────────────────────────┘
+```
+
+### 3. AI Features Flow
+
+```
+User Request
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Frontend React Component       │
+│  (AIAssistantChat.tsx)          │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Edge Function: chat-assistant  │
+│                                 │
+│  1. Fetches current data:       │
+│     • /api/radar (themes)       │
+│     • /api/assets (scored)      │
+│     • User watchlist            │
+│                                 │
+│  2. Builds context prompt       │
+│                                 │
+│  3. Calls Lovable AI Gateway    │
+│     (google/gemini-2.5-flash)   │
+│                                 │
+│  4. Streams response to user    │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Lovable AI Gateway             │
+│  https://ai.gateway.lovable.dev │
+│                                 │
+│  Models:                        │
+│  • google/gemini-2.5-flash      │
+│  • google/gemini-2.5-pro        │
+│  • openai/gpt-5                 │
+└─────────────────────────────────┘
+```
+
+### 4. Trading Bot Flow
+
+```
+Scheduled Trigger (APScheduler)
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Railway: bot_engine.py         │
+│                                 │
+│  1. Get active bots             │
+│  2. For each bot:               │
+│     a. Get user's broker keys   │
+│     b. Decrypt credentials      │
+│     c. Execute strategy         │
+│     d. Place orders via broker  │
+│     e. Log results              │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Broker Adapters                │
+│  • alpaca_broker.py             │
+│  • ibkr_broker.py               │
+│  • coinbase_broker.py           │
+│  • binance_broker.py            │
+│  • kraken_broker.py             │
+└─────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────┐
+│  External Broker APIs           │
+│  Orders executed in user's      │
+│  actual broker account          │
+└─────────────────────────────────┘
+```
 
 ---
 
-### 2. **Signal Aggregation & Scoring**
+## Database Schema Overview
 
-**Location:** `backend/scoring.py`
+### PostgreSQL (Supabase) - Primary
 
-**What Happens:**
-```python
-# Combines multiple signal types into a unified score
-combined_score = (
-    policy_weight * policy_signals +
-    institutional_weight * 13f_signals +
-    insider_weight * form4_signals +
-    etf_weight * etf_flow_signals +
-    momentum_weight * price_momentum
-)
+```sql
+-- Core Tables
+prices              -- 27,000+ assets, daily prices
+assets              -- Asset metadata (ticker, name, exchange)
+signals             -- All generated signals
+themes              -- Investment themes
+theme_scores        -- Computed theme scores
+
+-- Ingestion Tracking
+ingest_logs         -- ETL run history
+function_status     -- Function execution status
+circuit_breaker_status -- Failure tracking
+
+-- User Data
+user_roles          -- Role-based access
+user_theme_subscriptions -- Theme following
+watchlist           -- User watchlists
+alerts              -- Generated alerts
+bots                -- Bot configurations
+bot_orders          -- Order history
+
+-- Signal Sources
+holdings_13f        -- Institutional holdings
+dark_pool_activity  -- FINRA dark pool data
+congressional_trades -- Political trades
+options_flow        -- Options activity
+short_interest      -- Short data
+news_rss_articles   -- News sentiment
 ```
 
-**Output:**
-- Assets ranked by combined score
-- Themes with aggregated signal counts
-- Confidence levels based on signal diversity
+### MongoDB (Railway) - Signal Storage
 
----
-
-### 3. **Theme Mapping**
-
-**Location:** `backend/services/theme_mapper.py`
-
-**What Happens:**
-- Signals are mapped to investment themes (e.g., "AI Infrastructure", "Water Reuse")
-- Uses semantic matching (embeddings) or keyword matching
-- Configuration: `SEMANTIC_MAPPER=1` for AI-based matching
-
-**Example:**
-```
-Signal: "BlackRock buys $50M in NVDA"
-Theme Mapped: "AI Infrastructure"
-```
-
-**Output:** Themed signal clusters with metadata
-
----
-
-### 4. **API Endpoints (Backend)**
-
-**Base URL:** `https://opportunity-radar-api-production.up.railway.app`
-
-**Key Endpoints:**
-
-#### `/api/radar` - Dashboard Feed
-```json
-GET /api/radar?days=7
-
-Response:
-{
-  "themes": [
-    {
-      "id": "theme_123",
-      "name": "AI Liquid Cooling",
-      "signal_count": 15,
-      "combined_score": 87.3,
-      "assets": ["NVDA", "SMCI", "AAPL"]
-    }
-  ],
-  "top_signals": [
-    {
-      "ticker": "NVDA",
-      "signal_type": "13F",
-      "summary": "BlackRock increased position by 25%"
-    }
-  ]
-}
-```
-
-#### `/api/assets` - Scored Asset List
-```json
-GET /api/assets?limit=20
-
-Response:
-{
-  "assets": [
-    {
-      "ticker": "NVDA",
-      "name": "NVIDIA Corp",
-      "combined_score": 92.1,
-      "signals": {
-        "13F": 8,
-        "Form4": 3,
-        "policy": 2,
-        "etf_flows": 5
-      }
-    }
-  ]
-}
-```
-
-#### `/api/themes/{theme_id}/why_now` - AI Summary
-```json
-GET /api/themes/theme_123/why_now
-
-Response:
-{
-  "summary": "AI Liquid Cooling is surging due to...",
-  "why_now": "Three major catalysts converged this week...",
-  "citations": [
-    "BlackRock filed 13F showing $200M new position in SMCI",
-    "DOE announced $500M cooling infrastructure grant"
-  ]
-}
+```javascript
+// Collections
+signals             // Primary signal storage
+assets              // Asset metadata cache
+themes              // Theme definitions
+users               // User accounts
+api_keys            // Encrypted broker keys
+bots                // Bot configurations
+bot_logs            // Execution logs
+bot_orders          // Order history
+bot_positions       // Current positions
 ```
 
 ---
 
-### 5. **AI Enhancement Layer (Supabase Edge Functions)**
+## Edge Functions Overview
 
-**Location:** `supabase/functions/`
+### AI & Analysis
+| Function | Purpose |
+|----------|---------|
+| `chat-assistant` | Natural language Q&A |
+| `analyze-theme` | Theme "Why Now?" summaries |
+| `explain-signal` | Signal explanations |
+| `assess-risk` | Risk assessment |
+| `discover-themes` | Theme discovery |
+| `generate-digest` | Daily digest |
+| `generate-pdf-report` | Report generation |
 
-**How AI Works:**
+### Data Ingestion
+| Function | Source | Schedule |
+|----------|--------|----------|
+| `ingest-breaking-news` | RSS Feeds | Every 5 min |
+| `ingest-prices-twelvedata` | TwelveData | Every 15 min |
+| `ingest-etf-flows` | ETF Data | Every 15 min |
+| `ingest-finra-darkpool` | FINRA | Every hour |
+| `ingest-reddit-sentiment` | Reddit API | Every 2 hrs |
+| `ingest-stocktwits` | StockTwits | Every 2 hrs |
+| `ingest-sec-13f-edgar` | SEC EDGAR | Every 6 hrs |
+| `ingest-form4` | SEC EDGAR | Every 6 hrs |
+| `ingest-congressional-trades` | Public Data | Daily |
+| `ingest-cot-reports` | CFTC | Weekly |
 
-#### A. **Chat Assistant** (`chat-assistant/index.ts`)
-```typescript
-// Flow:
-User asks: "What's the best opportunity today?"
-  ↓
-Edge function fetches:
-  - /api/radar (recent themes)
-  - /api/assets (top scored assets)
-  ↓
-Lovable AI (Google Gemini 2.5 Flash) receives:
-  - User question
-  - Real-time market data
-  - System prompt
-  ↓
-AI analyzes and responds:
-  "Based on current signals, AI Liquid Cooling shows 
-   the strongest momentum with 15 complementary signals..."
-```
+### Signal Generation
+| Function | Creates |
+|----------|---------|
+| `generate-signals-from-13f` | Institutional signals |
+| `generate-signals-from-form4` | Insider signals |
+| `generate-signals-from-darkpool` | Dark pool signals |
+| `generate-signals-from-options` | Options signals |
+| `generate-signals-from-policy` | Policy signals |
+| `generate-signals-from-social` | Social sentiment |
+| `compute-signal-scores` | Composite scores |
+| `compute-theme-scores` | Theme scores |
 
-**Key Code:**
-```typescript
-// Fetches YOUR proprietary data
-const radarResponse = await fetch(`${backendUrl}/api/radar?days=7`);
-const radarData = await radarResponse.json();
-
-// Injects into AI prompt
-const systemPrompt = `
-  REAL-TIME MARKET DATA:
-  ${marketData}
-  
-  Your role: Answer using the REAL-TIME DATA provided...
-`;
-```
-
-#### B. **Theme Analysis** (`analyze-theme/index.ts`)
-- Generates "Why Now?" summaries
-- Uses signal citations as evidence
-- Powered by Lovable AI
-
-#### C. **Risk Assessment** (`assess-risk/index.ts`)
-- Analyzes signal quality
-- Checks for diversification
-- Provides conviction levels
+### Monitoring & Health
+| Function | Purpose |
+|----------|---------|
+| `ingestion-health` | Overall health check |
+| `watchdog-ingestion-health` | Continuous monitoring |
+| `daily-ingestion-digest` | Daily summary to Slack |
+| `api-alerts-errors` | Error tracking |
+| `kill-stuck-jobs` | Cleanup stuck processes |
 
 ---
 
-### 6. **Frontend Display**
+## Cron Scheduling
 
-**Location:** `src/pages/`
+### pg_cron Jobs (Supabase)
 
-**Key Pages:**
+45+ scheduled jobs running at various intervals:
+- **Every 5 min**: Breaking news, price updates
+- **Every 15 min**: ETF flows, hot prices
+- **Hourly**: Technicals, dark pool, pattern recognition
+- **Every 2 hours**: Social sentiment (Reddit, StockTwits)
+- **Every 6 hours**: SEC filings (13F, Form 4)
+- **Daily**: Patents, job postings, COT reports, cleanup
+- **Weekly**: Full data refresh, analytics
 
-#### **Radar** (`src/pages/Radar.tsx`)
-- Displays themed opportunities
-- Shows signal counts and scores
-- Real-time updates
+### Railway APScheduler
 
-#### **Assets** (`src/pages/Assets.tsx`)
-- Lists all tracked tickers
-- Multi-signal scores visible
-- Sortable by score/signals
-
-#### **AI Assistant** (`src/pages/Assistant.tsx`)
-- Chat interface
-- Pulls live data from backend
-- Natural language Q&A
-
----
-
-## Complete User Journey Example
-
-### User asks: "What's the best opportunity today?"
-
-**Step-by-step:**
-
-1. **Frontend:** User types question in AI Assistant
-   ```typescript
-   // src/components/AIAssistantChat.tsx
-   fetch(`${SUPABASE_URL}/functions/v1/chat-assistant`, {
-     body: JSON.stringify({ messages: [...] })
-   })
-   ```
-
-2. **Edge Function:** Receives request
-   ```typescript
-   // supabase/functions/chat-assistant/index.ts
-   const radarData = await fetch(backendUrl + '/api/radar?days=7');
-   const assetsData = await fetch(backendUrl + '/api/assets?limit=20');
-   ```
-
-3. **Backend API:** Returns scored data
-   ```python
-   # backend/routers/radar.py
-   themes = db.query(Theme).filter(...).order_by(combined_score)
-   return {"themes": themes, "top_signals": signals}
-   ```
-
-4. **Database:** Queries aggregated signals
-   ```sql
-   SELECT 
-     themes.name,
-     COUNT(signals.*) as signal_count,
-     AVG(signals.score) as combined_score
-   FROM themes
-   JOIN signals ON signals.theme_id = themes.id
-   WHERE signals.created_at > NOW() - INTERVAL '7 days'
-   GROUP BY themes.id
-   ORDER BY combined_score DESC;
-   ```
-
-5. **Edge Function:** Sends to Lovable AI
-   ```typescript
-   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-     body: JSON.stringify({
-       model: 'google/gemini-2.5-flash',
-       messages: [
-         { role: 'system', content: systemPrompt + realTimeData },
-         { role: 'user', content: 'What's the best opportunity today?' }
-       ]
-     })
-   });
-   ```
-
-6. **Lovable AI:** Analyzes and responds
-   ```
-   Based on the last 7 days of signals:
-   
-   🏆 TOP OPPORTUNITY: AI Liquid Cooling
-   - 15 complementary signals
-   - Combined score: 87.3/100
-   - Key assets: NVDA, SMCI, AAPL
-   
-   WHY NOW:
-   • BlackRock filed 13F with $200M new positions
-   • DOE announced $500M infrastructure grants
-   • 3 insider purchases this week
-   • ETF inflows: $85M in sector funds
-   ```
-
-7. **Frontend:** Displays streaming response
-   ```typescript
-   // User sees response appear token-by-token
-   setMessages([...messages, { role: 'assistant', content: aiResponse }])
-   ```
+Price ingestion tiers:
+- **Hot Tier**: Every 5 minutes (top 50 active assets)
+- **Active Tier**: Every 30 minutes (500 watchlist assets)
+- **Standard Tier**: Every 24 hours (remaining 26,000+ assets)
 
 ---
 
-## Data Sources Breakdown
+## Security Architecture
 
-### **SEC 13F Holdings**
-- **What:** Institutional investor quarterly filings (>$100M AUM)
-- **Frequency:** Quarterly, 45 days after quarter end
-- **Signal:** New positions = buying conviction
-- **Example:** "BlackRock bought 2M shares of NVDA in Q4 2024"
+### Authentication
+- Supabase Auth for user management
+- JWT tokens with role-based access
+- RLS policies on all user data tables
 
-### **SEC Form 4**
-- **What:** Insider transactions (executives, directors, >10% owners)
-- **Frequency:** Must file within 2 days of trade
-- **Signal:** Insider buying = confidence, selling = caution
-- **Example:** "NVDA CEO bought $5M worth of stock"
+### API Key Protection
+- Broker keys encrypted with Fernet (AES-128)
+- Keys stored in MongoDB with `secret_enc` field
+- Rotation support with audit logging
 
-### **Policy Feeds**
-- **What:** Government legislation, executive orders, regulations
-- **Frequency:** Real-time RSS/API feeds
-- **Signal:** New bills/funding = sector tailwinds
-- **Example:** "Infrastructure Bill allocates $50B for EV charging"
-
-### **ETF Flows**
-- **What:** Daily capital inflows/outflows from ETFs
-- **Frequency:** Daily
-- **Signal:** Large inflows = institutional interest
-- **Example:** "$100M flowed into AI ETFs this week"
-
-### **Price Data**
-- **What:** Historical OHLCV (Open/High/Low/Close/Volume)
-- **Frequency:** Daily
-- **Signal:** Momentum indicators, trend detection
-- **Example:** "NVDA up 15% with increasing volume"
+### Rate Limiting
+- TwelveData: 55 credits/minute budget
+- Firecrawl: Request throttling
+- API endpoints: Per-user rate limits
 
 ---
 
-## Why This Architecture Is Powerful
+## Monitoring & Alerting
 
-### **Multi-Signal Approach**
-- No single signal creates noise
-- Convergence of 3+ signals = high conviction
-- Reduces false positives
+### Health Endpoints
+- `/api/health` - Railway backend status
+- `ingestion-health` - Edge function status
+- `health-metrics` - Detailed metrics
 
-### **Real-Time AI Context**
-- AI assistant doesn't guess or hallucinate
-- Uses YOUR proprietary scored data
-- Cites specific signals as evidence
+### Slack Integration
+- Ingestion failures → #alerts channel
+- Daily digest → #ingestion-summary
+- Critical errors → Immediate notification
 
-### **Scalable Design**
-- ETL pipelines run independently
-- API can handle high traffic
-- Edge functions auto-scale
-- Database optimized for time-series queries
+### Metrics Tracked
+- Ingestion success rates
+- Data freshness per source
+- API response times
+- Error counts by function
 
-### **Transparent Scoring**
-```python
-# Users can see exactly why an asset scores high
-{
-  "ticker": "NVDA",
-  "combined_score": 92.1,
-  "breakdown": {
-    "institutional": 35.2,  # 13F signals
-    "insider": 15.0,        # Form 4 signals
-    "policy": 22.5,         # Policy alignment
-    "etf_flows": 19.4       # Capital flows
-  }
-}
-```
+---
+
+## Cost Structure
+
+| Component | Service | Monthly Cost |
+|-----------|---------|-------------|
+| Price Data | TwelveData Pro | $29 |
+| Backend Hosting | Railway | $5 |
+| Frontend + DB | Lovable Cloud | $20 |
+| Web Scraping | Firecrawl | $20 |
+| Caching | Upstash Redis | $5 |
+| **Total** | | **~$80-90** |
+
+Free tier alternatives available for development.
 
 ---
 
 ## Key Configuration Files
 
-### **Backend Config** (`backend/config.py`)
-```python
-# Database connection
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Signal weights
-INSTITUTIONAL_WEIGHT = 0.35
-INSIDER_WEIGHT = 0.25
-POLICY_WEIGHT = 0.20
-ETF_WEIGHT = 0.20
-
-# Theme mapping
-SEMANTIC_MAPPER = os.getenv("SEMANTIC_MAPPER", "0")
-SEMANTIC_THRESHOLD = float(os.getenv("SEMANTIC_THRESHOLD", "0.35"))
-```
-
-### **Edge Function Config** (`supabase/config.toml`)
-```toml
-[functions.chat-assistant]
-verify_jwt = false  # Public access
-
-[functions.analyze-theme]
-verify_jwt = true   # Requires auth
-```
-
----
-
-## How to Monitor & Debug
-
-### **Backend API Logs**
-- Railway dashboard: https://railway.app
-- Check `/api/health` endpoint
-- Review ETL pipeline logs
-
-### **Edge Function Logs**
-- Lovable Cloud view → AI section → Function logs
-- Real-time streaming logs
-- Error tracking
-
-### **Database Queries**
-- Use backend scripts: `backend/scripts/check_user_status.py`
-- Direct SQL via Railway console
-- Monitor query performance
-
----
-
-## Next Steps for Enhancement
-
-### **Add Web Search to AI**
-- Integrate real-time news via web search API
-- Combine with your proprietary signals
-- Example: "Latest NVDA news" + your 13F data
-
-### **Expand Data Sources**
-- Options flow data (unusual activity)
-- Social sentiment (Twitter/Reddit)
-- Earnings call transcripts
-- Supply chain indicators
-
-### **Advanced Analytics**
-- Backtest historical signals
-- Correlation analysis between signal types
-- Predictive modeling (ML)
+| File | Purpose |
+|------|---------|
+| `backend/config.py` | Backend configuration |
+| `supabase/config.toml` | Edge function settings |
+| `.env` | Environment variables |
+| `backend/.env` | Backend-specific vars |
 
 ---
 
 ## Summary
 
-**Your Investment Advice Flow:**
-```
-Data Sources → ETL → Database → Scoring → API → AI Enhancement → User
-```
+**Opportunity Radar uses a hybrid architecture:**
 
-**Key Differentiators:**
-1. **Multi-Signal Fusion:** Not just price charts or news
-2. **Proprietary Scoring:** Combines 5 data types
-3. **AI-Powered Context:** Real-time analysis, not canned responses
-4. **Transparent Methodology:** Users see signal breakdowns
+1. **Railway Python Backend** handles price ingestion (TwelveData) and trading bots
+2. **Supabase Edge Functions** (90+) handle data ingestion, AI, and user APIs
+3. **Dual Database**: PostgreSQL (primary) + MongoDB (signals/users)
+4. **pg_cron** orchestrates 45+ scheduled ingestion jobs
+5. **Lovable AI** powers all AI features via the gateway
+6. **Firecrawl** enables web scraping for sources without APIs
 
-**What Makes It Valuable:**
-- Institutional-grade data (13F)
-- Early insider signals (Form 4)
-- Policy-driven opportunities
-- AI that uses YOUR data, not generic info
-
-This is a professional-grade investment research platform competing with Bloomberg Terminal, but focused on multi-signal opportunity detection.
+This architecture provides:
+- Scalability (Edge Functions auto-scale)
+- Cost efficiency (~$80-90/month)
+- Real-time data (5-minute refresh for hot assets)
+- Comprehensive signal coverage (20+ data sources)

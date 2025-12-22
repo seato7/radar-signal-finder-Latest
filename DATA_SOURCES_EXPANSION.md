@@ -1,605 +1,401 @@
-# Opportunity Radar - Data Sources Expansion Plan
+# Opportunity Radar - Data Sources Guide
 
-## 🎯 Implementation Status
+## 🎯 Current Implementation Status
 
 ### ✅ **Phase 1: Core Foundation (COMPLETE)**
-- [x] SEC 13F Filings (Institutional Holdings)
-- [x] SEC Form 4 (Insider Transactions)
-- [x] Policy Feeds (Government Legislation)
-- [x] ETF Flows (Capital Movement)
-- [x] Market Data (Price & Momentum)
-- [x] AI-Enhanced Analysis (Lovable AI)
-- [x] **NEW: Web Search Integration (Perplexity API)** ✨
 
-### 🚀 **Phase 2: Social Intelligence (IN PROGRESS)**
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| SEC 13F Holdings | `ingest-sec-13f-edgar` | Every 6 hrs | ✅ Live |
+| SEC Form 4 | `ingest-form4` | Every 6 hrs | ✅ Live |
+| Policy Feeds | `ingest-policy-feeds` | Every hour | ✅ Live |
+| ETF Flows | `ingest-etf-flows` | Every 15 min | ✅ Live |
+| TwelveData Prices | Railway + `ingest-prices-twelvedata` | Tiered | ✅ Live |
 
-#### 1. **Twitter/X Sentiment Tracking**
-**Status:** Backend implementation needed
+### ✅ **Phase 2: Social Intelligence (COMPLETE)**
 
-**What to Track:**
-```python
-# backend/etl/twitter_sentiment.py
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| Reddit Sentiment | `ingest-reddit-sentiment` | Every 2 hrs | ✅ Live |
+| StockTwits | `ingest-stocktwits` | Every 2 hrs | ✅ Live |
+| News RSS | `ingest-news-rss` | Every hour | ✅ Live |
+| Breaking News | `ingest-breaking-news` | Every 5 min | ✅ Live |
+| News Sentiment | `ingest-news-sentiment` | Every 3 hrs | ✅ Live |
 
-class TwitterTracker:
-    def track_cashtags(self):
-        # Monitor $TICKER mentions
-        # Detect volume spikes (>300% increase = viral)
-        # Sentiment analysis (bullish/bearish ratio)
-        # Influencer mentions (>100k followers)
-        
-    def trending_tickers(self):
-        # Top 20 most mentioned tickers (1hr window)
-        # Velocity scoring (mentions per hour)
-        # Compare to historical baseline
-        
-    def retail_momentum_score(self, ticker: str):
-        # Combine: mention volume + sentiment + influencer activity
-        # Output: 0-100 retail momentum score
-```
+### ✅ **Phase 3: Market Structure (COMPLETE)**
 
-**Database Schema Needed:**
-```sql
-CREATE TABLE social_signals (
-    id SERIAL PRIMARY KEY,
-    ticker VARCHAR(10) NOT NULL,
-    source VARCHAR(20) NOT NULL, -- 'twitter', 'reddit', 'stocktwits'
-    mention_count INTEGER,
-    sentiment_score FLOAT, -- -1 to +1
-    influencer_mentions INTEGER,
-    timestamp TIMESTAMP DEFAULT NOW(),
-    metadata JSONB
-);
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| Dark Pool (FINRA) | `ingest-finra-darkpool` | Hourly | ✅ Live |
+| Options Flow | `ingest-options-flow` | Hourly | ✅ Live |
+| Short Interest | `ingest-short-interest` | Daily | ✅ Live |
 
-CREATE INDEX idx_social_ticker_timestamp ON social_signals(ticker, timestamp);
-```
+### ✅ **Phase 4: Political Intelligence (COMPLETE)**
 
-**API Requirements:**
-- Twitter API v2 (Elevated access for search)
-- Rate limits: 500k tweets/month on basic tier
-- Estimated cost: $100/month for Basic tier
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| Congressional Trades | `ingest-congressional-trades` | Daily | ✅ Live |
+
+### ✅ **Phase 5: Alternative Data (COMPLETE)**
+
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| Job Postings (Adzuna) | `ingest-job-postings` | Daily | ✅ Live |
+| Patent Filings | `ingest-patents` | Daily | ✅ Live |
+| Search Trends | `ingest-search-trends` | Daily | ✅ Live |
+| Supply Chain | `ingest-supply-chain` | Daily | ✅ Live |
+
+### ✅ **Phase 6: Technical Analysis (COMPLETE)**
+
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| Advanced Technicals | `ingest-advanced-technicals` | Every 6 hrs | ✅ Live |
+| Pattern Recognition | `ingest-pattern-recognition` | Every 6 hrs | ✅ Live |
+| Forex Technicals | `ingest-forex-technicals` | Every 4 hrs | ✅ Live |
+| Forex Sentiment | `ingest-forex-sentiment` | Every 4 hrs | ✅ Live |
+
+### ✅ **Phase 7: Economic Data (COMPLETE)**
+
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| FRED Economics | `ingest-fred-economics` | Daily | ✅ Live |
+| COT Reports (CFTC) | `ingest-cot-cftc` | Weekly | ✅ Live |
+| Economic Calendar | `ingest-economic-calendar` | Daily | ✅ Live |
+| Earnings | `ingest-earnings` | Daily | ✅ Live |
+
+### ✅ **Phase 8: Crypto Data (COMPLETE)**
+
+| Source | Edge Function | Schedule | Status |
+|--------|---------------|----------|--------|
+| Crypto On-chain | `ingest-crypto-onchain` | Every 4 hrs | ✅ Live |
+
+### ✅ **AI-Enhanced Features (COMPLETE)**
+
+| Feature | Edge Function | Status |
+|---------|---------------|--------|
+| AI Research Reports | `generate-ai-research` | ✅ Live |
+| Smart Money Analysis | `ingest-smart-money` | ✅ Live |
 
 ---
 
-#### 2. **Reddit Sentiment Analysis**
-**Status:** Backend implementation needed
+## 📊 Data Source Details
 
-**Subreddits to Monitor:**
-- r/wallstreetbets (2M+ members)
-- r/stocks (6M+ members)
-- r/investing (3M+ members)
+### Price Data: TwelveData
+
+**Coverage:** 27,000+ assets (Stocks, ETFs, Forex, Crypto)
+
+**Tiered Refresh Strategy:**
+| Tier | Assets | Refresh Rate | Credits/Day |
+|------|--------|--------------|-------------|
+| Hot | Top 50 active | Every 5 min | ~290 |
+| Active | 500 watchlist | Every 30 min | ~480 |
+| Standard | 26,000+ others | Every 24 hrs | ~30 |
+
+**Rate Limiting:** 55 credits/minute budget
+
+**Implementation:** `backend/services/price_scheduler.py` → Supabase PostgreSQL
+
+---
+
+### SEC 13F Holdings
+
+**Source:** SEC EDGAR API  
+**What it tracks:**
+- Institutional investor quarterly filings (>$100M AUM)
+- New positions = buying conviction
+- Position changes (increase/decrease/exit)
+
+**Signal Types:**
+- `bigmoney_hold_new` - New position
+- `bigmoney_hold_increase` - Position increased >5%
+- `bigmoney_hold_decrease` - Position decreased >5%
+
+**CUSIP Mapping:** Uses `cusip_mappings` table with OpenFIGI fallback
+
+---
+
+### SEC Form 4 Insider Transactions
+
+**Source:** SEC EDGAR Atom Feed  
+**What it tracks:**
+- Insider transactions (executives, directors, >10% owners)
+- Must file within 2 days of trade
+
+**Signal Types:**
+- `insider_buy` (direction=up)
+- `insider_sell` (direction=down)
+
+---
+
+### Dark Pool Activity (FINRA)
+
+**Source:** FINRA ATS/OTC Transparency Data  
+**What it tracks:**
+- Dark pool volume
+- Dark pool percentage of total volume
+- Price impact estimates
+
+**Signal Interpretation:**
+- High dark pool % + price up = institutional accumulation
+- High dark pool % + price down = institutional distribution
+
+---
+
+### Congressional Trades
+
+**Source:** House Stock Watcher / Public Disclosures  
+**What it tracks:**
+- Representative trading activity
+- Trade before policy votes
+- Bipartisan convergence
+
+**Signal Value:**
+- Multiple members buying same ticker = strong signal
+- Committee oversight = potential insider info
+
+---
+
+### Reddit Sentiment
+
+**Source:** Reddit API  
+**Subreddits Monitored:**
+- r/wallstreetbets (retail sentiment)
+- r/stocks (general discussion)
+- r/investing (long-term)
 - r/SecurityAnalysis (professional)
 
-**What to Track:**
-```python
-# backend/etl/reddit_sentiment.py
+**Metrics:**
+- Mention count
+- Sentiment score (-1 to +1)
+- Award count = conviction
+- Upvote velocity = trending
 
-class RedditTracker:
-    def hot_tickers(self):
-        # Scan top 100 posts from last 24hrs
-        # Extract tickers from title + body
-        # Award count = community conviction
-        # Upvote velocity = trending indicator
-        
-    def dd_analysis(self):
-        # Identify "DD" (due diligence) posts
-        # Sentiment: Bullish/Bearish
-        # Quality score (post length, sources cited)
-        # Track comment sentiment
-```
-
-**Implementation:**
-```python
-import praw  # Python Reddit API Wrapper
-
-reddit = praw.Reddit(
-    client_id=os.getenv("REDDIT_CLIENT_ID"),
-    client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
-    user_agent="OpportunityRadar/1.0"
-)
-
-# Scan wallstreetbets
-for submission in reddit.subreddit("wallstreetbets").hot(limit=100):
-    tickers = extract_tickers(submission.title + submission.selftext)
-    sentiment = analyze_sentiment(submission.selftext)
-    # Store in social_signals table
-```
-
-**Cost:** FREE (Reddit API is free for read-only)
+**Secrets Required:**
+- `REDDIT_CLIENT_ID`
+- `REDDIT_CLIENT_SECRET`
+- `REDDIT_USERNAME`
+- `REDDIT_PASSWORD`
 
 ---
 
-#### 3. **StockTwits Integration**
-**Status:** Backend implementation needed
+### Options Flow
 
-**Why StockTwits:**
-- Purpose-built for stock discussion
-- Built-in bullish/bearish sentiment
-- More signal, less noise than Twitter
-
-**API Endpoints:**
-```python
-# backend/etl/stocktwits.py
-
-class StockTwitsTracker:
-    def ticker_sentiment(self, ticker: str):
-        # GET /streams/symbol/{ticker}.json
-        # Returns: messages + sentiment ratio
-        
-    def trending(self):
-        # GET /streams/trending.json
-        # Returns: Top 30 trending symbols
-```
-
-**Cost:** FREE (30 requests/hour on free tier)
-
----
-
-### 📊 **Phase 3: Congressional & Political Intelligence**
-
-#### 4. **Congressional Stock Trades**
-**Status:** Backend implementation needed
-
-**Data Source:** House Stock Watcher API / Quiver Quantitative
-
-**What to Track:**
-```python
-# backend/etl/congressional_trades.py
-
-class CongressionalTracker:
-    def recent_trades(self, days=7):
-        # Scrape latest disclosures
-        # Track: Representative, ticker, amount, date
-        # Flag: Trades before policy votes
-        
-    def cluster_analysis(self):
-        # Multiple members buying same ticker = strong signal
-        # Track party alignment (bipartisan = stronger)
-        # Committee membership (oversight = insider info)
-```
-
-**Database Schema:**
-```sql
-CREATE TABLE congressional_trades (
-    id SERIAL PRIMARY KEY,
-    representative VARCHAR(100),
-    ticker VARCHAR(10),
-    transaction_type VARCHAR(10), -- 'buy' or 'sell'
-    amount_min INTEGER,
-    amount_max INTEGER,
-    filed_date DATE,
-    transaction_date DATE,
-    party VARCHAR(20),
-    committee VARCHAR(100),
-    metadata JSONB
-);
-```
-
-**Why It Matters:**
-- Lawmakers trade before policy changes
-- Example: Chip bill → Pelosi buys NVDA
-- Bipartisan buying = high conviction
-
-**Cost:** FREE (public disclosure data)
-
----
-
-### 💹 **Phase 4: Options & Derivatives Signals**
-
-#### 5. **Unusual Options Activity**
-**Status:** Requires paid API subscription
-
-**Data Sources:**
-- Unusual Whales API ($50-200/month)
-- FlowAlgo API ($99-499/month)
-- Cheddar Flow ($97/month)
-
-**What to Track:**
-```python
-# backend/etl/options_flow.py
-
-class OptionsTracker:
-    def unusual_activity(self):
-        # Large call purchases (bullish bets)
-        # Large put purchases (bearish bets)
-        # Sweep orders (aggressive institutional buying)
-        # Dark pool prints (hidden institutional trades)
-        
-    def signals(self, ticker: str):
-        # Put/Call ratio
-        # Open interest changes
-        # Implied volatility spikes
-        # Near-dated vs. long-dated positioning
-```
+**What it tracks:**
+- Unusual call/put activity
+- Sweep orders (aggressive buying)
+- Open interest changes
+- Implied volatility spikes
 
 **Signal Interpretation:**
 ```
-Large call sweep on NVDA $900 strike (1 week expiry)
-+ Institutional 13F buying
-+ Insider purchases
+Large call sweep + Institutional 13F buying + Insider purchases
 = HIGH CONVICTION short-term move
 ```
 
-**Database Schema:**
-```sql
-CREATE TABLE options_flow (
-    id SERIAL PRIMARY KEY,
-    ticker VARCHAR(10),
-    option_type VARCHAR(10), -- 'call' or 'put'
-    strike FLOAT,
-    expiry DATE,
-    premium BIGINT,
-    volume INTEGER,
-    open_interest INTEGER,
-    flow_type VARCHAR(20), -- 'sweep', 'block', 'split'
-    sentiment VARCHAR(10), -- 'bullish', 'bearish'
-    timestamp TIMESTAMP DEFAULT NOW()
-);
-```
+---
 
-**Recommended:** Start with Unusual Whales API ($50/month basic tier)
+### Job Postings (Adzuna)
+
+**Source:** Adzuna API  
+**What it tracks:**
+- Hiring velocity by company
+- Role types (engineering, sales, leadership)
+- Growth indicator
+
+**Signal Value:**
+- Engineering roles = product development
+- Sales roles = revenue expansion
+- Mass hiring = scaling operations
+
+**Secrets Required:**
+- `ADZUNA_APP_ID`
+- `ADZUNA_APP_KEY`
 
 ---
 
-### 🏢 **Phase 5: Company Growth Indicators**
+### FRED Economic Data
 
-#### 6. **Job Postings as Leading Indicator**
-**Status:** Backend implementation needed
+**Source:** Federal Reserve Economic Data API  
+**Indicators Tracked:**
+- GDP growth
+- Inflation rates
+- Employment data
+- Interest rates
 
-**Data Sources:**
-- LinkedIn Jobs API (requires partnership)
-- Indeed API scraping
-- Company career pages scraping (Firecrawl)
-
-**What to Track:**
-```python
-# backend/etl/job_postings.py
-
-class JobPostingsTracker:
-    def hiring_velocity(self, ticker: str):
-        # Track new job postings over time
-        # Categorize: Engineering, Sales, Operations
-        # Growth = bullish, layoffs = bearish
-        
-    def role_analysis(self):
-        # Engineering roles = product development
-        # Sales roles = revenue expansion
-        # Leadership roles = scaling operations
-```
-
-**Example Insights:**
-```
-NVDA posts 500 new AI engineer roles in Q1
-+ 13F institutional buying
-+ Policy support (AI infrastructure bill)
-= Company scaling production to meet demand
-```
-
-**Implementation:**
-```python
-# Scrape using Firecrawl
-from firecrawl import FirecrawlApp
-
-app = FirecrawlApp(api_key=os.getenv("FIRECRAWL_API_KEY"))
-careers_data = app.scrape_url("https://nvidia.com/careers")
-# Parse job listings, count, categorize
-```
-
-**Cost:** 
-- Firecrawl: $20/month for 5,000 pages
-- Indeed scraping: FREE (rate-limited)
+**Secret Required:** `FRED_API_KEY`
 
 ---
 
-#### 7. **Earnings Call Sentiment Analysis**
-**Status:** Backend implementation needed
+### Web Scraping (Firecrawl)
 
-**Data Sources:**
-- Alpha Vantage API (FREE tier: 25 calls/day)
-- Seeking Alpha transcripts (scraping)
-- Financial Modeling Prep API ($15/month)
+**Used For:** Sources without APIs
+- Patent filings (USPTO)
+- Breaking news
+- Company pages
 
-**What to Track:**
-```python
-# backend/etl/earnings_sentiment.py
-
-class EarningsAnalyzer:
-    def transcript_sentiment(self, ticker: str):
-        # AI sentiment analysis of management tone
-        # Key phrases: "tailwinds", "headwinds", "beating expectations"
-        # Compare guidance to analyst estimates
-        
-    def quarter_over_quarter(self):
-        # Track sentiment changes
-        # Improved tone = bullish
-        # Defensive language = bearish
-```
-
-**AI Analysis with Lovable AI:**
-```typescript
-// Use existing Lovable AI to analyze transcripts
-const sentiment = await analyzTranscript(transcript);
-// Output: bullish/neutral/bearish + confidence score
-```
-
-**Cost:** FREE (Alpha Vantage) or $15/month (FMP)
+**Secret Required:** `FIRECRAWL_API_KEY`
 
 ---
 
-### 🔬 **Phase 6: Innovation Pipeline**
+## 💰 Data Source Costs
 
-#### 8. **Patent Filings Tracker**
-**Status:** Backend implementation needed
+### Free Data Sources
+| Source | Cost | Notes |
+|--------|------|-------|
+| SEC EDGAR | Free | Public data |
+| FINRA Dark Pool | Free | Public data |
+| Reddit API | Free | Rate limited |
+| StockTwits | Free | 30 req/hr |
+| Congressional Trades | Free | Public disclosure |
+| USPTO Patents | Free | Public data |
+| FRED | Free | Requires API key |
 
-**Data Source:** USPTO API (FREE)
+### Paid Data Sources
+| Source | Cost | Notes |
+|--------|------|-------|
+| TwelveData | $29/mo | Pro tier, 27K assets |
+| Firecrawl | $20/mo | 5,000 pages |
+| Adzuna | Free tier | Job postings |
 
-**What to Track:**
-```python
-# backend/etl/patent_filings.py
-
-class PatentTracker:
-    def recent_filings(self, company: str):
-        # Query USPTO database
-        # Track: AI, semiconductor, biotech patents
-        # Flag: Pending vs. granted
-        
-    def innovation_score(self, ticker: str):
-        # Patent count (last 12 months)
-        # Patent quality (citations)
-        # Technology categories
-```
-
-**Example:**
-```
-NVDA files 50 new AI chip patents in Q4
-+ Institutional buying
-+ Insider confidence
-= Future product pipeline validation
-```
-
-**Implementation:**
-```python
-import requests
-
-# USPTO Public API
-url = "https://developer.uspto.gov/ibd-api/v1/patent/application"
-params = {"searchText": "NVIDIA AI chip"}
-response = requests.get(url, params=params)
-# Parse and store patent data
-```
-
-**Cost:** FREE
+### Optional Premium Sources
+| Source | Cost | Notes |
+|--------|------|-------|
+| Unusual Whales | $50-200/mo | Options flow |
+| Fintel | $20-50/mo | Short interest |
+| Alpha Vantage | Free-$50/mo | Earnings data |
 
 ---
 
-### 📈 **Phase 7: Market Sentiment & Trends**
+## 🏗️ Signal Generation Pipeline
 
-#### 9. **Google Trends Integration**
-**Status:** Backend implementation needed
-
-**Data Source:** Google Trends API (pytrends library)
-
-**What to Track:**
-```python
-# backend/etl/google_trends.py
-
-from pytrends.request import TrendReq
-
-class GoogleTrendsTracker:
-    def search_volume(self, keyword: str):
-        # Track interest over time
-        # Compare: ticker + product name
-        # Regional breakdowns
-        
-    def correlation(self, ticker: str):
-        # Correlate search volume with stock price
-        # Example: "Tesla" searches predict TSLA moves
 ```
-
-**Use Cases:**
-- iPhone search volume → AAPL earnings preview
-- "ChatGPT" searches → MSFT (OpenAI investor)
-- "Nvidia stock" searches → Retail interest
-
-**Cost:** FREE
+Data Source
+    ↓
+Edge Function: ingest-*
+    ↓
+Raw Data → PostgreSQL Tables
+    ↓
+Edge Function: generate-signals-from-*
+    ↓
+Signals Table (with citations, checksums)
+    ↓
+Edge Function: compute-signal-scores
+    ↓
+Composite Scores per Asset
+    ↓
+Edge Function: compute-theme-scores
+    ↓
+Theme Scores for UI
+```
 
 ---
 
-#### 10. **Short Interest & Borrow Rates**
-**Status:** Backend implementation needed
+## 📈 Scoring Engine
 
-**Data Sources:**
-- Fintel API ($20-50/month)
-- Ortex ($99/month)
-- FINRA (bi-monthly reports, FREE)
+### Component Weights
 
-**What to Track:**
 ```python
-# backend/etl/short_interest.py
-
-class ShortInterestTracker:
-    def short_ratio(self, ticker: str):
-        # % of float shorted
-        # Days to cover
-        # Borrow rate (cost to short)
-        
-    def squeeze_potential(self):
-        # High short interest + positive catalyst = squeeze risk
-        # Recent examples: GME, AMC
-```
-
-**Database Schema:**
-```sql
-CREATE TABLE short_interest (
-    id SERIAL PRIMARY KEY,
-    ticker VARCHAR(10),
-    short_interest BIGINT,
-    float_percentage FLOAT,
-    days_to_cover FLOAT,
-    borrow_rate FLOAT,
-    report_date DATE,
-    timestamp TIMESTAMP DEFAULT NOW()
-);
-```
-
-**Cost:** $20-99/month depending on provider
-
----
-
-## 🏗️ **Implementation Architecture**
-
-### **ETL Pipeline Structure**
-```
-backend/etl/
-├── social_sentiment.py      # Twitter, Reddit, StockTwits
-├── congressional_trades.py  # Political trades
-├── options_flow.py          # Unusual options activity
-├── job_postings.py          # Hiring trends
-├── earnings_sentiment.py    # Earnings call analysis
-├── patent_filings.py        # USPTO data
-├── google_trends.py         # Search volume
-└── short_interest.py        # Short data
-```
-
-### **Database Expansion**
-```sql
--- New tables needed
-CREATE TABLE social_signals (...);
-CREATE TABLE congressional_trades (...);
-CREATE TABLE options_flow (...);
-CREATE TABLE job_postings (...);
-CREATE TABLE earnings_sentiment (...);
-CREATE TABLE patent_filings (...);
-CREATE TABLE search_trends (...);
-CREATE TABLE short_interest (...);
-```
-
-### **Scoring Engine Update**
-```python
-# backend/scoring.py - Enhanced
-
 combined_score = (
     0.25 * institutional_signals +    # 13F
     0.15 * insider_signals +          # Form 4
     0.15 * policy_signals +           # Government
     0.10 * etf_flows +                # Capital flows
-    0.10 * social_sentiment +         # NEW: Twitter/Reddit
-    0.08 * congressional_trades +     # NEW: Political
-    0.07 * options_flow +             # NEW: Derivatives
-    0.05 * job_postings +             # NEW: Hiring
-    0.05 * web_search_relevance       # NEW: Breaking news
+    0.10 * social_sentiment +         # Reddit/StockTwits
+    0.08 * dark_pool_signals +        # Market structure
+    0.07 * options_flow +             # Derivatives
+    0.05 * job_postings +             # Alternative
+    0.05 * technical_signals          # Patterns
 )
 ```
 
----
+### Exponential Decay
 
-## 💰 **Cost Summary**
-
-### **Free Data Sources**
-- ✅ Reddit API
-- ✅ StockTwits API (limited)
-- ✅ Congressional trades (public data)
-- ✅ USPTO patents
-- ✅ Google Trends
-- ✅ FINRA short interest (bi-monthly)
-- ✅ Alpha Vantage (25 calls/day)
-
-### **Paid APIs (Recommended)**
-| Service | Cost/Month | Priority | Purpose |
-|---------|-----------|----------|---------|
-| Perplexity API | ~$20 | HIGH ✅ | Web search (ACTIVE) |
-| Twitter API v2 | $100 | HIGH | Social sentiment |
-| Unusual Whales | $50 | MEDIUM | Options flow |
-| Firecrawl | $20 | MEDIUM | Job postings scraping |
-| Financial Modeling Prep | $15 | LOW | Earnings transcripts |
-| Fintel | $20 | LOW | Short interest data |
-
-**Total Monthly Cost:** $225 for all paid APIs
-**High Priority Only:** $120 (Twitter + Perplexity)
-
----
-
-## 📊 **Enhanced Signal Convergence**
-
-### **Example: High Conviction Opportunity**
-
-**Ticker: NVDA**
+Signals decay over time with 30-day half-life:
 ```
-PROPRIETARY SIGNALS (Opportunity Radar):
-✅ 13F: 8 institutional buys ($500M total)
-✅ Form 4: CEO bought $5M worth
-✅ Policy: $500M DOE AI infrastructure grant
-✅ ETF Flows: $85M into AI sector ETFs
-
-NEW SIGNALS (Enhanced Platform):
-✅ Web Search: "NVDA announces $2B Microsoft datacenter deal"
-✅ Twitter: Mentions up 400% (viral trend)
-✅ Reddit: 3 DD posts on r/wallstreetbets (bullish)
-✅ Congressional: 2 senators bought NVDA this week
-✅ Options: $10M in call sweeps (bullish bets)
-✅ Jobs: 200 new engineer postings
-✅ Patents: 15 new AI chip patents filed
-✅ Google Trends: Search volume up 300%
-✅ Short Interest: Borrow rate spiked (shorts squeezed)
-
-COMBINED SCORE: 97.3/100 🔥
-CONVICTION: EXTREME HIGH
-RECOMMENDATION: Strong Buy
+decay = exp(-ln(2) * days_ago / 30)
 ```
 
----
-
-## 🚀 **Deployment Roadmap**
-
-### **Week 1-2: Social Intelligence**
-- [ ] Implement Twitter sentiment tracker
-- [ ] Add Reddit scraper
-- [ ] Integrate StockTwits API
-- [ ] Create social_signals table
-- [ ] Update scoring engine
-
-### **Week 3-4: Political & Options**
-- [ ] Congressional trades scraper
-- [ ] Integrate Unusual Whales API
-- [ ] Create respective database tables
-- [ ] Add to scoring algorithm
-
-### **Week 5-6: Company Intelligence**
-- [ ] Job postings tracker (Firecrawl)
-- [ ] Earnings sentiment analyzer
-- [ ] Patent filings scraper
-
-### **Week 7-8: Market Sentiment**
-- [ ] Google Trends integration
-- [ ] Short interest tracker
-- [ ] Final scoring algorithm calibration
-
-### **Week 9-10: Testing & Optimization**
-- [ ] Backtest new signals vs. historical data
-- [ ] Optimize signal weights
-- [ ] Performance tuning
-- [ ] Documentation
+| Age | Weight |
+|-----|--------|
+| 0 days | 100% |
+| 30 days | 50% |
+| 60 days | 25% |
+| 90 days | 12.5% |
 
 ---
 
-## 🎯 **Success Metrics**
+## 🔧 Adding New Data Sources
 
-### **Signal Quality**
-- **False Positive Rate:** <15% (down from 25%)
-- **Early Detection:** Identify opportunities 30-60 days before price moves
-- **Multi-Signal Convergence:** 80% of winning trades have 5+ signals
+### 1. Create Edge Function
 
-### **Platform Differentiation**
-- **Unique Data Points:** 14 signal types (vs. 5 today)
-- **Real-Time Context:** Web search + proprietary data
-- **Competitive Moat:** No other platform combines all 14 sources
+```typescript
+// supabase/functions/ingest-new-source/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  // Fetch from external source
+  const data = await fetch("https://api.example.com/data");
+  
+  // Insert into PostgreSQL
+  await supabase.from("new_source_table").upsert(data);
+  
+  // Log success
+  await supabase.from("ingest_logs").insert({
+    etl_name: "ingest-new-source",
+    status: "success",
+    rows_inserted: data.length
+  });
+
+  return new Response(JSON.stringify({ success: true }));
+});
+```
+
+### 2. Add to Config
+
+```toml
+# supabase/config.toml
+[functions.ingest-new-source]
+verify_jwt = false
+```
+
+### 3. Schedule with pg_cron
+
+```sql
+SELECT cron.schedule(
+  'ingest-new-source-hourly',
+  '0 * * * *',
+  $$SELECT net.http_post(...)$$
+);
+```
 
 ---
 
-## 📞 **Next Steps**
+## 📊 Data Quality Monitoring
 
-1. ✅ **DONE:** Web search integration (Perplexity)
-2. **IMMEDIATE:** Set up Twitter API credentials
-3. **NEXT WEEK:** Implement social sentiment ETL
-4. **NEXT MONTH:** Add congressional trades + options flow
+### Automated Checks
+- **Staleness alerts**: Data older than expected
+- **Skew detection**: 90%+ same direction = data issue
+- **Fallback tracking**: AI source usage >80% = primary down
 
-Ready to implement the backend ETL pipelines? I've documented everything needed for your backend team to build these integrations.
+### Health Dashboard
+- `/ingestion-health` - Function status
+- `/api-data-staleness` - Data freshness
+- `watchdog-ingestion-health` - Continuous monitoring
+
+---
+
+## 🚀 Future Data Sources (Roadmap)
+
+### Under Consideration
+- [ ] Twitter/X sentiment (API access expensive)
+- [ ] LinkedIn job postings (requires partnership)
+- [ ] Earnings call transcripts
+- [ ] Real-time streaming prices
+- [ ] Supply chain shipping data
+- [ ] Satellite imagery analysis

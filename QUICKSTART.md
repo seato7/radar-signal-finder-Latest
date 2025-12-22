@@ -3,43 +3,103 @@
 ## 🎯 What This Does
 
 Opportunity Radar is a financial intelligence platform that:
-- Scores market opportunities using 8 weighted components
+- Scores market opportunities using 8 weighted signal components
+- Aggregates 20+ data sources (SEC, dark pool, social, options)
 - Applies exponential decay to prioritize recent signals (30-day half-life)
-- Tracks 3 canonical themes: AI Liquid Cooling, Water Reuse, HVDC Transformers
-- Provides idempotent ETL pipelines with full citation tracking
+- Provides AI-powered analysis via Lovable AI (Gemini 2.5 Flash)
+- Supports automated trading via multi-broker integration
 
-## 🚀 Launch in 3 Commands
+---
 
-```bash
-# 1. Start all services (MongoDB, Backend, Frontend, Mongo Express)
-make up
+## 🏗️ Architecture Overview
 
-# 2. Seed the 3 canonical themes
-make seed
-
-# 3. Run demo ingest to generate signals
-make ingest-demo
+```
+Frontend (Lovable Cloud)
+    ↓
+┌───────────────────┬───────────────────┐
+│ Railway Backend   │ Supabase Edge     │
+│ (Python/FastAPI)  │ Functions (90+)   │
+│                   │                   │
+│ • TwelveData      │ • AI Features     │
+│ • Bot Engine      │ • Data Ingestion  │
+│ • Broker APIs     │ • User APIs       │
+└───────────────────┴───────────────────┘
+    ↓                       ↓
+┌───────────────────┬───────────────────┐
+│ MongoDB (Railway) │ PostgreSQL        │
+│ • signals         │ (Supabase)        │
+│ • users           │ • prices          │
+│ • bots            │ • ingest_logs     │
+└───────────────────┴───────────────────┘
 ```
 
-**Access Points:**
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-- Mongo Express: http://localhost:8081
+---
 
-## 📊 Verify It's Working
+## 🚀 Deployment Options
 
-### Check Health & Weights
+### Option 1: Lovable Cloud (Recommended)
+
+Everything deploys automatically:
+
+1. **Frontend**: Auto-deployed to `your-project.lovable.app`
+2. **Edge Functions**: Auto-deployed on code changes
+3. **Database**: Supabase PostgreSQL included
+
+**Required Secrets** (add via Lovable Cloud settings):
+- `TWELVEDATA_API_KEY` - Price data (get at twelvedata.com)
+- `FIRECRAWL_API_KEY` - Web scraping (get at firecrawl.dev)
+
+**Optional Secrets**:
+- `SLACK_WEBHOOK_URL` - Alert notifications
+- `STRIPE_SECRET_KEY` - Subscription payments
+- `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` - Social sentiment
+- `ADZUNA_APP_ID` + `ADZUNA_APP_KEY` - Job postings
+
+### Option 2: Railway Backend (For Price Ingestion + Bots)
+
+If you need the Python backend for TwelveData price ingestion or trading bots:
 
 ```bash
-curl http://localhost:8000/api/health
+# Clone repository
+git clone https://github.com/your-org/opportunity-radar.git
+cd opportunity-radar/backend
+
+# Deploy to Railway
+railway login
+railway init
+railway up
+```
+
+**Railway Environment Variables**:
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+MONGO_URL=mongodb+srv://...
+TWELVEDATA_API_KEY=your-key
+```
+
+---
+
+## 📊 Verify Deployment
+
+### Check Health Endpoints
+
+```bash
+# Railway backend health
+curl https://your-railway-app.up.railway.app/api/health
 # Expected: {"status":"ok","service":"opportunity-radar"}
 
-curl http://localhost:8000/api/healthz/weights
-# Expected: Component weights matching spec
+# Edge function health
+curl https://your-project.supabase.co/functions/v1/ingestion-health
 ```
 
-**Spec-Compliant Weights:**
+### Check Scoring Weights
+
+```bash
+curl https://your-railway-app.up.railway.app/api/healthz/weights
+```
+
+**Expected Weights:**
 ```json
 {
   "PolicyMomentum": 1.0,
@@ -53,202 +113,143 @@ curl http://localhost:8000/api/healthz/weights
 }
 ```
 
-### View Themes with Scores
+---
+
+## 🌱 Seed Initial Data
+
+### Seed Canonical Themes
 
 ```bash
-curl "http://localhost:8000/api/radar/themes?days=45" | jq
+# Via Railway
+railway run python backend/scripts/seed_themes.py
 ```
 
-**Expected Output:**
-```json
-[
-  {
-    "id": "theme-ai-liquid-cooling",
-    "name": "AI Liquid Cooling",
-    "score": 73.2,
-    "components": {
-      "PolicyMomentum": 5.4,
-      "FlowPressure": 8.1,
-      "BigMoneyConfirm": 6.7,
-      ...
-    },
-    "as_of": "2025-10-14T...",
-    "weights": {...}
-  },
-  ...
-]
-```
+Seeds 3 default themes:
+- **AI Liquid Cooling** - Data center thermal management
+- **Water Reuse** - Desalination, reverse osmosis
+- **HVDC Transformers** - Grid infrastructure
 
-## 🎨 Frontend Demo Loop
+### Trigger Initial Ingestion
 
-1. Navigate to http://localhost:5173
-2. Click **"Run Ingest (Demo)"** button on Home page
-3. See 3 themes populate with scores
-4. Click **Radar** to explore scored opportunities
-5. Click **Themes** to see component breakdowns
-
-## 🧪 Run Tests
+Via Edge Functions (automatic with pg_cron), or manually:
 
 ```bash
-# Run all backend tests
-make test
+# Trigger price ingestion
+curl -X POST https://your-project.supabase.co/functions/v1/ingest-prices-twelvedata
 
-# Expected output:
-# ==================== 6 passed in 2.43s ====================
+# Trigger signal generation
+curl -X POST https://your-project.supabase.co/functions/v1/compute-signal-scores
 ```
 
-**Tests cover:**
-- ✅ Health endpoint returns OK
-- ✅ Weights endpoint returns spec values
-- ✅ Decay function ~0.5 at 30-day half-life
-- ✅ Watchlist CRUD operations
-- ✅ Component weights match spec exactly
+---
 
-## 🔧 Makefile Commands
+## 📱 Access Points
 
-| Command | Description |
-|---------|-------------|
-| `make up` | Start all services |
-| `make down` | Stop services |
-| `make seed` | Seed canonical themes |
-| `make ingest-demo` | Run demo ingest |
-| `make be` | View backend logs |
-| `make fe` | View frontend logs |
-| `make test` | Run backend tests |
-| `make clean` | Stop and remove all data |
+| Service | URL |
+|---------|-----|
+| Frontend | `https://your-project.lovable.app` |
+| Railway API | `https://your-app.up.railway.app` |
+| Edge Functions | `https://your-project.supabase.co/functions/v1/` |
 
-## 📝 Configuration
+---
 
-### Backend Environment
+## 🎨 Frontend Navigation
 
-Create `backend/.env` from template:
+1. **Home** - System status, run ingestion
+2. **Radar** - Scored themes with signal counts
+3. **Themes** - Theme details, AI summaries
+4. **Alerts** - Configured alert rules
+5. **Bots** - Trading bot management
+6. **Assistant** - AI chat interface
+7. **Settings** - Broker connections, preferences
+
+---
+
+## 🧪 Testing
+
+### Backend Tests
 
 ```bash
-cp backend/.env.example backend/.env
+cd backend
+pip install -r requirements.txt
+pytest
+
+# Expected: All tests passing
 ```
 
-**Key Variables:**
-- `MONGO_URL` - MongoDB connection (default: mongodb://mongo:27017)
-- `HALF_LIFE_DAYS` - Signal decay half-life (default: 30.0)
-- `ALERT_SCORE_THRESHOLD` - Alert firing threshold (default: 80.0)
-- `FRONTEND_PUBLIC_URL` - Frontend URL for CORS (required)
+### Test Coverage
+- ✅ Health endpoints
+- ✅ Scoring decay function
+- ✅ ETL idempotency
+- ✅ Watchlist CRUD
+- ✅ Alert thresholds
 
-## 🎯 Canonical Themes
-
-The system seeds 3 production themes:
-
-### 1. AI Liquid Cooling
-**ID**: `theme-ai-liquid-cooling`  
-**Keywords**: liquid cooling, data center, datacenter, thermal
-
-### 2. Water Reuse
-**ID**: `theme-water-reuse`  
-**Keywords**: desal, reverse osmosis, water reuse, pipeline
-
-### 3. HVDC Transformers
-**ID**: `theme-hvdc-transformers`  
-**Keywords**: hvdc, transformer, transmission, interconnector, grid
-
-## 📊 Data Models
-
-### Signal
-```python
-{
-  "signal_type": "policy_keyword",
-  "theme_id": "theme-ai-liquid-cooling",
-  "magnitude": 1.2,
-  "direction": "up",
-  "observed_at": datetime,
-  "oa_citation": {
-    "source": "SEC Filing",
-    "url": "https://...",
-    "timestamp": "2025-10-14T..."
-  },
-  "checksum": "sha256...",  # Idempotency key
-  "raw": {...}
-}
-```
-
-### Theme Score Calculation
-
-```python
-score = sum(component_value * weight * decay(days_ago))
-
-# Where:
-# - component_value: normalized 0-100
-# - weight: from WEIGHTS dict
-# - decay: exp(-ln(2) * days_ago / 30)
-```
+---
 
 ## 🐛 Troubleshooting
 
-### Services won't start
-```bash
-make down
-make clean
-make up
-```
+### Frontend won't load
+1. Check browser console for errors
+2. Verify Supabase environment variables set
 
-### Frontend can't connect to backend
-Check `FRONTEND_PUBLIC_URL` is set in `backend/.env`:
-```
-FRONTEND_PUBLIC_URL=http://localhost:5173
-```
+### No themes showing
+1. Run seed script first
+2. Check MongoDB connection
 
-### No themes showing up
-Run seed first:
-```bash
-make seed
-make ingest-demo
-```
+### Prices not updating
+1. Verify `TWELVEDATA_API_KEY` is set
+2. Check Railway logs for errors
+3. Confirm credit budget not exhausted
 
-### Tests failing
-Ensure MongoDB is running:
-```bash
-docker-compose ps
-# mongo should be "Up"
-```
+### Edge functions failing
+1. Check Supabase function logs
+2. Verify secrets are configured
+3. Check for rate limit errors (429)
 
-## 🔄 Development Workflow
+---
+
+## 🔧 Key Commands
+
+### Makefile (Local Development)
 
 ```bash
-# Start fresh
-make clean
-make up
-
-# Seed themes
-make seed
-
-# Run demo ingest (via UI or curl)
-make ingest-demo
-
-# Make backend changes, tests auto-reload
-make be  # watch logs
-
-# Make frontend changes, HMR active
-make fe  # watch logs
-
-# Run tests after changes
-make test
+make up          # Start Docker services
+make down        # Stop services
+make seed        # Seed themes
+make test        # Run backend tests
+make be          # View backend logs
+make fe          # View frontend logs
+make clean       # Remove all data
 ```
+
+### Railway
+
+```bash
+railway logs     # View logs
+railway run      # Execute command
+railway up       # Deploy changes
+```
+
+---
 
 ## 📚 Next Steps
 
-1. **Add Real ETL**: Implement `backend/etl/policy_feeds.py` for real RSS/Atom ingestion
-2. **Configure Alerts**: Set up Slack webhook for high-score notifications
-3. **Backtest**: Ingest price data and run backtests
-4. **Deploy**: Use docker-compose for production deployment
+1. **Configure Data Sources** - Add API keys for more sources
+2. **Set Up Alerts** - Configure Slack webhook
+3. **Connect Broker** - Add trading credentials
+4. **Create Bots** - Set up automated trading
+5. **Explore AI** - Try the assistant at `/assistant`
 
 ---
 
 ## 🎉 You're Ready!
 
-The system is now fully spec-compliant with:
-- ✅ HALF_LIFE_DAYS = 30.0
-- ✅ Correct component weights
-- ✅ Dark theme tokens
-- ✅ Strict CORS
-- ✅ Idempotent ETL with checksums
-- ✅ Full citation tracking
+The system is now running with:
+- ✅ Hybrid Railway + Supabase architecture
+- ✅ 27,000+ assets via TwelveData
+- ✅ 90+ Edge Functions for data ingestion
+- ✅ AI features via Lovable AI
+- ✅ pg_cron scheduling (45 jobs)
+- ✅ Multi-broker trading support
 
-Access the UI at http://localhost:5173 and start exploring! 🚀
+Access the UI and start exploring opportunities! 🚀
