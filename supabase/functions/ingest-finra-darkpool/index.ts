@@ -9,7 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v3 - REAL DATA ONLY - NO ESTIMATIONS
+// v4 - REAL DATA ONLY - NO ESTIMATIONS, NO DERIVED VALUES
 
 // FINRA official data sources
 const FINRA_SOURCES = [
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
         rows_inserted: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'none',
-        metadata: { version: 'v3_no_estimation', reason: 'finra_scraping_failed' }
+        metadata: { version: 'v4_no_estimation', reason: 'finra_scraping_failed' }
       });
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-finra-darkpool', {
@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
         rows_inserted: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'FINRA_scraped',
-        metadata: { version: 'v3_no_estimation', reason: 'extraction_failed' }
+        metadata: { version: 'v4_no_estimation', reason: 'extraction_failed' }
       });
 
       await sendNoDataFoundAlert(slackAlerter, 'ingest-finra-darkpool', {
@@ -131,24 +131,24 @@ Deno.serve(async (req) => {
     const assetMap = new Map((assets || []).map((a: any) => [a.ticker, a.id]));
     const today = new Date().toISOString().split('T')[0];
     
-    // REAL data only
+    // REAL data only - only use actual scraped values, NO derived/estimated fields
     const darkPoolRecords = atsData
-      .filter((d: any) => assetMap.has(d.ticker))
+      .filter((d: any) => assetMap.has(d.ticker) && d.shares_traded)
       .map((d: any) => ({
         ticker: d.ticker,
         asset_id: assetMap.get(d.ticker),
         trade_date: d.week_ending || today,
         dark_pool_volume: d.shares_traded,
-        total_volume: d.shares_traded * 3,
-        dark_pool_percentage: 33,
-        signal_type: 'neutral',
-        signal_strength: 'weak',
+        total_volume: null, // NOT derived - we only have dark pool volume
+        dark_pool_percentage: null, // NOT derived - we don't know total volume
+        signal_type: null,
+        signal_strength: null,
         source: 'FINRA_ATS_official',
         metadata: { 
           ats_name: d.ats_name, 
           trade_count: d.trade_count,
           data_type: 'real',
-          version: 'v3_no_estimation'
+          version: 'v4_no_estimation'
         }
       }));
 
@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
       rows_skipped: atsData.length - inserted,
       duration_ms: durationMs,
       source_used: 'FINRA_ATS_official',
-      metadata: { version: 'v3_no_estimation' }
+      metadata: { version: 'v4_no_estimation' }
     });
     
     await slackAlerter.sendLiveAlert({

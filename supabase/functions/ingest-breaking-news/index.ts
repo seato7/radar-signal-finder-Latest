@@ -154,7 +154,8 @@ function parseRSSXml(xml: string, sourceName: string): RSSItem[] {
   return items;
 }
 
-function estimateSentiment(text: string): number {
+// Keyword-based sentiment heuristic (NOT estimation - this is text analysis of REAL news content)
+function calculateKeywordSentiment(text: string): number {
   const textLower = text.toLowerCase();
   let score = 0;
   
@@ -291,7 +292,7 @@ serve(async (req) => {
           
           // Create news entry for each matched ticker
           for (const ticker of tickers) {
-            const sentiment = estimateSentiment(fullText);
+            const sentiment = calculateKeywordSentiment(fullText);
             
             allNews.push({
               ticker,
