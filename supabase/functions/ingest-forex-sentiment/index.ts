@@ -1,14 +1,108 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { IngestLogger } from "../_shared/log-ingest.ts";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const BATCH_SIZE = 500;
+// v3 - REAL DATA ONLY - NO ESTIMATIONS
+// Uses Firecrawl to scrape real forex sentiment data from Myfxbook
+
+const FIRECRAWL_API = 'https://api.firecrawl.dev/v1';
+
+interface ForexSentimentData {
+  ticker: string;
+  retail_long_pct: number;
+  retail_short_pct: number;
+  retail_sentiment: string;
+  source: string;
+}
+
+async function scrapeForexSentiment(firecrawlApiKey: string): Promise<ForexSentimentData[]> {
+  const results: ForexSentimentData[] = [];
+  
+  try {
+    // Scrape Myfxbook community outlook (real retail positioning data)
+    const response = await fetch(`${FIRECRAWL_API}/scrape`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: 'https://www.myfxbook.com/community/outlook',
+        formats: ['markdown'],
+        onlyMainContent: true,
+        waitFor: 3000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.log(`Firecrawl scrape failed: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const markdown = data.data?.markdown || data.markdown || '';
+    
+    if (!markdown || markdown.length < 100) {
+      console.log('No content scraped from Myfxbook');
+      return [];
+    }
+
+    console.log(`Scraped ${markdown.length} chars from Myfxbook`);
+    
+    // Parse the markdown for currency pair sentiment data
+    // Myfxbook shows pairs like "EUR/USD 65% Long / 35% Short"
+    const pairPatterns = [
+      /EUR\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+      /GBP\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+      /USD\/JPY[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+      /AUD\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+      /USD\/CAD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+      /USD\/CHF[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+      /NZD\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
+    ];
+    
+    const majorPairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'USD/CHF', 'NZD/USD'];
+    
+    for (const pair of majorPairs) {
+      // Look for pattern like "EUR/USD: 65.5% long" or "EUR/USD 35% short"
+      const longPattern = new RegExp(`${pair.replace('/', '\\/')}[^\\d]*(\\d+(?:\\.\\d+)?)\\s*%?\\s*long`, 'i');
+      const shortPattern = new RegExp(`${pair.replace('/', '\\/')}[^\\d]*(\\d+(?:\\.\\d+)?)\\s*%?\\s*short`, 'i');
+      
+      const longMatch = markdown.match(longPattern);
+      const shortMatch = markdown.match(shortPattern);
+      
+      if (longMatch || shortMatch) {
+        const longPct = longMatch ? parseFloat(longMatch[1]) : (100 - parseFloat(shortMatch?.[1] || '50'));
+        const shortPct = shortMatch ? parseFloat(shortMatch[1]) : (100 - longPct);
+        
+        let sentiment = 'neutral';
+        if (longPct > 60) sentiment = 'bullish';
+        if (shortPct > 60) sentiment = 'bearish';
+        
+        results.push({
+          ticker: pair,
+          retail_long_pct: Math.round(longPct * 100) / 100,
+          retail_short_pct: Math.round(shortPct * 100) / 100,
+          retail_sentiment: sentiment,
+          source: 'Myfxbook_Community_Outlook',
+        });
+        
+        console.log(`✅ ${pair}: ${longPct}% long, ${shortPct}% short`);
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Firecrawl scraping error:', error);
+    return [];
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -26,144 +120,116 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    console.log('😊 Starting forex sentiment ingestion for ALL forex pairs...');
+    console.log('[v3] Starting forex sentiment ingestion - REAL DATA ONLY, NO ESTIMATIONS');
 
-    // Get ALL forex pairs with pagination
-    let allForexPairs: any[] = [];
-    let page = 0;
-    const pageSize = 1000;
-
-    while (true) {
-      const { data: pairs, error } = await supabaseClient
-        .from('assets')
-        .select('*')
-        .eq('asset_class', 'forex')
-        .range(page * pageSize, (page + 1) * pageSize - 1);
-
-      if (error) throw error;
-      if (!pairs || pairs.length === 0) break;
-
-      allForexPairs = [...allForexPairs, ...pairs];
-      if (pairs.length < pageSize) break;
-      page++;
-    }
-
-    console.log(`Found ${allForexPairs.length} forex pairs to process`);
-
-    if (allForexPairs.length === 0) {
-      await logger.success({
-        source_used: 'Estimated from market data',
+    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
+    
+    if (!firecrawlApiKey) {
+      console.log('❌ FIRECRAWL_API_KEY not configured - cannot fetch real data');
+      
+      await logger.failure(new Error('FIRECRAWL_API_KEY not configured'), {
+        source_used: 'none',
         cache_hit: false,
         fallback_count: 0,
         rows_inserted: 0,
         rows_skipped: 0,
       });
+      
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-forex-sentiment', {
+        sourcesAttempted: ['Firecrawl/Myfxbook'],
+        reason: 'FIRECRAWL_API_KEY not configured'
+      });
+      
       return new Response(
-        JSON.stringify({ success: true, processed: 0, message: 'No forex pairs found' }),
+        JSON.stringify({ success: false, error: 'No API key configured for real data', inserted: 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Bulk fetch recent prices
-    const tickers = allForexPairs.map(p => p.ticker);
-    const { data: priceData } = await supabaseClient
-      .from('prices')
-      .select('ticker, close, date')
-      .in('ticker', tickers)
-      .order('date', { ascending: false });
-
-    // Build price lookup
-    const priceByTicker: Record<string, { prices: number[], latest: number }> = {};
-    for (const price of (priceData || [])) {
-      if (!priceByTicker[price.ticker]) {
-        priceByTicker[price.ticker] = { prices: [], latest: price.close };
-      }
-      if (priceByTicker[price.ticker].prices.length < 10) {
-        priceByTicker[price.ticker].prices.push(price.close);
-      }
+    // Scrape real sentiment data
+    const sentimentData = await scrapeForexSentiment(firecrawlApiKey);
+    
+    if (sentimentData.length === 0) {
+      console.log('❌ No real forex sentiment data found - NOT inserting any fake data');
+      
+      await logger.success({
+        source_used: 'none',
+        cache_hit: false,
+        fallback_count: 0,
+        rows_inserted: 0,
+        rows_skipped: 0,
+        metadata: { reason: 'no_real_data_available', version: 'v3_no_estimation' }
+      });
+      
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-forex-sentiment', {
+        sourcesAttempted: ['Myfxbook via Firecrawl'],
+        reason: 'Could not parse sentiment data from Myfxbook'
+      });
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'No real forex sentiment data found - no fake data inserted',
+          inserted: 0,
+          version: 'v3_no_estimation'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
+    // Get asset IDs for the forex pairs
+    const tickers = sentimentData.map(s => s.ticker);
+    const { data: assets } = await supabaseClient
+      .from('assets')
+      .select('id, ticker')
+      .in('ticker', tickers);
+
+    const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
+
+    // Prepare insert data - REAL DATA ONLY
+    const insertData = sentimentData
+      .filter(s => tickerToAssetId.has(s.ticker))
+      .map(s => ({
+        ticker: s.ticker,
+        asset_id: tickerToAssetId.get(s.ticker),
+        retail_long_pct: s.retail_long_pct,
+        retail_short_pct: s.retail_short_pct,
+        retail_sentiment: s.retail_sentiment,
+        news_sentiment_score: null,
+        news_count: null,
+        social_mentions: null,
+        social_sentiment_score: null,
+        source: s.source,
+        metadata: { 
+          data_type: 'real',
+          version: 'v3_no_estimation',
+          scraped_at: new Date().toISOString()
+        }
+      }));
+
     let successCount = 0;
-    let errorCount = 0;
+    if (insertData.length > 0) {
+      const { error: insertError } = await supabaseClient
+        .from('forex_sentiment')
+        .insert(insertData);
 
-    // Process in batches
-    for (let i = 0; i < allForexPairs.length; i += BATCH_SIZE) {
-      const batch = allForexPairs.slice(i, i + BATCH_SIZE);
-      const insertData: any[] = [];
-
-      for (const pair of batch) {
-        try {
-          const priceInfo = priceByTicker[pair.ticker];
-          const prices = priceInfo?.prices || [];
-
-          // Calculate price trend to estimate sentiment
-          let priceTrend = 0;
-          if (prices.length >= 2) {
-            priceTrend = (prices[0] - prices[prices.length - 1]) / prices[prices.length - 1];
-          }
-
-          // Major pairs typically have more balanced positioning
-          const isMajorPair = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD'].includes(pair.ticker);
-
-          // Estimate retail sentiment (retail typically goes against trend)
-          const baseLong = 50 + (Math.random() * 10 - 5);
-          const trendAdjustment = priceTrend * -20; // Retail goes against trend
-          const retailLongPct = Math.max(20, Math.min(80, baseLong + trendAdjustment));
-          const retailShortPct = 100 - retailLongPct;
-
-          let retailSentiment = 'neutral';
-          if (retailLongPct > 60) retailSentiment = 'bullish';
-          if (retailShortPct > 60) retailSentiment = 'bearish';
-
-          // News sentiment follows trend
-          const newsSentimentScore = Math.max(-1, Math.min(1, priceTrend * 5 + (Math.random() * 0.4 - 0.2)));
-          const newsCount = Math.floor((isMajorPair ? 30 : 10) + Math.random() * 40);
-          const socialMentions = Math.floor((isMajorPair ? 500 : 100) + Math.random() * 1000);
-
-          insertData.push({
-            ticker: pair.ticker,
-            asset_id: pair.id,
-            retail_long_pct: Math.round(retailLongPct * 100) / 100,
-            retail_short_pct: Math.round(retailShortPct * 100) / 100,
-            retail_sentiment: retailSentiment,
-            news_sentiment_score: Math.round(newsSentimentScore * 100) / 100,
-            news_count: newsCount,
-            social_mentions: socialMentions,
-            social_sentiment_score: Math.round(newsSentimentScore * 0.8 * 100) / 100,
-            source: 'Estimated from price trend',
-            metadata: { priceTrend, isMajorPair, batch: Math.floor(i / BATCH_SIZE) + 1 }
-          });
-
-          successCount++;
-        } catch (err) {
-          console.error(`Error processing ${pair.ticker}:`, err);
-          errorCount++;
-        }
+      if (insertError) {
+        console.error('Insert error:', insertError.message);
+      } else {
+        successCount = insertData.length;
       }
-
-      // Bulk insert batch
-      if (insertData.length > 0) {
-        const { error: insertError } = await supabaseClient
-          .from('forex_sentiment')
-          .insert(insertData);
-
-        if (insertError) {
-          console.error(`Batch insert error:`, insertError.message);
-        }
-      }
-
-      console.log(`✅ Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(allForexPairs.length / BATCH_SIZE)}`);
     }
 
     const duration = Date.now() - startTime;
 
     await logger.success({
-      source_used: 'Estimated from price trend',
+      source_used: 'Myfxbook_Community_Outlook',
       cache_hit: false,
       fallback_count: 0,
       latency_ms: duration,
       rows_inserted: successCount,
-      rows_skipped: errorCount,
+      rows_skipped: 0,
+      metadata: { version: 'v3_no_estimation' }
     });
 
     await slackAlerter.sendLiveAlert({
@@ -171,18 +237,19 @@ serve(async (req) => {
       status: 'success',
       duration,
       rowsInserted: successCount,
-      rowsSkipped: errorCount,
-      sourceUsed: 'Estimated from price trend',
-      metadata: { pairs_processed: allForexPairs.length }
+      rowsSkipped: 0,
+      sourceUsed: 'Myfxbook_Community_Outlook (REAL DATA ONLY)',
     });
+
+    console.log(`✅ Inserted ${successCount} REAL forex sentiment records - NO ESTIMATIONS`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        processed: allForexPairs.length,
-        successful: successCount,
-        errors: errorCount,
-        message: `Ingested sentiment for ${successCount} forex pairs`
+        inserted: successCount,
+        source: 'Myfxbook_Community_Outlook',
+        version: 'v3_no_estimation',
+        message: `Inserted ${successCount} REAL forex sentiment records`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -193,20 +260,16 @@ serve(async (req) => {
     const duration = Date.now() - startTime;
 
     await logger.failure(error as Error, {
-      source_used: 'Estimated from price trend',
+      source_used: 'Myfxbook_Community_Outlook',
       cache_hit: false,
       fallback_count: 0,
       latency_ms: duration,
     });
 
-    await slackAlerter.sendLiveAlert({
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
       etlName: 'ingest-forex-sentiment',
-      status: 'failed',
-      duration,
-      rowsInserted: 0,
-      rowsSkipped: 0,
-      sourceUsed: 'Estimated from price trend',
-      metadata: { error: (error as Error).message }
+      message: `Forex sentiment ingestion failed: ${(error as Error).message}`,
     });
 
     return new Response(

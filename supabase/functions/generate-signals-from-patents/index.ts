@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// v2 - REAL DATA ONLY - NO ESTIMATIONS
+// Only generates signals from REAL patent data that has been ingested
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -17,20 +20,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    console.log('[SIGNAL-GEN-PATENTS] Starting patent filing signal generation...');
+    console.log('[v2] Starting patent signal generation - REAL DATA ONLY');
 
+    // Only get patents that are from REAL sources (not estimation)
     const { data: patents, error: patentsError } = await supabaseClient
       .from('patent_filings')
       .select('*')
       .gte('filing_date', new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString())
+      .not('metadata->source', 'eq', 'patent_estimation_engine')
+      .not('metadata->estimated', 'eq', true)
       .order('filing_date', { ascending: false });
 
     if (patentsError) throw patentsError;
 
-    console.log(`[SIGNAL-GEN-PATENTS] Found ${patents?.length || 0} patent filings`);
+    console.log(`[v2] Found ${patents?.length || 0} REAL patent filings (excluding estimations)`);
 
     if (!patents || patents.length === 0) {
-      return new Response(JSON.stringify({ message: 'No patent filings to process', signals_created: 0 }), {
+      console.log('[v2] No real patent data available - NOT generating any fake signals');
+      
+      return new Response(JSON.stringify({ 
+        message: 'No real patent data to process - no fake signals generated', 
+        signals_created: 0,
+        version: 'v2_no_estimation'
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -43,7 +55,7 @@ serve(async (req) => {
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
-    // Aggregate patents by ticker to detect innovation momentum
+    // Aggregate patents by ticker
     const patentsByTicker = new Map<string, any[]>();
     for (const patent of patents) {
       if (!patentsByTicker.has(patent.ticker)) {
@@ -57,15 +69,15 @@ serve(async (req) => {
       const assetId = tickerToAssetId.get(ticker);
       if (!assetId) continue;
 
-      // Recent filings indicate innovation momentum
+      // Recent filings (last 90 days)
       const recentPatents = tickerPatents.filter(p => 
         new Date(p.filing_date) > new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
       );
 
       if (recentPatents.length === 0) continue;
 
-      const magnitude = Math.min(1.0, recentPatents.length / 10); // Normalize to 10 patents
-      const direction = 'up'; // Patent activity is generally bullish
+      const magnitude = Math.min(1.0, recentPatents.length / 10);
+      const direction = 'up';
 
       const categories = [...new Set(recentPatents.map(p => p.technology_category).filter(Boolean))];
 
@@ -86,13 +98,26 @@ serve(async (req) => {
         checksum: JSON.stringify(signalData),
         citation: {
           source: 'USPTO Patent Database',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          data_type: 'real'
         },
         raw: {
           patent_count: recentPatents.length,
           categories,
-          latest_patent: recentPatents[0].patent_title
+          latest_patent: recentPatents[0].patent_title,
+          version: 'v2_no_estimation'
         }
+      });
+    }
+
+    if (signals.length === 0) {
+      console.log('[v2] No signals generated from real patent data');
+      return new Response(JSON.stringify({ 
+        message: 'No signals generated - patent data did not meet signal criteria', 
+        signals_created: 0,
+        version: 'v2_no_estimation'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -101,22 +126,24 @@ serve(async (req) => {
       .insert(signals);
 
     if (insertError) {
-      console.error('[SIGNAL-GEN-PATENTS] Insert error:', insertError);
+      console.error('[v2] Insert error:', insertError);
       throw insertError;
     }
 
-    console.log(`[SIGNAL-GEN-PATENTS] ✅ Created ${signals.length} innovation patent signals`);
+    console.log(`[v2] ✅ Created ${signals.length} REAL innovation patent signals - NO ESTIMATIONS`);
 
     return new Response(JSON.stringify({ 
       success: true,
       patents_processed: patents.length,
-      signals_created: signals.length 
+      signals_created: signals.length,
+      version: 'v2_no_estimation',
+      message: `Created ${signals.length} REAL innovation patent signals`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    console.error('[SIGNAL-GEN-PATENTS] ❌ Error:', error);
+    console.error('[v2] ❌ Error:', error);
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

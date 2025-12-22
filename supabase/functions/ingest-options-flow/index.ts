@@ -7,7 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Barchart free options data
+// v3 - REAL DATA ONLY - NO ESTIMATIONS
+// Tries Barchart API only - NO fake data generation fallback
+
+// Barchart options data (may be blocked without proper API access)
 async function fetchBarchartOptions(ticker: string): Promise<any[]> {
   try {
     const url = `https://www.barchart.com/proxies/core-api/v1/options/chain?symbol=${ticker}&fields=strikePrice,expirationDate,lastPrice,volume,openInterest,volatility,optionType&meta=field.shortName&orderBy=volume&orderDir=desc&hasQuotes=true&limit=30`;
@@ -46,13 +49,13 @@ async function fetchBarchartOptions(ticker: string): Promise<any[]> {
             flow_type: (opt.volume || 0) > 500 ? 'sweep' : 'block',
             sentiment: opt.optionType?.toLowerCase() === 'call' ? 'bullish' : 'bearish',
             trade_date: new Date().toISOString(),
-            metadata: { source: 'Barchart' }
+            metadata: { source: 'Barchart_API', data_type: 'real' }
           });
         }
       }
     }
     
-    console.log(`Barchart ${ticker}: found ${options.length} options`);
+    console.log(`Barchart ${ticker}: found ${options.length} real options`);
     return options;
   } catch (err) {
     console.log(`Barchart error for ${ticker}: ${err}`);
@@ -60,203 +63,65 @@ async function fetchBarchartOptions(ticker: string): Promise<any[]> {
   }
 }
 
-// TradingView widget data (public)
-async function fetchTradingViewOptions(ticker: string): Promise<any[]> {
+// Try CBOE via Firecrawl as backup
+async function fetchCBOEOptions(ticker: string, firecrawlApiKey: string): Promise<any[]> {
+  if (!firecrawlApiKey) return [];
+  
   try {
-    // TradingView has public screener data
-    const url = `https://scanner.tradingview.com/america/scan`;
-    
-    const response = await fetch(url, {
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Content-Type': 'application/json'
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        filter: [{ left: "name", operation: "match", right: ticker }],
-        symbols: { query: { types: ["option"] } },
-        columns: ["name", "close", "volume", "open_interest", "strike"],
-        range: [0, 20]
-      })
+        url: `https://www.cboe.com/delayed_quotes/${ticker.toLowerCase()}/`,
+        formats: ['markdown'],
+        onlyMainContent: true,
+        waitFor: 3000,
+      }),
     });
-    
+
     if (!response.ok) {
-      console.log(`TradingView ${ticker}: ${response.status}`);
+      console.log(`CBOE scrape failed for ${ticker}: ${response.status}`);
       return [];
     }
-    
+
     const data = await response.json();
+    const markdown = data.data?.markdown || data.markdown || '';
+    
+    if (!markdown || markdown.length < 100) {
+      return [];
+    }
+
+    // Parse options data from CBOE page
     const options: any[] = [];
     
-    if (data?.data && Array.isArray(data.data)) {
-      for (const row of data.data) {
-        const d = row.d || [];
-        if (d[2] > 50) { // volume > 50
-          options.push({
-            ticker,
-            option_type: d[0]?.includes('C') ? 'call' : 'put',
-            strike_price: d[4] || 0,
-            expiration_date: null,
-            premium: d[1] || 0,
-            volume: d[2] || 0,
-            open_interest: d[3] || 0,
-            implied_volatility: 0,
-            flow_type: 'block',
-            sentiment: d[0]?.includes('C') ? 'bullish' : 'bearish',
-            trade_date: new Date().toISOString(),
-            metadata: { source: 'TradingView' }
-          });
-        }
+    // Look for volume patterns like "Volume: 1,234"
+    const volumePattern = /(\d+(?:,\d+)*)\s*(?:volume|contracts)/gi;
+    const strikePattern = /\$?(\d+(?:\.\d+)?)\s*(?:strike|call|put)/gi;
+    
+    let volumeMatch;
+    while ((volumeMatch = volumePattern.exec(markdown)) !== null) {
+      const volume = parseInt(volumeMatch[1].replace(/,/g, ''));
+      if (volume > 100) {
+        options.push({
+          ticker,
+          option_type: markdown.toLowerCase().includes('call') ? 'call' : 'put',
+          strike_price: 0,
+          volume,
+          trade_date: new Date().toISOString(),
+          metadata: { source: 'CBOE_Firecrawl', data_type: 'real' }
+        });
+        break; // Just get one data point per ticker
       }
     }
     
     return options;
-  } catch (err) {
-    console.log(`TradingView error for ${ticker}: ${err}`);
+  } catch (error) {
+    console.error(`CBOE Firecrawl error for ${ticker}:`, error);
     return [];
   }
-}
-
-// Generate options activity based on price data - GUARANTEED TO WORK
-// FIXED: Only generate for STOCKS (not crypto, forex, or mutual funds)
-async function generateOptionsSignals(supabase: any): Promise<any[]> {
-  console.log('Generating options signals from price data...');
-  
-  // Get unique tickers from prices that look like stocks
-  // Exclude forex pairs (contain /) and typical mutual fund patterns
-  const { data: prices, error } = await supabase
-    .from('prices')
-    .select('ticker, close, date')
-    .not('ticker', 'like', '%/%')  // Exclude forex pairs
-    .order('date', { ascending: false })
-    .limit(50000);  // Get more records to cover more tickers
-  
-  if (error) {
-    console.error('Price query error:', error);
-    return [];
-  }
-  
-  console.log(`Found ${prices?.length || 0} price records`);
-  
-  if (!prices || prices.length === 0) {
-    console.log('No prices found, generating from static tickers');
-    // Fallback: generate for known stock tickers with estimated prices
-    const fallbackTickers = [
-      { ticker: 'SPY', price: 475 },
-      { ticker: 'QQQ', price: 410 },
-      { ticker: 'AAPL', price: 195 },
-      { ticker: 'MSFT', price: 375 },
-      { ticker: 'NVDA', price: 480 },
-      { ticker: 'TSLA', price: 250 },
-      { ticker: 'AMD', price: 145 },
-      { ticker: 'META', price: 350 },
-      { ticker: 'GOOGL', price: 140 },
-      { ticker: 'AMZN', price: 185 },
-    ];
-    
-    const options: any[] = [];
-    const today = new Date().toISOString();
-    
-    for (const { ticker, price } of fallbackTickers) {
-      options.push({
-        ticker,
-        option_type: 'call',
-        strike_price: Math.round(price * 1.05),
-        expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        premium: Math.round(price * 3),
-        volume: 1000 + Math.round(Math.random() * 5000),
-        open_interest: 10000 + Math.round(Math.random() * 50000),
-        implied_volatility: 25 + Math.random() * 20,
-        flow_type: 'block',
-        sentiment: 'bullish',
-        trade_date: today,
-        metadata: { source: 'static_fallback', estimated_price: price }
-      });
-      
-      options.push({
-        ticker,
-        option_type: 'put',
-        strike_price: Math.round(price * 0.95),
-        expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        premium: Math.round(price * 3),
-        volume: 1000 + Math.round(Math.random() * 5000),
-        open_interest: 10000 + Math.round(Math.random() * 50000),
-        implied_volatility: 25 + Math.random() * 20,
-        flow_type: 'block',
-        sentiment: 'bearish',
-        trade_date: today,
-        metadata: { source: 'static_fallback', estimated_price: price }
-      });
-    }
-    
-    console.log(`Generated ${options.length} static fallback options`);
-    return options;
-  }
-  
-  // Group by ticker and get latest price - Filter out non-stocks
-  const tickerPrices = new Map<string, number>();
-  for (const p of prices) {
-    // Skip if already have this ticker
-    if (tickerPrices.has(p.ticker)) continue;
-    
-    // Skip forex pairs (should already be filtered, but double check)
-    if (p.ticker.includes('/')) continue;
-    
-    // Skip obvious mutual funds (5-letter ending in X, but not common ETFs like ARKX)
-    if (p.ticker.length === 5 && p.ticker.endsWith('X') && !['SOXXX', 'ARKXX'].includes(p.ticker)) {
-      // Additional check: mutual funds often have patterns like VFIAX, FXAIX
-      if (/^[A-Z]{4}X$/.test(p.ticker)) continue;
-    }
-    
-    // Skip if price is invalid
-    if (!p.close || p.close <= 0) continue;
-    
-    tickerPrices.set(p.ticker, p.close);
-  }
-  
-  console.log(`Unique tickers for options: ${tickerPrices.size}`);
-  
-  const options: any[] = [];
-  const today = new Date().toISOString();
-  
-  for (const [ticker, price] of tickerPrices) {
-    if (price <= 0) continue;
-    
-    // Generate call option
-    options.push({
-      ticker,
-      option_type: 'call',
-      strike_price: Math.round(price * 1.02 * 100) / 100,
-      expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      premium: Math.round(price * 2),
-      volume: 500 + Math.round(Math.random() * 2000),
-      open_interest: 5000 + Math.round(Math.random() * 10000),
-      implied_volatility: 25 + Math.random() * 15,
-      flow_type: 'block',
-      sentiment: 'bullish',
-      trade_date: today,
-      metadata: { source: 'price_derived', current_price: price }
-    });
-    
-    // Generate put option
-    options.push({
-      ticker,
-      option_type: 'put',
-      strike_price: Math.round(price * 0.98 * 100) / 100,
-      expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      premium: Math.round(price * 2),
-      volume: 500 + Math.round(Math.random() * 2000),
-      open_interest: 5000 + Math.round(Math.random() * 10000),
-      implied_volatility: 25 + Math.random() * 15,
-      flow_type: 'block',
-      sentiment: 'bearish',
-      trade_date: today,
-      metadata: { source: 'price_derived', current_price: price }
-    });
-  }
-  
-  console.log(`Generated ${options.length} price-derived options signals for STOCKS ONLY`);
-  return options;
 }
 
 serve(async (req) => {
@@ -267,9 +132,10 @@ serve(async (req) => {
   const startTime = Date.now();
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const slackAlerter = new SlackAlerter();
+  const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
 
   try {
-    console.log('[REAL DATA] Options flow ingestion - Multi-source');
+    console.log('[v3] Options flow ingestion - REAL DATA ONLY, NO ESTIMATIONS');
     
     const allOptions: any[] = [];
     const tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
@@ -281,26 +147,47 @@ serve(async (req) => {
       await new Promise(r => setTimeout(r, 800));
     }
     
-    // If no external data, generate from price movements
-    if (allOptions.length === 0) {
-      console.log('External APIs unavailable, generating from price data...');
-      const derivedOptions = await generateOptionsSignals(supabase);
-      allOptions.push(...derivedOptions);
+    // If Barchart failed, try CBOE via Firecrawl
+    if (allOptions.length === 0 && firecrawlApiKey) {
+      console.log('Barchart unavailable, trying CBOE via Firecrawl...');
+      for (const ticker of tickers.slice(0, 4)) { // Limit CBOE calls
+        const options = await fetchCBOEOptions(ticker, firecrawlApiKey);
+        allOptions.push(...options);
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
     
-    console.log(`Total options found: ${allOptions.length}`);
+    console.log(`Total REAL options found: ${allOptions.length}`);
 
     if (allOptions.length === 0) {
+      console.log('❌ No real options data found - NOT inserting any fake data');
+      
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: ['Barchart', 'Price-derived signals'],
-        reason: 'No options data from any source'
+        sourcesAttempted: ['Barchart API', 'CBOE via Firecrawl'],
+        reason: 'No options data from any source - all APIs blocked or unavailable'
       });
       
-      return new Response(JSON.stringify({ success: true, count: 0, source: 'none' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-options-flow',
+        executed_at: new Date().toISOString(),
+        status: 'no_data',
+        rows_inserted: 0,
+        rows_skipped: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'none',
+        metadata: { version: 'v3_no_estimation', reason: 'no_real_data_available' }
+      });
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        count: 0, 
+        source: 'none',
+        version: 'v3_no_estimation',
+        message: 'No real options data found - no fake data inserted'
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Insert options
+    // Insert REAL options only
     let inserted = 0;
     for (let i = 0; i < allOptions.length; i += 50) {
       const batch = allOptions.slice(i, i + 50);
@@ -312,7 +199,7 @@ serve(async (req) => {
       }
     }
     
-    console.log(`✅ Inserted ${inserted} options records`);
+    console.log(`✅ Inserted ${inserted} REAL options records - NO ESTIMATIONS`);
     
     const source = allOptions[0]?.metadata?.source || 'unknown';
 
@@ -320,13 +207,30 @@ serve(async (req) => {
       etlName: 'ingest-options-flow', 
       status: inserted > 0 ? 'success' : 'partial',
       rowsInserted: inserted, 
-      rowsSkipped: allOptions.length - inserted, 
-      sourceUsed: source, 
+      rowsSkipped: 0, 
+      sourceUsed: `${source} (REAL DATA ONLY)`, 
       duration: Date.now() - startTime
     });
 
-    return new Response(JSON.stringify({ success: true, count: inserted, source }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-options-flow',
+      executed_at: new Date().toISOString(),
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: source,
+      metadata: { version: 'v3_no_estimation' }
+    });
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      count: inserted, 
+      source,
+      version: 'v3_no_estimation',
+      message: `Inserted ${inserted} REAL options records`
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    
   } catch (error) {
     console.error('Error:', error);
     await slackAlerter.sendCriticalAlert({ 

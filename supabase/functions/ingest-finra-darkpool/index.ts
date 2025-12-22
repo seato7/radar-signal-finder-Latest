@@ -1,6 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 import { scrapeWithRetry } from "../_shared/scrape-and-extract.ts";
 import { extractTableData, ExtractionSchema } from "../_shared/lovable-extractor.ts";
 
@@ -8,6 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// v3 - REAL DATA ONLY - NO ESTIMATIONS
 
 // FINRA official data sources
 const FINRA_SOURCES = [
@@ -29,7 +31,7 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    console.log('[REAL DATA] FINRA dark pool ingestion - NO ESTIMATION...');
+    console.log('[v3] FINRA dark pool ingestion - REAL DATA ONLY, NO ESTIMATIONS');
     
     // Scrape FINRA data
     let scrapedContent = '';
@@ -46,68 +48,32 @@ Deno.serve(async (req) => {
       }
     }
 
-    // If scraping fails, generate dark pool data from most-traded stocks
+    // If scraping fails, return no data - DO NOT generate fake data
     if (!scrapedContent || scrapedContent.length < 500) {
-      console.log('⚠️ No real FINRA data, generating from top-traded stocks...');
-      
-      // Get top-traded stocks
-      const { data: topAssets } = await supabase
-        .from('assets')
-        .select('id, ticker')
-        .in('asset_class', ['stock', 'etf'])
-        .limit(500);
-      
-      if (!topAssets || topAssets.length === 0) {
-        return new Response(JSON.stringify({
-          success: true, source: 'none', processed: 0, inserted: 0
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      
-      const today = new Date().toISOString().split('T')[0];
-      const darkPoolRecords = topAssets.map((asset: any) => ({
-        ticker: asset.ticker,
-        asset_id: asset.id,
-        trade_date: today,
-        dark_pool_volume: 50000 + Math.round(Math.random() * 500000),
-        total_volume: 200000 + Math.round(Math.random() * 2000000),
-        dark_pool_percentage: 25 + Math.round(Math.random() * 20),
-        signal_type: Math.random() > 0.6 ? 'accumulation' : Math.random() > 0.3 ? 'distribution' : 'neutral',
-        signal_strength: Math.random() > 0.7 ? 'strong' : Math.random() > 0.4 ? 'moderate' : 'weak',
-        source: 'estimated_from_market_data',
-        metadata: { generated: true, reason: 'FINRA scraping unavailable' }
-      }));
-      
-      let inserted = 0;
-      for (let i = 0; i < darkPoolRecords.length; i += 100) {
-        const batch = darkPoolRecords.slice(i, i + 100);
-        const { error } = await supabase
-          .from('dark_pool_activity')
-          .upsert(batch, { onConflict: 'ticker,trade_date' });
-        if (!error) inserted += batch.length;
-      }
+      console.log('❌ No real FINRA data available - NOT inserting any fake data');
       
       await supabase.from('function_status').insert({
         function_name: 'ingest-finra-darkpool',
         executed_at: new Date().toISOString(),
-        status: 'success',
-        rows_inserted: inserted,
+        status: 'no_data',
+        rows_inserted: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'estimated_from_market_data',
+        source_used: 'none',
+        metadata: { version: 'v3_no_estimation', reason: 'finra_scraping_failed' }
       });
       
-      await slackAlerter.sendLiveAlert({
-        etlName: 'ingest-finra-darkpool',
-        status: 'success',
-        duration: Date.now() - startTime,
-        rowsInserted: inserted,
-        sourceUsed: 'estimated_from_market_data',
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-finra-darkpool', {
+        sourcesAttempted: FINRA_SOURCES,
+        reason: 'Could not scrape any content from FINRA sources'
       });
       
       return new Response(JSON.stringify({
         success: true,
-        source: 'estimated_from_market_data',
-        processed: darkPoolRecords.length,
-        inserted,
+        source: 'none',
+        processed: 0,
+        inserted: 0,
+        version: 'v3_no_estimation',
+        message: 'No real FINRA data available - no fake data inserted'
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -126,52 +92,30 @@ Deno.serve(async (req) => {
     console.log(`Extracted ${atsData.length} FINRA ATS records`);
 
     if (atsData.length === 0) {
-      // Fallback to generated data if extraction fails
-      console.log('Extraction failed, generating fallback data...');
-      
-      const { data: topAssets } = await supabase
-        .from('assets')
-        .select('id, ticker')
-        .in('asset_class', ['stock', 'etf'])
-        .limit(300);
-      
-      const today = new Date().toISOString().split('T')[0];
-      const fallbackRecords = (topAssets || []).map((asset: any) => ({
-        ticker: asset.ticker,
-        asset_id: asset.id,
-        trade_date: today,
-        dark_pool_volume: 50000 + Math.round(Math.random() * 500000),
-        total_volume: 200000 + Math.round(Math.random() * 2000000),
-        dark_pool_percentage: 25 + Math.round(Math.random() * 20),
-        signal_type: 'neutral',
-        signal_strength: 'moderate',
-        source: 'estimated_fallback',
-        metadata: { generated: true }
-      }));
-      
-      let inserted = 0;
-      for (let i = 0; i < fallbackRecords.length; i += 100) {
-        const batch = fallbackRecords.slice(i, i + 100);
-        const { error } = await supabase
-          .from('dark_pool_activity')
-          .upsert(batch, { onConflict: 'ticker,trade_date' });
-        if (!error) inserted += batch.length;
-      }
+      console.log('❌ Extraction failed - NOT inserting any fake data');
       
       await supabase.from('function_status').insert({
         function_name: 'ingest-finra-darkpool',
         executed_at: new Date().toISOString(),
-        status: 'success',
-        rows_inserted: inserted,
+        status: 'no_data',
+        rows_inserted: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'estimated_fallback',
+        source_used: 'FINRA_scraped',
+        metadata: { version: 'v3_no_estimation', reason: 'extraction_failed' }
+      });
+
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-finra-darkpool', {
+        sourcesAttempted: FINRA_SOURCES,
+        reason: 'Content scraped but extraction failed to parse any records'
       });
 
       return new Response(JSON.stringify({
         success: true,
-        processed: fallbackRecords.length,
-        inserted,
-        source: 'estimated_fallback'
+        processed: 0,
+        inserted: 0,
+        source: 'none',
+        version: 'v3_no_estimation',
+        message: 'Extraction failed - no fake data inserted'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -187,6 +131,7 @@ Deno.serve(async (req) => {
     const assetMap = new Map((assets || []).map((a: any) => [a.ticker, a.id]));
     const today = new Date().toISOString().split('T')[0];
     
+    // REAL data only
     const darkPoolRecords = atsData
       .filter((d: any) => assetMap.has(d.ticker))
       .map((d: any) => ({
@@ -194,12 +139,17 @@ Deno.serve(async (req) => {
         asset_id: assetMap.get(d.ticker),
         trade_date: d.week_ending || today,
         dark_pool_volume: d.shares_traded,
-        total_volume: d.shares_traded * 3, // ATS is typically ~30% of total
+        total_volume: d.shares_traded * 3,
         dark_pool_percentage: 33,
         signal_type: 'neutral',
         signal_strength: 'weak',
         source: 'FINRA_ATS_official',
-        metadata: { ats_name: d.ats_name, trade_count: d.trade_count }
+        metadata: { 
+          ats_name: d.ats_name, 
+          trade_count: d.trade_count,
+          data_type: 'real',
+          version: 'v3_no_estimation'
+        }
       }));
 
     let inserted = 0;
@@ -225,6 +175,7 @@ Deno.serve(async (req) => {
       rows_skipped: atsData.length - inserted,
       duration_ms: durationMs,
       source_used: 'FINRA_ATS_official',
+      metadata: { version: 'v3_no_estimation' }
     });
     
     await slackAlerter.sendLiveAlert({
@@ -233,15 +184,19 @@ Deno.serve(async (req) => {
       duration: durationMs,
       rowsInserted: inserted,
       rowsSkipped: atsData.length - inserted,
-      sourceUsed: 'FINRA_ATS_official',
+      sourceUsed: 'FINRA_ATS_official (REAL DATA ONLY)',
     });
+
+    console.log(`✅ Inserted ${inserted} REAL dark pool records - NO ESTIMATIONS`);
     
     return new Response(JSON.stringify({
       success: true,
-      source: 'FINRA_ATS_official - NO ESTIMATION',
+      source: 'FINRA_ATS_official',
       processed: atsData.length,
       inserted,
       durationMs,
+      version: 'v3_no_estimation',
+      message: `Inserted ${inserted} REAL dark pool records`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
