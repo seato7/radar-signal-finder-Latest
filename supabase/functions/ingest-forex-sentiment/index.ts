@@ -8,9 +8,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v3 - REAL DATA ONLY - NO ESTIMATIONS
-// Uses Firecrawl to scrape real forex sentiment data from Myfxbook
+// v4 - REAL DATA ONLY - NO ESTIMATIONS
+// Uses multiple sources to get real forex sentiment data
 
+const VERSION = 'v4_real_data';
 const FIRECRAWL_API = 'https://api.firecrawl.dev/v1';
 
 interface ForexSentimentData {
@@ -21,11 +22,120 @@ interface ForexSentimentData {
   source: string;
 }
 
-async function scrapeForexSentiment(firecrawlApiKey: string): Promise<ForexSentimentData[]> {
+// Try to scrape DailyFX sentiment page
+async function scrapeDailyFXSentiment(firecrawlApiKey: string): Promise<ForexSentimentData[]> {
   const results: ForexSentimentData[] = [];
   
   try {
-    // Scrape Myfxbook community outlook (real retail positioning data)
+    console.log('[DailyFX] Attempting to scrape sentiment data...');
+    
+    const response = await fetch(`${FIRECRAWL_API}/scrape`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${firecrawlApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: 'https://www.dailyfx.com/sentiment',
+        formats: ['markdown', 'html'],
+        onlyMainContent: true,
+        waitFor: 5000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.log(`[DailyFX] Scrape failed: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const content = data.data?.markdown || data.markdown || data.data?.html || data.html || '';
+    
+    if (!content || content.length < 200) {
+      console.log('[DailyFX] No usable content');
+      return [];
+    }
+
+    console.log(`[DailyFX] Scraped ${content.length} chars`);
+    
+    // DailyFX shows pairs with percentages like "EUR/USD 65% Long"
+    const majorPairs = [
+      { display: 'EUR/USD', ticker: 'EUR/USD' },
+      { display: 'GBP/USD', ticker: 'GBP/USD' },
+      { display: 'USD/JPY', ticker: 'USD/JPY' },
+      { display: 'AUD/USD', ticker: 'AUD/USD' },
+      { display: 'USD/CAD', ticker: 'USD/CAD' },
+      { display: 'USD/CHF', ticker: 'USD/CHF' },
+      { display: 'NZD/USD', ticker: 'NZD/USD' },
+      { display: 'EUR/GBP', ticker: 'EUR/GBP' },
+      { display: 'EUR/JPY', ticker: 'EUR/JPY' },
+      { display: 'GBP/JPY', ticker: 'GBP/JPY' },
+    ];
+    
+    for (const { display, ticker } of majorPairs) {
+      // Try multiple pattern formats
+      const escapedPair = display.replace('/', '\\/');
+      
+      // Pattern 1: "EUR/USD: 65% Long, 35% Short" or similar
+      const pattern1 = new RegExp(`${escapedPair}[^\\d]*(\\d+(?:\\.\\d+)?)\\s*%?\\s*(long|short)[^\\d]*(\\d+(?:\\.\\d+)?)\\s*%?\\s*(long|short)`, 'i');
+      
+      // Pattern 2: Just "EUR/USD 65% long" 
+      const longPattern = new RegExp(`${escapedPair}[^\\d]{0,30}(\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:are\\s+)?long`, 'i');
+      const shortPattern = new RegExp(`${escapedPair}[^\\d]{0,30}(\\d+(?:\\.\\d+)?)\\s*%?\\s*(?:are\\s+)?short`, 'i');
+      
+      // Pattern 3: Check for numbers near pair name
+      const nearbyNumbers = new RegExp(`${escapedPair}[^\\d]{0,50}(\\d{1,2}(?:\\.\\d+)?)[^\\d]{0,10}(\\d{1,2}(?:\\.\\d+)?)`, 'i');
+      
+      let longPct: number | null = null;
+      let shortPct: number | null = null;
+      
+      const longMatch = content.match(longPattern);
+      const shortMatch = content.match(shortPattern);
+      
+      if (longMatch) {
+        longPct = parseFloat(longMatch[1]);
+        shortPct = shortMatch ? parseFloat(shortMatch[1]) : (100 - longPct);
+      } else if (shortMatch) {
+        shortPct = parseFloat(shortMatch[1]);
+        longPct = 100 - shortPct;
+      }
+      
+      // Validate the percentages are reasonable
+      if (longPct !== null && shortPct !== null && 
+          longPct >= 0 && longPct <= 100 && 
+          shortPct >= 0 && shortPct <= 100 &&
+          Math.abs(longPct + shortPct - 100) < 5) { // Allow small rounding errors
+        
+        let sentiment = 'neutral';
+        if (longPct > 60) sentiment = 'bullish';
+        if (shortPct > 60) sentiment = 'bearish';
+        
+        results.push({
+          ticker,
+          retail_long_pct: Math.round(longPct * 100) / 100,
+          retail_short_pct: Math.round(shortPct * 100) / 100,
+          retail_sentiment: sentiment,
+          source: 'DailyFX_Sentiment',
+        });
+        
+        console.log(`✅ ${ticker}: ${longPct}% long, ${shortPct}% short`);
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('[DailyFX] Scraping error:', error);
+    return [];
+  }
+}
+
+// Try to scrape Myfxbook sentiment page (fallback)
+async function scrapeMyfxbookSentiment(firecrawlApiKey: string): Promise<ForexSentimentData[]> {
+  const results: ForexSentimentData[] = [];
+  
+  try {
+    console.log('[Myfxbook] Attempting to scrape sentiment data...');
+    
     const response = await fetch(`${FIRECRAWL_API}/scrape`, {
       method: 'POST',
       headers: {
@@ -34,72 +144,66 @@ async function scrapeForexSentiment(firecrawlApiKey: string): Promise<ForexSenti
       },
       body: JSON.stringify({
         url: 'https://www.myfxbook.com/community/outlook',
-        formats: ['markdown'],
-        onlyMainContent: true,
-        waitFor: 3000,
+        formats: ['markdown', 'html'],
+        onlyMainContent: false, // Get full page for tables
+        waitFor: 5000,
       }),
     });
 
     if (!response.ok) {
-      console.log(`Firecrawl scrape failed: ${response.status}`);
+      console.log(`[Myfxbook] Scrape failed: ${response.status}`);
       return [];
     }
 
     const data = await response.json();
-    const markdown = data.data?.markdown || data.markdown || '';
+    const content = data.data?.markdown || data.markdown || data.data?.html || data.html || '';
     
-    if (!markdown || markdown.length < 100) {
-      console.log('No content scraped from Myfxbook');
+    if (!content || content.length < 200) {
+      console.log('[Myfxbook] No usable content');
       return [];
     }
 
-    console.log(`Scraped ${markdown.length} chars from Myfxbook`);
-    
-    // Parse the markdown for currency pair sentiment data
-    // Myfxbook shows pairs like "EUR/USD 65% Long / 35% Short"
-    const pairPatterns = [
-      /EUR\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-      /GBP\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-      /USD\/JPY[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-      /AUD\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-      /USD\/CAD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-      /USD\/CHF[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-      /NZD\/USD[:\s]*(\d+(?:\.\d+)?)\s*%?\s*(?:long|short)/gi,
-    ];
+    console.log(`[Myfxbook] Scraped ${content.length} chars`);
     
     const majorPairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'USD/CHF', 'NZD/USD'];
     
     for (const pair of majorPairs) {
-      // Look for pattern like "EUR/USD: 65.5% long" or "EUR/USD 35% short"
-      const longPattern = new RegExp(`${pair.replace('/', '\\/')}[^\\d]*(\\d+(?:\\.\\d+)?)\\s*%?\\s*long`, 'i');
-      const shortPattern = new RegExp(`${pair.replace('/', '\\/')}[^\\d]*(\\d+(?:\\.\\d+)?)\\s*%?\\s*short`, 'i');
+      const escapedPair = pair.replace('/', '\\/');
       
-      const longMatch = markdown.match(longPattern);
-      const shortMatch = markdown.match(shortPattern);
+      // Myfxbook format: look for percentages near the pair
+      // Could be "65% / 35%" or "65 | 35" etc.
+      const tableRowPattern = new RegExp(`${escapedPair}[^\\d]{0,100}(\\d{1,2}(?:\\.\\d+)?)\\s*[%|/\\s]+\\s*(\\d{1,2}(?:\\.\\d+)?)`, 'i');
       
-      if (longMatch || shortMatch) {
-        const longPct = longMatch ? parseFloat(longMatch[1]) : (100 - parseFloat(shortMatch?.[1] || '50'));
-        const shortPct = shortMatch ? parseFloat(shortMatch[1]) : (100 - longPct);
+      const match = content.match(tableRowPattern);
+      if (match) {
+        const num1 = parseFloat(match[1]);
+        const num2 = parseFloat(match[2]);
         
-        let sentiment = 'neutral';
-        if (longPct > 60) sentiment = 'bullish';
-        if (shortPct > 60) sentiment = 'bearish';
-        
-        results.push({
-          ticker: pair,
-          retail_long_pct: Math.round(longPct * 100) / 100,
-          retail_short_pct: Math.round(shortPct * 100) / 100,
-          retail_sentiment: sentiment,
-          source: 'Myfxbook_Community_Outlook',
-        });
-        
-        console.log(`✅ ${pair}: ${longPct}% long, ${shortPct}% short`);
+        // Assume larger number is long if they sum to ~100
+        if (Math.abs(num1 + num2 - 100) < 5) {
+          const longPct = Math.max(num1, num2);
+          const shortPct = Math.min(num1, num2);
+          
+          let sentiment = 'neutral';
+          if (longPct > 60) sentiment = 'bullish';
+          if (shortPct > 60) sentiment = 'bearish';
+          
+          results.push({
+            ticker: pair,
+            retail_long_pct: Math.round(longPct * 100) / 100,
+            retail_short_pct: Math.round(shortPct * 100) / 100,
+            retail_sentiment: sentiment,
+            source: 'Myfxbook_Community_Outlook',
+          });
+          
+          console.log(`✅ ${pair}: ${longPct}% long, ${shortPct}% short`);
+        }
       }
     }
     
     return results;
   } catch (error) {
-    console.error('Firecrawl scraping error:', error);
+    console.error('[Myfxbook] Scraping error:', error);
     return [];
   }
 }
@@ -120,7 +224,7 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    console.log('[v3] Starting forex sentiment ingestion - REAL DATA ONLY, NO ESTIMATIONS');
+    console.log(`[${VERSION}] Starting forex sentiment ingestion - REAL DATA ONLY, NO ESTIMATIONS`);
 
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
     
@@ -136,7 +240,7 @@ serve(async (req) => {
       });
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-forex-sentiment', {
-        sourcesAttempted: ['Firecrawl/Myfxbook'],
+        sourcesAttempted: ['DailyFX', 'Myfxbook'],
         reason: 'FIRECRAWL_API_KEY not configured'
       });
       
@@ -146,11 +250,18 @@ serve(async (req) => {
       );
     }
 
-    // Scrape real sentiment data
-    const sentimentData = await scrapeForexSentiment(firecrawlApiKey);
+    // Try DailyFX first (more reliable), then Myfxbook as fallback
+    let sentimentData = await scrapeDailyFXSentiment(firecrawlApiKey);
+    let sourceUsed = 'DailyFX_Sentiment';
     
     if (sentimentData.length === 0) {
-      console.log('❌ No real forex sentiment data found - NOT inserting any fake data');
+      console.log('[DailyFX] No data, trying Myfxbook...');
+      sentimentData = await scrapeMyfxbookSentiment(firecrawlApiKey);
+      sourceUsed = 'Myfxbook_Community_Outlook';
+    }
+    
+    if (sentimentData.length === 0) {
+      console.log('❌ No real forex sentiment data found from any source - NOT inserting any fake data');
       
       await logger.success({
         source_used: 'none',
@@ -158,12 +269,12 @@ serve(async (req) => {
         fallback_count: 0,
         rows_inserted: 0,
         rows_skipped: 0,
-        metadata: { reason: 'no_real_data_available', version: 'v3_no_estimation' }
+        metadata: { reason: 'no_real_data_available', version: VERSION }
       });
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-forex-sentiment', {
-        sourcesAttempted: ['Myfxbook via Firecrawl'],
-        reason: 'Could not parse sentiment data from Myfxbook'
+        sourcesAttempted: ['DailyFX', 'Myfxbook via Firecrawl'],
+        reason: 'Could not parse sentiment data from either source'
       });
       
       return new Response(
@@ -171,7 +282,7 @@ serve(async (req) => {
           success: true, 
           message: 'No real forex sentiment data found - no fake data inserted',
           inserted: 0,
-          version: 'v3_no_estimation'
+          version: VERSION
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -202,7 +313,7 @@ serve(async (req) => {
         source: s.source,
         metadata: { 
           data_type: 'real',
-          version: 'v3_no_estimation',
+          version: VERSION,
           scraped_at: new Date().toISOString()
         }
       }));
@@ -223,13 +334,13 @@ serve(async (req) => {
     const duration = Date.now() - startTime;
 
     await logger.success({
-      source_used: 'Myfxbook_Community_Outlook',
+      source_used: sourceUsed,
       cache_hit: false,
       fallback_count: 0,
       latency_ms: duration,
       rows_inserted: successCount,
-      rows_skipped: 0,
-      metadata: { version: 'v3_no_estimation' }
+      rows_skipped: sentimentData.length - insertData.length,
+      metadata: { version: VERSION }
     });
 
     await slackAlerter.sendLiveAlert({
@@ -237,8 +348,8 @@ serve(async (req) => {
       status: 'success',
       duration,
       rowsInserted: successCount,
-      rowsSkipped: 0,
-      sourceUsed: 'Myfxbook_Community_Outlook (REAL DATA ONLY)',
+      rowsSkipped: sentimentData.length - insertData.length,
+      sourceUsed: `${sourceUsed} (REAL DATA ONLY)`,
     });
 
     console.log(`✅ Inserted ${successCount} REAL forex sentiment records - NO ESTIMATIONS`);
@@ -247,8 +358,8 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         inserted: successCount,
-        source: 'Myfxbook_Community_Outlook',
-        version: 'v3_no_estimation',
+        source: sourceUsed,
+        version: VERSION,
         message: `Inserted ${successCount} REAL forex sentiment records`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -260,7 +371,7 @@ serve(async (req) => {
     const duration = Date.now() - startTime;
 
     await logger.failure(error as Error, {
-      source_used: 'Myfxbook_Community_Outlook',
+      source_used: 'none',
       cache_hit: false,
       fallback_count: 0,
       latency_ms: duration,
