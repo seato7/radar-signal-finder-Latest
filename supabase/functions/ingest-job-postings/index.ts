@@ -66,30 +66,57 @@ serve(async (req) => {
     const adzunaAppId = Deno.env.get('ADZUNA_APP_ID');
     const adzunaAppKey = Deno.env.get('ADZUNA_APP_KEY');
 
-    console.log('Starting job postings ingestion...');
-    console.log(`Adzuna credentials: ${adzunaAppId ? 'ID present' : 'ID missing'}, ${adzunaAppKey ? 'Key present' : 'Key missing'}`);
+    console.log('[JOB-POSTINGS] v2 - Starting job postings ingestion...');
+    console.log(`[JOB-POSTINGS] Adzuna credentials: ${adzunaAppId ? 'APP_ID present' : 'APP_ID MISSING'}, ${adzunaAppKey ? 'APP_KEY present' : 'APP_KEY MISSING'}`);
 
     let realDataCount = 0;
     let estimatedCount = 0;
+    let adzunaApiCalls = 0;
+    let adzunaSuccessfulCalls = 0;
     const jobPostings: any[] = [];
     const today = new Date().toISOString().split('T')[0];
 
     // Try Adzuna API if credentials available
     if (adzunaAppId && adzunaAppKey) {
-      console.log('Fetching real job data from Adzuna API...');
+      console.log('[JOB-POSTINGS] Adzuna API: Starting real job data fetch...');
       
-      // Search for major tech companies
+      // Expanded company search list - S&P 500 majors across sectors
       const searchTerms = [
+        // Tech giants
         'apple', 'microsoft', 'google', 'amazon', 'meta', 'nvidia', 'tesla',
-        'netflix', 'adobe', 'salesforce', 'oracle', 'intel', 'amd',
-        'walmart', 'jpmorgan', 'bank of america', 'pfizer', 'johnson & johnson',
-        'boeing', 'disney', 'coca-cola', 'nike', 'uber', 'airbnb'
+        'netflix', 'adobe', 'salesforce', 'oracle', 'intel', 'amd', 'ibm',
+        'cisco', 'qualcomm', 'broadcom', 'paypal',
+        // E-commerce & Retail
+        'walmart', 'target', 'costco', 'home depot', 'lowes', 'cvs', 'walgreens', 'kroger',
+        // Finance
+        'jpmorgan', 'bank of america', 'wells fargo', 'goldman sachs', 'morgan stanley',
+        'citigroup', 'american express', 'visa', 'mastercard',
+        // Healthcare
+        'pfizer', 'johnson & johnson', 'unitedhealth', 'merck', 'abbvie', 'eli lilly', 'moderna',
+        // Industrial & Aerospace
+        'boeing', 'lockheed martin', 'raytheon', 'general electric', 'honeywell', 'caterpillar',
+        'deere', '3m', 'ups', 'fedex',
+        // Energy
+        'exxon', 'chevron', 'conocophillips',
+        // Media & Telecom
+        'disney', 'comcast', 'verizon', 'at&t',
+        // Consumer
+        'coca-cola', 'pepsi', 'procter & gamble', 'nike', 'starbucks', 'mcdonalds',
+        // Tech unicorns & growth
+        'uber', 'airbnb', 'doordash', 'snap', 'pinterest', 'spotify', 'zoom',
+        'shopify', 'square', 'coinbase', 'robinhood', 'palantir',
+        'snowflake', 'datadog', 'crowdstrike', 'servicenow', 'workday'
       ];
+      
+      console.log(`[JOB-POSTINGS] Adzuna API: Searching ${searchTerms.length} companies...`);
 
       for (const company of searchTerms) {
         try {
           // Adzuna API - search by company name
           const url = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${adzunaAppId}&app_key=${adzunaAppKey}&results_per_page=10&what=${encodeURIComponent(company)}&sort_by=date`;
+          
+          console.log(`[JOB-POSTINGS] Adzuna API: Searching for "${company}"...`);
+          adzunaApiCalls++;
           
           const response = await fetch(url, {
             headers: { 'Accept': 'application/json' }
@@ -97,10 +124,16 @@ serve(async (req) => {
 
           if (response.ok) {
             const data: AdzunaResponse = await response.json();
+            adzunaSuccessfulCalls++;
+            
+            console.log(`[JOB-POSTINGS] Adzuna API: Found ${data.count} total jobs, ${data.results?.length || 0} results for "${company}"`);
             
             if (data.results && data.results.length > 0) {
               const ticker = COMPANY_TO_TICKER[company.toLowerCase()];
-              if (!ticker) continue;
+              if (!ticker) {
+                console.log(`[JOB-POSTINGS] Adzuna API: No ticker mapping for "${company}", skipping`);
+                continue;
+              }
 
               // Group jobs by department/category
               const categoryGroups: Record<string, AdzunaJob[]> = {};
@@ -117,6 +150,7 @@ serve(async (req) => {
                 categoryGroups[category].push(job);
               }
 
+              let companyJobsAdded = 0;
               for (const [category, jobs] of Object.entries(categoryGroups)) {
                 const sampleJob = jobs[0];
                 
@@ -157,22 +191,32 @@ serve(async (req) => {
                     data_type: 'real',
                     sample_title: sampleJob.title,
                     total_company_jobs: data.count,
+                    version: 'v2',
                   },
                 });
 
                 realDataCount++;
+                companyJobsAdded++;
+              }
+              
+              if (companyJobsAdded > 0) {
+                console.log(`[JOB-POSTINGS] Adzuna API: Added ${companyJobsAdded} job records for ${company} (${ticker})`);
               }
             }
           } else {
-            console.log(`Adzuna API error for ${company}: ${response.status}`);
+            console.log(`[JOB-POSTINGS] Adzuna API ERROR for "${company}": HTTP ${response.status} ${response.statusText}`);
           }
 
-          // Rate limiting - Adzuna has limits
-          await new Promise(r => setTimeout(r, 200));
+          // Rate limiting - Adzuna has limits (250ms between requests)
+          await new Promise(r => setTimeout(r, 250));
         } catch (err) {
-          console.error(`Error fetching ${company}:`, err);
+          console.error(`[JOB-POSTINGS] Adzuna API EXCEPTION for "${company}":`, err);
         }
       }
+      
+      console.log(`[JOB-POSTINGS] Adzuna API Summary: ${adzunaSuccessfulCalls}/${adzunaApiCalls} successful calls, ${realDataCount} real job records created`);
+    } else {
+      console.log('[JOB-POSTINGS] Adzuna API: SKIPPED - Missing credentials');
     }
 
     // Fetch ALL assets for estimation fallback
@@ -269,9 +313,12 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Generated ${jobPostings.length} job posting records (${realDataCount} real, ${estimatedCount} estimated)`);
+    console.log(`[JOB-POSTINGS] Generated ${jobPostings.length} job posting records (${realDataCount} real from Adzuna, ${estimatedCount} estimated)`);
+    const realDataPercentage = jobPostings.length > 0 ? ((realDataCount / jobPostings.length) * 100).toFixed(2) : '0';
+    console.log(`[JOB-POSTINGS] Real data ratio: ${realDataPercentage}%`);
 
     // Bulk insert in batches
+    let insertedCount = 0;
     if (jobPostings.length > 0) {
       const insertBatchSize = 500;
       for (let i = 0; i < jobPostings.length; i += insertBatchSize) {
@@ -281,10 +328,14 @@ serve(async (req) => {
           .insert(batch);
 
         if (error) {
-          console.error(`Insert error at batch ${i}:`, error.message);
+          console.error(`[JOB-POSTINGS] Insert error at batch ${i}:`, error.message);
+        } else {
+          insertedCount += batch.length;
         }
       }
     }
+    
+    console.log(`[JOB-POSTINGS] Successfully inserted ${insertedCount} records`);
 
     const duration = Date.now() - startTime;
     const sourceUsed = realDataCount > 0 ? `Adzuna_API (${realDataCount} real) + Estimation (${estimatedCount})` : 'Estimation';
@@ -294,32 +345,41 @@ serve(async (req) => {
       function_name: 'ingest-job-postings',
       executed_at: new Date().toISOString(),
       status: 'success',
-      rows_inserted: jobPostings.length,
+      rows_inserted: insertedCount,
       rows_skipped: 0,
       duration_ms: duration,
       source_used: sourceUsed,
       metadata: { 
+        version: 'v2',
         assets_processed: allAssets.length,
         real_data_count: realDataCount,
-        estimated_count: estimatedCount
+        estimated_count: estimatedCount,
+        adzuna_api_calls: adzunaApiCalls,
+        adzuna_successful_calls: adzunaSuccessfulCalls,
+        real_data_percentage: parseFloat(realDataPercentage),
       }
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-job-postings',
       status: 'success',
-      rowsInserted: jobPostings.length,
+      rowsInserted: insertedCount,
       rowsSkipped: 0,
       sourceUsed,
       duration,
     });
 
+    console.log(`[JOB-POSTINGS] v2 Complete - Duration: ${duration}ms`);
+
     return new Response(
       JSON.stringify({ 
         success: true, 
-        count: jobPostings.length, 
+        version: 'v2',
+        count: insertedCount, 
         real_data: realDataCount,
         estimated: estimatedCount,
+        adzuna_api_calls: adzunaApiCalls,
+        real_data_percentage: parseFloat(realDataPercentage),
         source: sourceUsed
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
