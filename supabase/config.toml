@@ -43,8 +43,6 @@ verify_jwt = false
 [functions.ingest-economic-calendar]
 verify_jwt = false
 
-[functions.ingest-google-trends]
-verify_jwt = false
 
 [functions.ingest-options-flow]
 verify_jwt = false
