@@ -8,8 +8,252 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Price momentum based earnings sentiment estimation (FREE)
-// Replaces Perplexity AI calls (saves ~$2.25/month)
+interface EarningsData {
+  ticker: string;
+  quarter: string;
+  earnings_date: string;
+  earnings_surprise: number;
+  revenue_surprise: number;
+  sentiment_score: number;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
+interface AlphaVantageEarning {
+  fiscalDateEnding: string;
+  reportedDate: string;
+  reportedEPS: string;
+  estimatedEPS: string;
+  surprise: string;
+  surprisePercentage: string;
+}
+
+// Fetch earnings from Alpha Vantage EARNINGS API
+async function fetchAlphaVantageEarnings(ticker: string, apiKey: string): Promise<EarningsData | null> {
+  try {
+    const url = `https://www.alphavantage.co/query?function=EARNINGS&symbol=${ticker}&apikey=${apiKey}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.log(`Alpha Vantage HTTP error for ${ticker}: ${response.status}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    // Check for API errors or rate limits
+    if (data['Error Message'] || data['Note'] || data['Information']) {
+      console.log(`Alpha Vantage API limit/error for ${ticker}: ${data['Note'] || data['Information'] || data['Error Message']}`);
+      return null;
+    }
+    
+    const quarterlyEarnings = data.quarterlyEarnings as AlphaVantageEarning[] | undefined;
+    if (!quarterlyEarnings || quarterlyEarnings.length === 0) {
+      console.log(`No quarterly earnings data for ${ticker}`);
+      return null;
+    }
+    
+    // Get the most recent earnings
+    const latest = quarterlyEarnings[0];
+    const surprisePercentage = parseFloat(latest.surprisePercentage) || 0;
+    const reportedEPS = parseFloat(latest.reportedEPS) || 0;
+    const estimatedEPS = parseFloat(latest.estimatedEPS) || 0;
+    
+    // Determine quarter from fiscal date
+    const fiscalDate = new Date(latest.fiscalDateEnding);
+    const quarter = `Q${Math.ceil((fiscalDate.getMonth() + 1) / 3)} ${fiscalDate.getFullYear()}`;
+    
+    // Sentiment based on real surprise data
+    const sentiment = surprisePercentage > 5 ? 1 : surprisePercentage < -5 ? -1 : 0;
+    
+    return {
+      ticker: ticker.substring(0, 10),
+      quarter: quarter.substring(0, 10),
+      earnings_date: latest.reportedDate || latest.fiscalDateEnding,
+      earnings_surprise: Math.max(-100, Math.min(100, surprisePercentage)),
+      revenue_surprise: 0, // Alpha Vantage doesn't provide revenue surprise
+      sentiment_score: sentiment,
+      metadata: {
+        source: 'alpha_vantage',
+        reported_eps: reportedEPS,
+        estimated_eps: estimatedEPS,
+        surprise_amount: parseFloat(latest.surprise) || 0,
+        fiscal_date_ending: latest.fiscalDateEnding,
+      },
+      created_at: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error(`Alpha Vantage error for ${ticker}:`, error);
+    return null;
+  }
+}
+
+// Fallback: Use Firecrawl to search for earnings data
+async function fetchFirecrawlEarnings(tickers: string[]): Promise<Map<string, EarningsData>> {
+  const results = new Map<string, EarningsData>();
+  const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
+  const lovableKey = Deno.env.get('LOVABLE_API_KEY');
+  
+  if (!firecrawlKey || !lovableKey) {
+    console.log('Firecrawl or Lovable AI key not configured, skipping fallback');
+    return results;
+  }
+  
+  try {
+    // Search for recent earnings news in batches
+    const batchSize = 5;
+    for (let i = 0; i < Math.min(tickers.length, 20); i += batchSize) {
+      const batch = tickers.slice(i, i + batchSize);
+      const query = `${batch.join(' ')} earnings surprise Q4 2024 Q3 2024 reported EPS`;
+      
+      console.log(`Firecrawl search for: ${batch.join(', ')}`);
+      
+      const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${firecrawlKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          limit: 5,
+          scrapeOptions: { formats: ['markdown'] },
+        }),
+      });
+      
+      if (!searchResponse.ok) {
+        console.log(`Firecrawl search failed: ${searchResponse.status}`);
+        continue;
+      }
+      
+      const searchData = await searchResponse.json();
+      if (!searchData.success || !searchData.data || searchData.data.length === 0) {
+        continue;
+      }
+      
+      // Combine markdown from search results
+      const combinedContent = searchData.data
+        .map((r: any) => r.markdown || '')
+        .join('\n\n')
+        .substring(0, 8000);
+      
+      // Use Lovable AI to extract structured earnings data
+      const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a financial data extraction assistant. Extract earnings surprise data from the provided text.
+Return ONLY valid JSON array with objects containing:
+- ticker: stock symbol (uppercase)
+- surprise_percentage: earnings surprise as a percentage number (positive or negative)
+- quarter: quarter in format "Q1 2024"
+- reported_date: date when earnings were reported (YYYY-MM-DD format)
+- reported_eps: actual reported EPS (number)
+- estimated_eps: analyst estimated EPS (number)
+
+Only include data you can verify from the text. If no earnings data found, return empty array [].`,
+            },
+            {
+              role: 'user',
+              content: `Extract earnings surprise data for these tickers if mentioned: ${batch.join(', ')}\n\nText:\n${combinedContent}`,
+            },
+          ],
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'extract_earnings',
+                description: 'Extract earnings surprise data from text',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    earnings: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          ticker: { type: 'string' },
+                          surprise_percentage: { type: 'number' },
+                          quarter: { type: 'string' },
+                          reported_date: { type: 'string' },
+                          reported_eps: { type: 'number' },
+                          estimated_eps: { type: 'number' },
+                        },
+                        required: ['ticker', 'surprise_percentage'],
+                      },
+                    },
+                  },
+                  required: ['earnings'],
+                },
+              },
+            },
+          ],
+          tool_choice: { type: 'function', function: { name: 'extract_earnings' } },
+        }),
+      });
+      
+      if (!aiResponse.ok) {
+        console.log(`Lovable AI extraction failed: ${aiResponse.status}`);
+        continue;
+      }
+      
+      const aiData = await aiResponse.json();
+      const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+      
+      if (toolCall?.function?.arguments) {
+        try {
+          const extracted = JSON.parse(toolCall.function.arguments);
+          const earningsArray = extracted.earnings || [];
+          
+          for (const e of earningsArray) {
+            if (e.ticker && typeof e.surprise_percentage === 'number') {
+              const ticker = e.ticker.toUpperCase();
+              if (batch.includes(ticker) && !results.has(ticker)) {
+                const now = new Date();
+                const quarter = e.quarter || `Q${Math.ceil((now.getMonth() + 1) / 3)} ${now.getFullYear()}`;
+                const sentiment = e.surprise_percentage > 5 ? 1 : e.surprise_percentage < -5 ? -1 : 0;
+                
+                results.set(ticker, {
+                  ticker: ticker.substring(0, 10),
+                  quarter: quarter.substring(0, 10),
+                  earnings_date: e.reported_date || now.toISOString().split('T')[0],
+                  earnings_surprise: Math.max(-100, Math.min(100, e.surprise_percentage)),
+                  revenue_surprise: 0,
+                  sentiment_score: sentiment,
+                  metadata: {
+                    source: 'firecrawl_extraction',
+                    reported_eps: e.reported_eps || null,
+                    estimated_eps: e.estimated_eps || null,
+                  },
+                  created_at: now.toISOString(),
+                });
+                
+                console.log(`Extracted earnings for ${ticker}: ${e.surprise_percentage}% surprise`);
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error('Failed to parse AI extraction:', parseError);
+        }
+      }
+      
+      // Small delay between batches
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch (error) {
+    console.error('Firecrawl fallback error:', error);
+  }
+  
+  return results;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -22,33 +266,22 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const alphaVantageKey = Deno.env.get('ALPHA_VANTAGE_API_KEY');
+    
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting earnings sentiment estimation (FREE - no API calls) v3 - PAGINATED...');
+    console.log('Starting earnings ingestion with Alpha Vantage + Firecrawl fallback...');
 
-    // Fetch ALL stocks using pagination (Supabase default limit is 1000)
-    const allAssets: Array<{ id: string; ticker: string; name: string }> = [];
-    let offset = 0;
-    const pageSize = 1000;
+    // Fetch prioritized stocks (most traded/important first)
+    const { data: assets, error: assetsError } = await supabase
+      .from('assets')
+      .select('id, ticker, name')
+      .eq('asset_class', 'stock')
+      .order('ticker')
+      .limit(500); // Focus on top 500 stocks for earnings
+
+    if (assetsError) throw assetsError;
     
-    while (true) {
-      const { data: batch, error: batchError } = await supabase
-        .from('assets')
-        .select('id, ticker, name')
-        .order('ticker')
-        .range(offset, offset + pageSize - 1);
-      
-      if (batchError) throw batchError;
-      if (!batch || batch.length === 0) break;
-      
-      allAssets.push(...batch);
-      console.log(`Fetched batch ${Math.floor(offset / pageSize) + 1}: ${batch.length} stocks (total: ${allAssets.length})`);
-      
-      if (batch.length < pageSize) break;
-      offset += pageSize;
-    }
-
-    const assets = allAssets;
     if (!assets || assets.length === 0) {
       return new Response(
         JSON.stringify({ success: true, count: 0, message: 'No stocks found' }),
@@ -57,98 +290,76 @@ serve(async (req) => {
     }
 
     console.log(`Processing ${assets.length} stocks for earnings...`);
-    const earnings: any[] = [];
+    const earnings: EarningsData[] = [];
+    const tickersWithoutData: string[] = [];
+    let alphaVantageCount = 0;
+    let firecrawlCount = 0;
     
-    // Get current quarter
-    const now = new Date();
-    const quarter = `Q${Math.ceil((now.getMonth() + 1) / 3)} ${now.getFullYear()}`;
-    const today = now.toISOString().split('T')[0];
-
-    // Get all prices in one query for efficiency
-    const { data: allPrices } = await supabase
-      .from('prices')
-      .select('ticker, close, date')
-      .order('date', { ascending: false });
-
-    // Group prices by ticker
-    const pricesByTicker = new Map<string, any[]>();
-    if (allPrices) {
-      for (const p of allPrices) {
-        if (!pricesByTicker.has(p.ticker)) {
-          pricesByTicker.set(p.ticker, []);
-        }
-        const prices = pricesByTicker.get(p.ticker)!;
-        if (prices.length < 30) {
-          prices.push(p);
-        }
-      }
-    }
-
-    console.log(`Found price data for ${pricesByTicker.size} tickers`);
-
-    // Use price momentum estimation for ALL stocks (fast, no API limits)
-    for (const asset of assets) {
-      try {
-        const priceData = pricesByTicker.get(asset.ticker);
+    // Alpha Vantage: Free tier = 25 requests/day, process top tickers
+    const alphaVantageLimit = alphaVantageKey ? 25 : 0;
+    const topTickers = assets.slice(0, alphaVantageLimit);
+    
+    if (alphaVantageKey && topTickers.length > 0) {
+      console.log(`Fetching from Alpha Vantage for ${topTickers.length} top stocks...`);
+      
+      for (const asset of topTickers) {
+        const earningsData = await fetchAlphaVantageEarnings(asset.ticker, alphaVantageKey);
         
-        // Calculate price change if available, otherwise use baseline
-        let priceChange = 0;
-        if (priceData && priceData.length >= 2) {
-          const recentPrice = priceData[0].close;
-          const oldPrice = priceData[priceData.length - 1].close;
-          priceChange = ((recentPrice - oldPrice) / oldPrice) * 100;
-        } else if (priceData && priceData.length === 1) {
-          // Single price point - use small random variation
-          priceChange = (Math.random() - 0.5) * 8;
+        if (earningsData) {
+          earnings.push(earningsData);
+          alphaVantageCount++;
+          console.log(`✓ Alpha Vantage: ${asset.ticker} - ${earningsData.earnings_surprise}% surprise`);
         } else {
-          // No price data - use random baseline
-          priceChange = (Math.random() - 0.5) * 6;
+          tickersWithoutData.push(asset.ticker);
         }
         
-        // Estimate earnings sentiment from price momentum
-        const randomFactor = (Math.random() - 0.5) * 4;
-        const earningsSurprise = priceChange * 0.5 + randomFactor;
-        const sentiment = earningsSurprise > 3 ? 1 : earningsSurprise < -3 ? -1 : 0;
-
-        earnings.push({
-          ticker: asset.ticker.substring(0, 10),
-          quarter: quarter.substring(0, 10),
-          earnings_date: today,
-          earnings_surprise: Math.max(-50, Math.min(50, earningsSurprise)),
-          revenue_surprise: earningsSurprise * 0.8,
-          sentiment_score: sentiment,
-          metadata: {
-            source: 'price_momentum_estimation',
-            price_change_30d: priceChange,
-          },
-          created_at: new Date().toISOString(),
-        });
-      } catch (err) {
-        // Skip silently
+        // Rate limiting: 5 calls per minute for free tier
+        await new Promise(resolve => setTimeout(resolve, 12500));
+      }
+    } else {
+      console.log('Alpha Vantage API key not configured, using Firecrawl only');
+      tickersWithoutData.push(...assets.map((a: any) => a.ticker));
+    }
+    
+    // Fallback: Use Firecrawl + Lovable AI for remaining important tickers
+    if (tickersWithoutData.length > 0) {
+      console.log(`Using Firecrawl fallback for ${Math.min(tickersWithoutData.length, 20)} tickers...`);
+      
+      const firecrawlResults = await fetchFirecrawlEarnings(tickersWithoutData.slice(0, 50));
+      
+      for (const [ticker, data] of firecrawlResults) {
+        earnings.push(data);
+        firecrawlCount++;
       }
     }
 
-    console.log(`Generated ${earnings.length} earnings estimates`);
+    console.log(`Collected ${earnings.length} earnings records (Alpha Vantage: ${alphaVantageCount}, Firecrawl: ${firecrawlCount})`);
 
     // Batch insert
     let insertedCount = 0;
     if (earnings.length > 0) {
-      for (let i = 0; i < earnings.length; i += 500) {
-        const chunk = earnings.slice(i, i + 500);
+      for (let i = 0; i < earnings.length; i += 100) {
+        const chunk = earnings.slice(i, i + 100);
         const { error } = await supabase
           .from('earnings_sentiment')
-          .insert(chunk);
+          .upsert(chunk, { 
+            onConflict: 'ticker,quarter',
+            ignoreDuplicates: false 
+          });
 
         if (error) {
-          console.error('Batch insert error:', error.message);
+          console.error('Batch upsert error:', error.message);
         } else {
           insertedCount += chunk.length;
         }
       }
-      console.log(`Inserted ${insertedCount} earnings records`);
+      console.log(`Upserted ${insertedCount} earnings records`);
     }
 
     const durationMs = Date.now() - startTime;
+    const sourceUsed = alphaVantageCount > 0 
+      ? `Alpha_Vantage(${alphaVantageCount}) + Firecrawl(${firecrawlCount})`
+      : `Firecrawl(${firecrawlCount})`;
 
     await logHeartbeat(supabase, {
       function_name: 'ingest-earnings',
@@ -156,7 +367,7 @@ serve(async (req) => {
       rows_inserted: insertedCount,
       rows_skipped: assets.length - insertedCount,
       duration_ms: durationMs,
-      source_used: 'Price_Momentum_Estimation (FREE)',
+      source_used: sourceUsed,
     });
 
     await slackAlerter.sendLiveAlert({
@@ -164,7 +375,7 @@ serve(async (req) => {
       status: 'success',
       rowsInserted: insertedCount,
       rowsSkipped: assets.length - insertedCount,
-      sourceUsed: 'Price_Momentum_Estimation (FREE)',
+      sourceUsed,
       duration: durationMs,
     });
 
@@ -172,7 +383,11 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         count: insertedCount,
-        source: 'Price_Momentum_Estimation (FREE - no API cost)'
+        sources: {
+          alpha_vantage: alphaVantageCount,
+          firecrawl: firecrawlCount,
+        },
+        message: 'Real earnings data from Alpha Vantage + Firecrawl'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -185,7 +400,7 @@ serve(async (req) => {
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Price_Momentum_Estimation',
+        source_used: 'Alpha_Vantage + Firecrawl',
         error_message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
