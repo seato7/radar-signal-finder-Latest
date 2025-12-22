@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v4 - Full pagination for all 8201 assets
+// v5 - REAL DATA ONLY - NO ESTIMATIONS - Only process assets with real price data
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -84,11 +84,9 @@ serve(async (req) => {
       try {
         const prices = priceMap.get(asset.ticker) || [];
 
+        // v5 - NO ESTIMATION: Skip assets without sufficient price data
         if (prices.length < 10) {
-          // Generate estimated pattern for assets without price data
-          const patterns = generateEstimatedPatterns(asset);
-          allPatterns.push(...patterns);
-          successCount++;
+          skipCount++;
           continue;
         }
 
@@ -134,7 +132,7 @@ serve(async (req) => {
       duration_ms: Date.now() - startTime,
       source_used: 'Pattern Recognition Engine',
       error_message: null,
-      metadata: { assets_processed: allAssets.length, patterns_found: allPatterns.length, version: 'v4' }
+      metadata: { assets_processed: allAssets.length, patterns_found: allPatterns.length, version: 'v5_no_estimation' }
     });
 
     await slackAlerter.sendLiveAlert({
@@ -185,38 +183,7 @@ serve(async (req) => {
   }
 });
 
-function generateEstimatedPatterns(asset: any) {
-  const patterns = [];
-  const basePrice = 50 + Math.random() * 450;
-  
-  // Randomly generate 0-2 patterns per asset
-  const patternTypes = ['double_top', 'double_bottom', 'symmetrical_triangle', 'ascending_triangle', 'head_and_shoulders'];
-  const numPatterns = Math.random() > 0.6 ? (Math.random() > 0.7 ? 2 : 1) : 0;
-  
-  for (let i = 0; i < numPatterns; i++) {
-    const patternType = patternTypes[Math.floor(Math.random() * patternTypes.length)];
-    const isReversal = patternType.includes('top') || patternType.includes('bottom') || patternType.includes('head');
-    
-    patterns.push({
-      ticker: asset.ticker.substring(0, 50),
-      asset_id: asset.id,
-      pattern_type: patternType,
-      pattern_category: isReversal ? 'reversal' : 'bilateral',
-      timeframe: 'daily',
-      pattern_completion_pct: 60 + Math.random() * 35,
-      entry_price: basePrice,
-      target_price: basePrice * (1 + (Math.random() * 0.1 - 0.02)),
-      stop_loss_price: basePrice * (1 - (Math.random() * 0.05)),
-      risk_reward_ratio: 1.5 + Math.random() * 2,
-      confidence_score: 55 + Math.random() * 30,
-      historical_success_rate: 50 + Math.random() * 25,
-      status: Math.random() > 0.3 ? 'confirmed' : 'forming',
-      volume_confirmed: Math.random() > 0.4,
-    });
-  }
-  
-  return patterns;
-}
+// v5 - REMOVED: generateEstimatedPatterns function deleted - we only use real price-based patterns now
 
 function detectPatterns(prices: any[], asset: any) {
   const patterns = [];
