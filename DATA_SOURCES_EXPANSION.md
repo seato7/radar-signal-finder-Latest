@@ -1,88 +1,68 @@
 # Opportunity Radar - Data Sources Guide
 
+## ⚠️ IMPORTANT: Data Accuracy Commitment
+
+**As of December 2025, this project uses ONLY REAL data from verified sources. No estimation, synthetic, or AI-generated data is used as a substitute for real market data.**
+
+---
+
 ## 🎯 Current Implementation Status
 
-### ✅ **Phase 1: Core Foundation (COMPLETE)**
+### ✅ **Real Data Sources (Verified Working)**
 
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| SEC 13F Holdings | `ingest-sec-13f-edgar` | Every 6 hrs | ✅ Live |
-| SEC Form 4 | `ingest-form4` | Every 6 hrs | ✅ Live |
-| Policy Feeds | `ingest-policy-feeds` | Every hour | ✅ Live |
-| ETF Flows | `ingest-etf-flows` | Every 15 min | ✅ Live |
-| TwelveData Prices | Railway + `ingest-prices-twelvedata` | Tiered | ✅ Live |
+| Source | Edge Function | Data Origin | Status |
+|--------|---------------|-------------|--------|
+| SEC 13F Holdings | `ingest-sec-13f-edgar` | SEC EDGAR API | ✅ REAL |
+| SEC Form 4 | `ingest-form4` | SEC EDGAR Atom Feed | ✅ REAL |
+| TwelveData Prices | `ingest-prices-twelvedata` | TwelveData API | ✅ REAL |
+| Policy Feeds | `ingest-policy-feeds` | Government RSS | ✅ REAL |
+| News RSS | `ingest-news-rss` | RSS Feeds | ✅ REAL |
+| Short Interest | `ingest-short-interest` | FINRA CDN | ✅ REAL |
+| Congressional Trades | `ingest-congressional-trades` | House Stock Watcher | ✅ REAL |
+| FRED Economics | `ingest-fred-economics` | FRED API | ✅ REAL |
+| StockTwits | `ingest-stocktwits` | StockTwits API | ✅ REAL |
+| AI Research Reports | `generate-ai-research` | Lovable AI | ✅ REAL (AI-Generated Analysis) |
+| Supply Chain | `ingest-supply-chain` | ISM RSS Feeds | ✅ REAL |
 
-### ✅ **Phase 2: Social Intelligence (COMPLETE)**
+### 🔄 **Data Sources Requiring External APIs (May Return No Data)**
 
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| Reddit Sentiment | `ingest-reddit-sentiment` | Every 2 hrs | ✅ Live |
-| StockTwits | `ingest-stocktwits` | Every 2 hrs | ✅ Live |
-| News RSS | `ingest-news-rss` | Every hour | ✅ Live |
-| Breaking News | `ingest-breaking-news` | Every 5 min | ✅ Live |
-| News Sentiment | `ingest-news-sentiment` | Every 3 hrs | ✅ Live |
+These functions only insert data when real data is available. If no real data is found, nothing is inserted.
 
-### ✅ **Phase 3: Market Structure (COMPLETE)**
+| Source | Edge Function | Data Origin | Behavior |
+|--------|---------------|-------------|----------|
+| Reddit Sentiment | `ingest-reddit-sentiment` | Reddit OAuth API | ✅ Real data only, no fallback |
+| Forex Sentiment | `ingest-forex-sentiment` | Myfxbook/OANDA via Firecrawl | ✅ Real data only, no fallback |
+| ETF Flows | `ingest-etf-flows` | ETF.com via Firecrawl | ✅ Real data only, no fallback |
+| Crypto On-chain | `ingest-crypto-onchain` | Blockchain.com/CoinGecko APIs | ✅ Real data only, no fallback |
+| Options Flow | `ingest-options-flow` | Barchart/CBOE via Firecrawl | ✅ Real data only, no fallback |
+| Dark Pool | `ingest-dark-pool` | FINRA CDN | ✅ Real data only, no fallback |
+| Dark Pool (FINRA) | `ingest-finra-darkpool` | FINRA Scraping | ✅ Real data only, no fallback |
+| COT Reports | `ingest-cot-reports` | CFTC Socrata API | ✅ Real data only, no fallback |
+| Job Postings | `ingest-job-postings` | Adzuna API | ✅ Real data only, no fallback |
+| Patents | `ingest-patents` | USPTO via Firecrawl | ✅ Real data only, no fallback |
 
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| Dark Pool (FINRA) | `ingest-finra-darkpool` | Hourly | ✅ Live |
-| Options Flow | `ingest-options-flow` | Hourly | ✅ Live |
-| Short Interest | `ingest-short-interest` | Daily | ✅ Live |
+### ❌ **Removed/Disabled Features**
 
-### ✅ **Phase 4: Political Intelligence (COMPLETE)**
+The following data sources have been removed because no reliable free API exists:
 
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| Congressional Trades | `ingest-congressional-trades` | Daily | ✅ Live |
-
-### ✅ **Phase 5: Alternative Data (COMPLETE)**
-
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| Job Postings (Adzuna) | `ingest-job-postings` | Daily | ✅ Live |
-| Patent Filings | `ingest-patents` | Daily | ✅ Live |
-| Search Trends | `ingest-search-trends` | Daily | ✅ Live |
-| Supply Chain | `ingest-supply-chain` | Daily | ✅ Live |
-
-### ✅ **Phase 6: Technical Analysis (COMPLETE)**
-
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| Advanced Technicals | `ingest-advanced-technicals` | Every 6 hrs | ✅ Live |
-| Pattern Recognition | `ingest-pattern-recognition` | Every 6 hrs | ✅ Live |
-| Forex Technicals | `ingest-forex-technicals` | Every 4 hrs | ✅ Live |
-| Forex Sentiment | `ingest-forex-sentiment` | Every 4 hrs | ✅ Live |
-
-### ✅ **Phase 7: Economic Data (COMPLETE)**
-
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| FRED Economics | `ingest-fred-economics` | Daily | ✅ Live |
-| COT Reports (CFTC) | `ingest-cot-cftc` | Weekly | ✅ Live |
-| Economic Calendar | `ingest-economic-calendar` | Daily | ✅ Live |
-| Earnings | `ingest-earnings` | Daily | ✅ Live |
-
-### ✅ **Phase 8: Crypto Data (COMPLETE)**
-
-| Source | Edge Function | Schedule | Status |
-|--------|---------------|----------|--------|
-| Crypto On-chain | `ingest-crypto-onchain` | Every 4 hrs | ✅ Live |
-
-### ✅ **AI-Enhanced Features (COMPLETE)**
-
-| Feature | Edge Function | Status |
-|---------|---------------|--------|
-| AI Research Reports | `generate-ai-research` | ✅ Live |
-| Smart Money Analysis | `ingest-smart-money` | ✅ Live |
+| Feature | Reason |
+|---------|--------|
+| Estimated forex sentiment | Replaced with real Myfxbook/OANDA scraping |
+| Synthetic ETF flows | Replaced with real ETF.com scraping |
+| Generated patent data | Replaced with real USPTO scraping |
+| Fake on-chain metrics | Replaced with real Blockchain.com API |
+| Estimated options flow | Replaced with real Barchart scraping |
+| AI-fallback sentiment | Removed all estimation fallbacks |
 
 ---
 
 ## 📊 Data Source Details
 
-### Price Data: TwelveData
+### Price Data: TwelveData ✅ REAL
 
-**Coverage:** 27,000+ assets (Stocks, ETFs, Forex, Crypto)
+**Source:** TwelveData API (Paid)  
+**Coverage:** 27,000+ assets (Stocks, ETFs, Forex, Crypto)  
+**Status:** Fully operational with rate limiting
 
 **Tiered Refresh Strategy:**
 | Tier | Assets | Refresh Rate | Credits/Day |
@@ -91,15 +71,13 @@
 | Active | 500 watchlist | Every 30 min | ~480 |
 | Standard | 26,000+ others | Every 24 hrs | ~30 |
 
-**Rate Limiting:** 55 credits/minute budget
-
-**Implementation:** `backend/services/price_scheduler.py` → Supabase PostgreSQL
+**Secret Required:** `TWELVEDATA_API_KEY`
 
 ---
 
-### SEC 13F Holdings
+### SEC 13F Holdings ✅ REAL
 
-**Source:** SEC EDGAR API  
+**Source:** SEC EDGAR API (Free)  
 **What it tracks:**
 - Institutional investor quarterly filings (>$100M AUM)
 - New positions = buying conviction
@@ -110,13 +88,11 @@
 - `bigmoney_hold_increase` - Position increased >5%
 - `bigmoney_hold_decrease` - Position decreased >5%
 
-**CUSIP Mapping:** Uses `cusip_mappings` table with OpenFIGI fallback
-
 ---
 
-### SEC Form 4 Insider Transactions
+### SEC Form 4 Insider Transactions ✅ REAL
 
-**Source:** SEC EDGAR Atom Feed  
+**Source:** SEC EDGAR Atom Feed (Free)  
 **What it tracks:**
 - Insider transactions (executives, directors, >10% owners)
 - Must file within 2 days of trade
@@ -127,48 +103,38 @@
 
 ---
 
-### Dark Pool Activity (FINRA)
+### Dark Pool Activity (FINRA) ✅ REAL
 
-**Source:** FINRA ATS/OTC Transparency Data  
+**Source:** FINRA ATS/OTC Transparency CDN (Free)  
 **What it tracks:**
 - Dark pool volume
 - Dark pool percentage of total volume
-- Price impact estimates
+- Trading venue breakdown
 
-**Signal Interpretation:**
-- High dark pool % + price up = institutional accumulation
-- High dark pool % + price down = institutional distribution
+**Note:** Data is delayed (T+2 weeks) per FINRA regulations.
 
 ---
 
-### Congressional Trades
+### Congressional Trades ✅ REAL
 
-**Source:** House Stock Watcher / Public Disclosures  
+**Source:** House Stock Watcher / Public Disclosures (Free)  
 **What it tracks:**
 - Representative trading activity
 - Trade before policy votes
 - Bipartisan convergence
 
-**Signal Value:**
-- Multiple members buying same ticker = strong signal
-- Committee oversight = potential insider info
-
 ---
 
-### Reddit Sentiment
+### Reddit Sentiment ✅ REAL (When Available)
 
-**Source:** Reddit API  
+**Source:** Reddit OAuth API  
 **Subreddits Monitored:**
-- r/wallstreetbets (retail sentiment)
-- r/stocks (general discussion)
-- r/investing (long-term)
-- r/SecurityAnalysis (professional)
+- r/wallstreetbets
+- r/stocks
+- r/investing
+- r/SecurityAnalysis
 
-**Metrics:**
-- Mention count
-- Sentiment score (-1 to +1)
-- Award count = conviction
-- Upvote velocity = trending
+**Behavior:** Only inserts real Reddit data. If API fails, returns empty result - NO estimation.
 
 **Secrets Required:**
 - `REDDIT_CLIENT_ID`
@@ -178,23 +144,7 @@
 
 ---
 
-### Options Flow
-
-**What it tracks:**
-- Unusual call/put activity
-- Sweep orders (aggressive buying)
-- Open interest changes
-- Implied volatility spikes
-
-**Signal Interpretation:**
-```
-Large call sweep + Institutional 13F buying + Insider purchases
-= HIGH CONVICTION short-term move
-```
-
----
-
-### Job Postings (Adzuna)
+### Job Postings ✅ REAL (When Available)
 
 **Source:** Adzuna API  
 **What it tracks:**
@@ -202,10 +152,7 @@ Large call sweep + Institutional 13F buying + Insider purchases
 - Role types (engineering, sales, leadership)
 - Growth indicator
 
-**Signal Value:**
-- Engineering roles = product development
-- Sales roles = revenue expansion
-- Mass hiring = scaling operations
+**Behavior:** Only inserts real Adzuna data. If API key missing, returns empty result - NO estimation.
 
 **Secrets Required:**
 - `ADZUNA_APP_ID`
@@ -213,9 +160,9 @@ Large call sweep + Institutional 13F buying + Insider purchases
 
 ---
 
-### FRED Economic Data
+### FRED Economic Data ✅ REAL
 
-**Source:** Federal Reserve Economic Data API  
+**Source:** Federal Reserve Economic Data API (Free)  
 **Indicators Tracked:**
 - GDP growth
 - Inflation rates
@@ -226,12 +173,65 @@ Large call sweep + Institutional 13F buying + Insider purchases
 
 ---
 
-### Web Scraping (Firecrawl)
+### Crypto On-chain ✅ REAL (When Available)
 
-**Used For:** Sources without APIs
-- Patent filings (USPTO)
-- Breaking news
-- Company pages
+**Sources:**
+- Blockchain.com API (BTC data)
+- CoinGecko API (Other crypto)
+
+**What it tracks:**
+- Active addresses
+- Transaction counts
+- Hash rate
+- Market data
+
+**Behavior:** Only inserts real on-chain data. If APIs fail, returns empty result - NO estimation.
+
+---
+
+### Options Flow ✅ REAL (When Available)
+
+**Sources:**
+- Barchart via Firecrawl
+- CBOE via Firecrawl
+
+**What it tracks:**
+- Unusual call/put activity
+- Sweep orders
+- Open interest changes
+
+**Behavior:** Only inserts real options data. If scraping fails, returns empty result - NO estimation.
+
+**Secret Required:** `FIRECRAWL_API_KEY`
+
+---
+
+### Forex Sentiment ✅ REAL (When Available)
+
+**Sources:**
+- Myfxbook via Firecrawl
+- OANDA Sentiment RSS
+
+**What it tracks:**
+- Retail positioning
+- Long/short ratios
+- Sentiment scores
+
+**Behavior:** Only inserts real sentiment data. If scraping fails, returns empty result - NO estimation.
+
+**Secret Required:** `FIRECRAWL_API_KEY`
+
+---
+
+### Patent Filings ✅ REAL (When Available)
+
+**Source:** USPTO via Firecrawl  
+**What it tracks:**
+- Company patent filings
+- Technology categories
+- Filing dates
+
+**Behavior:** Only inserts real USPTO data. If scraping fails, returns empty result - NO estimation.
 
 **Secret Required:** `FIRECRAWL_API_KEY`
 
@@ -243,136 +243,46 @@ Large call sweep + Institutional 13F buying + Insider purchases
 | Source | Cost | Notes |
 |--------|------|-------|
 | SEC EDGAR | Free | Public data |
-| FINRA Dark Pool | Free | Public data |
-| Reddit API | Free | Rate limited |
-| StockTwits | Free | 30 req/hr |
+| FINRA Dark Pool | Free | Public data, delayed |
 | Congressional Trades | Free | Public disclosure |
-| USPTO Patents | Free | Public data |
 | FRED | Free | Requires API key |
+| Blockchain.com | Free | BTC data |
+| CoinGecko | Free | Rate limited |
 
 ### Paid Data Sources
 | Source | Cost | Notes |
 |--------|------|-------|
 | TwelveData | $29/mo | Pro tier, 27K assets |
-| Firecrawl | $20/mo | 5,000 pages |
+| Firecrawl | $20/mo | Web scraping |
 | Adzuna | Free tier | Job postings |
 
-### Optional Premium Sources
-| Source | Cost | Notes |
-|--------|------|-------|
-| Unusual Whales | $50-200/mo | Options flow |
-| Fintel | $20-50/mo | Short interest |
-| Alpha Vantage | Free-$50/mo | Earnings data |
+### Requires API Keys (Free Tier Available)
+| Source | Signup | Notes |
+|--------|--------|-------|
+| Reddit API | reddit.com/prefs/apps | OAuth required |
+| Adzuna | developer.adzuna.com | Free tier |
+| FRED | fred.stlouisfed.org/docs/api | Free |
 
 ---
 
-## 🏗️ Signal Generation Pipeline
+## 🔧 No-Data Handling
 
-```
-Data Source
-    ↓
-Edge Function: ingest-*
-    ↓
-Raw Data → PostgreSQL Tables
-    ↓
-Edge Function: generate-signals-from-*
-    ↓
-Signals Table (with citations, checksums)
-    ↓
-Edge Function: compute-signal-scores
-    ↓
-Composite Scores per Asset
-    ↓
-Edge Function: compute-theme-scores
-    ↓
-Theme Scores for UI
-```
-
----
-
-## 📈 Scoring Engine
-
-### Component Weights
-
-```python
-combined_score = (
-    0.25 * institutional_signals +    # 13F
-    0.15 * insider_signals +          # Form 4
-    0.15 * policy_signals +           # Government
-    0.10 * etf_flows +                # Capital flows
-    0.10 * social_sentiment +         # Reddit/StockTwits
-    0.08 * dark_pool_signals +        # Market structure
-    0.07 * options_flow +             # Derivatives
-    0.05 * job_postings +             # Alternative
-    0.05 * technical_signals          # Patterns
-)
-```
-
-### Exponential Decay
-
-Signals decay over time with 30-day half-life:
-```
-decay = exp(-ln(2) * days_ago / 30)
-```
-
-| Age | Weight |
-|-----|--------|
-| 0 days | 100% |
-| 30 days | 50% |
-| 60 days | 25% |
-| 90 days | 12.5% |
-
----
-
-## 🔧 Adding New Data Sources
-
-### 1. Create Edge Function
+All ingestion functions follow this pattern:
 
 ```typescript
-// supabase/functions/ingest-new-source/index.ts
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// If real data is available:
+return { success: true, inserted: count, source: "REAL_SOURCE_NAME" };
 
-serve(async (req) => {
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  );
-
-  // Fetch from external source
-  const data = await fetch("https://api.example.com/data");
-  
-  // Insert into PostgreSQL
-  await supabase.from("new_source_table").upsert(data);
-  
-  // Log success
-  await supabase.from("ingest_logs").insert({
-    etl_name: "ingest-new-source",
-    status: "success",
-    rows_inserted: data.length
-  });
-
-  return new Response(JSON.stringify({ success: true }));
-});
+// If no real data is available:
+return { 
+  success: true, 
+  inserted: 0, 
+  message: "No real data found - no fake data inserted",
+  version: "v3_no_estimation"
+};
 ```
 
-### 2. Add to Config
-
-```toml
-# supabase/config.toml
-[functions.ingest-new-source]
-verify_jwt = false
-```
-
-### 3. Schedule with pg_cron
-
-```sql
-SELECT cron.schedule(
-  'ingest-new-source-hourly',
-  '0 * * * *',
-  $$SELECT net.http_post(...)$$
-);
-```
+**There are NO estimation fallbacks. If real data is unavailable, the function returns 0 records.**
 
 ---
 
@@ -380,8 +290,8 @@ SELECT cron.schedule(
 
 ### Automated Checks
 - **Staleness alerts**: Data older than expected
-- **Skew detection**: 90%+ same direction = data issue
-- **Fallback tracking**: AI source usage >80% = primary down
+- **Source verification**: All records tagged with actual source
+- **No estimation tracking**: Fallback usage eliminated
 
 ### Health Dashboard
 - `/ingestion-health` - Function status
@@ -390,12 +300,19 @@ SELECT cron.schedule(
 
 ---
 
-## 🚀 Future Data Sources (Roadmap)
+## 🚀 Required Secrets
 
-### Under Consideration
-- [ ] Twitter/X sentiment (API access expensive)
-- [ ] LinkedIn job postings (requires partnership)
-- [ ] Earnings call transcripts
-- [ ] Real-time streaming prices
-- [ ] Supply chain shipping data
-- [ ] Satellite imagery analysis
+For full functionality, configure these secrets in your backend:
+
+| Secret | Required For |
+|--------|--------------|
+| `TWELVEDATA_API_KEY` | Price data |
+| `FIRECRAWL_API_KEY` | Web scraping (patents, options, forex) |
+| `REDDIT_CLIENT_ID` | Reddit sentiment |
+| `REDDIT_CLIENT_SECRET` | Reddit sentiment |
+| `REDDIT_USERNAME` | Reddit sentiment |
+| `REDDIT_PASSWORD` | Reddit sentiment |
+| `ADZUNA_APP_ID` | Job postings |
+| `ADZUNA_APP_KEY` | Job postings |
+| `FRED_API_KEY` | Economic data |
+| `SLACK_WEBHOOK_URL` | Alerts (optional) |

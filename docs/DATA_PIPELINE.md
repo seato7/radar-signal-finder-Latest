@@ -12,9 +12,21 @@ All data flows into **Supabase PostgreSQL** as the single source of truth.
 
 ---
 
+## ⚠️ CRITICAL: NO ESTIMATION POLICY
+
+**As of December 2025, all ingestion functions follow a strict NO ESTIMATION policy:**
+
+- If real data is available → Insert it
+- If real data is NOT available → Insert NOTHING (return 0 records)
+- NO synthetic data, NO estimation, NO AI fallbacks for market data
+
+All functions log `version: 'v3_no_estimation'` to confirm compliance.
+
+---
+
 ## Data Sources
 
-### Price Data (TwelveData via Railway)
+### Price Data (TwelveData via Railway) ✅ REAL
 
 | Tier | Assets | Refresh | Daily Credits |
 |------|--------|---------|---------------|
@@ -31,49 +43,31 @@ All data flows into **Supabase PostgreSQL** as the single source of truth.
 
 ### Edge Function Data Sources (90+ Functions)
 
-#### Market Data
-| Function | Source | Frequency | Data |
-|----------|--------|-----------|------|
-| `ingest-news-rss` | RSS feeds | Hourly | Headlines, sentiment |
-| `ingest-news-sentiment` | NewsAPI | 3 hours | Aggregated sentiment |
-| `ingest-stocktwits` | StockTwits | 2 hours | Social mentions |
-| `ingest-reddit-sentiment` | Reddit API | 2 hours | Reddit sentiment |
-| `ingest-pattern-recognition` | Firecrawl | 6 hours | Chart patterns |
-| `ingest-advanced-technicals` | Firecrawl | 6 hours | Technical indicators |
+#### ✅ Real Data Sources (Working)
+| Function | Source | Frequency | Data | Status |
+|----------|--------|-----------|------|--------|
+| `ingest-sec-13f-edgar` | SEC EDGAR API | Weekly | 13F holdings | ✅ REAL |
+| `ingest-form4` | SEC EDGAR | Weekly | Insider trades | ✅ REAL |
+| `ingest-news-rss` | RSS feeds | Hourly | Headlines | ✅ REAL |
+| `ingest-short-interest` | FINRA CDN | Daily | Short data | ✅ REAL |
+| `ingest-congressional-trades` | House Stock Watcher | Daily | Congress trades | ✅ REAL |
+| `ingest-fred-economics` | FRED API | Weekly | Economic indicators | ✅ REAL |
+| `ingest-stocktwits` | StockTwits API | 2 hours | Social mentions | ✅ REAL |
+| `ingest-supply-chain` | ISM RSS | Daily | Supply chain data | ✅ REAL |
 
-#### Institutional Data
-| Function | Source | Frequency | Data |
-|----------|--------|-----------|------|
-| `ingest-sec-13f-edgar` | SEC EDGAR | Weekly | 13F holdings |
-| `ingest-form4` | SEC EDGAR | Weekly | Insider trades |
-| `ingest-congressional-trades` | Firecrawl | Daily | Congressional trades |
-| `ingest-dark-pool` | FINRA ATS | Daily | Dark pool activity |
-| `ingest-finra-darkpool` | FINRA OTC | Daily | OTC volume |
-
-#### Economic Data
-| Function | Source | Frequency | Data |
-|----------|--------|-----------|------|
-| `ingest-fred-economics` | FRED API | Weekly | Economic indicators |
-| `ingest-cot-cftc` | CFTC | Weekly | COT reports |
-| `ingest-economic-calendar` | Firecrawl | Daily | Economic events |
-
-#### Alternative Data
-| Function | Source | Frequency | Data |
-|----------|--------|-----------|------|
-| `ingest-job-postings` | Adzuna API | Daily | Hiring signals |
-| `ingest-patents` | USPTO/Firecrawl | Weekly | Patent filings |
-| `ingest-search-trends` | Firecrawl | Daily | Google Trends |
-| `ingest-supply-chain` | Firecrawl | Daily | Supply chain signals |
-
-#### Asset-Class Specific
-| Function | Source | Frequency | Data |
-|----------|--------|-----------|------|
-| `ingest-crypto-onchain` | Firecrawl | Daily | On-chain metrics |
-| `ingest-forex-sentiment` | Firecrawl | Daily | Forex sentiment |
-| `ingest-forex-technicals` | Firecrawl | Daily | Forex indicators |
-| `ingest-options-flow` | Firecrawl | Daily | Options activity |
-| `ingest-short-interest` | Firecrawl | Daily | Short interest |
-| `ingest-etf-flows` | Firecrawl | Daily | ETF flows |
+#### 🔄 Real Data or Nothing (No Fallback)
+| Function | Source | Frequency | Behavior |
+|----------|--------|-----------|----------|
+| `ingest-reddit-sentiment` | Reddit OAuth | 2 hours | Real data only, no fallback |
+| `ingest-forex-sentiment` | Myfxbook/OANDA | Daily | Real data only, no fallback |
+| `ingest-etf-flows` | ETF.com | Daily | Real data only, no fallback |
+| `ingest-crypto-onchain` | Blockchain.com/CoinGecko | Daily | Real data only, no fallback |
+| `ingest-options-flow` | Barchart/CBOE | Daily | Real data only, no fallback |
+| `ingest-dark-pool` | FINRA CDN | Daily | Real data only, no fallback |
+| `ingest-finra-darkpool` | FINRA scraping | Daily | Real data only, no fallback |
+| `ingest-cot-reports` | CFTC Socrata | Weekly | Real data only, no fallback |
+| `ingest-job-postings` | Adzuna API | Daily | Real data only, no fallback |
+| `ingest-patents` | USPTO/Firecrawl | Weekly | Real data only, no fallback |
 
 ---
 
@@ -92,8 +86,8 @@ All data flows into **Supabase PostgreSQL** as the single source of truth.
 │ Railway     │ │           Supabase Edge Functions           │
 │ Python      │ │                                             │
 │ Scheduler   │ │  ingest-*  (90+ functions)                  │
-│             │ │  generate-signals-from-*                    │
-│ APScheduler │ │  compute-theme-scores                       │
+│             │ │  ⚠️ NO ESTIMATION - Real data or nothing    │
+│ APScheduler │ │  generate-signals-from-*                    │
 └──────┬──────┘ └──────────────────────┬──────────────────────┘
        │                               │
        │     ┌─────────────────────────┘
@@ -111,6 +105,23 @@ All data flows into **Supabase PostgreSQL** as the single source of truth.
 │  function_status │ Function health tracking                 │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## No-Data Response Format
+
+All ingestion functions return this format when no real data is available:
+
+```json
+{
+  "success": true,
+  "inserted": 0,
+  "message": "No real data found - no fake data inserted",
+  "version": "v3_no_estimation"
+}
+```
+
+**Important**: A `success: true` with `inserted: 0` is CORRECT behavior when external APIs are down or return no data. The function did its job - it just didn't have real data to insert.
 
 ---
 
@@ -173,6 +184,8 @@ Edge functions generate signals from raw data:
 | `generate-signals-from-social` | Social data | `social_*` |
 | `generate-signals-from-policy` | Policy news | `policy_*` |
 
+**Note**: Signal generation only runs on REAL data. If the source table has no data, no signals are generated.
+
 ---
 
 ## Data Quality Monitoring
@@ -184,9 +197,6 @@ SELECT * FROM get_stale_functions();
 
 -- Check signal distribution
 SELECT * FROM check_signal_distribution_skew();
-
--- Monitor AI fallback usage
-SELECT * FROM check_ai_fallback_usage();
 ```
 
 ### Health Endpoints
@@ -195,12 +205,14 @@ SELECT * FROM check_ai_fallback_usage();
 - `/functions/v1/api-alerts-errors` - Error alerts
 - `/functions/v1/ingestion-health` - Overall health status
 
-### Alerts (Slack)
-Automatic alerts for:
-- ❌ Ingestion failures (3+ consecutive)
-- ⏰ Stale data (>24h for critical tables)
-- 📊 Signal distribution skew (>90% one direction)
-- 🔄 Excessive AI fallback usage (>80%)
+### Expected Behavior
+
+| Situation | Expected Response |
+|-----------|-------------------|
+| Real data available | `inserted: N, success: true` |
+| No real data | `inserted: 0, success: true, version: v3_no_estimation` |
+| API error | `success: false, error: "..."` |
+| Rate limited | `success: true, inserted: 0` (retry later) |
 
 ---
 
@@ -212,11 +224,13 @@ Automatic alerts for:
 3. Check scheduler status: `GET /api/health/scheduler`
 4. Review rate limit: 55 credits/min max
 
-### Edge Function Failures
-1. Check function logs in Lovable Cloud
-2. Verify API keys in secrets
-3. Check for rate limiting
-4. Review `ingest_logs` table
+### Edge Function Returns 0 Records
+This is EXPECTED behavior if:
+- External API is down
+- No new data available
+- Rate limited by source
+
+Check logs for `v3_no_estimation` to confirm function is working correctly.
 
 ### Stale Signals
 1. Run diagnostics: `curl .../ingest-diagnostics`
@@ -229,3 +243,20 @@ Automatic alerts for:
 2. Review circuit breaker status
 3. Check API quotas and limits
 4. Review Slack alerts for patterns
+
+---
+
+## Required Secrets
+
+| Secret | Required For |
+|--------|--------------|
+| `TWELVEDATA_API_KEY` | Price data |
+| `FIRECRAWL_API_KEY` | Web scraping |
+| `REDDIT_CLIENT_ID` | Reddit sentiment |
+| `REDDIT_CLIENT_SECRET` | Reddit sentiment |
+| `REDDIT_USERNAME` | Reddit sentiment |
+| `REDDIT_PASSWORD` | Reddit sentiment |
+| `ADZUNA_APP_ID` | Job postings |
+| `ADZUNA_APP_KEY` | Job postings |
+| `FRED_API_KEY` | Economic data |
+| `SLACK_WEBHOOK_URL` | Alerts (optional) |
