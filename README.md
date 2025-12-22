@@ -3,215 +3,195 @@
 **Real-time investment opportunity detection powered by multi-signal analysis**
 
 [![CI](https://github.com/your-org/opportunity-radar/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/opportunity-radar/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)](https://codecov.io/gh/your-org/opportunity-radar)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Opportunity Radar is a production-ready investment analysis platform that aggregates signals from policy changes, institutional holdings (13F), insider transactions (Form 4), ETF flows, and social sentiment to identify high-conviction opportunities before they become obvious.
+Opportunity Radar is a production-ready investment analysis platform that aggregates signals from policy changes, institutional holdings (13F), insider transactions (Form 4), ETF flows, dark pool activity, options flow, and social sentiment to identify high-conviction opportunities before they become obvious.
+
+---
 
 ## 🎯 Key Features
 
-- **Multi-Signal Analysis**: Policy, 13F holdings, Form 4 insiders, ETF flows
-- **Production-Ready**: Comprehensive logging, metrics, rate limiting, retry logic
-- **Transparent Scoring**: Exponential decay, component-based calculations
+- **Multi-Signal Analysis**: 20+ data sources including SEC filings, social sentiment, dark pool activity
+- **AI-Powered Insights**: Lovable AI integration for natural language analysis and recommendations
+- **Automated Trading Bots**: Connect to Alpaca, IBKR, Coinbase, Binance, Kraken
 - **Real-time Alerts**: Slack integration with configurable thresholds
-- **Full Test Coverage**: 85%+ coverage with CI/CD pipeline
+- **27,000+ Assets**: Stocks, ETFs, Forex, Crypto via TwelveData
+- **Production-Ready**: Comprehensive logging, metrics, rate limiting, retry logic
 
-## Architecture
+---
 
-```mermaid
-graph LR
-    A[Policy Feeds] -->|RSS/Atom| B[ETL Pipeline]
-    C[SEC 13F] -->|EDGAR| B
-    D[SEC Form 4] -->|EDGAR| B
-    E[ETF Flows] -->|CSV| B
-    B -->|Signals| F[Theme Mapper]
-    F --> G[(MongoDB)]
-    G --> H[Scoring Engine]
-    H --> I[Alert System]
-    I -->|Webhooks| J[Slack]
-    H --> K[Backtest]
-    G --> L[Frontend]
-    
-    style B fill:#e1f5ff
-    style H fill:#fff4e1
-    style I fill:#ffe1e1
+## 🏗️ Architecture
+
 ```
+┌─────────────────────────────────────────────────────────────────┐
+│                      FRONTEND (Lovable Cloud)                     │
+│               React + Vite + TypeScript + Tailwind                │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+                    ▼                       ▼
+        ┌───────────────────┐   ┌───────────────────────┐
+        │  Railway Backend  │   │  Supabase Edge        │
+        │  (Python/FastAPI) │   │  Functions (90+)      │
+        │                   │   │                       │
+        │  • TwelveData     │   │  • AI Features        │
+        │    Price Ingest   │   │  • Data Ingestion     │
+        │  • Signal Storage │   │  • User APIs          │
+        │  • Bot Engine     │   │  • Payments           │
+        └───────────────────┘   └───────────────────────┘
+                    │                       │
+                    ▼                       ▼
+        ┌───────────────────┐   ┌───────────────────────┐
+        │     MongoDB       │   │  Supabase PostgreSQL  │
+        │   (Railway)       │   │  (Primary Database)   │
+        └───────────────────┘   └───────────────────────┘
+```
+
+### Hybrid Architecture
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Frontend | React + Vite + Lovable Cloud | User interface |
+| Price Ingestion | Railway Python + TwelveData | 27,000+ assets, tiered scheduling |
+| Data Ingestion | 90+ Supabase Edge Functions | RSS, FINRA, Reddit, StockTwits, Firecrawl |
+| AI Features | Lovable AI (Gemini 2.5 Flash) | Chat, analysis, risk assessment |
+| Primary Database | Supabase PostgreSQL | Prices, signals, ingest logs |
+| Signal Storage | MongoDB (Railway) | Signals, assets, themes, users |
+| Cron Scheduling | pg_cron (45 jobs) + APScheduler | Automated ingestion |
+
+---
+
+## 📊 Data Sources
+
+### Price Data
+- **TwelveData API**: 27,000+ assets (stocks, ETFs, forex, crypto)
+- **Tiered Refresh**: Hot (5min), Active (30min), Standard (24hr)
+- **Credit Budget**: 55/minute rate limiting
+
+### Signal Sources (Edge Functions)
+| Category | Sources |
+|----------|---------|
+| **Institutional** | SEC 13F Holdings, Form 4 Insiders |
+| **Political** | Congressional Trades |
+| **Market Structure** | Dark Pool (FINRA), Options Flow, Short Interest |
+| **Social Sentiment** | Reddit, StockTwits, News RSS |
+| **Alternative** | Job Postings (Adzuna), Patents (USPTO), Search Trends |
+| **Technical** | Advanced Technicals, Pattern Recognition |
+| **Economic** | FRED Economics, COT Reports, Forex Sentiment |
+| **Crypto** | On-chain Metrics |
+
+### AI & Web Scraping
+- **Lovable AI**: Natural language analysis, summaries, risk assessment
+- **Firecrawl**: Web scraping for sources without APIs
+
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- Make (optional but recommended)
+- Lovable Cloud account (or Supabase + Railway)
+- TwelveData API key (free tier: 800 credits/day)
 
-### 1. Start Services
-
-```bash
-make up
-```
-
-This starts:
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **Mongo Express**: http://localhost:8081
-
-### 2. Seed Canonical Themes
+### 1. Clone & Configure
 
 ```bash
-make seed
+git clone https://github.com/your-org/opportunity-radar.git
+cd opportunity-radar
 ```
 
-Seeds the 3 canonical themes:
-- AI Liquid Cooling
-- Water Reuse  
-- HVDC Transformers
+### 2. Set Environment Variables
 
-### 3. Run Demo Ingest
+**Supabase Secrets** (via Lovable Cloud):
+- `TWELVEDATA_API_KEY` - Price data
+- `FIRECRAWL_API_KEY` - Web scraping
+- `SLACK_WEBHOOK_URL` - Alerts (optional)
+- `STRIPE_SECRET_KEY` - Payments (optional)
+
+**Railway Environment**:
+- `SUPABASE_URL` - Database connection
+- `SUPABASE_SERVICE_ROLE_KEY` - Service access
+- `MONGO_URL` - MongoDB connection
+- `TWELVEDATA_API_KEY` - Price data
+
+### 3. Deploy
+
+Frontend and Edge Functions deploy automatically via Lovable Cloud.
+
+For Railway backend:
+```bash
+cd backend
+railway up
+```
+
+### 4. Seed Data
 
 ```bash
-make ingest-demo
+# Seed canonical themes
+railway run python backend/scripts/seed_themes.py
+
+# Trigger initial price ingestion
+curl -X POST https://your-railway-url/api/ingest/prices/hot
 ```
 
-Or click "Run Ingest (Demo)" in the UI at http://localhost:5173
+---
 
-### 4. View Results
+## 📱 Access Points
 
-Navigate to http://localhost:5173 and explore:
-- **Home**: Run ingests and view system status
-- **Radar**: See scored themes with components
-- **Themes**: Explore theme details
+| Service | URL |
+|---------|-----|
+| Frontend | `https://your-project.lovable.app` |
+| Backend API | `https://your-railway-app.up.railway.app` |
+| API Docs | `https://your-railway-app.up.railway.app/docs` |
+| Edge Functions | `https://your-project.supabase.co/functions/v1/` |
 
-## 🧪 Development
+---
 
-### Backend Commands
+## 💰 Cost Breakdown
 
-```bash
-make be          # View backend logs
-make test        # Run backend tests
-```
+| Service | Monthly Cost |
+|---------|-------------|
+| TwelveData (Pro) | ~$29 |
+| Railway (Backend) | ~$5 |
+| Lovable Cloud | ~$20 |
+| Firecrawl | ~$20 |
+| Redis (Upstash) | ~$5 |
+| **Total** | **~$80-90** |
 
-### Frontend Commands
+Free tier options available for development.
 
-```bash
-make fe          # View frontend logs
-npm run dev      # Run frontend locally
-```
+---
 
-### Stop Services
+## 📚 Documentation
 
-```bash
-make down        # Stop containers
-make clean       # Stop and remove volumes
-```
+| Guide | Description |
+|-------|-------------|
+| [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) | Complete system architecture |
+| [QUICKSTART.md](QUICKSTART.md) | Local development setup |
+| [AI_FEATURES_GUIDE.md](AI_FEATURES_GUIDE.md) | AI features implementation |
+| [BROKER_SETUP.md](BROKER_SETUP.md) | Multi-broker integration |
+| [PAYMENT_GUIDE.md](PAYMENT_GUIDE.md) | Stripe subscription setup |
+| [AUTH_SETUP.md](AUTH_SETUP.md) | Authentication configuration |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment |
+| [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md) | Data ingestion details |
+| [docs/MONITORING.md](docs/MONITORING.md) | Monitoring & alerting |
+| [docs/SECURITY.md](docs/SECURITY.md) | Security best practices |
+| [docs/TESTING.md](docs/TESTING.md) | Testing guide |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Version history |
 
-## 📊 API Endpoints
-
-### Health & Config
-- `GET /api/health` - Service health check
-- `GET /api/healthz/weights` - Scoring component weights
-
-### Radar
-- `GET /api/radar/themes?days=30` - List all themes with scores
-- `GET /api/radar/theme/{id}?days=30` - Detailed theme view
-
-### Ingest
-- `POST /api/ingest/run?mode=demo|real` - Run ETL pipeline
-- `POST /api/ingest/13f` - Ingest single 13F-HR filing with holdings deltas
-
-### Alerts
-- `GET /api/alerts` - List active alerts
-- `GET /api/alerts/thresholds` - Get alert thresholds
-- `POST /api/alerts/thresholds` - Update thresholds
-- `POST /api/alerts/check` - Manually trigger alert check
-
-### Watchlist
-- `GET /api/watchlist` - Get watchlist
-- `POST /api/watchlist` - Add ticker
-- `DELETE /api/watchlist/{ticker}` - Remove ticker
-
-### Assets
-- `GET /api/assets/{asset_id}` - Asset details by ID + where to buy
-- `GET /api/assets/by-ticker/{ticker}` - Asset details by ticker symbol
-
-### Backtest
-- `POST /api/backtest/prices/run` - Ingest price data from CSV
-- `GET /api/backtest/summary?since_days=120&group_by=theme` - Backtest summary
-- `GET /api/backtest/top_contributors?rank_horizon=7` - Top performing assets
-- `GET /api/backtest/rows.csv?since_days=120` - Export backtest data as CSV
-- `GET /api/backtest/rows.parquet?since_days=120` - Export backtest data as Parquet
-
-### Example Requests
-
-```bash
-# Ingest demo data
-curl -X POST "http://localhost:8000/api/ingest/run?mode=demo"
-
-# Ingest real-mode (policy feeds)
-curl -X POST "http://localhost:8000/api/ingest/run?mode=real"
-
-# Ingest 13F filing
-curl -X POST "http://localhost:8000/api/ingest/13f" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "filing_url": "https://sec.gov/...",
-    "xml_content": "<xml>...</xml>",
-    "manager_name": "Vanguard Group",
-    "period_ended": "2024-03-31"
-  }'
-
-# Get scoring weights
-curl "http://localhost:8000/api/healthz/weights" | jq
-
-# Get theme scores
-curl "http://localhost:8000/api/radar/themes?days=30" | jq
-
-# Get and update alert thresholds
-curl "http://localhost:8000/api/alerts/thresholds" | jq
-curl -X POST "http://localhost:8000/api/alerts/thresholds" \
-  -H "Content-Type: application/json" \
-  -d '{"signal":"policy_approval","threshold":1.5}'
-
-# Get asset info by ticker
-curl "http://localhost:8000/api/assets/by-ticker/ERII" | jq
-
-# Download backtest exports
-curl "http://localhost:8000/api/backtest/rows.csv?since_days=120" > backtest.csv
-curl "http://localhost:8000/api/backtest/rows.parquet?since_days=120" > backtest.parquet
-```
-
-## ⚙️ Configuration
-
-### Backend (.env)
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-Key variables:
-- `MONGO_URL` - MongoDB connection string
-- `ALERT_SCORE_THRESHOLD` - Alert firing threshold (default: 2.0, range: 0-10)
-- `HALF_LIFE_DAYS` - Signal decay half-life (default: 30.0)
-- `SLACK_WEBHOOK` - Optional Slack notifications
-- `OPENFIGI_API_KEY` - Optional OpenFIGI for CUSIP mapping
-- `CUSIP_MAP_CSV_URLS` - Comma-separated CSV URLs for CUSIP→ticker mapping
-- `FRONTEND_PUBLIC_URL` - Frontend URL for CORS and deep links (default: http://localhost:5173)
-- `POLICY_FEEDS` - Comma-separated RSS/Atom feed URLs for policy signals
-- `POLICY_KEYWORDS` - Comma-separated keywords for theme mapping
-- `PRICE_CSV_URLS` - Comma-separated price data CSV URLs for backtesting
-
-See `backend/.env.example` for all options.
+---
 
 ## 🧮 Scoring System
 
-### Components & Weights
+### Component Weights
 
 | Component | Weight | Description |
 |-----------|--------|-------------|
 | PolicyMomentum | 1.0 | Regulatory & policy signals |
-| FlowPressure | 1.0 | ETF flows & volume anomalies |
+| FlowPressure | 1.0 | ETF flows & dark pool activity |
 | BigMoneyConfirm | 1.0 | 13F filings & institutional activity |
-| InsiderPoliticianConfirm | 0.8 | Form 4 insider & politician trades |
+| InsiderPoliticianConfirm | 0.8 | Form 4 insider & congressional trades |
 | Attention | 0.5 | Social & news mentions |
 | TechEdge | 0.4 | Technical/tech edge signals |
 | RiskFlags | -1.0 | Negative risk signals |
@@ -219,214 +199,66 @@ See `backend/.env.example` for all options.
 
 ### Exponential Decay
 
-Signals decay with half-life = 30 days (configurable):
-
+Signals decay with half-life = 30 days:
 ```
 decay = exp(-ln(2) * days_ago / half_life)
 ```
 
-At 30 days: ~50% weight
-At 60 days: ~25% weight
-At 90 days: ~12.5% weight
+---
 
-## 🔄 ETL Pipeline
+## 🤖 Trading Bots
 
-### Demo Mode
+Supported brokers via Model 1 (User API Keys):
+- **Alpaca** - US Stocks, Crypto (Paper + Live)
+- **Interactive Brokers** - Global markets
+- **Coinbase** - Cryptocurrency
+- **Binance** - Cryptocurrency (Testnet available)
+- **Kraken** - Cryptocurrency
 
-Demo mode (`mode=demo`) creates synthetic signals for all 3 canonical themes with realistic distributions.
+See [BROKER_SETUP.md](BROKER_SETUP.md) for configuration.
 
-### Real Mode
-
-Real mode (`mode=real`) fetches live data from configured sources.
-
-#### SEC 13F Holdings (Deep)
-
-**Signal Types:**
-- `bigmoney_hold_new` - New position (not held in prior quarter)
-- `bigmoney_hold_increase` - Position increased >5%
-- `bigmoney_hold_decrease` - Position decreased >5%
-- `bigmoney_hold` - Position unchanged (±5%)
-
-**CUSIP Mapping:**
-1. First tries `CUSIP_MAP_CSV_URLS` (comma-separated CSV files with `cusip,ticker` columns)
-2. Falls back to OpenFIGI API if `OPENFIGI_API_KEY` is set
-3. Persists mappings to assets collection
-
-**Idempotency:**
-- Checksum: `sha256(manager|period_ended|cusip|value|shares)`
-- Re-running with same filing data inserts 0 new signals
-
-**CSV Format Example:**
-```csv
-cusip,ticker
-037833100,AAPL
-594918104,MSFT
-```
-
-#### Policy Feeds
-
-RSS/Atom feeds configured via `POLICY_FEEDS` are fetched and filtered by `POLICY_KEYWORDS`.
-
-#### SEC Form 4 Insiders
-
-**Source:** SEC Atom feed for Form 4 filings  
-**Module:** `backend/etl/sec_form4.py`
-
-Parses insider transaction data:
-- Transaction codes: P (purchase), S (sale), or acquired/disposed flags
-- Maps to `insider_buy` (direction=up) or `insider_sell` (direction=down)
-- Idempotency: `sha256(accession|reportedHolder|ticker|transaction_date|code|shares|price)`
-- Citation: Direct SEC filing URL
-
-**Raw data includes:**
-- `issuer_name`: Company name
-- `reported_holder`: Insider name
-- `code`: Transaction code
-- `shares`: Number of shares
-- `price`: Price per share
-- `acquired_disposed`: A (acquired) or D (disposed)
-
-**Caveats:**
-- Only non-derivative transactions are processed
-- Derivative securities (options, warrants) are excluded
-- Multiple transactions per filing create separate signals
-
-#### ETF Flows
-
-**Source:** CSV URLs configured via `ETF_FLOWS_CSV_URLS`  
-**Module:** `backend/etl/etf_flows.py`
-
-Computes per-ETF and sector-level flow pressure:
-- Reads CSV with columns: `date`, `ticker`, `flow` (flexible header detection)
-- Computes rolling 60-day z-score: `(flow - mean) / stdev`
-- Emits `flow_pressure_etf` per ETF with magnitude = |z|
-- Aggregates by sector using `ETF_SECTOR_MAP_JSON`
-- Emits `flow_pressure` per sector with magnitude = sector z-score
-
-**Sector Mapping:**
-Configure via `ETF_SECTOR_MAP_JSON` environment variable:
-```json
-{
-  "SPY": "Broad Market",
-  "QQQ": "Technology",
-  "XLE": "Energy"
-}
-```
-
-**CSV Schema** (headers auto-detected, case-insensitive):
-```csv
-date,ticker,flow
-2024-01-15,SPY,1500000
-2024-01-15,QQQ,-800000
-```
-
-**Scoring Weight:**
-- Sector `flow_pressure`: Full weight (1.0)
-- Per-ETF `flow_pressure_etf`: Half weight (0.5×)
-
-### Idempotency
-
-All ETL modules use deterministic checksums:
-
-```python
-checksum = sha256(json.dumps(data, sort_keys=True))
-```
-
-Re-running ETL jobs never creates duplicates.
-
-### Citation Tracking
-
-Every signal includes `oa_citation`:
-- source name
-- url (if available)
-- timestamp
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-make test
-
-# Run specific test file
-docker-compose exec backend pytest backend/tests/test_scoring.py -v
-```
-
-### Test Coverage
-- Health endpoint
-- Scoring decay function
-- ETL idempotency
-- Watchlist CRUD
-- Backtest endpoints
-
-## 🌏 Where to Buy (AU-Friendly)
-
-Based on exchange/asset type:
-
-- **US Stocks**: Stake, Interactive Brokers AU
-- **ASX Stocks**: CommSec, SelfWealth
-- **Crypto**: Binance AU, Kraken, KuCoin
-
-## 📦 Production Deployment
-
-See **[DEPLOYMENT.md](DEPLOYMENT.md)** for complete production guide.
-
-### Quick Start
-
-```bash
-# 1. Configure
-cp .env.example .env.prod
-# Edit .env.prod with production values
-
-# 2. Start production stack
-docker-compose -f docker-compose.prod.yml up -d
-
-# 3. Seed themes
-docker-compose -f docker-compose.prod.yml exec backend \
-  python backend/scripts/seed_themes.py
-
-# 4. Set up cron
-echo "5 * * * * curl -X POST https://yourdomain.com/api/ingest/run?mode=real" | crontab -
-```
-
-### Production Features
-- ✅ Structured JSON logging with rotation
-- ✅ Metrics & monitoring (`/api/healthz/metrics`)
-- ✅ HTTP retry logic (3 attempts, exponential backoff)
-- ✅ Rate limiting (API + outbound requests)
-- ✅ 85%+ test coverage with CI/CD
-- ✅ Nginx reverse proxy with TLS
-- ✅ Health checks & auto-restart
-- `SLACK_WEBHOOK` - Alerts webhook
-- `ALERT_SCORE_THRESHOLD` - Tune sensitivity
-
-### CI/CD
-
-GitHub Actions runs on push/PR:
-- Backend tests (pytest)
-- Frontend build verification
+---
 
 ## 🛠️ Technology Stack
 
 ### Backend
-- FastAPI (Python 3.11)
-- Motor (async MongoDB)
-- Pydantic v2 (validation)
+- FastAPI (Python 3.11) on Railway
+- TwelveData for price data
+- MongoDB + PostgreSQL (dual database)
 
 ### Frontend
-- React 18
-- Vite
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
+- React 18 + Vite + TypeScript
+- Tailwind CSS + shadcn/ui
+- Deployed on Lovable Cloud
 
 ### Infrastructure
-- MongoDB 7
-- Docker Compose
-- GitHub Actions
+- Supabase PostgreSQL + Edge Functions
+- Railway for Python backend
+- pg_cron for scheduled jobs
+- Upstash Redis for caching
+
+---
+
+## 🧪 Testing
+
+```bash
+# Backend tests
+cd backend
+pytest
+
+# Run specific test
+pytest backend/tests/test_scoring.py -v
+```
+
+See [docs/TESTING.md](docs/TESTING.md) for complete testing guide.
+
+---
 
 ## 📝 License
 
 MIT
+
+---
 
 ## 🤝 Contributing
 
