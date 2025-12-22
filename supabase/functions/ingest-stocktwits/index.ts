@@ -404,10 +404,15 @@ serve(async (req) => {
         ? (sentiment.bullish - sentiment.bearish) / sentiment.total 
         : 0;
       
-      // Sanitize sample messages for JSON storage
+      // Sanitize sample messages for JSON storage - remove control chars and emojis that break JSON
       const sanitizedSamples = sentiment.sampleMessages.map(msg => 
-        msg.replace(/[\x00-\x1F\x7F]/g, ' ').substring(0, 150)
-      );
+        msg
+          .replace(/[\x00-\x1F\x7F]/g, ' ')
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .substring(0, 150)
+      ).filter(msg => msg.length > 0);
       
       signals.push({
         ticker: ticker.substring(0, 10),
@@ -420,7 +425,7 @@ serve(async (req) => {
         metadata: {
           data_source: dataSource,
           fetched_at: new Date().toISOString(),
-          sample_messages: sentiment.sampleMessages,
+          sample_messages: sanitizedSamples,
           version: 'v8_api_primary',
         },
         created_at: new Date().toISOString(),
