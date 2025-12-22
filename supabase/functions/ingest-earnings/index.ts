@@ -8,6 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const VERSION = 'v2';
+
 interface EarningsData {
   ticker: string;
   quarter: string;
@@ -28,30 +30,73 @@ interface AlphaVantageEarning {
   surprisePercentage: string;
 }
 
+// Log API usage to tracking table
+async function logApiUsage(
+  supabase: any,
+  apiName: string,
+  endpoint: string,
+  status: 'success' | 'failure' | 'rate_limited',
+  responseTimeMs: number,
+  errorMessage?: string
+): Promise<void> {
+  try {
+    await supabase.from('api_usage_logs').insert({
+      api_name: apiName,
+      endpoint: endpoint,
+      function_name: 'ingest-earnings',
+      status: status,
+      response_time_ms: responseTimeMs,
+      error_message: errorMessage || null,
+    });
+  } catch (e) {
+    console.error('Failed to log API usage:', e);
+  }
+}
+
 // Fetch earnings from Alpha Vantage EARNINGS API
-async function fetchAlphaVantageEarnings(ticker: string, apiKey: string): Promise<EarningsData | null> {
+async function fetchAlphaVantageEarnings(
+  ticker: string, 
+  apiKey: string,
+  supabase: any
+): Promise<EarningsData | null> {
+  const startTime = Date.now();
+  const endpoint = '/query?function=EARNINGS';
+  
   try {
     const url = `https://www.alphavantage.co/query?function=EARNINGS&symbol=${ticker}&apikey=${apiKey}`;
     const response = await fetch(url);
+    const responseTimeMs = Date.now() - startTime;
     
     if (!response.ok) {
       console.log(`Alpha Vantage HTTP error for ${ticker}: ${response.status}`);
+      await logApiUsage(supabase, 'Alpha Vantage', endpoint, 'failure', responseTimeMs, `HTTP ${response.status}`);
       return null;
     }
     
     const data = await response.json();
     
     // Check for API errors or rate limits
-    if (data['Error Message'] || data['Note'] || data['Information']) {
-      console.log(`Alpha Vantage API limit/error for ${ticker}: ${data['Note'] || data['Information'] || data['Error Message']}`);
+    if (data['Note'] || data['Information']) {
+      console.log(`Alpha Vantage rate limit for ${ticker}: ${data['Note'] || data['Information']}`);
+      await logApiUsage(supabase, 'Alpha Vantage', endpoint, 'rate_limited', responseTimeMs, data['Note'] || data['Information']);
+      return null;
+    }
+    
+    if (data['Error Message']) {
+      console.log(`Alpha Vantage API error for ${ticker}: ${data['Error Message']}`);
+      await logApiUsage(supabase, 'Alpha Vantage', endpoint, 'failure', responseTimeMs, data['Error Message']);
       return null;
     }
     
     const quarterlyEarnings = data.quarterlyEarnings as AlphaVantageEarning[] | undefined;
     if (!quarterlyEarnings || quarterlyEarnings.length === 0) {
       console.log(`No quarterly earnings data for ${ticker}`);
+      await logApiUsage(supabase, 'Alpha Vantage', endpoint, 'success', responseTimeMs, 'No data available');
       return null;
     }
+    
+    // Log successful API call
+    await logApiUsage(supabase, 'Alpha Vantage', endpoint, 'success', responseTimeMs);
     
     // Get the most recent earnings
     const latest = quarterlyEarnings[0];
@@ -75,21 +120,28 @@ async function fetchAlphaVantageEarnings(ticker: string, apiKey: string): Promis
       sentiment_score: sentiment,
       metadata: {
         source: 'alpha_vantage',
+        version: VERSION,
         reported_eps: reportedEPS,
         estimated_eps: estimatedEPS,
         surprise_amount: parseFloat(latest.surprise) || 0,
         fiscal_date_ending: latest.fiscalDateEnding,
+        data_quality: 'official',
       },
       created_at: new Date().toISOString(),
     };
   } catch (error) {
+    const responseTimeMs = Date.now() - startTime;
     console.error(`Alpha Vantage error for ${ticker}:`, error);
+    await logApiUsage(supabase, 'Alpha Vantage', endpoint, 'failure', responseTimeMs, error instanceof Error ? error.message : 'Unknown error');
     return null;
   }
 }
 
 // Fallback: Use Firecrawl to search for earnings data
-async function fetchFirecrawlEarnings(tickers: string[]): Promise<Map<string, EarningsData>> {
+async function fetchFirecrawlEarnings(
+  tickers: string[],
+  supabase: any
+): Promise<Map<string, EarningsData>> {
   const results = new Map<string, EarningsData>();
   const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
   const lovableKey = Deno.env.get('LOVABLE_API_KEY');
@@ -100,13 +152,17 @@ async function fetchFirecrawlEarnings(tickers: string[]): Promise<Map<string, Ea
   }
   
   try {
-    // Search for recent earnings news in batches
+    // Process ALL tickers in batches (expanded from 20 limit)
     const batchSize = 5;
-    for (let i = 0; i < Math.min(tickers.length, 20); i += batchSize) {
+    const maxBatches = Math.ceil(tickers.length / batchSize);
+    let processedBatches = 0;
+    
+    for (let i = 0; i < tickers.length; i += batchSize) {
       const batch = tickers.slice(i, i + batchSize);
+      const startTime = Date.now();
       const query = `${batch.join(' ')} earnings surprise Q4 2024 Q3 2024 reported EPS`;
       
-      console.log(`Firecrawl search for: ${batch.join(', ')}`);
+      console.log(`[${++processedBatches}/${maxBatches}] Firecrawl search for: ${batch.join(', ')}`);
       
       const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
@@ -121,10 +177,15 @@ async function fetchFirecrawlEarnings(tickers: string[]): Promise<Map<string, Ea
         }),
       });
       
+      const responseTimeMs = Date.now() - startTime;
+      
       if (!searchResponse.ok) {
         console.log(`Firecrawl search failed: ${searchResponse.status}`);
+        await logApiUsage(supabase, 'Firecrawl', '/v1/search', 'failure', responseTimeMs, `HTTP ${searchResponse.status}`);
         continue;
       }
+      
+      await logApiUsage(supabase, 'Firecrawl', '/v1/search', 'success', responseTimeMs);
       
       const searchData = await searchResponse.json();
       if (!searchData.success || !searchData.data || searchData.data.length === 0) {
@@ -138,6 +199,7 @@ async function fetchFirecrawlEarnings(tickers: string[]): Promise<Map<string, Ea
         .substring(0, 8000);
       
       // Use Lovable AI to extract structured earnings data
+      const aiStartTime = Date.now();
       const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -199,10 +261,15 @@ Only include data you can verify from the text. If no earnings data found, retur
         }),
       });
       
+      const aiResponseTimeMs = Date.now() - aiStartTime;
+      
       if (!aiResponse.ok) {
         console.log(`Lovable AI extraction failed: ${aiResponse.status}`);
+        await logApiUsage(supabase, 'Lovable AI', '/v1/chat/completions', 'failure', aiResponseTimeMs, `HTTP ${aiResponse.status}`);
         continue;
       }
+      
+      await logApiUsage(supabase, 'Lovable AI', '/v1/chat/completions', 'success', aiResponseTimeMs);
       
       const aiData = await aiResponse.json();
       const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
@@ -229,13 +296,15 @@ Only include data you can verify from the text. If no earnings data found, retur
                   sentiment_score: sentiment,
                   metadata: {
                     source: 'firecrawl_extraction',
+                    version: VERSION,
                     reported_eps: e.reported_eps || null,
                     estimated_eps: e.estimated_eps || null,
+                    data_quality: 'ai_extracted',
                   },
                   created_at: now.toISOString(),
                 });
                 
-                console.log(`Extracted earnings for ${ticker}: ${e.surprise_percentage}% surprise`);
+                console.log(`✓ Extracted earnings for ${ticker}: ${e.surprise_percentage}% surprise`);
               }
             }
           }
@@ -244,7 +313,7 @@ Only include data you can verify from the text. If no earnings data found, retur
         }
       }
       
-      // Small delay between batches
+      // Rate limiting between batches
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   } catch (error) {
@@ -270,29 +339,36 @@ serve(async (req) => {
     
     supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Starting earnings ingestion with Alpha Vantage + Firecrawl fallback...');
+    console.log(`[ingest-earnings ${VERSION}] Starting earnings ingestion with Alpha Vantage + Firecrawl fallback...`);
 
-    // Fetch prioritized stocks (most traded/important first)
+    // Validate Alpha Vantage API key
+    if (!alphaVantageKey) {
+      console.warn('⚠️ ALPHA_VANTAGE_API_KEY not configured - will use Firecrawl only');
+    } else {
+      console.log('✓ Alpha Vantage API key configured');
+    }
+
+    // Fetch ALL stocks (removed limit for expanded coverage)
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('id, ticker, name')
       .eq('asset_class', 'stock')
-      .order('ticker')
-      .limit(500); // Focus on top 500 stocks for earnings
+      .order('ticker');
 
     if (assetsError) throw assetsError;
     
     if (!assets || assets.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, count: 0, message: 'No stocks found' }),
+        JSON.stringify({ success: true, count: 0, message: 'No stocks found', version: VERSION }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`Processing ${assets.length} stocks for earnings...`);
+    console.log(`Processing ${assets.length} stocks for earnings (v2 - full coverage)...`);
     const earnings: EarningsData[] = [];
     const tickersWithoutData: string[] = [];
     let alphaVantageCount = 0;
+    let alphaVantageErrors = 0;
     let firecrawlCount = 0;
     
     // Alpha Vantage: Free tier = 25 requests/day, process top tickers
@@ -303,7 +379,7 @@ serve(async (req) => {
       console.log(`Fetching from Alpha Vantage for ${topTickers.length} top stocks...`);
       
       for (const asset of topTickers) {
-        const earningsData = await fetchAlphaVantageEarnings(asset.ticker, alphaVantageKey);
+        const earningsData = await fetchAlphaVantageEarnings(asset.ticker, alphaVantageKey, supabase);
         
         if (earningsData) {
           earnings.push(earningsData);
@@ -311,26 +387,35 @@ serve(async (req) => {
           console.log(`✓ Alpha Vantage: ${asset.ticker} - ${earningsData.earnings_surprise}% surprise`);
         } else {
           tickersWithoutData.push(asset.ticker);
+          alphaVantageErrors++;
         }
         
-        // Rate limiting: 5 calls per minute for free tier
+        // Rate limiting: 5 calls per minute for free tier (12 seconds between calls)
         await new Promise(resolve => setTimeout(resolve, 12500));
       }
+      
+      console.log(`Alpha Vantage complete: ${alphaVantageCount} success, ${alphaVantageErrors} failed/no-data`);
     } else {
       console.log('Alpha Vantage API key not configured, using Firecrawl only');
       tickersWithoutData.push(...assets.map((a: any) => a.ticker));
     }
     
-    // Fallback: Use Firecrawl + Lovable AI for remaining important tickers
+    // Add remaining tickers (beyond Alpha Vantage limit) to fallback list
+    const remainingTickers = assets.slice(alphaVantageLimit).map((a: any) => a.ticker);
+    tickersWithoutData.push(...remainingTickers);
+    
+    // Fallback: Use Firecrawl + Lovable AI for all remaining tickers
     if (tickersWithoutData.length > 0) {
-      console.log(`Using Firecrawl fallback for ${Math.min(tickersWithoutData.length, 20)} tickers...`);
+      console.log(`Using Firecrawl fallback for ${tickersWithoutData.length} tickers...`);
       
-      const firecrawlResults = await fetchFirecrawlEarnings(tickersWithoutData.slice(0, 50));
+      const firecrawlResults = await fetchFirecrawlEarnings(tickersWithoutData, supabase);
       
       for (const [ticker, data] of firecrawlResults) {
         earnings.push(data);
         firecrawlCount++;
       }
+      
+      console.log(`Firecrawl complete: ${firecrawlCount} records extracted`);
     }
 
     console.log(`Collected ${earnings.length} earnings records (Alpha Vantage: ${alphaVantageCount}, Firecrawl: ${firecrawlCount})`);
@@ -368,6 +453,13 @@ serve(async (req) => {
       rows_skipped: assets.length - insertedCount,
       duration_ms: durationMs,
       source_used: sourceUsed,
+      metadata: {
+        version: VERSION,
+        alpha_vantage_success: alphaVantageCount,
+        alpha_vantage_errors: alphaVantageErrors,
+        firecrawl_count: firecrawlCount,
+        total_stocks_processed: assets.length,
+      },
     });
 
     await slackAlerter.sendLiveAlert({
@@ -382,12 +474,15 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
+        version: VERSION,
         count: insertedCount,
         sources: {
           alpha_vantage: alphaVantageCount,
+          alpha_vantage_errors: alphaVantageErrors,
           firecrawl: firecrawlCount,
         },
-        message: 'Real earnings data from Alpha Vantage + Firecrawl'
+        total_stocks: assets.length,
+        message: 'Real earnings data from Alpha Vantage + Firecrawl (v2)'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -402,6 +497,7 @@ serve(async (req) => {
         duration_ms: Date.now() - startTime,
         source_used: 'Alpha_Vantage + Firecrawl',
         error_message: error instanceof Error ? error.message : 'Unknown error',
+        metadata: { version: VERSION },
       });
     }
     
@@ -412,7 +508,7 @@ serve(async (req) => {
     });
     
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error', version: VERSION }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
