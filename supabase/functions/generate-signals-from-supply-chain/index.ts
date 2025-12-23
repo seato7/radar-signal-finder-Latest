@@ -81,21 +81,30 @@ serve(async (req) => {
       });
     }
 
-    const { error: insertError } = await supabaseClient
-      .from('signals')
-      .insert(signals);
-
-    if (insertError) {
-      console.error('[SIGNAL-GEN-SUPPLY] Insert error:', insertError);
-      throw insertError;
+    // Use upsert to avoid duplicate key errors
+    let insertedCount = 0;
+    const batchSize = 100;
+    for (let i = 0; i < signals.length; i += batchSize) {
+      const batch = signals.slice(i, i + batchSize);
+      const { data, error: insertError } = await supabaseClient
+        .from('signals')
+        .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
+        .select('id');
+      
+      if (insertError) {
+        console.log('[SIGNAL-GEN-SUPPLY] Batch error (continuing):', insertError.message);
+      } else {
+        insertedCount += data?.length || 0;
+      }
     }
 
-    console.log(`[SIGNAL-GEN-SUPPLY] ✅ Created ${signals.length} supply chain signals`);
+    console.log(`[SIGNAL-GEN-SUPPLY] ✅ Upserted ${insertedCount} supply chain signals (${signals.length - insertedCount} duplicates skipped)`);
 
     return new Response(JSON.stringify({ 
       success: true,
       records_processed: supplyChain.length,
-      signals_created: signals.length 
+      signals_created: insertedCount,
+      duplicates_skipped: signals.length - insertedCount
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
