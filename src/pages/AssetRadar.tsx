@@ -145,13 +145,15 @@ const AssetRadar = () => {
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
 
-        // Get previous day's prices for change calculation (use 48-hour window to get 2 days of data)
-        const changeCutoffTime = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        // Get previous day's prices for change calculation (use last 3 calendar days by date)
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
         const { data: previousPriceData } = await supabase
           .from('prices')
           .select('ticker, close, date')
           .in('ticker', recentTickers)
-          .gte('last_updated_at', changeCutoffTime)
+          .gte('date', changeCutoffDate)
           .order('date', { ascending: false });
 
         // Build previous price map (previous day's close for change calculation)
@@ -230,13 +232,16 @@ const AssetRadar = () => {
 
       // Fetch prices - use 48-hour window to ensure we get both current and previous day's prices
       const tickers = assetsData.map(a => a.ticker);
-      const changeCutoffTime = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      // Use last 3 calendar days for price change calculation (filter by date, not last_updated_at)
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
       
       const { data: recentPriceData } = await supabase
         .from('prices')
         .select('ticker, close, date, last_updated_at')
         .in('ticker', tickers)
-        .gte('last_updated_at', changeCutoffTime)
+        .gte('date', changeCutoffDate)
         .order('date', { ascending: false });
 
       const priceData = recentPriceData || [];
