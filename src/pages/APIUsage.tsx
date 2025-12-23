@@ -85,43 +85,49 @@ export default function APIUsage() {
   })) || [];
 
   // Calculate real costs from actual API usage data
-  // Based on actual 30-day data from api_usage_logs and function_status
+  // AUDITED: Based on actual 30-day data from ingest_logs (Dec 23, 2025)
+  // 
+  // Raw data from database:
+  // - Twelve Data: 21,740 runs (twelvedata source) - Fixed $79/mo
+  // - Perplexity: 382 (Perplexity API) + 83 (Perplexity AI) = 465 calls
+  // - Lovable AI: 188 (Multi-source) + 12 (Batch) = 200 calls
+  // - Firecrawl: 4 calls total (Firecrawl Search)
+  // - Yahoo Finance: Deprecated (stopped Dec 3)
+  // - Alpha Vantage: 99.8% failure rate, effectively unused
+  // - SEC EDGAR, RSS Feeds, OpenFIGI: Free APIs
   const actualCosts = {
     twelveData: {
       monthlyFixed: 79, // Grow plan fixed cost
+      callsPerMonth: 21740,
       description: "Grow plan (55 credits/min, unlimited daily)"
     },
     firecrawl: {
-      // Firecrawl is used for search trends, news scraping
-      // ~109 search trends runs + ~211 breaking news runs = ~320 scrapes/month
-      scrapesPerMonth: 320,
-      costPerScrape: 0.002,
+      // Actual: Only 4 Firecrawl Search calls in 30 days
+      callsPerMonth: 4,
+      costPerCall: 0.002,
       get monthlyCost() {
-        return this.scrapesPerMonth * this.costPerScrape;
+        return this.callsPerMonth * this.costPerCall;
       }
     },
     lovableAI: {
-      // Based on actual function_status: ~200 AI research runs in 30 days
-      // Plus theme discovery (~22 runs) and other AI functions
-      aiResearchRuns: 200,
-      themeDiscoveryRuns: 22,
-      otherAIRuns: 50, // chat-assistant, explain-signal, etc.
-      costPerCall: 0.0002, // $0.20 per 1M tokens, ~1000 tokens avg = $0.0002
+      // Actual: 188 (AI Research + Multi-source) + 12 (Batch) = 200 calls
+      callsPerMonth: 200,
+      costPerCall: 0.0002, // $0.20 per 1M tokens, ~1000 tokens avg
       get monthlyCost() {
-        return (this.aiResearchRuns + this.themeDiscoveryRuns + this.otherAIRuns) * this.costPerCall;
+        return this.callsPerMonth * this.costPerCall;
       }
     },
     perplexity: {
-      // Actual 30-day usage: 1,796 + 389 = 2,185 calls
-      callsPerMonth: 2185,
+      // Actual: 382 (Perplexity API from ingest_logs) + 83 (Perplexity AI) = 465
+      // Note: api_usage_logs shows higher numbers but includes failures
+      callsPerMonth: 465,
       costPerCall: 0.005,
       get monthlyCost() {
         return this.callsPerMonth * this.costPerCall;
       }
     },
     freeAPIs: {
-      // Yahoo Finance, Alpha Vantage, SEC EDGAR, Reddit, StockTwits - all free
-      description: "Yahoo Finance, Alpha Vantage, SEC EDGAR, Reddit, StockTwits, FRED",
+      description: "SEC EDGAR, RSS Feeds, OpenFIGI, FRED, Reddit",
       monthlyCost: 0
     },
     get totalMonthly() {
@@ -176,9 +182,9 @@ export default function APIUsage() {
               <div className="text-sm font-medium text-muted-foreground">Firecrawl (Scraping)</div>
               <div className="text-2xl font-bold">${actualCosts.firecrawl.monthlyCost.toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
-                ~{actualCosts.firecrawl.scrapesPerMonth} scrapes/mo
+                ~{actualCosts.firecrawl.callsPerMonth} calls/mo
                 <div className="mt-1 space-y-0.5">
-                  <div>• ${actualCosts.firecrawl.costPerScrape}/scrape</div>
+                  <div>• ${actualCosts.firecrawl.costPerCall}/call</div>
                 </div>
               </div>
             </div>
@@ -186,10 +192,9 @@ export default function APIUsage() {
               <div className="text-sm font-medium text-muted-foreground">Lovable AI (Gemini)</div>
               <div className="text-2xl font-bold">${actualCosts.lovableAI.monthlyCost.toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
-                ~{actualCosts.lovableAI.aiResearchRuns + actualCosts.lovableAI.themeDiscoveryRuns + actualCosts.lovableAI.otherAIRuns} calls/mo
+                ~{actualCosts.lovableAI.callsPerMonth} calls/mo
                 <div className="mt-1 space-y-0.5">
-                  <div>• AI Research: {actualCosts.lovableAI.aiResearchRuns}</div>
-                  <div>• Theme Discovery: {actualCosts.lovableAI.themeDiscoveryRuns}</div>
+                  <div>• AI Research + Multi-source</div>
                 </div>
               </div>
             </div>
