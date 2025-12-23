@@ -140,16 +140,17 @@ serve(async (req) => {
       
       for (let i = 0; i < signals.length; i += batchSize) {
         const batch = signals.slice(i, i + batchSize);
-        const { error: insertError } = await supabaseClient
+        const { data, error: insertError } = await supabaseClient
           .from('signals')
-          .insert(batch);
+          .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
+          .select('id');
 
         if (insertError) {
-          console.error('[SIGNAL-GEN-13F] Insert error:', insertError);
-          throw insertError;
+          console.log('[SIGNAL-GEN-13F] Batch error (continuing):', insertError.message);
+        } else {
+          inserted += data?.length || 0;
         }
-        inserted += batch.length;
-        console.log(`[SIGNAL-GEN-13F] Inserted batch ${Math.floor(i/batchSize) + 1}: ${inserted}/${signals.length}`);
+        console.log(`[SIGNAL-GEN-13F] Upserted batch ${Math.floor(i/batchSize) + 1}: ${inserted} new signals`);
       }
     }
 

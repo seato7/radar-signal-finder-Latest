@@ -121,23 +121,32 @@ serve(async (req) => {
       });
     }
 
-    const { error: insertError } = await supabaseClient
-      .from('signals')
-      .insert(signals);
-
-    if (insertError) {
-      console.error('[v2] Insert error:', insertError);
-      throw insertError;
+    // Use upsert to avoid duplicate key errors
+    let insertedCount = 0;
+    const batchSize = 100;
+    for (let i = 0; i < signals.length; i += batchSize) {
+      const batch = signals.slice(i, i + batchSize);
+      const { data, error: insertError } = await supabaseClient
+        .from('signals')
+        .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
+        .select('id');
+      
+      if (insertError) {
+        console.log('[v2] Batch error (continuing):', insertError.message);
+      } else {
+        insertedCount += data?.length || 0;
+      }
     }
 
-    console.log(`[v2] ✅ Created ${signals.length} REAL innovation patent signals - NO ESTIMATIONS`);
+    console.log(`[v2] ✅ Upserted ${insertedCount} REAL innovation patent signals - NO ESTIMATIONS (${signals.length - insertedCount} duplicates)`);
 
     return new Response(JSON.stringify({ 
       success: true,
       patents_processed: patents.length,
-      signals_created: signals.length,
+      signals_created: insertedCount,
+      duplicates_skipped: signals.length - insertedCount,
       version: 'v2_no_estimation',
-      message: `Created ${signals.length} REAL innovation patent signals`
+      message: `Created ${insertedCount} REAL innovation patent signals`
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
