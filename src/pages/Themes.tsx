@@ -256,7 +256,7 @@ const Themes = () => {
                       className="flex-1"
                       variant="outline"
                     >
-                      <Link to="/radar">
+                      <Link to="/asset-radar">
                         View Opportunities
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
