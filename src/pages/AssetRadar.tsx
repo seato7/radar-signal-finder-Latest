@@ -145,26 +145,25 @@ const AssetRadar = () => {
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
 
-        // Get previous day's prices for change calculation (use most recent 2 days)
-        const previousDayCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        // Get previous day's prices for change calculation (use 48-hour window to get 2 days of data)
+        const changeCutoffTime = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
         const { data: previousPriceData } = await supabase
           .from('prices')
           .select('ticker, close, date')
           .in('ticker', recentTickers)
-          .gte('last_updated_at', previousDayCutoff)
+          .gte('last_updated_at', changeCutoffTime)
           .order('date', { ascending: false });
 
-        // Build previous price map (second-most-recent price per ticker for change calc)
+        // Build previous price map (previous day's close for change calculation)
         const previousPriceMap = new Map<string, number>();
-        const seenTickers = new Set<string>();
+        const seenDates = new Map<string, string>(); // Track the date of the first (most recent) price seen
         (previousPriceData || []).forEach(p => {
-          if (seenTickers.has(p.ticker)) {
-            // This is the second occurrence = previous price
-            if (!previousPriceMap.has(p.ticker)) {
-              previousPriceMap.set(p.ticker, p.close);
-            }
-          } else {
-            seenTickers.add(p.ticker);
+          if (!seenDates.has(p.ticker)) {
+            // First occurrence = most recent date
+            seenDates.set(p.ticker, p.date);
+          } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
+            // Different date = previous day's close
+            previousPriceMap.set(p.ticker, p.close);
           }
         });
 
@@ -229,33 +228,34 @@ const AssetRadar = () => {
       assetsData = data || [];
       totalCount = count || 0;
 
-      // Fetch prices within cycle window for accurate last_updated_at timestamps
+      // Fetch prices - use 48-hour window to ensure we get both current and previous day's prices
       const tickers = assetsData.map(a => a.ticker);
+      const changeCutoffTime = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
       
       const { data: recentPriceData } = await supabase
         .from('prices')
         .select('ticker, close, date, last_updated_at')
         .in('ticker', tickers)
-        .gte('last_updated_at', cutoffTime)
-        .order('last_updated_at', { ascending: false });
+        .gte('last_updated_at', changeCutoffTime)
+        .order('date', { ascending: false });
 
       const priceData = recentPriceData || [];
 
-      // Build maps: most recent price per ticker and previous price for change calc
+      // Build maps: most recent price per ticker (for display) and previous day's price (for % change)
       const priceMap = new Map<string, { lastUpdated: string; close: number }>();
       const previousPriceMap = new Map<string, number>();
-      const seenTickers = new Set<string>();
+      const seenDates = new Map<string, string>(); // Track the date of the first price seen per ticker
       
       priceData.forEach(p => {
         if (!priceMap.has(p.ticker)) {
-          // First occurrence = most recent price
+          // First occurrence = most recent price (for display)
           priceMap.set(p.ticker, { 
             lastUpdated: p.last_updated_at || '', 
             close: p.close 
           });
-          seenTickers.add(p.ticker);
-        } else if (!previousPriceMap.has(p.ticker)) {
-          // Second occurrence = previous price for change calculation
+          seenDates.set(p.ticker, p.date);
+        } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
+          // Different date = previous day's close (for % change calculation)
           previousPriceMap.set(p.ticker, p.close);
         }
       });
