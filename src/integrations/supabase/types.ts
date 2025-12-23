@@ -1390,6 +1390,81 @@ export type Database = {
           },
         ]
       }
+      form4_insider_trades: {
+        Row: {
+          asset_id: string | null
+          checksum: string | null
+          created_at: string | null
+          filing_date: string
+          form_url: string | null
+          id: string
+          insider_name: string
+          insider_title: string | null
+          is_direct_ownership: boolean | null
+          metadata: Json | null
+          price_per_share: number | null
+          shares: number | null
+          shares_owned_after: number | null
+          ticker: string
+          total_value: number | null
+          transaction_date: string | null
+          transaction_type: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          checksum?: string | null
+          created_at?: string | null
+          filing_date: string
+          form_url?: string | null
+          id?: string
+          insider_name: string
+          insider_title?: string | null
+          is_direct_ownership?: boolean | null
+          metadata?: Json | null
+          price_per_share?: number | null
+          shares?: number | null
+          shares_owned_after?: number | null
+          ticker: string
+          total_value?: number | null
+          transaction_date?: string | null
+          transaction_type?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          checksum?: string | null
+          created_at?: string | null
+          filing_date?: string
+          form_url?: string | null
+          id?: string
+          insider_name?: string
+          insider_title?: string | null
+          is_direct_ownership?: boolean | null
+          metadata?: Json | null
+          price_per_share?: number | null
+          shares?: number | null
+          shares_owned_after?: number | null
+          ticker?: string
+          total_value?: number | null
+          transaction_date?: string | null
+          transaction_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form4_insider_trades_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "form4_insider_trades_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       function_status: {
         Row: {
           created_at: string
@@ -1998,6 +2073,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      policy_feeds: {
+        Row: {
+          affected_sectors: string[] | null
+          affected_tickers: string[] | null
+          checksum: string | null
+          created_at: string | null
+          id: string
+          impact_assessment: string | null
+          impact_score: number | null
+          metadata: Json | null
+          policy_type: string
+          published_at: string | null
+          source: string | null
+          source_url: string | null
+          summary: string | null
+          ticker: string | null
+          title: string
+        }
+        Insert: {
+          affected_sectors?: string[] | null
+          affected_tickers?: string[] | null
+          checksum?: string | null
+          created_at?: string | null
+          id?: string
+          impact_assessment?: string | null
+          impact_score?: number | null
+          metadata?: Json | null
+          policy_type: string
+          published_at?: string | null
+          source?: string | null
+          source_url?: string | null
+          summary?: string | null
+          ticker?: string | null
+          title: string
+        }
+        Update: {
+          affected_sectors?: string[] | null
+          affected_tickers?: string[] | null
+          checksum?: string | null
+          created_at?: string | null
+          id?: string
+          impact_assessment?: string | null
+          impact_score?: number | null
+          metadata?: Json | null
+          policy_type?: string
+          published_at?: string | null
+          source?: string | null
+          source_url?: string | null
+          summary?: string | null
+          ticker?: string | null
+          title?: string
+        }
+        Relationships: []
       }
       prices: {
         Row: {
