@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +39,15 @@ serve(async (req) => {
 
     if (!holdings || holdings.length === 0) {
       const duration = Date.now() - startTime;
+      
+      await logHeartbeat(supabaseClient, {
+        function_name: 'generate-signals-from-13f',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'holdings_13f',
+      });
+      
       await slackAlerter.sendLiveAlert({
         etlName: 'generate-signals-from-13f',
         status: 'success',
@@ -133,10 +143,10 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-13F] Prepared ${signals.length} signals, skipping ${skipped} duplicates`);
 
+    let inserted = 0;
     if (signals.length > 0) {
       // Insert in batches to avoid timeout
       const batchSize = 500;
-      let inserted = 0;
       
       for (let i = 0; i < signals.length; i += batchSize) {
         const batch = signals.slice(i, i + batchSize);
@@ -154,21 +164,31 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[SIGNAL-GEN-13F] ✅ Created ${signals.length} institutional 13F signals`);
+    console.log(`[SIGNAL-GEN-13F] ✅ Created ${inserted} institutional 13F signals`);
 
     const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-13f',
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skipped,
+      duration_ms: duration,
+      source_used: 'holdings_13f',
+    });
+    
     await slackAlerter.sendLiveAlert({
       etlName: 'generate-signals-from-13f',
       status: 'success',
       duration,
       latencyMs: duration,
-      rowsInserted: signals.length,
+      rowsInserted: inserted,
     });
 
     return new Response(JSON.stringify({ 
       success: true,
       holdings_processed: holdings.length,
-      signals_created: signals.length,
+      signals_created: inserted,
       signals_skipped: skipped,
       assets_matched: tickerToAssetId.size
     }), {
@@ -177,6 +197,19 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-13F] ❌ Error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-13f',
+      status: 'failure',
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
     
     await slackAlerter.sendCriticalAlert({
       type: 'halted',

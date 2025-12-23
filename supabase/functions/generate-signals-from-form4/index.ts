@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
 
   try {
     const supabaseClient = createClient(
@@ -30,6 +33,16 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-FORM4] Found ${filings?.length || 0} Form 4 filings`);
 
     if (!filings || filings.length === 0) {
+      const duration = Date.now() - startTime;
+      
+      await logHeartbeat(supabaseClient, {
+        function_name: 'generate-signals-from-form4',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'form4_insider_trades',
+      });
+      
       return new Response(JSON.stringify({ message: 'No Form 4 filings to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -103,6 +116,17 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-FORM4] ✅ Upserted ${insertedCount} insider trading signals (${signals.length - insertedCount} duplicates skipped)`);
 
+    const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-form4',
+      status: 'success',
+      rows_inserted: insertedCount,
+      rows_skipped: signals.length - insertedCount,
+      duration_ms: duration,
+      source_used: 'form4_insider_trades',
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       filings_processed: filings.length,
@@ -114,6 +138,20 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-FORM4] ❌ Error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-form4',
+      status: 'failure',
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {
