@@ -80,16 +80,122 @@ const AssetRadar = () => {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab) => {
+  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab, currentSortBy: SortOption = sortBy) => {
     setLoading(true);
     
     try {
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const tabConfig = ASSET_CLASS_TABS.find(t => t.value === assetClass);
+
+      let assetsData: any[] = [];
+      let totalCount = 0;
+
+      // For "Most Recently Updated" mode, fetch from prices first to get global ordering
+      if (currentSortBy === "recent" && !searchTerm) {
+        // Step 1: Get today's prices ordered by last_updated_at, paginated
+        let priceQuery = supabase
+          .from('prices')
+          .select('ticker, close, last_updated_at', { count: 'exact' })
+          .eq('date', today)
+          .order('last_updated_at', { ascending: false });
+
+        const { data: recentPrices, count: priceCount, error: priceError } = await priceQuery
+          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+
+        if (priceError) throw priceError;
+
+        const recentTickers = (recentPrices || []).map(p => p.ticker);
+        
+        if (recentTickers.length === 0) {
+          setAssets([]);
+          setTotal(0);
+          setLoading(false);
+          return;
+        }
+
+        // Step 2: Fetch assets for these tickers
+        let assetQuery = supabase
+          .from('assets')
+          .select('*')
+          .in('ticker', recentTickers);
+
+        // Filter by asset class if needed
+        if (tabConfig?.filter) {
+          assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
+        }
+
+        const { data: matchingAssets, error: assetError } = await assetQuery;
+        if (assetError) throw assetError;
+
+        // Build price map from what we already fetched
+        const priceMap = new Map<string, { lastUpdated: string; close: number }>();
+        (recentPrices || []).forEach(p => {
+          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+        });
+
+        // Reorder assets to match the price recency order
+        const tickerOrder = new Map(recentTickers.map((t, i) => [t, i]));
+        assetsData = (matchingAssets || [])
+          .filter(a => tickerOrder.has(a.ticker))
+          .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
+
+        // Get yesterday's prices for change calculation
+        const { data: yesterdayPriceData } = await supabase
+          .from('prices')
+          .select('ticker, close')
+          .in('ticker', recentTickers)
+          .eq('date', yesterday);
+
+        const yesterdayPriceMap = new Map<string, number>();
+        (yesterdayPriceData || []).forEach(p => {
+          yesterdayPriceMap.set(p.ticker, p.close);
+        });
+
+        // Compute scores
+        const assetsForScoring = assetsData.map(a => ({
+          id: a.id,
+          ticker: a.ticker,
+          asset_class: a.asset_class
+        }));
+        const scoreMap = await computeAssetScoresBatch(assetsForScoring);
+
+        // Build enhanced assets
+        const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
+          const score = scoreMap.get(asset.id) ?? 50;
+          const sentiment = getSentiment(score);
+          const priceInfo = priceMap.get(asset.ticker);
+          const yesterdayPrice = yesterdayPriceMap.get(asset.ticker);
+          
+          let priceChange: number | null = null;
+          if (priceInfo && yesterdayPrice && yesterdayPrice !== 0) {
+            priceChange = Math.round(((priceInfo.close - yesterdayPrice) / yesterdayPrice) * 10000) / 100;
+          }
+          
+          return {
+            id: asset.id,
+            ticker: asset.ticker,
+            name: asset.name,
+            exchange: asset.exchange,
+            asset_class: asset.asset_class,
+            score,
+            sentiment: sentiment.label,
+            lastUpdated: priceInfo?.lastUpdated || null,
+            priceChange
+          };
+        });
+
+        setAssets(enhancedAssets);
+        setTotal(priceCount || 0);
+        setLoading(false);
+        return;
+      }
+
+      // Default mode: fetch assets first, then enrich with prices
       let query = supabase
         .from('assets')
         .select('*', { count: 'exact' });
 
-      // Filter by asset class if not "all"
-      const tabConfig = ASSET_CLASS_TABS.find(t => t.value === assetClass);
       if (tabConfig?.filter) {
         query = query.eq('asset_class', tabConfig.filter);
       }
@@ -104,11 +210,12 @@ const AssetRadar = () => {
 
       if (error) throw error;
 
+      assetsData = data || [];
+      totalCount = count || 0;
+
       // Fetch today's prices for accurate last_updated_at timestamps
-      const tickers = (data || []).map(a => a.ticker);
-      const today = new Date().toISOString().split('T')[0];
+      const tickers = assetsData.map(a => a.ticker);
       
-      // Get today's prices (1 row per ticker with real last_updated_at)
       const { data: todayPriceData } = await supabase
         .from('prices')
         .select('ticker, close, date, last_updated_at')
@@ -116,8 +223,6 @@ const AssetRadar = () => {
         .eq('date', today)
         .order('last_updated_at', { ascending: false });
 
-      // Get yesterday's prices for price change calculation
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
       const { data: yesterdayPriceData } = await supabase
         .from('prices')
         .select('ticker, close')
@@ -126,13 +231,11 @@ const AssetRadar = () => {
 
       const priceData = todayPriceData || [];
 
-      // Create yesterday's price map for change calculation
       const yesterdayPriceMap = new Map<string, number>();
       (yesterdayPriceData || []).forEach(p => {
         yesterdayPriceMap.set(p.ticker, p.close);
       });
 
-      // Create map for ticker -> latest update time and price change
       const priceMap = new Map<string, { lastUpdated: string; priceChange: number | null }>();
       
       priceData.forEach(p => {
@@ -151,16 +254,14 @@ const AssetRadar = () => {
         }
       });
 
-      // Compute real scores for all assets using data-driven scoring
-      const assetsForScoring = (data || []).map(a => ({
+      const assetsForScoring = assetsData.map(a => ({
         id: a.id,
         ticker: a.ticker,
         asset_class: a.asset_class
       }));
       const scoreMap = await computeAssetScoresBatch(assetsForScoring);
 
-      // Enhance assets with computed scores, last updated, and price change
-      const enhancedAssets: AssetWithScore[] = (data || []).map((asset) => {
+      const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
         const score = scoreMap.get(asset.id) ?? 50;
         const sentiment = getSentiment(score);
         const priceInfo = priceMap.get(asset.ticker);
@@ -179,7 +280,7 @@ const AssetRadar = () => {
       });
 
       setAssets(enhancedAssets);
-      setTotal(count || 0);
+      setTotal(totalCount);
     } catch (error) {
       console.error("Failed to fetch assets:", error);
     } finally {
@@ -227,9 +328,9 @@ const AssetRadar = () => {
 
   useEffect(() => {
     setPage(0);
-    const debounce = setTimeout(() => fetchAssets(0, activeTab), 300);
+    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab]);
+  }, [searchTerm, activeTab, sortBy]);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as AssetClassTab);
@@ -240,7 +341,7 @@ const AssetRadar = () => {
   const goToPage = (newPage: number) => {
     if (newPage >= 0 && newPage < totalPages) {
       setPage(newPage);
-      fetchAssets(newPage, activeTab);
+      fetchAssets(newPage, activeTab, sortBy);
     }
   };
 
