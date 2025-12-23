@@ -104,40 +104,50 @@ const AssetRadar = () => {
 
       if (error) throw error;
 
-      // Fetch latest prices for these assets (get last 2 prices per ticker to calculate change)
+      // Fetch today's prices for accurate last_updated_at timestamps
       const tickers = (data || []).map(a => a.ticker);
-      const { data: priceData } = await supabase
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Get today's prices (1 row per ticker with real last_updated_at)
+      const { data: todayPriceData } = await supabase
         .from('prices')
         .select('ticker, close, date, last_updated_at')
         .in('ticker', tickers)
-        .order('date', { ascending: false });
+        .eq('date', today)
+        .order('last_updated_at', { ascending: false });
 
-      // Create maps for ticker -> latest update time and price change
-      const priceMap = new Map<string, { lastUpdated: string; priceChange: number | null }>();
-      const tickerPrices = new Map<string, number[]>();
-      
-      priceData?.forEach(p => {
-        const prices = tickerPrices.get(p.ticker) || [];
-        if (prices.length < 2) {
-          prices.push(p.close);
-          tickerPrices.set(p.ticker, prices);
-        }
-        if (!priceMap.has(p.ticker)) {
-          priceMap.set(p.ticker, { 
-            lastUpdated: p.last_updated_at || '', 
-            priceChange: null 
-          });
-        }
+      // Get yesterday's prices for price change calculation
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const { data: yesterdayPriceData } = await supabase
+        .from('prices')
+        .select('ticker, close')
+        .in('ticker', tickers)
+        .eq('date', yesterday);
+
+      const priceData = todayPriceData || [];
+
+      // Create yesterday's price map for change calculation
+      const yesterdayPriceMap = new Map<string, number>();
+      (yesterdayPriceData || []).forEach(p => {
+        yesterdayPriceMap.set(p.ticker, p.close);
       });
 
-      // Calculate price change percentage
-      tickerPrices.forEach((prices, ticker) => {
-        if (prices.length >= 2 && prices[1] !== 0) {
-          const change = ((prices[0] - prices[1]) / prices[1]) * 100;
-          const existing = priceMap.get(ticker);
-          if (existing) {
-            existing.priceChange = Math.round(change * 100) / 100;
+      // Create map for ticker -> latest update time and price change
+      const priceMap = new Map<string, { lastUpdated: string; priceChange: number | null }>();
+      
+      priceData.forEach(p => {
+        if (!priceMap.has(p.ticker)) {
+          const yesterdayPrice = yesterdayPriceMap.get(p.ticker);
+          let priceChange: number | null = null;
+          
+          if (yesterdayPrice && yesterdayPrice !== 0) {
+            priceChange = Math.round(((p.close - yesterdayPrice) / yesterdayPrice) * 10000) / 100;
           }
+          
+          priceMap.set(p.ticker, { 
+            lastUpdated: p.last_updated_at || '', 
+            priceChange 
+          });
         }
       });
 
