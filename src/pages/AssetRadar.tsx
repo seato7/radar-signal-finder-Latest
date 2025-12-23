@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { computeAssetScoresBatch } from "@/lib/assetScoring";
@@ -75,17 +75,13 @@ const AssetRadar = () => {
   const [sortBy, setSortBy] = useState<SortOption>("score-desc");
   const [assets, setAssets] = useState<AssetWithScore[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
 
-  const fetchAssets = async (pageNum: number, append: boolean = false, assetClass: AssetClassTab = activeTab) => {
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab) => {
+    setLoading(true);
     
     try {
       let query = supabase
@@ -172,19 +168,12 @@ const AssetRadar = () => {
         };
       });
 
-      if (append) {
-        setAssets(prev => [...prev, ...enhancedAssets]);
-      } else {
-        setAssets(enhancedAssets);
-      }
-      
+      setAssets(enhancedAssets);
       setTotal(count || 0);
-      setHasMore((pageNum + 1) * PAGE_SIZE < (count || 0));
     } catch (error) {
       console.error("Failed to fetch assets:", error);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   };
 
@@ -228,7 +217,7 @@ const AssetRadar = () => {
 
   useEffect(() => {
     setPage(0);
-    const debounce = setTimeout(() => fetchAssets(0, false, activeTab), 300);
+    const debounce = setTimeout(() => fetchAssets(0, activeTab), 300);
     return () => clearTimeout(debounce);
   }, [searchTerm, activeTab]);
 
@@ -238,10 +227,29 @@ const AssetRadar = () => {
     setAssets([]);
   };
 
-  const loadMore = () => {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchAssets(nextPage, true);
+  const goToPage = (newPage: number) => {
+    if (newPage >= 0 && newPage < totalPages) {
+      setPage(newPage);
+      fetchAssets(newPage, activeTab);
+    }
+  };
+
+  // Generate visible page numbers (show max 5 pages around current)
+  const getVisiblePages = () => {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(0, page - Math.floor(maxVisible / 2));
+    let end = Math.min(totalPages - 1, start + maxVisible - 1);
+    
+    // Adjust start if we're near the end
+    if (end - start < maxVisible - 1) {
+      start = Math.max(0, end - maxVisible + 1);
+    }
+    
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
   };
 
   const getTabDescription = () => {
@@ -358,15 +366,44 @@ const AssetRadar = () => {
                   );
                 })}
               </div>
-              {hasMore && (
-                <div className="flex justify-center mt-6">
-                  <Button 
-                    onClick={loadMore} 
-                    disabled={loadingMore}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-1 mt-6">
+                  <Button
                     variant="outline"
+                    size="icon"
+                    onClick={() => goToPage(page - 1)}
+                    disabled={page === 0 || loading}
+                    className="h-9 w-9"
                   >
-                    {loadingMore ? "Loading..." : `Load More (${assets.length} of ${total})`}
+                    <ChevronLeft className="h-4 w-4" />
                   </Button>
+                  
+                  {getVisiblePages().map((pageNum) => (
+                    <Button
+                      key={pageNum}
+                      variant={pageNum === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => goToPage(pageNum)}
+                      disabled={loading}
+                      className="h-9 w-9"
+                    >
+                      {pageNum + 1}
+                    </Button>
+                  ))}
+                  
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => goToPage(page + 1)}
+                    disabled={page >= totalPages - 1 || loading}
+                    className="h-9 w-9"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  
+                  <span className="text-sm text-muted-foreground ml-3">
+                    {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
+                  </span>
                 </div>
               )}
             </>
