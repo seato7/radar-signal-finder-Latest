@@ -14,7 +14,7 @@ import { formatDistanceToNow } from "date-fns";
 import { computeAssetScoresBatch } from "@/lib/assetScoring";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
-type SortOption = "score-desc" | "score-asc" | "rank-asc" | "rank-desc" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
+type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
 
 interface AssetWithScore {
   id: string;
@@ -62,8 +62,7 @@ const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.React
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "score-desc", label: "Highest Score" },
   { value: "score-asc", label: "Lowest Score" },
-  { value: "rank-asc", label: "Highest Ranking" },
-  { value: "rank-desc", label: "Lowest Ranking" },
+  { value: "recent", label: "Most Recently Updated" },
   { value: "gainers", label: "Biggest Gainers" },
   { value: "losers", label: "Biggest Losers" },
   { value: "alpha-asc", label: "A → Z" },
@@ -197,12 +196,13 @@ const AssetRadar = () => {
         return sorted.sort((a, b) => b.score - a.score);
       case "score-asc":
         return sorted.sort((a, b) => a.score - b.score);
-      case "rank-asc":
-        // Highest ranking = lowest rank number = highest score
-        return sorted.sort((a, b) => b.score - a.score);
-      case "rank-desc":
-        // Lowest ranking = highest rank number = lowest score
-        return sorted.sort((a, b) => a.score - b.score);
+      case "recent":
+        return sorted.sort((a, b) => {
+          if (!a.lastUpdated && !b.lastUpdated) return 0;
+          if (!a.lastUpdated) return 1;
+          if (!b.lastUpdated) return -1;
+          return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
+        });
       case "alpha-asc":
         return sorted.sort((a, b) => a.ticker.localeCompare(b.ticker));
       case "alpha-desc":
