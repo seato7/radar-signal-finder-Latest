@@ -2,75 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Insider Pulse Design System - Bold Trading Dashboard */
 
 @layer base {
   :root {
-    /* Spec-compliant dark tokens */
-    --bg: 217 91% 3%;  /* #06080f */
-    --fg: 220 25% 93%;  /* #e6e9f2 */
-    --surface-1: 220 58% 6%;  /* #0b1020 */
-    --surface-2: 220 52% 10%;  /* #0e1428 */
-    --border: 220 31% 24%;  /* #2a3450 */
-    --accent: 199 89% 48%;  /* #0ea5e9 */
-    --accent-purple: 258 90% 66%;  /* #8b5cf6 */
-    --accent-gold: 38 92% 50%;  /* #f59e0b */
+    /* Core dark theme - high contrast black/blue */
+    --bg: 220 20% 4%;
+    --fg: 210 20% 94%;
+    --surface-1: 220 25% 7%;
+    --surface-2: 220 22% 10%;
+    --surface-3: 220 18% 14%;
+    --border: 220 15% 20%;
+    --border-glow: 199 89% 48%;
+    
+    /* Accent colors */
+    --accent-cyan: 199 89% 48%;
+    --accent-purple: 258 90% 66%;
+    --accent-gold: 38 92% 50%;
+    --accent-emerald: 160 84% 39%;
+    --accent-rose: 350 89% 60%;
+    
+    /* Semantic colors */
+    --bull: 160 84% 39%;
+    --bear: 0 75% 55%;
+    --neutral: 220 15% 50%;
     
     /* Map to shadcn tokens */
-    --background: 217 91% 3%;
-    --foreground: 220 25% 93%;
+    --background: 220 20% 4%;
+    --foreground: 210 20% 94%;
 
-    --card: 220 58% 6%;
-    --card-foreground: 220 25% 93%;
+    --card: 220 25% 7%;
+    --card-foreground: 210 20% 94%;
 
-    --popover: 220 52% 10%;
-    --popover-foreground: 220 25% 93%;
+    --popover: 220 22% 10%;
+    --popover-foreground: 210 20% 94%;
 
     --primary: 199 89% 48%;
-    --primary-foreground: 220 25% 93%;
+    --primary-foreground: 220 20% 4%;
     --primary-glow: 199 89% 58%;
 
-    --secondary: 220 31% 24%;
-    --secondary-foreground: 220 25% 93%;
+    --secondary: 220 15% 20%;
+    --secondary-foreground: 210 20% 94%;
 
-    --muted: 220 52% 10%;
-    --muted-foreground: 220 25% 60%;
+    --muted: 220 22% 10%;
+    --muted-foreground: 220 15% 55%;
 
     --accent: 199 89% 48%;
-    --accent-foreground: 217 91% 3%;
+    --accent-foreground: 220 20% 4%;
 
     --destructive: 0 75% 55%;
-    --destructive-foreground: 220 25% 93%;
+    --destructive-foreground: 210 20% 94%;
 
-    --success: 142 75% 55%;
-    --success-foreground: 217 91% 3%;
+    --success: 160 84% 39%;
+    --success-foreground: 220 20% 4%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 217 91% 3%;
+    --warning-foreground: 220 20% 4%;
 
-    --input: 220 31% 24%;
+    --input: 220 15% 20%;
     --ring: 199 89% 48%;
 
-    --radius: 0.375rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 220 58% 6%;
-    --sidebar-foreground: 220 25% 85%;
+    --sidebar-background: 220 25% 7%;
+    --sidebar-foreground: 220 15% 75%;
     --sidebar-primary: 199 89% 48%;
-    --sidebar-primary-foreground: 220 25% 93%;
-    --sidebar-accent: 220 52% 10%;
-    --sidebar-accent-foreground: 220 25% 93%;
-    --sidebar-border: 220 31% 20%;
+    --sidebar-primary-foreground: 210 20% 94%;
+    --sidebar-accent: 220 22% 10%;
+    --sidebar-accent-foreground: 210 20% 94%;
+    --sidebar-border: 220 15% 18%;
     --sidebar-ring: 199 89% 48%;
 
-    /* Custom gradients */
+    /* Gradients */
     --gradient-chrome: linear-gradient(135deg, hsl(199 89% 48%) 0%, hsl(258 90% 66%) 100%);
-    --gradient-glow: linear-gradient(180deg, hsl(199 89% 48% / 0.1) 0%, transparent 100%);
+    --gradient-bull: linear-gradient(135deg, hsl(160 84% 39%) 0%, hsl(160 84% 29%) 100%);
+    --gradient-bear: linear-gradient(135deg, hsl(0 75% 55%) 0%, hsl(0 75% 45%) 100%);
+    --gradient-gold: linear-gradient(135deg, hsl(38 92% 50%) 0%, hsl(28 92% 40%) 100%);
+    --gradient-surface: linear-gradient(180deg, hsl(220 25% 8%) 0%, hsl(220 25% 5%) 100%);
+    --gradient-glow: radial-gradient(ellipse at top, hsl(199 89% 48% / 0.15) 0%, transparent 50%);
+    --gradient-hero: linear-gradient(135deg, hsl(220 25% 8%) 0%, hsl(220 30% 5%) 50%, hsl(199 50% 8%) 100%);
     
     /* Shadows */
-    --shadow-chrome: 0 0 20px hsl(199 89% 48% / 0.2);
-    --shadow-data: 0 2px 8px hsl(217 91% 3% / 0.6);
+    --shadow-chrome: 0 0 30px hsl(199 89% 48% / 0.25);
+    --shadow-glow: 0 0 40px hsl(199 89% 48% / 0.3);
+    --shadow-data: 0 4px 20px hsl(220 20% 4% / 0.8);
+    --shadow-card: 0 1px 3px hsl(220 20% 4% / 0.5), 0 4px 20px hsl(220 20% 4% / 0.3);
+    --shadow-bull: 0 0 20px hsl(160 84% 39% / 0.3);
+    --shadow-bear: 0 0 20px hsl(0 75% 55% / 0.3);
   }
 }
 
@@ -80,6 +98,123 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    background-image: var(--gradient-glow);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  /* Animated pulse for live indicators */
+  .pulse-live {
+    animation: pulse-live 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  @keyframes pulse-live {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+  
+  /* Glow effect for cards on hover */
+  .card-glow {
+    transition: all 0.3s ease;
+  }
+  
+  .card-glow:hover {
+    box-shadow: 0 0 30px hsl(199 89% 48% / 0.15);
+    border-color: hsl(199 89% 48% / 0.4);
+  }
+  
+  /* Sparkline container */
+  .sparkline-container {
+    @apply h-8 w-24 relative overflow-hidden;
+  }
+  
+  /* Score bar animation */
+  .score-bar {
+    transition: width 1s ease-out;
+  }
+  
+  /* Animated counter */
+  .counter-animate {
+    animation: counter-pop 0.5s ease-out;
+  }
+  
+  @keyframes counter-pop {
+    0% {
+      transform: scale(0.8);
+      opacity: 0;
+    }
+    50% {
+      transform: scale(1.1);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  
+  /* Signal badge pulse */
+  .signal-badge-bull {
+    @apply bg-success/20 text-success border border-success/30;
+    animation: signal-pulse-bull 3s ease-in-out infinite;
+  }
+  
+  .signal-badge-bear {
+    @apply bg-destructive/20 text-destructive border border-destructive/30;
+    animation: signal-pulse-bear 3s ease-in-out infinite;
+  }
+  
+  @keyframes signal-pulse-bull {
+    0%, 100% {
+      box-shadow: 0 0 0 0 hsl(160 84% 39% / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 4px hsl(160 84% 39% / 0);
+    }
+  }
+  
+  @keyframes signal-pulse-bear {
+    0%, 100% {
+      box-shadow: 0 0 0 0 hsl(0 75% 55% / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 4px hsl(0 75% 55% / 0);
+    }
+  }
+  
+  /* Skeleton loading */
+  .skeleton-pulse {
+    @apply bg-muted/50 rounded;
+    animation: skeleton-loading 1.5s ease-in-out infinite;
+  }
+  
+  @keyframes skeleton-loading {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+  
+  /* Hero gradient text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-chrome);
+  }
+  
+  /* Heatmap cell */
+  .heatmap-cell {
+    @apply rounded transition-all duration-200;
+  }
+  
+  .heatmap-cell:hover {
+    transform: scale(1.05);
+    z-index: 10;
   }
 }
