@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
 
   try {
     const supabaseClient = createClient(
@@ -30,6 +33,16 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-EARNINGS] Found ${earnings?.length || 0} earnings records`);
 
     if (!earnings || earnings.length === 0) {
+      const duration = Date.now() - startTime;
+      
+      await logHeartbeat(supabaseClient, {
+        function_name: 'generate-signals-from-earnings',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'earnings_sentiment',
+      });
+      
       return new Response(JSON.stringify({ message: 'No earnings data to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -85,27 +98,60 @@ serve(async (req) => {
       });
     }
 
-    const { error: insertError } = await supabaseClient
-      .from('signals')
-      .insert(signals);
-
-    if (insertError) {
-      console.error('[SIGNAL-GEN-EARNINGS] Insert error:', insertError);
-      throw insertError;
+    // Use upsert to avoid duplicate key errors
+    let insertedCount = 0;
+    const batchSize = 100;
+    for (let i = 0; i < signals.length; i += batchSize) {
+      const batch = signals.slice(i, i + batchSize);
+      const { data, error: insertError } = await supabaseClient
+        .from('signals')
+        .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
+        .select('id');
+      
+      if (insertError) {
+        console.log('[SIGNAL-GEN-EARNINGS] Batch error (continuing):', insertError.message);
+      } else {
+        insertedCount += data?.length || 0;
+      }
     }
 
-    console.log(`[SIGNAL-GEN-EARNINGS] ✅ Created ${signals.length} earnings surprise signals`);
+    console.log(`[SIGNAL-GEN-EARNINGS] ✅ Created ${insertedCount} earnings surprise signals`);
+
+    const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-earnings',
+      status: 'success',
+      rows_inserted: insertedCount,
+      rows_skipped: signals.length - insertedCount,
+      duration_ms: duration,
+      source_used: 'earnings_sentiment',
+    });
 
     return new Response(JSON.stringify({ 
       success: true,
       earnings_processed: earnings.length,
-      signals_created: signals.length 
+      signals_created: insertedCount 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
     console.error('[SIGNAL-GEN-EARNINGS] ❌ Error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-earnings',
+      status: 'failure',
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {

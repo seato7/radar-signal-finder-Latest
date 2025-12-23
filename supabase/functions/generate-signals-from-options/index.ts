@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,6 +36,15 @@ serve(async (req) => {
 
     if (!optionsFlow || optionsFlow.length === 0) {
       const duration = Date.now() - startTime;
+      
+      await logHeartbeat(supabaseClient, {
+        function_name: 'generate-signals-from-options',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'options_flow',
+      });
+      
       await slackAlerter.sendLiveAlert({
         etlName: 'generate-signals-from-options',
         status: 'success',
@@ -113,6 +123,15 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-OPTIONS] ✅ Created ${signals.length} unusual options signals`);
 
     const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-options',
+      status: 'success',
+      rows_inserted: signals.length,
+      duration_ms: duration,
+      source_used: 'options_flow',
+    });
+    
     await slackAlerter.sendLiveAlert({
       etlName: 'generate-signals-from-options',
       status: 'success',
@@ -131,6 +150,19 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[SIGNAL-GEN-OPTIONS] ❌ Error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-options',
+      status: 'failure',
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
     
     await slackAlerter.sendCriticalAlert({
       type: 'halted',

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const startTime = Date.now();
 
   try {
     const supabaseClient = createClient(
@@ -41,6 +44,17 @@ serve(async (req) => {
 
     if (!patents || patents.length === 0) {
       console.log('[v2] No real patent data available - NOT generating any fake signals');
+      
+      const duration = Date.now() - startTime;
+      
+      await logHeartbeat(supabaseClient, {
+        function_name: 'generate-signals-from-patents',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'patent_filings',
+        metadata: { version: 'v2_no_estimation' }
+      });
       
       return new Response(JSON.stringify({ 
         message: 'No real patent data to process - no fake signals generated', 
@@ -116,6 +130,18 @@ serve(async (req) => {
 
     if (signals.length === 0) {
       console.log('[v2] No signals generated from real patent data');
+      
+      const duration = Date.now() - startTime;
+      
+      await logHeartbeat(supabaseClient, {
+        function_name: 'generate-signals-from-patents',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'patent_filings',
+        metadata: { version: 'v2_no_estimation' }
+      });
+      
       return new Response(JSON.stringify({ 
         message: 'No signals generated - patent data did not meet signal criteria', 
         signals_created: 0,
@@ -144,6 +170,18 @@ serve(async (req) => {
 
     console.log(`[v2] ✅ Upserted ${insertedCount} REAL innovation patent signals - NO ESTIMATIONS (${signals.length - insertedCount} duplicates)`);
 
+    const duration = Date.now() - startTime;
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-patents',
+      status: 'success',
+      rows_inserted: insertedCount,
+      rows_skipped: signals.length - insertedCount,
+      duration_ms: duration,
+      source_used: 'patent_filings',
+      metadata: { version: 'v2_no_estimation' }
+    });
+
     return new Response(JSON.stringify({ 
       success: true,
       patents_processed: patents.length,
@@ -157,6 +195,20 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[v2] ❌ Error:', error);
+    
+    const duration = Date.now() - startTime;
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+    
+    await logHeartbeat(supabaseClient, {
+      function_name: 'generate-signals-from-patents',
+      status: 'failure',
+      duration_ms: duration,
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+    });
+    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {
