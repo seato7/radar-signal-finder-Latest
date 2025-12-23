@@ -20,29 +20,29 @@ const TopAssetsCard = () => {
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['top-assets-dashboard'],
     queryFn: async (): Promise<TopAsset[]> => {
-      // Get assets with strong trends
+      // Get top bullish assets with strong uptrends, sorted by performance
       const { data: technicals, error } = await supabase
         .from('advanced_technicals')
         .select('ticker, trend_strength, price_vs_vwap_pct, breakout_signal')
-        .in('trend_strength', ['strong_uptrend', 'strong_downtrend'])
-        .not('breakout_signal', 'eq', 'range_bound')
+        .eq('trend_strength', 'strong_uptrend')
+        .order('price_vs_vwap_pct', { ascending: false })
         .order('timestamp', { ascending: false })
         .limit(20);
       
       if (error) throw error;
       if (!technicals || technicals.length === 0) {
-        // Fallback: get any strong trend assets
+        // Fallback: get any uptrend assets
         const { data: fallback } = await supabase
           .from('advanced_technicals')
           .select('ticker, trend_strength, price_vs_vwap_pct')
-          .in('trend_strength', ['strong_uptrend', 'strong_downtrend'])
-          .order('timestamp', { ascending: false })
+          .eq('trend_strength', 'strong_uptrend')
+          .order('price_vs_vwap_pct', { ascending: false })
           .limit(6);
         
         return (fallback || []).slice(0, 3).map(t => ({
           ticker: t.ticker,
           name: t.ticker,
-          trend: t.trend_strength,
+          trend: t.trend_strength || 'strong_uptrend',
           change: t.price_vs_vwap_pct || 0,
           signalCount: Math.floor(Math.random() * 5) + 2
         }));
@@ -98,7 +98,7 @@ const TopAssetsCard = () => {
             variant="ghost" 
             size="sm" 
             className="text-xs text-muted-foreground hover:text-primary"
-            onClick={() => navigate('/radar')}
+            onClick={() => navigate('/asset-radar')}
           >
             View Radar <ChevronRight className="h-3 w-3 ml-1" />
           </Button>
@@ -119,7 +119,7 @@ const TopAssetsCard = () => {
           </div>
         ) : assets.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm">Scanning for momentum signals...</p>
+            <p className="text-sm">No bullish opportunities detected right now</p>
           </div>
         ) : (
           assets.map((asset, index) => {
