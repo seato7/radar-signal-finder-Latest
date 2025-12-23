@@ -1174,6 +1174,63 @@ export type Database = {
         }
         Relationships: []
       }
+      etf_flows: {
+        Row: {
+          asset_id: string | null
+          aum: number | null
+          created_at: string | null
+          flow_date: string
+          id: string
+          inflow: number | null
+          metadata: Json | null
+          net_flow: number | null
+          outflow: number | null
+          ticker: string
+          volume: number | null
+        }
+        Insert: {
+          asset_id?: string | null
+          aum?: number | null
+          created_at?: string | null
+          flow_date: string
+          id?: string
+          inflow?: number | null
+          metadata?: Json | null
+          net_flow?: number | null
+          outflow?: number | null
+          ticker: string
+          volume?: number | null
+        }
+        Update: {
+          asset_id?: string | null
+          aum?: number | null
+          created_at?: string | null
+          flow_date?: string
+          id?: string
+          inflow?: number | null
+          metadata?: Json | null
+          net_flow?: number | null
+          outflow?: number | null
+          ticker?: string
+          volume?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "etf_flows_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "etf_flows_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       forex_sentiment: {
         Row: {
           asset_id: string | null
