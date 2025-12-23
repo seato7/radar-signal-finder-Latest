@@ -50,6 +50,9 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
 
 const PAGE_SIZE = 50;
 
+// Full Standard tier cycle is 24 hours, add buffer for safety
+const FULL_CYCLE_HOURS = 26;
+
 const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.ReactNode; filter: string | null }[] = [
   { value: "all", label: "All Assets", icon: <Filter className="h-4 w-4" />, filter: null },
   { value: "stock", label: "Stocks", icon: <TrendingUp className="h-4 w-4" />, filter: "stock" },
@@ -84,8 +87,8 @@ const AssetRadar = () => {
     setLoading(true);
     
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      // Use cycle-based cutoff instead of "today" - covers full Standard tier cycle
+      const cutoffTime = new Date(Date.now() - FULL_CYCLE_HOURS * 60 * 60 * 1000).toISOString();
       const tabConfig = ASSET_CLASS_TABS.find(t => t.value === assetClass);
 
       let assetsData: any[] = [];
@@ -93,11 +96,11 @@ const AssetRadar = () => {
 
       // For "Most Recently Updated" mode, fetch from prices first to get global ordering
       if (currentSortBy === "recent" && !searchTerm) {
-        // Step 1: Get today's prices ordered by last_updated_at, paginated
+        // Step 1: Get prices within the cycle window ordered by last_updated_at, paginated
         let priceQuery = supabase
           .from('prices')
           .select('ticker, close, last_updated_at', { count: 'exact' })
-          .eq('date', today)
+          .gte('last_updated_at', cutoffTime)
           .order('last_updated_at', { ascending: false });
 
         const { data: recentPrices, count: priceCount, error: priceError } = await priceQuery
@@ -128,10 +131,12 @@ const AssetRadar = () => {
         const { data: matchingAssets, error: assetError } = await assetQuery;
         if (assetError) throw assetError;
 
-        // Build price map from what we already fetched
+        // Build price map from what we already fetched (dedupe to most recent per ticker)
         const priceMap = new Map<string, { lastUpdated: string; close: number }>();
         (recentPrices || []).forEach(p => {
-          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+          if (!priceMap.has(p.ticker)) {
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+          }
         });
 
         // Reorder assets to match the price recency order
@@ -140,16 +145,27 @@ const AssetRadar = () => {
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
 
-        // Get yesterday's prices for change calculation
-        const { data: yesterdayPriceData } = await supabase
+        // Get previous day's prices for change calculation (use most recent 2 days)
+        const previousDayCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        const { data: previousPriceData } = await supabase
           .from('prices')
-          .select('ticker, close')
+          .select('ticker, close, date')
           .in('ticker', recentTickers)
-          .eq('date', yesterday);
+          .gte('last_updated_at', previousDayCutoff)
+          .order('date', { ascending: false });
 
-        const yesterdayPriceMap = new Map<string, number>();
-        (yesterdayPriceData || []).forEach(p => {
-          yesterdayPriceMap.set(p.ticker, p.close);
+        // Build previous price map (second-most-recent price per ticker for change calc)
+        const previousPriceMap = new Map<string, number>();
+        const seenTickers = new Set<string>();
+        (previousPriceData || []).forEach(p => {
+          if (seenTickers.has(p.ticker)) {
+            // This is the second occurrence = previous price
+            if (!previousPriceMap.has(p.ticker)) {
+              previousPriceMap.set(p.ticker, p.close);
+            }
+          } else {
+            seenTickers.add(p.ticker);
+          }
         });
 
         // Compute scores
@@ -165,11 +181,11 @@ const AssetRadar = () => {
           const score = scoreMap.get(asset.id) ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
-          const yesterdayPrice = yesterdayPriceMap.get(asset.ticker);
+          const previousPrice = previousPriceMap.get(asset.ticker);
           
           let priceChange: number | null = null;
-          if (priceInfo && yesterdayPrice && yesterdayPrice !== 0) {
-            priceChange = Math.round(((priceInfo.close - yesterdayPrice) / yesterdayPrice) * 10000) / 100;
+          if (priceInfo && previousPrice && previousPrice !== 0) {
+            priceChange = Math.round(((priceInfo.close - previousPrice) / previousPrice) * 10000) / 100;
           }
           
           return {
@@ -213,44 +229,45 @@ const AssetRadar = () => {
       assetsData = data || [];
       totalCount = count || 0;
 
-      // Fetch today's prices for accurate last_updated_at timestamps
+      // Fetch prices within cycle window for accurate last_updated_at timestamps
       const tickers = assetsData.map(a => a.ticker);
       
-      const { data: todayPriceData } = await supabase
+      const { data: recentPriceData } = await supabase
         .from('prices')
         .select('ticker, close, date, last_updated_at')
         .in('ticker', tickers)
-        .eq('date', today)
+        .gte('last_updated_at', cutoffTime)
         .order('last_updated_at', { ascending: false });
 
-      const { data: yesterdayPriceData } = await supabase
-        .from('prices')
-        .select('ticker, close')
-        .in('ticker', tickers)
-        .eq('date', yesterday);
+      const priceData = recentPriceData || [];
 
-      const priceData = todayPriceData || [];
-
-      const yesterdayPriceMap = new Map<string, number>();
-      (yesterdayPriceData || []).forEach(p => {
-        yesterdayPriceMap.set(p.ticker, p.close);
-      });
-
-      const priceMap = new Map<string, { lastUpdated: string; priceChange: number | null }>();
+      // Build maps: most recent price per ticker and previous price for change calc
+      const priceMap = new Map<string, { lastUpdated: string; close: number }>();
+      const previousPriceMap = new Map<string, number>();
+      const seenTickers = new Set<string>();
       
       priceData.forEach(p => {
         if (!priceMap.has(p.ticker)) {
-          const yesterdayPrice = yesterdayPriceMap.get(p.ticker);
-          let priceChange: number | null = null;
-          
-          if (yesterdayPrice && yesterdayPrice !== 0) {
-            priceChange = Math.round(((p.close - yesterdayPrice) / yesterdayPrice) * 10000) / 100;
-          }
-          
+          // First occurrence = most recent price
           priceMap.set(p.ticker, { 
             lastUpdated: p.last_updated_at || '', 
-            priceChange 
+            close: p.close 
           });
+          seenTickers.add(p.ticker);
+        } else if (!previousPriceMap.has(p.ticker)) {
+          // Second occurrence = previous price for change calculation
+          previousPriceMap.set(p.ticker, p.close);
+        }
+      });
+      
+      // Calculate price changes
+      const priceChangeMap = new Map<string, number | null>();
+      priceMap.forEach((info, ticker) => {
+        const previousPrice = previousPriceMap.get(ticker);
+        if (previousPrice && previousPrice !== 0) {
+          priceChangeMap.set(ticker, Math.round(((info.close - previousPrice) / previousPrice) * 10000) / 100);
+        } else {
+          priceChangeMap.set(ticker, null);
         }
       });
 
@@ -275,7 +292,7 @@ const AssetRadar = () => {
           score,
           sentiment: sentiment.label,
           lastUpdated: priceInfo?.lastUpdated || null,
-          priceChange: priceInfo?.priceChange ?? null
+          priceChange: priceChangeMap.get(asset.ticker) ?? null
         };
       });
 
