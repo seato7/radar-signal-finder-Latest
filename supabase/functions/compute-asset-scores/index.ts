@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
         forexSentiment,
         economicIndicators,
       ] = await Promise.all([
-        supabase.from('advanced_technicals').select('ticker, rsi_14, breakout_signal, trend_strength, stochastic_signal').in('ticker', tickers),
+        supabase.from('advanced_technicals').select('ticker, stochastic_k, stochastic_d, breakout_signal, trend_strength, stochastic_signal').in('ticker', tickers),
         supabase.from('dark_pool_activity').select('ticker, dark_pool_percentage').in('ticker', tickers),
         supabase.from('form4_insider_trades').select('ticker, transaction_type, total_value, filing_date').in('ticker', tickers).gte('filing_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]),
         supabase.from('holdings_13f').select('ticker, change_shares, value').in('ticker', tickers),
@@ -243,19 +243,26 @@ Deno.serve(async (req) => {
         // Technical signals (10x increase: 0.3 -> 3.0, 0.4 -> 4.0, etc.)
         const tech = techMap.get(ticker);
         if (tech) {
-          if (tech.rsi_14 !== null) {
-            // Scale RSI contribution based on how extreme it is
-            if (tech.rsi_14 < 30) {
-              const extremity = (30 - tech.rsi_14) / 30; // 0-1 scale
-              components.TechEdge += 3.0 + extremity * 3.0; // 3-6 points
-            } else if (tech.rsi_14 > 70) {
-              const extremity = (tech.rsi_14 - 70) / 30;
-              components.TechEdge -= 2.0 + extremity * 2.0; // -2 to -4 points
+          // Use stochastic as momentum proxy (since rsi_14 doesn't exist in the table)
+          if (tech.stochastic_k !== null && tech.stochastic_k !== undefined) {
+            // Scale stochastic contribution based on how extreme it is
+            if (tech.stochastic_k < 20) {
+              const extremity = (20 - tech.stochastic_k) / 20; // 0-1 scale
+              components.TechEdge += 3.0 + extremity * 3.0; // 3-6 points for oversold
+            } else if (tech.stochastic_k > 80) {
+              const extremity = (tech.stochastic_k - 80) / 20;
+              components.TechEdge -= 2.0 + extremity * 2.0; // -2 to -4 points for overbought
             }
           }
-          if (tech.breakout_signal === 'bullish') components.TechEdge += 4.0;
-          if (tech.breakout_signal === 'bearish') components.TechEdge -= 3.0;
-          if (tech.trend_strength === 'strong') components.TechEdge += 2.0;
+          // Breakout signals - match actual database values (resistance_break, support_break)
+          if (tech.breakout_signal === 'resistance_break') components.TechEdge += 4.0;
+          if (tech.breakout_signal === 'support_break') components.TechEdge -= 3.0;
+          // Trend strength - match actual database values (strong_uptrend, strong_downtrend, weak_uptrend, weak_downtrend)
+          if (tech.trend_strength === 'strong_uptrend') components.TechEdge += 2.0;
+          if (tech.trend_strength === 'strong_downtrend') components.TechEdge -= 1.5;
+          if (tech.trend_strength === 'weak_uptrend') components.TechEdge += 0.5;
+          if (tech.trend_strength === 'weak_downtrend') components.TechEdge -= 0.5;
+          // Stochastic signal is already correct
           if (tech.stochastic_signal === 'oversold') components.TechEdge += 2.0;
           if (tech.stochastic_signal === 'overbought') components.TechEdge -= 1.5;
         }
