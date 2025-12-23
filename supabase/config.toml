@@ -33,7 +33,6 @@ verify_jwt = false
 [functions.ingest-etf-flows]
 verify_jwt = false
 
-
 [functions.ingest-prices-csv]
 verify_jwt = false
 
@@ -42,7 +41,6 @@ verify_jwt = false
 
 [functions.ingest-economic-calendar]
 verify_jwt = false
-
 
 [functions.ingest-options-flow]
 verify_jwt = false
@@ -123,6 +121,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.compute-theme-scores]
+verify_jwt = false
+
+[functions.compute-asset-scores]
 verify_jwt = false
 
 [functions.map-signal-to-theme]

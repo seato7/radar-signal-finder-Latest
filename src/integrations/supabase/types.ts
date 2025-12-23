@@ -375,6 +375,7 @@ export type Database = {
         Row: {
           asset_class: string | null
           base_currency: string | null
+          computed_score: number | null
           contract_size: number | null
           created_at: string | null
           exchange: string
@@ -383,12 +384,14 @@ export type Database = {
           name: string
           pip_value: number | null
           quote_currency: string | null
+          score_computed_at: string | null
           spread_typical: number | null
           ticker: string
         }
         Insert: {
           asset_class?: string | null
           base_currency?: string | null
+          computed_score?: number | null
           contract_size?: number | null
           created_at?: string | null
           exchange: string
@@ -397,12 +400,14 @@ export type Database = {
           name: string
           pip_value?: number | null
           quote_currency?: string | null
+          score_computed_at?: string | null
           spread_typical?: number | null
           ticker: string
         }
         Update: {
           asset_class?: string | null
           base_currency?: string | null
+          computed_score?: number | null
           contract_size?: number | null
           created_at?: string | null
           exchange?: string
@@ -411,6 +416,7 @@ export type Database = {
           name?: string
           pip_value?: number | null
           quote_currency?: string | null
+          score_computed_at?: string | null
           spread_typical?: number | null
           ticker?: string
         }
