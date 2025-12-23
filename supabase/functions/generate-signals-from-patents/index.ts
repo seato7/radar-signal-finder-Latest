@@ -22,16 +22,20 @@ serve(async (req) => {
 
     console.log('[v2] Starting patent signal generation - REAL DATA ONLY');
 
-    // Only get patents that are from REAL sources (not estimation)
-    const { data: patents, error: patentsError } = await supabaseClient
+    // Get all recent patents (we'll filter estimations in JS to avoid JSON query issues)
+    const { data: allPatents, error: patentsError } = await supabaseClient
       .from('patent_filings')
       .select('*')
       .gte('filing_date', new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString())
-      .not('metadata->source', 'eq', 'patent_estimation_engine')
-      .not('metadata->estimated', 'eq', true)
       .order('filing_date', { ascending: false });
 
     if (patentsError) throw patentsError;
+
+    // Filter out estimations in JS
+    const patents = (allPatents || []).filter(p => {
+      const metadata = p.metadata || {};
+      return metadata.source !== 'patent_estimation_engine' && metadata.estimated !== true;
+    });
 
     console.log(`[v2] Found ${patents?.length || 0} REAL patent filings (excluding estimations)`);
 

@@ -103,7 +103,7 @@ serve(async (req) => {
 
     const { error: insertError } = await supabaseClient
       .from('signals')
-      .insert(signals);
+      .upsert(signals, { onConflict: 'checksum', ignoreDuplicates: true });
 
     if (insertError) {
       console.error('[SIGNAL-GEN-OPTIONS] Insert error:', insertError);
