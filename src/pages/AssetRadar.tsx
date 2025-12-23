@@ -16,6 +16,17 @@ import { computeAssetScoresBatch } from "@/lib/assetScoring";
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
 
+// Asset row type with pre-computed score from database
+interface AssetRow {
+  id: string;
+  ticker: string;
+  name: string;
+  exchange: string;
+  asset_class: string | null;
+  computed_score: number | null;
+  score_computed_at: string | null;
+}
+
 interface AssetWithScore {
   id: string;
   ticker: string;
@@ -57,9 +68,6 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
 };
 
 const PAGE_SIZE = 50;
-
-// For score-based sorting, fetch more assets to find true highest/lowest
-const SCORE_SORT_SAMPLE_SIZE = 2000;
 
 // Full Standard tier cycle is 24 hours, add buffer for safety
 const FULL_CYCLE_HOURS = 26;
@@ -106,36 +114,39 @@ const AssetRadar = () => {
       let totalCount = 0;
 
       // ═══════════════════════════════════════════════════════════════════
-      // SCORE-BASED SORTING: Two-pass fetch for accurate global ranking
+      // SCORE-BASED SORTING: Use pre-computed computed_score column
       // ═══════════════════════════════════════════════════════════════════
       if ((currentSortBy === "score-desc" || currentSortBy === "score-asc") && !searchTerm) {
-        // Step 1: Fetch a large sample of assets to compute scores
+        // Fetch assets ordered by pre-computed score from database
         let assetQuery = supabase
           .from('assets')
-          .select('*', { count: 'exact' });
+          .select('id, ticker, name, exchange, asset_class, computed_score, score_computed_at', { count: 'exact' });
 
         if (tabConfig?.filter) {
           assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
         }
 
-        const { data: allAssets, count, error: assetError } = await assetQuery
-          .order('ticker')
-          .limit(SCORE_SORT_SAMPLE_SIZE);
+        // Order by computed_score directly in database
+        const sortOrder = currentSortBy === "score-desc" ? { ascending: false } : { ascending: true };
+        
+        const { data: sortedAssets, count, error: assetError } = await assetQuery
+          .order('computed_score', { ...sortOrder, nullsFirst: false })
+          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
         if (assetError) throw assetError;
 
-        const sampleAssets = allAssets || [];
+        const assets = (sortedAssets || []) as AssetRow[];
         totalCount = count || 0;
 
-        if (sampleAssets.length === 0) {
+        if (assets.length === 0) {
           setAssets([]);
           setTotal(0);
           setLoading(false);
           return;
         }
 
-        // Step 2: Fetch prices for all sample assets
-        const tickers = sampleAssets.map(a => a.ticker);
+        // Fetch price data for these assets
+        const tickers = assets.map(a => a.ticker);
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
@@ -173,17 +184,9 @@ const AssetRadar = () => {
           }
         });
 
-        // Step 3: Compute scores for ALL sample assets
-        const assetsForScoring = sampleAssets.map(a => ({
-          id: a.id,
-          ticker: a.ticker,
-          asset_class: a.asset_class
-        }));
-        const scoreMap = await computeAssetScoresBatch(assetsForScoring);
-
-        // Step 4: Build enhanced assets with scores
-        const enhancedAssets: AssetWithScore[] = sampleAssets.map((asset) => {
-          const score = scoreMap.get(asset.id) ?? 50;
+        // Build enhanced assets using pre-computed scores
+        const enhancedAssets: AssetWithScore[] = assets.map((asset) => {
+          const score = asset.computed_score ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
 
@@ -200,18 +203,8 @@ const AssetRadar = () => {
           };
         });
 
-        // Step 5: Sort ALL assets by score
-        enhancedAssets.sort((a, b) => 
-          currentSortBy === "score-desc" ? b.score - a.score : a.score - b.score
-        );
-
-        // Step 6: Take only the current page's slice
-        const startIdx = pageNum * PAGE_SIZE;
-        const endIdx = startIdx + PAGE_SIZE;
-        const pagedAssets = enhancedAssets.slice(startIdx, endIdx);
-
-        setAssets(pagedAssets);
-        setTotal(Math.min(totalCount, SCORE_SORT_SAMPLE_SIZE)); // Cap total at sample size
+        setAssets(enhancedAssets);
+        setTotal(totalCount);
         setLoading(false);
         return;
       }
