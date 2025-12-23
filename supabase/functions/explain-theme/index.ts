@@ -18,13 +18,24 @@ serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     );
 
-    const url = new URL(req.url);
-    const pathParts = url.pathname.split('/').filter(Boolean);
-    const themeId = pathParts[pathParts.length - 2]; // Before 'why_now'
+    // Try to get theme_id from request body first, then from URL path
+    let themeId: string | null = null;
+    
+    try {
+      const body = await req.json();
+      themeId = body.theme_id;
+    } catch {
+      // No JSON body, try URL path
+      const url = new URL(req.url);
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      themeId = pathParts[pathParts.length - 2]; // Before 'why_now'
+    }
 
     if (!themeId) {
       throw new Error('Theme ID required');
     }
+
+    console.log(`[explain-theme] Processing theme: ${themeId}`);
 
     // Get theme details
     const { data: theme, error: themeError } = await supabaseClient
