@@ -40,6 +40,14 @@ const formatLabel = (str: string): string => {
     .join(' ');
 };
 
+// Helper to format exchange labels for display
+const formatExchange = (exchange: string): string => {
+  if (exchange.toLowerCase() === 'synthetic') {
+    return 'Altcoin';
+  }
+  return exchange;
+};
+
 const getSentiment = (score: number): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } => {
   if (score >= 80) return { label: "Strong Bullish", variant: "default" };
   if (score >= 60) return { label: "Bullish", variant: "secondary" };
@@ -49,6 +57,9 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
 };
 
 const PAGE_SIZE = 50;
+
+// For score-based sorting, fetch more assets to find true highest/lowest
+const SCORE_SORT_SAMPLE_SIZE = 2000;
 
 // Full Standard tier cycle is 24 hours, add buffer for safety
 const FULL_CYCLE_HOURS = 26;
@@ -94,9 +105,121 @@ const AssetRadar = () => {
       let assetsData: any[] = [];
       let totalCount = 0;
 
-      // For "Most Recently Updated" mode, fetch from prices first to get global ordering
+      // ═══════════════════════════════════════════════════════════════════
+      // SCORE-BASED SORTING: Two-pass fetch for accurate global ranking
+      // ═══════════════════════════════════════════════════════════════════
+      if ((currentSortBy === "score-desc" || currentSortBy === "score-asc") && !searchTerm) {
+        // Step 1: Fetch a large sample of assets to compute scores
+        let assetQuery = supabase
+          .from('assets')
+          .select('*', { count: 'exact' });
+
+        if (tabConfig?.filter) {
+          assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
+        }
+
+        const { data: allAssets, count, error: assetError } = await assetQuery
+          .order('ticker')
+          .limit(SCORE_SORT_SAMPLE_SIZE);
+
+        if (assetError) throw assetError;
+
+        const sampleAssets = allAssets || [];
+        totalCount = count || 0;
+
+        if (sampleAssets.length === 0) {
+          setAssets([]);
+          setTotal(0);
+          setLoading(false);
+          return;
+        }
+
+        // Step 2: Fetch prices for all sample assets
+        const tickers = sampleAssets.map(a => a.ticker);
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
+
+        const { data: recentPriceData } = await supabase
+          .from('prices')
+          .select('ticker, close, date, last_updated_at')
+          .in('ticker', tickers)
+          .gte('date', changeCutoffDate)
+          .order('date', { ascending: false });
+
+        const priceData = recentPriceData || [];
+
+        // Build price maps
+        const priceMap = new Map<string, { lastUpdated: string; close: number }>();
+        const previousPriceMap = new Map<string, number>();
+        const seenDates = new Map<string, string>();
+
+        priceData.forEach(p => {
+          if (!priceMap.has(p.ticker)) {
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+            seenDates.set(p.ticker, p.date);
+          } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
+            previousPriceMap.set(p.ticker, p.close);
+          }
+        });
+
+        const priceChangeMap = new Map<string, number | null>();
+        priceMap.forEach((info, ticker) => {
+          const previousPrice = previousPriceMap.get(ticker);
+          if (previousPrice && previousPrice !== 0) {
+            priceChangeMap.set(ticker, Math.round(((info.close - previousPrice) / previousPrice) * 10000) / 100);
+          } else {
+            priceChangeMap.set(ticker, null);
+          }
+        });
+
+        // Step 3: Compute scores for ALL sample assets
+        const assetsForScoring = sampleAssets.map(a => ({
+          id: a.id,
+          ticker: a.ticker,
+          asset_class: a.asset_class
+        }));
+        const scoreMap = await computeAssetScoresBatch(assetsForScoring);
+
+        // Step 4: Build enhanced assets with scores
+        const enhancedAssets: AssetWithScore[] = sampleAssets.map((asset) => {
+          const score = scoreMap.get(asset.id) ?? 50;
+          const sentiment = getSentiment(score);
+          const priceInfo = priceMap.get(asset.ticker);
+
+          return {
+            id: asset.id,
+            ticker: asset.ticker,
+            name: asset.name,
+            exchange: asset.exchange,
+            asset_class: asset.asset_class,
+            score,
+            sentiment: sentiment.label,
+            lastUpdated: priceInfo?.lastUpdated || null,
+            priceChange: priceChangeMap.get(asset.ticker) ?? null
+          };
+        });
+
+        // Step 5: Sort ALL assets by score
+        enhancedAssets.sort((a, b) => 
+          currentSortBy === "score-desc" ? b.score - a.score : a.score - b.score
+        );
+
+        // Step 6: Take only the current page's slice
+        const startIdx = pageNum * PAGE_SIZE;
+        const endIdx = startIdx + PAGE_SIZE;
+        const pagedAssets = enhancedAssets.slice(startIdx, endIdx);
+
+        setAssets(pagedAssets);
+        setTotal(Math.min(totalCount, SCORE_SORT_SAMPLE_SIZE)); // Cap total at sample size
+        setLoading(false);
+        return;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // "Most Recently Updated" mode: fetch from prices first
+      // ═══════════════════════════════════════════════════════════════════
       if (currentSortBy === "recent" && !searchTerm) {
-        // Step 1: Get prices within the cycle window ordered by last_updated_at, paginated
         let priceQuery = supabase
           .from('prices')
           .select('ticker, close, last_updated_at', { count: 'exact' })
@@ -117,13 +240,11 @@ const AssetRadar = () => {
           return;
         }
 
-        // Step 2: Fetch assets for these tickers
         let assetQuery = supabase
           .from('assets')
           .select('*')
           .in('ticker', recentTickers);
 
-        // Filter by asset class if needed
         if (tabConfig?.filter) {
           assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
         }
@@ -131,7 +252,6 @@ const AssetRadar = () => {
         const { data: matchingAssets, error: assetError } = await assetQuery;
         if (assetError) throw assetError;
 
-        // Build price map from what we already fetched (dedupe to most recent per ticker)
         const priceMap = new Map<string, { lastUpdated: string; close: number }>();
         (recentPrices || []).forEach(p => {
           if (!priceMap.has(p.ticker)) {
@@ -139,13 +259,11 @@ const AssetRadar = () => {
           }
         });
 
-        // Reorder assets to match the price recency order
         const tickerOrder = new Map(recentTickers.map((t, i) => [t, i]));
         assetsData = (matchingAssets || [])
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
 
-        // Get previous day's prices for change calculation (use last 3 calendar days by date)
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
@@ -156,20 +274,16 @@ const AssetRadar = () => {
           .gte('date', changeCutoffDate)
           .order('date', { ascending: false });
 
-        // Build previous price map (previous day's close for change calculation)
         const previousPriceMap = new Map<string, number>();
-        const seenDates = new Map<string, string>(); // Track the date of the first (most recent) price seen
+        const seenDates = new Map<string, string>();
         (previousPriceData || []).forEach(p => {
           if (!seenDates.has(p.ticker)) {
-            // First occurrence = most recent date
             seenDates.set(p.ticker, p.date);
           } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
-            // Different date = previous day's close
             previousPriceMap.set(p.ticker, p.close);
           }
         });
 
-        // Compute scores
         const assetsForScoring = assetsData.map(a => ({
           id: a.id,
           ticker: a.ticker,
@@ -177,7 +291,6 @@ const AssetRadar = () => {
         }));
         const scoreMap = await computeAssetScoresBatch(assetsForScoring);
 
-        // Build enhanced assets
         const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
           const score = scoreMap.get(asset.id) ?? 50;
           const sentiment = getSentiment(score);
@@ -208,7 +321,9 @@ const AssetRadar = () => {
         return;
       }
 
+      // ═══════════════════════════════════════════════════════════════════
       // Default mode: fetch assets first, then enrich with prices
+      // ═══════════════════════════════════════════════════════════════════
       let query = supabase
         .from('assets')
         .select('*', { count: 'exact' });
@@ -230,9 +345,7 @@ const AssetRadar = () => {
       assetsData = data || [];
       totalCount = count || 0;
 
-      // Fetch prices - use 48-hour window to ensure we get both current and previous day's prices
       const tickers = assetsData.map(a => a.ticker);
-      // Use last 3 calendar days for price change calculation (filter by date, not last_updated_at)
       const threeDaysAgo = new Date();
       threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
       const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
@@ -246,26 +359,19 @@ const AssetRadar = () => {
 
       const priceData = recentPriceData || [];
 
-      // Build maps: most recent price per ticker (for display) and previous day's price (for % change)
       const priceMap = new Map<string, { lastUpdated: string; close: number }>();
       const previousPriceMap = new Map<string, number>();
-      const seenDates = new Map<string, string>(); // Track the date of the first price seen per ticker
+      const seenDates = new Map<string, string>();
       
       priceData.forEach(p => {
         if (!priceMap.has(p.ticker)) {
-          // First occurrence = most recent price (for display)
-          priceMap.set(p.ticker, { 
-            lastUpdated: p.last_updated_at || '', 
-            close: p.close 
-          });
+          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
           seenDates.set(p.ticker, p.date);
         } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
-          // Different date = previous day's close (for % change calculation)
           previousPriceMap.set(p.ticker, p.close);
         }
       });
       
-      // Calculate price changes
       const priceChangeMap = new Map<string, number | null>();
       priceMap.forEach((info, ticker) => {
         const previousPrice = previousPriceMap.get(ticker);
@@ -310,14 +416,15 @@ const AssetRadar = () => {
     }
   };
 
-  // Sort assets based on selected option
+  // Sort assets based on selected option (for non-score modes that don't pre-sort)
   const sortedAssets = useMemo(() => {
+    // For score sorting, assets are already sorted from fetch
+    if (sortBy === "score-desc" || sortBy === "score-asc") {
+      return assets;
+    }
+
     const sorted = [...assets];
     switch (sortBy) {
-      case "score-desc":
-        return sorted.sort((a, b) => b.score - a.score);
-      case "score-asc":
-        return sorted.sort((a, b) => a.score - b.score);
       case "recent":
         return sorted.sort((a, b) => {
           if (!a.lastUpdated && !b.lastUpdated) return 0;
@@ -367,14 +474,12 @@ const AssetRadar = () => {
     }
   };
 
-  // Generate visible page numbers (show max 5 pages around current)
   const getVisiblePages = () => {
     const pages: number[] = [];
     const maxVisible = 5;
     let start = Math.max(0, page - Math.floor(maxVisible / 2));
     let end = Math.min(totalPages - 1, start + maxVisible - 1);
     
-    // Adjust start if we're near the end
     if (end - start < maxVisible - 1) {
       start = Math.max(0, end - maxVisible + 1);
     }
@@ -454,7 +559,6 @@ const AssetRadar = () => {
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {sortedAssets.map((asset, index) => {
                   const sentiment = getSentiment(asset.score);
-                  // Calculate rank within current sorted view (1-indexed)
                   const displayRank = index + 1;
                   return (
                     <Link
@@ -477,7 +581,7 @@ const AssetRadar = () => {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-primary text-primary-foreground">
-                              {asset.exchange}
+                              {formatExchange(asset.exchange)}
                             </Badge>
                             {asset.priceChange !== null && typeof asset.priceChange === 'number' && (
                               <span className={`text-xs font-medium ${asset.priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
