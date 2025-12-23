@@ -87,22 +87,21 @@ export default function APIUsage() {
   // Calculate real costs from actual API usage data
   // AUDITED: Based on actual 30-day data from ingest_logs (Dec 23, 2025)
   // 
-  // Raw data from database:
-  // - Twelve Data: 21,740 runs (twelvedata source) - Fixed $79/mo
-  // - Perplexity: 382 (Perplexity API) + 83 (Perplexity AI) = 465 calls
-  // - Lovable AI: 188 (Multi-source) + 12 (Batch) = 200 calls
-  // - Firecrawl: 4 calls total (Firecrawl Search)
-  // - Yahoo Finance: Deprecated (stopped Dec 3)
-  // - Alpha Vantage: 99.8% failure rate, effectively unused
-  // - SEC EDGAR, RSS Feeds, OpenFIGI: Free APIs
+  // VERIFIED FROM DATABASE QUERY:
+  // - Twelve Data: 21,744 runs - Fixed $79/mo (Grow plan)
+  // - Perplexity: 382 calls - LAST USED DEC 17, NO LONGER ACTIVE
+  // - Lovable AI: 248 calls (236 Multi-source + 12 Batch) - 6-hourly via cron
+  // - Firecrawl: 4 calls total (Dec 18-20 only) - rarely triggered
+  // - SEC EDGAR, RSS Feeds, OpenFIGI: Free APIs (active daily)
   const actualCosts = {
     twelveData: {
       monthlyFixed: 79, // Grow plan fixed cost
-      callsPerMonth: 21740,
+      callsPerMonth: 21744,
       description: "Grow plan (55 credits/min, unlimited daily)"
     },
     firecrawl: {
-      // Actual: Only 4 Firecrawl Search calls in 30 days
+      // ACTUAL: Only 4 Firecrawl Search calls in 30 days (Dec 18-20)
+      // Breaking-news uses Firecrawl but rarely triggers
       callsPerMonth: 4,
       costPerCall: 0.002,
       get monthlyCost() {
@@ -110,24 +109,27 @@ export default function APIUsage() {
       }
     },
     lovableAI: {
-      // Actual: 188 (AI Research + Multi-source) + 12 (Batch) = 200 calls
-      callsPerMonth: 200,
+      // ACTUAL: 236 (Multi-source) + 12 (Batch) = 248 calls in 30 days
+      // Runs every 6 hours via cron (ingest-ai-research)
+      callsPerMonth: 248,
       costPerCall: 0.0002, // $0.20 per 1M tokens, ~1000 tokens avg
       get monthlyCost() {
         return this.callsPerMonth * this.costPerCall;
       }
     },
     perplexity: {
-      // Actual: 382 (Perplexity API from ingest_logs) + 83 (Perplexity AI) = 465
-      // Note: api_usage_logs shows higher numbers but includes failures
-      callsPerMonth: 465,
+      // ACTUAL: 382 calls total - LAST USED DEC 17, NOW DEPRECATED
+      // Setting to 0 for monthly projection since no longer active
+      callsPerMonth: 0,
+      historicalCalls: 382, // For reference only
+      lastUsed: "Dec 17, 2025",
       costPerCall: 0.005,
       get monthlyCost() {
         return this.callsPerMonth * this.costPerCall;
       }
     },
     freeAPIs: {
-      description: "SEC EDGAR, RSS Feeds, OpenFIGI, FRED, Reddit",
+      description: "SEC EDGAR, RSS Feeds, OpenFIGI, FRED",
       monthlyCost: 0
     },
     get totalMonthly() {
@@ -200,11 +202,12 @@ export default function APIUsage() {
             </div>
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Perplexity AI</div>
-              <div className="text-2xl font-bold">${actualCosts.perplexity.monthlyCost.toFixed(2)}/mo</div>
+              <div className="text-2xl font-bold text-muted-foreground">$0.00/mo</div>
               <div className="text-xs text-muted-foreground">
-                ~{actualCosts.perplexity.callsPerMonth.toLocaleString()} calls/mo
+                <span className="text-amber-500 font-medium">DEPRECATED</span>
                 <div className="mt-1 space-y-0.5">
-                  <div>• ${actualCosts.perplexity.costPerCall}/call</div>
+                  <div>• Last used: Dec 17</div>
+                  <div>• Historical: 382 calls</div>
                 </div>
               </div>
             </div>
@@ -221,10 +224,10 @@ export default function APIUsage() {
             <div className="font-medium mb-2">📊 Cost Breakdown:</div>
             <div className="grid grid-cols-2 gap-2 text-muted-foreground">
               <div>• Twelve Data: Fixed ${actualCosts.twelveData.monthlyFixed}/mo (price data)</div>
-              <div>• Perplexity: ${actualCosts.perplexity.monthlyCost.toFixed(2)}/mo (AI search)</div>
+              <div>• Perplexity: $0/mo (deprecated Dec 17)</div>
               <div>• Firecrawl: ${actualCosts.firecrawl.monthlyCost.toFixed(2)}/mo (web scraping)</div>
               <div>• Lovable AI: ${actualCosts.lovableAI.monthlyCost.toFixed(2)}/mo (research reports)</div>
-              <div>• Free APIs: Yahoo, Alpha Vantage, SEC EDGAR, Reddit, FRED</div>
+              <div className="col-span-2">• Free APIs: SEC EDGAR, RSS Feeds, OpenFIGI, FRED</div>
             </div>
           </div>
         </CardContent>
