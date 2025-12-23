@@ -8,10 +8,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
-import { computeAssetScoresBatch } from "@/lib/assetScoring";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
@@ -68,6 +67,7 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
 };
 
 const PAGE_SIZE = 50;
+const REFRESH_INTERVAL = 30000; // 30 seconds auto-refresh
 
 // Full Standard tier cycle is 24 hours, add buffer for safety
 const FULL_CYCLE_HOURS = 26;
@@ -235,7 +235,7 @@ const AssetRadar = () => {
 
         let assetQuery = supabase
           .from('assets')
-          .select('*')
+          .select('id, ticker, name, exchange, asset_class, computed_score')
           .in('ticker', recentTickers);
 
         if (tabConfig?.filter) {
@@ -277,15 +277,9 @@ const AssetRadar = () => {
           }
         });
 
-        const assetsForScoring = assetsData.map(a => ({
-          id: a.id,
-          ticker: a.ticker,
-          asset_class: a.asset_class
-        }));
-        const scoreMap = await computeAssetScoresBatch(assetsForScoring);
-
+        // Use database computed_score directly
         const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
-          const score = scoreMap.get(asset.id) ?? 50;
+          const score = asset.computed_score ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
           const previousPrice = previousPriceMap.get(asset.ticker);
@@ -319,7 +313,7 @@ const AssetRadar = () => {
       // ═══════════════════════════════════════════════════════════════════
       let query = supabase
         .from('assets')
-        .select('*', { count: 'exact' });
+        .select('id, ticker, name, exchange, asset_class, computed_score', { count: 'exact' });
 
       if (tabConfig?.filter) {
         query = query.eq('asset_class', tabConfig.filter);
@@ -375,15 +369,9 @@ const AssetRadar = () => {
         }
       });
 
-      const assetsForScoring = assetsData.map(a => ({
-        id: a.id,
-        ticker: a.ticker,
-        asset_class: a.asset_class
-      }));
-      const scoreMap = await computeAssetScoresBatch(assetsForScoring);
-
+      // Use database computed_score directly
       const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
-        const score = scoreMap.get(asset.id) ?? 50;
+        const score = asset.computed_score ?? 50;
         const sentiment = getSentiment(score);
         const priceInfo = priceMap.get(asset.ticker);
         
@@ -453,6 +441,15 @@ const AssetRadar = () => {
     const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
     return () => clearTimeout(debounce);
   }, [searchTerm, activeTab, sortBy]);
+
+  // Auto-refresh every 30 seconds to pick up new scores
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAssets(page, activeTab, sortBy);
+    }, REFRESH_INTERVAL);
+    
+    return () => clearInterval(interval);
+  }, [page, activeTab, sortBy]);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as AssetClassTab);
