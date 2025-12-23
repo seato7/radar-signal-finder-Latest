@@ -22,8 +22,8 @@ serve(async (req) => {
     const { data: trends, error: trendsError } = await supabaseClient
       .from('search_trends')
       .select('*')
-      .gte('timestamp', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-      .order('timestamp', { ascending: false });
+      .gte('period_start', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .order('period_start', { ascending: false });
 
     if (trendsError) throw trendsError;
 
@@ -49,16 +49,16 @@ serve(async (req) => {
       if (!assetId) continue;
 
       const searchVolume = trend.search_volume || 0;
-      const changePct = trend.change_pct || 0;
+      const changePct = trend.trend_change || 0;
       
       // Rising search interest = potential momentum
       const direction = changePct > 20 ? 'up' : changePct < -20 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(changePct) / 100 + searchVolume / 100);
+      const magnitude = Math.max(0, Math.min(1.0, Math.abs(changePct) / 100 + searchVolume / 100));
 
       const signalData = {
         ticker: trend.ticker,
         signal_type: 'search_interest',
-        timestamp: trend.timestamp,
+        period_start: trend.period_start,
         search_volume: searchVolume
       };
       
@@ -67,7 +67,7 @@ serve(async (req) => {
         signal_type: 'search_interest',
         direction,
         magnitude,
-        observed_at: new Date(trend.timestamp).toISOString(),
+        observed_at: new Date(trend.period_start).toISOString(),
         value_text: `Search interest: ${changePct > 0 ? '+' : ''}${changePct.toFixed(0)}% (vol: ${searchVolume})`,
         checksum: JSON.stringify(signalData),
         citation: {
@@ -76,9 +76,9 @@ serve(async (req) => {
         },
         raw: {
           search_volume: searchVolume,
-          change_pct: changePct,
+          trend_change: changePct,
           region: trend.region,
-          related_queries: trend.related_queries
+          keyword: trend.keyword
         }
       });
     }

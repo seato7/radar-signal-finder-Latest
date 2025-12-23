@@ -84,8 +84,10 @@ serve(async (req) => {
           .filter(j => j.posted_date === date && j.growth_indicator)
           .reduce((sum, j) => sum + (j.growth_indicator || 0), 0) / tickerJobs.filter(j => j.posted_date === date).length;
         
-        const magnitude = Math.min(1.0, (count / 50) + (avgGrowth || 0) / 2);
-        const direction = avgGrowth > 0.1 ? 'up' : 'neutral';
+        // Ensure magnitude is always between 0 and 1 (use Math.abs for growth and clamp)
+        const baseMagnitude = Math.abs(count / 50) + Math.abs(avgGrowth || 0) / 2;
+        const magnitude = Math.max(0, Math.min(1.0, baseMagnitude));
+        const direction = avgGrowth > 0.1 ? 'up' : avgGrowth < -0.1 ? 'down' : 'neutral';
         
         const signalData = {
           ticker,
@@ -117,7 +119,7 @@ serve(async (req) => {
 
     const { error: insertError } = await supabaseClient
       .from('signals')
-      .insert(signals);
+      .upsert(signals, { onConflict: 'checksum', ignoreDuplicates: true });
 
     if (insertError) {
       console.error('[SIGNAL-GEN-JOBS] Insert error:', insertError);

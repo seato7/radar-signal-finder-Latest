@@ -196,3 +196,33 @@ verify_jwt = false
 
 [functions.generate-signals-from-13f]
 verify_jwt = false
+
+[functions.generate-signals-from-earnings]
+verify_jwt = false
+
+[functions.generate-signals-from-form4]
+verify_jwt = false
+
+[functions.generate-signals-from-short-interest]
+verify_jwt = false
+
+[functions.generate-signals-from-etf-flows]
+verify_jwt = false
+
+[functions.generate-signals-from-search-trends]
+verify_jwt = false
+
+[functions.generate-signals-from-supply-chain]
+verify_jwt = false
+
+[functions.generate-signals-from-patents]
+verify_jwt = false
+
+[functions.generate-signals-from-options]
+verify_jwt = false
+
+[functions.generate-signals-from-policy]
+verify_jwt = false
+
+[functions.generate-signals-from-social]
+verify_jwt = false

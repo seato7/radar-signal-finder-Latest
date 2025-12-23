@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,187 +11,116 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const startTime = Date.now();
-  const slackAlerter = new SlackAlerter();
-
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    console.log('[SIGNAL-GEN-SOCIAL] Starting social sentiment signal generation...');
+    console.log('[SIGNAL-GEN-SOCIAL] Starting social/news sentiment signal generation...');
 
-    const [redditResult, stocktwitsResult] = await Promise.all([
-      supabaseClient
-        .from('reddit_sentiment')
-        .select('*')
-        .gte('timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-        .order('timestamp', { ascending: false }),
-      supabaseClient
-        .from('stocktwits_sentiment')
-        .select('*')
-        .gte('timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-        .order('timestamp', { ascending: false })
-    ]);
+    // Use news_sentiment_aggregate which exists
+    const { data: sentimentData, error: sentimentError } = await supabaseClient
+      .from('news_sentiment_aggregate')
+      .select('*')
+      .gte('date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+      .order('date', { ascending: false });
 
-    if (redditResult.error) throw redditResult.error;
-    if (stocktwitsResult.error) throw stocktwitsResult.error;
+    if (sentimentError) throw sentimentError;
 
-    const reddit = redditResult.data || [];
-    const stocktwits = stocktwitsResult.data || [];
+    console.log(`[SIGNAL-GEN-SOCIAL] Found ${sentimentData?.length || 0} news sentiment records`);
 
-    console.log(`[SIGNAL-GEN-SOCIAL] Found ${reddit.length} Reddit + ${stocktwits.length} StockTwits records`);
-
-    if (reddit.length === 0 && stocktwits.length === 0) {
-      const duration = Date.now() - startTime;
-      await slackAlerter.sendLiveAlert({
-        etlName: 'generate-signals-from-social',
-        status: 'success',
-        duration,
-        latencyMs: duration,
-        rowsInserted: 0,
-      });
-      
-      return new Response(JSON.stringify({ message: 'No social data to process', signals_created: 0 }), {
+    if (!sentimentData || sentimentData.length === 0) {
+      return new Response(JSON.stringify({ message: 'No sentiment data to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const allTickers = [...new Set([...reddit.map(r => r.ticker), ...stocktwits.map(s => s.ticker)])];
+    const tickers = [...new Set(sentimentData.map(s => s.ticker))];
     const { data: assets } = await supabaseClient
       .from('assets')
       .select('id, ticker')
-      .in('ticker', allTickers);
+      .in('ticker', tickers);
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
 
     const signals = [];
 
-    for (const item of reddit) {
+    for (const item of sentimentData) {
       const assetId = tickerToAssetId.get(item.ticker);
       if (!assetId) continue;
 
       const sentimentScore = item.sentiment_score || 0;
+      const buzzScore = item.buzz_score || 0;
       const direction = sentimentScore > 0.2 ? 'up' : sentimentScore < -0.2 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(sentimentScore) + (item.mention_count || 0) / 100);
+      const magnitude = Math.max(0, Math.min(1.0, Math.abs(sentimentScore) + buzzScore / 100));
 
       const signalData = {
         ticker: item.ticker,
-        signal_type: 'social_sentiment_reddit',
-        timestamp: item.timestamp,
+        signal_type: 'news_sentiment',
+        date: item.date,
         sentiment_score: sentimentScore
       };
       
       signals.push({
         asset_id: assetId,
-        signal_type: 'social_sentiment_reddit',
+        signal_type: 'news_sentiment',
         direction,
         magnitude,
-        observed_at: new Date(item.timestamp).toISOString(),
-        value_text: `Reddit: ${item.mention_count} mentions, ${sentimentScore > 0 ? 'bullish' : 'bearish'} (${(sentimentScore * 100).toFixed(0)}%)`,
+        observed_at: new Date(item.date).toISOString(),
+        value_text: `News sentiment: ${item.sentiment_label || 'neutral'} (${item.total_articles || 0} articles)`,
         checksum: JSON.stringify(signalData),
         citation: {
-          source: 'Reddit (wallstreetbets)',
+          source: 'News Sentiment Aggregate',
           timestamp: new Date().toISOString()
         },
         raw: {
-          mention_count: item.mention_count,
           sentiment_score: sentimentScore,
-          top_posts: item.top_posts
-        }
-      });
-    }
-
-    for (const item of stocktwits) {
-      const assetId = tickerToAssetId.get(item.ticker);
-      if (!assetId) continue;
-
-      const sentimentScore = item.sentiment_score || 0;
-      const direction = sentimentScore > 0.2 ? 'up' : sentimentScore < -0.2 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(sentimentScore) + (item.message_volume || 0) / 1000);
-
-      const signalData = {
-        ticker: item.ticker,
-        signal_type: 'social_sentiment_stocktwits',
-        timestamp: item.timestamp,
-        sentiment_score: sentimentScore
-      };
-      
-      signals.push({
-        asset_id: assetId,
-        signal_type: 'social_sentiment_stocktwits',
-        direction,
-        magnitude,
-        observed_at: new Date(item.timestamp).toISOString(),
-        value_text: `StockTwits: ${item.message_volume} messages, ${sentimentScore > 0 ? 'bullish' : 'bearish'} (${(sentimentScore * 100).toFixed(0)}%)`,
-        checksum: JSON.stringify(signalData),
-        citation: {
-          source: 'StockTwits',
-          timestamp: new Date().toISOString()
-        },
-        raw: {
-          message_volume: item.message_volume,
-          sentiment_score: sentimentScore,
-          bullish_pct: item.bullish_pct,
-          bearish_pct: item.bearish_pct
+          sentiment_label: item.sentiment_label,
+          buzz_score: buzzScore,
+          total_articles: item.total_articles,
+          positive_articles: item.positive_articles,
+          negative_articles: item.negative_articles
         }
       });
     }
 
     if (signals.length === 0) {
-      const duration = Date.now() - startTime;
-      await slackAlerter.sendLiveAlert({
-        etlName: 'generate-signals-from-social',
-        status: 'success',
-        duration,
-        latencyMs: duration,
-        rowsInserted: 0,
-      });
-      
-      return new Response(JSON.stringify({ message: 'No signals created from social data', signals_created: 0 }), {
+      return new Response(JSON.stringify({ message: 'No signals created from sentiment data', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const { error: insertError } = await supabaseClient
-      .from('signals')
-      .insert(signals);
-
-    if (insertError) {
-      console.error('[SIGNAL-GEN-SOCIAL] Insert error:', insertError);
-      throw insertError;
+    // Use upsert to avoid duplicates
+    let insertedCount = 0;
+    const batchSize = 100;
+    for (let i = 0; i < signals.length; i += batchSize) {
+      const batch = signals.slice(i, i + batchSize);
+      const { data, error: insertError } = await supabaseClient
+        .from('signals')
+        .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
+        .select('id');
+      
+      if (insertError) {
+        console.log('[SIGNAL-GEN-SOCIAL] Batch error (continuing):', insertError.message);
+      } else {
+        insertedCount += data?.length || 0;
+      }
     }
 
-    console.log(`[SIGNAL-GEN-SOCIAL] ✅ Created ${signals.length} social sentiment signals`);
-
-    const duration = Date.now() - startTime;
-    await slackAlerter.sendLiveAlert({
-      etlName: 'generate-signals-from-social',
-      status: 'success',
-      duration,
-      latencyMs: duration,
-      rowsInserted: signals.length,
-    });
+    console.log(`[SIGNAL-GEN-SOCIAL] ✅ Upserted ${insertedCount} news sentiment signals (${signals.length - insertedCount} duplicates)`);
 
     return new Response(JSON.stringify({ 
       success: true,
-      reddit_processed: reddit.length,
-      stocktwits_processed: stocktwits.length,
-      signals_created: signals.length 
+      records_processed: sentimentData.length,
+      signals_created: insertedCount,
+      duplicates_skipped: signals.length - insertedCount
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
     console.error('[SIGNAL-GEN-SOCIAL] ❌ Error:', error);
-    
-    await slackAlerter.sendCriticalAlert({
-      type: 'halted',
-      etlName: 'generate-signals-from-social',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-    
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error' 
     }), {
