@@ -6,11 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// ALL 34 data ingestion and signal generation functions
-// NOTE: ingest-prices-yahoo REMOVED - price ingestion moved to Railway backend (Twelve Data)
-const INGESTION_FUNCTIONS = [
-  // Data Ingestion Functions (31)
-  'ingest-13f-holdings',
+// ALL 60 functions - Ingestion, Signal Generation, Scoring, Mapping, and Utilities
+const ALL_FUNCTIONS = [
+  // === DATA INGESTION (32 functions) ===
   'ingest-advanced-technicals',
   'ingest-ai-research',
   'ingest-breaking-news',
@@ -27,24 +25,58 @@ const INGESTION_FUNCTIONS = [
   'ingest-forex-technicals',
   'ingest-form4',
   'ingest-fred-economics',
-  'ingest-google-trends',
   'ingest-job-postings',
+  'ingest-news-rss',
   'ingest-news-sentiment',
   'ingest-options-flow',
   'ingest-patents',
   'ingest-pattern-recognition',
   'ingest-policy-feeds',
   'ingest-prices-csv',
+  'ingest-prices-twelvedata',
   'ingest-reddit-sentiment',
   'ingest-search-trends',
+  'ingest-sec-13f-edgar',
   'ingest-short-interest',
   'ingest-smart-money',
   'ingest-stocktwits',
   'ingest-supply-chain',
-  // Signal & Alert Generation (3)
-  'compute-theme-scores',
+  
+  // === SIGNAL GENERATION (15 functions) ===
+  'generate-signals-from-13f',
+  'generate-signals-from-congressional',
+  'generate-signals-from-cot',
+  'generate-signals-from-darkpool',
+  'generate-signals-from-earnings',
+  'generate-signals-from-etf-flows',
+  'generate-signals-from-form4',
+  'generate-signals-from-jobpostings',
+  'generate-signals-from-options',
+  'generate-signals-from-patents',
+  'generate-signals-from-policy',
+  'generate-signals-from-search-trends',
+  'generate-signals-from-short-interest',
+  'generate-signals-from-social',
+  'generate-signals-from-supply-chain',
+  
+  // === SCORING & MAPPING (5 functions) ===
   'compute-signal-scores',
-  'generate-alerts'
+  'compute-theme-scores',
+  'map-signal-to-theme',
+  'populate-signal-theme-map',
+  'mine-and-discover-themes',
+  
+  // === ALERTS & REPORTS (3 functions) ===
+  'generate-alerts',
+  'generate-ai-research',
+  'daily-ingestion-digest',
+  
+  // === UTILITY & MONITORING (5 functions) ===
+  'ingestion-health',
+  'ingestion-health-enhanced',
+  'monitor-ingestion-success-rates',
+  'kill-stuck-jobs',
+  'bot-scheduler'
 ];
 
 serve(async (req) => {
@@ -56,7 +88,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     
-    console.log(`🚀 Triggering ${INGESTION_FUNCTIONS.length} ingestion functions...`);
+    console.log(`🚀 Triggering ${ALL_FUNCTIONS.length} functions...`);
 
     const results: Array<{
       function: string;
@@ -66,11 +98,11 @@ serve(async (req) => {
 
     // Trigger all functions in parallel (batches of 4 to avoid overwhelming)
     const batchSize = 4;
-    for (let i = 0; i < INGESTION_FUNCTIONS.length; i += batchSize) {
-      const batch = INGESTION_FUNCTIONS.slice(i, i + batchSize);
+    for (let i = 0; i < ALL_FUNCTIONS.length; i += batchSize) {
+      const batch = ALL_FUNCTIONS.slice(i, i + batchSize);
       
       const batchResults = await Promise.all(
-        batch.map(async (functionName) => {
+        batch.map(async (functionName: string) => {
           try {
             console.log(`📤 Triggering: ${functionName}`);
             
@@ -117,8 +149,8 @@ serve(async (req) => {
       results.push(...batchResults);
 
       // Small delay between batches to avoid rate limiting
-      if (i + batchSize < INGESTION_FUNCTIONS.length) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      if (i + batchSize < ALL_FUNCTIONS.length) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
@@ -130,11 +162,11 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        total: INGESTION_FUNCTIONS.length,
+        total: ALL_FUNCTIONS.length,
         triggered,
         errored,
         results,
-        message: `Triggered ${triggered}/${INGESTION_FUNCTIONS.length} ingestion functions`,
+        message: `Triggered ${triggered}/${ALL_FUNCTIONS.length} functions`,
         note: 'Functions are running asynchronously. Check Slack for results.',
         timestamp: new Date().toISOString()
       }),
