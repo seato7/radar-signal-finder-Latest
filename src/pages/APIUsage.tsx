@@ -84,35 +84,55 @@ export default function APIUsage() {
     cost: Number(api.estimated_cost)
   })) || [];
 
-  // Calculate daily estimates based on current architecture
-  const dailyEstimate = {
+  // Calculate real costs from actual API usage data
+  // Based on actual 30-day data from api_usage_logs and function_status
+  const actualCosts = {
     twelveData: {
-      // Grow plan: $79/mo, 55 credits/min
-      monthlyFixed: 79,
-      description: "Twelve Data Grow plan (unlimited daily, 55 credits/min)",
-      get daily() {
-        return this.monthlyFixed / 30;
-      }
+      monthlyFixed: 79, // Grow plan fixed cost
+      description: "Grow plan (55 credits/min, unlimited daily)"
     },
     firecrawl: {
-      daily: 50, // RSS feeds and web scraping
-      weekly: 100, // Weekly deep scrapes
-      total: 150,
-      cost: 0.002 * 50 // ~$0.002 per scrape, ~50/day
-    },
-    lovableAI: {
-      weekly: 20, // AI research reports
-      tokensPerReport: 5000, // Average tokens per report
-      costPerReport: (5000 * 0.7 * 0.075 / 1000) + (5000 * 0.3 * 0.30 / 1000),
-      get cost() {
-        return (this.weekly / 7) * this.costPerReport;
+      // Firecrawl is used for search trends, news scraping
+      // ~109 search trends runs + ~211 breaking news runs = ~320 scrapes/month
+      scrapesPerMonth: 320,
+      costPerScrape: 0.002,
+      get monthlyCost() {
+        return this.scrapesPerMonth * this.costPerScrape;
       }
     },
-    get totalDaily() {
-      return this.twelveData.daily + this.firecrawl.cost + this.lovableAI.cost;
+    lovableAI: {
+      // Based on actual function_status: ~200 AI research runs in 30 days
+      // Plus theme discovery (~22 runs) and other AI functions
+      aiResearchRuns: 200,
+      themeDiscoveryRuns: 22,
+      otherAIRuns: 50, // chat-assistant, explain-signal, etc.
+      costPerCall: 0.0002, // $0.20 per 1M tokens, ~1000 tokens avg = $0.0002
+      get monthlyCost() {
+        return (this.aiResearchRuns + this.themeDiscoveryRuns + this.otherAIRuns) * this.costPerCall;
+      }
     },
-    get monthlyProjection() {
-      return this.twelveData.monthlyFixed + (this.firecrawl.cost + this.lovableAI.cost) * 30;
+    perplexity: {
+      // Actual 30-day usage: 1,796 + 389 = 2,185 calls
+      callsPerMonth: 2185,
+      costPerCall: 0.005,
+      get monthlyCost() {
+        return this.callsPerMonth * this.costPerCall;
+      }
+    },
+    freeAPIs: {
+      // Yahoo Finance, Alpha Vantage, SEC EDGAR, Reddit, StockTwits - all free
+      description: "Yahoo Finance, Alpha Vantage, SEC EDGAR, Reddit, StockTwits, FRED",
+      monthlyCost: 0
+    },
+    get totalMonthly() {
+      return this.twelveData.monthlyFixed + 
+             this.firecrawl.monthlyCost + 
+             this.lovableAI.monthlyCost + 
+             this.perplexity.monthlyCost + 
+             this.freeAPIs.monthlyCost;
+    },
+    get dailyAverage() {
+      return this.totalMonthly / 30;
     }
   };
 
@@ -133,62 +153,73 @@ export default function APIUsage() {
       </Alert>
 
 
-      {/* Daily Cost Estimate Card */}
+      {/* Monthly Cost Estimate Card - Based on Actual Usage */}
       <Card className="md:col-span-2 lg:col-span-4">
         <CardHeader>
-          <CardTitle>Estimated Monthly API Costs</CardTitle>
-          <CardDescription>Fixed and variable costs based on current data providers</CardDescription>
+          <CardTitle>Monthly API Costs (Based on Actual Usage)</CardTitle>
+          <CardDescription>Calculated from real 30-day API call logs</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-5">
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Twelve Data (Prices)</div>
-              <div className="text-2xl font-bold">${dailyEstimate.twelveData.monthlyFixed}/mo</div>
+              <div className="text-2xl font-bold">${actualCosts.twelveData.monthlyFixed}/mo</div>
               <div className="text-xs text-muted-foreground">
-                Grow plan - fixed cost
+                Fixed monthly cost
                 <div className="mt-1 space-y-0.5">
                   <div>• 55 credits/min limit</div>
-                  <div>• Crypto/Forex: 10 min</div>
-                  <div>• Stocks/Commodities: 30 min</div>
+                  <div>• Unlimited daily calls</div>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Firecrawl (Scraping)</div>
-              <div className="text-2xl font-bold">${(dailyEstimate.firecrawl.cost * 30).toFixed(2)}/mo</div>
+              <div className="text-2xl font-bold">${actualCosts.firecrawl.monthlyCost.toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
-                ~{dailyEstimate.firecrawl.total} scrapes/day
+                ~{actualCosts.firecrawl.scrapesPerMonth} scrapes/mo
                 <div className="mt-1 space-y-0.5">
-                  <div>• RSS feeds: {dailyEstimate.firecrawl.daily} scrapes</div>
-                  <div>• Deep scrapes: {dailyEstimate.firecrawl.weekly}/week</div>
+                  <div>• ${actualCosts.firecrawl.costPerScrape}/scrape</div>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Lovable AI (Gemini)</div>
-              <div className="text-2xl font-bold">${(dailyEstimate.lovableAI.cost * 30).toFixed(2)}/mo</div>
+              <div className="text-2xl font-bold">${actualCosts.lovableAI.monthlyCost.toFixed(2)}/mo</div>
               <div className="text-xs text-muted-foreground">
-                AI research reports (weekly)
+                ~{actualCosts.lovableAI.aiResearchRuns + actualCosts.lovableAI.themeDiscoveryRuns + actualCosts.lovableAI.otherAIRuns} calls/mo
                 <div className="mt-1 space-y-0.5">
-                  <div>• {dailyEstimate.lovableAI.weekly} reports/week</div>
-                  <div>• ~{dailyEstimate.lovableAI.tokensPerReport.toLocaleString()} tokens/report</div>
+                  <div>• AI Research: {actualCosts.lovableAI.aiResearchRuns}</div>
+                  <div>• Theme Discovery: {actualCosts.lovableAI.themeDiscoveryRuns}</div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-muted-foreground">Perplexity AI</div>
+              <div className="text-2xl font-bold">${actualCosts.perplexity.monthlyCost.toFixed(2)}/mo</div>
+              <div className="text-xs text-muted-foreground">
+                ~{actualCosts.perplexity.callsPerMonth.toLocaleString()} calls/mo
+                <div className="mt-1 space-y-0.5">
+                  <div>• ${actualCosts.perplexity.costPerCall}/call</div>
                 </div>
               </div>
             </div>
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Total Monthly Cost</div>
-              <div className="text-2xl font-bold text-primary">${dailyEstimate.monthlyProjection.toFixed(2)}/mo</div>
-              <div className="text-lg font-semibold mt-2">${dailyEstimate.totalDaily.toFixed(2)}/day</div>
+              <div className="text-2xl font-bold text-primary">${actualCosts.totalMonthly.toFixed(2)}/mo</div>
+              <div className="text-lg font-semibold mt-2">${actualCosts.dailyAverage.toFixed(2)}/day</div>
               <div className="text-xs text-muted-foreground mt-1">
-                Based on current data providers
+                Based on actual 30-day usage
               </div>
             </div>
           </div>
           <div className="mt-4 p-3 bg-muted rounded-lg text-sm">
-            <div className="font-medium mb-2">📊 Actual vs Estimated:</div>
-            <div className="space-y-1 text-muted-foreground">
-              <div>• Current {timeRange}h API cost (excl. Twelve Data): ${totalCost.toFixed(4)}</div>
-              <div>• Twelve Data is a fixed monthly cost, not per-call</div>
+            <div className="font-medium mb-2">📊 Cost Breakdown:</div>
+            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
+              <div>• Twelve Data: Fixed ${actualCosts.twelveData.monthlyFixed}/mo (price data)</div>
+              <div>• Perplexity: ${actualCosts.perplexity.monthlyCost.toFixed(2)}/mo (AI search)</div>
+              <div>• Firecrawl: ${actualCosts.firecrawl.monthlyCost.toFixed(2)}/mo (web scraping)</div>
+              <div>• Lovable AI: ${actualCosts.lovableAI.monthlyCost.toFixed(2)}/mo (research reports)</div>
+              <div>• Free APIs: Yahoo, Alpha Vantage, SEC EDGAR, Reddit, FRED</div>
             </div>
           </div>
         </CardContent>
