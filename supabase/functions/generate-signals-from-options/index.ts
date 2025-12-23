@@ -71,9 +71,11 @@ serve(async (req) => {
       const assetId = tickerToAssetId.get(option.ticker);
       if (!assetId) continue;
 
+      // Use the sentiment field directly - it already contains bullish/bearish values
+      // (flow_type only contains 'block', not 'sweep_buy'/'sweep_sell')
+      const isBullish = option.sentiment?.toLowerCase() === 'bullish';
       const isCall = option.option_type?.toLowerCase() === 'call';
       const flowType = option.flow_type?.toLowerCase();
-      const isBullish = (isCall && flowType === 'sweep_buy') || (!isCall && flowType === 'sweep_sell');
       
       const direction = isBullish ? 'up' : 'down';
       const premium = option.premium || 0;
