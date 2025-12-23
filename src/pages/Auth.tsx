@@ -14,6 +14,7 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const navigate = useNavigate();
   const {
     toast
@@ -32,6 +33,15 @@ export default function Auth() {
         });
         return;
       }
+    }
+    
+    if (password !== confirmPassword) {
+      toast({
+        title: "Validation Error",
+        description: "Passwords do not match",
+        variant: "destructive"
+      });
+      return;
     }
     setLoading(true);
     const {
@@ -141,6 +151,10 @@ export default function Auth() {
                   <p className="text-xs text-muted-foreground">
                     Must be at least 6 characters
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password-signup">Confirm Password</Label>
+                  <Input id="confirm-password-signup" type="password" placeholder="••••••••" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
                 </div>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Creating account..." : "Sign Up"}
