@@ -6,247 +6,227 @@ import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { AlertTriangle, TrendingUp, DollarSign, Activity, CheckCircle2, XCircle, Info } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { TrendingUp, DollarSign, Activity, CheckCircle2, Info, Database, Clock, AlertTriangle, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { formatDistanceToNow } from "date-fns";
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1', '#a4de6c', '#d084d0', '#ffb3ba'];
 
+interface IngestSummary {
+  etl_name: string;
+  total_runs: number;
+  success_runs: number;
+  last_run: string;
+  total_inserted: number;
+  avg_duration_sec: number;
+}
+
+interface SignalStats {
+  total_signals: number;
+  mapped_signals: number;
+  unmapped_signals: number;
+  signals_24h: number;
+}
+
+interface ThemeScoreStats {
+  last_computed: string;
+  themes_scored: number;
+}
+
 export default function APIUsage() {
-  const [timeRange, setTimeRange] = useState<24 | 168 | 720>(24); // 24h, 7d, 30d
+  const [timeRange, setTimeRange] = useState<"24h" | "7d" | "30d">("7d");
 
-  // Fetch API usage summary
-  const { data: usageSummary, isLoading: loadingUsage } = useQuery({
-    queryKey: ["api-usage-summary", timeRange],
+  const hoursBack = timeRange === "24h" ? 24 : timeRange === "7d" ? 168 : 720;
+
+  // Fetch ingestion summary from ingest_logs
+  const { data: ingestSummary, isLoading: loadingIngest, refetch: refetchIngest } = useQuery({
+    queryKey: ["ingest-summary", timeRange],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("get_api_usage_summary", {
-        hours_back: timeRange
-      });
-      if (error) throw error;
-      return data as Array<{
-        api_name: string;
-        total_calls: number;
-        successful_calls: number;
-        failed_calls: number;
-        cached_calls: number;
-        success_rate: number;
-        avg_response_time_ms: number;
-        estimated_cost: number;
-      }>;
+      const { data: directData, error: directError } = await supabase
+        .from("ingest_logs")
+        .select("etl_name, status, started_at, rows_inserted, duration_seconds")
+        .gte("started_at", new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString());
+      
+      if (directError) throw directError;
+      
+      // Aggregate manually
+      const grouped = (directData || []).reduce((acc, log) => {
+        if (!acc[log.etl_name]) {
+          acc[log.etl_name] = {
+            etl_name: log.etl_name,
+            total_runs: 0,
+            success_runs: 0,
+            last_run: log.started_at,
+            total_inserted: 0,
+            avg_duration_sec: 0,
+            durations: [] as number[]
+          };
+        }
+        acc[log.etl_name].total_runs++;
+        if (log.status === 'success') acc[log.etl_name].success_runs++;
+        acc[log.etl_name].total_inserted += log.rows_inserted || 0;
+        acc[log.etl_name].durations.push(log.duration_seconds || 0);
+        if (new Date(log.started_at) > new Date(acc[log.etl_name].last_run)) {
+          acc[log.etl_name].last_run = log.started_at;
+        }
+        return acc;
+      }, {} as Record<string, { etl_name: string; total_runs: number; success_runs: number; last_run: string; total_inserted: number; avg_duration_sec: number; durations: number[] }>);
+      
+      return Object.values(grouped).map((g) => ({
+        etl_name: g.etl_name,
+        total_runs: g.total_runs,
+        success_runs: g.success_runs,
+        last_run: g.last_run,
+        total_inserted: g.total_inserted,
+        avg_duration_sec: g.durations.length > 0 ? g.durations.reduce((a, b) => a + b, 0) / g.durations.length : 0
+      })).sort((a, b) => new Date(b.last_run).getTime() - new Date(a.last_run).getTime()) as IngestSummary[];
     },
-    refetchInterval: 30000 // Refresh every 30s
+    refetchInterval: 60000
   });
 
-  // Fetch API costs configuration
-  const { data: apiCosts } = useQuery({
-    queryKey: ["api-costs"],
+  // Fetch signal stats
+  const { data: signalStats, isLoading: loadingSignals } = useQuery({
+    queryKey: ["signal-stats"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("api_costs")
-        .select("*")
-        .order("api_name");
-      if (error) throw error;
-      return data;
-    }
+      const { data: total, error: totalError } = await supabase
+        .from("signals")
+        .select("id", { count: "exact", head: true });
+      
+      const { data: unmapped, error: unmappedError } = await supabase
+        .from("signals")
+        .select("id", { count: "exact", head: true })
+        .is("theme_id", null);
+      
+      const { data: recent, error: recentError } = await supabase
+        .from("signals")
+        .select("id", { count: "exact", head: true })
+        .gte("observed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      
+      const totalCount = (total as any)?.length ?? 0;
+      const unmappedCount = (unmapped as any)?.length ?? 0;
+      
+      // Get actual counts from count queries
+      const { count: totalSignals } = await supabase
+        .from("signals")
+        .select("*", { count: "exact", head: true });
+      
+      const { count: unmappedSignals } = await supabase
+        .from("signals")
+        .select("*", { count: "exact", head: true })
+        .is("theme_id", null);
+      
+      const { count: signals24h } = await supabase
+        .from("signals")
+        .select("*", { count: "exact", head: true })
+        .gte("observed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      
+      return {
+        total_signals: totalSignals || 0,
+        mapped_signals: (totalSignals || 0) - (unmappedSignals || 0),
+        unmapped_signals: unmappedSignals || 0,
+        signals_24h: signals24h || 0
+      } as SignalStats;
+    },
+    refetchInterval: 30000
   });
 
-  // Fetch recent API logs for time-series chart
-  const { data: apiLogs } = useQuery({
-    queryKey: ["api-logs", timeRange],
+  // Fetch theme score stats
+  const { data: themeStats, isLoading: loadingThemes } = useQuery({
+    queryKey: ["theme-score-stats"],
     queryFn: async () => {
-      const hoursBack = timeRange;
       const { data, error } = await supabase
-        .from("api_usage_logs")
-        .select("*")
-        .gte("created_at", new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString())
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return data;
+        .from("theme_scores")
+        .select("computed_at")
+        .order("computed_at", { ascending: false })
+        .limit(1);
+      
+      const { count: themesScored } = await supabase
+        .from("theme_scores")
+        .select("*", { count: "exact", head: true })
+        .gte("computed_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      
+      return {
+        last_computed: data?.[0]?.computed_at || null,
+        themes_scored: themesScored || 0
+      } as ThemeScoreStats;
     }
   });
 
   // Calculate totals
-  const totalCalls = usageSummary?.reduce((sum, api) => sum + Number(api.total_calls), 0) || 0;
-  const totalCost = usageSummary?.reduce((sum, api) => sum + Number(api.estimated_cost), 0) || 0;
-  const avgSuccessRate = usageSummary?.reduce((sum, api) => sum + Number(api.success_rate), 0) / (usageSummary?.length || 1) || 0;
+  const totalRuns = ingestSummary?.reduce((sum, etl) => sum + Number(etl.total_runs), 0) || 0;
+  const totalInserted = ingestSummary?.reduce((sum, etl) => sum + Number(etl.total_inserted), 0) || 0;
+  const avgSuccessRate = ingestSummary?.length 
+    ? (ingestSummary.reduce((sum, etl) => sum + (etl.success_runs / etl.total_runs) * 100, 0) / ingestSummary.length) 
+    : 0;
 
   // Prepare chart data
-  const apiCallsData = usageSummary?.map(api => ({
-    name: api.api_name,
-    calls: Number(api.total_calls),
-    success: Number(api.successful_calls),
-    failed: Number(api.failed_calls),
-    cached: Number(api.cached_calls)
+  const ingestionChartData = ingestSummary?.slice(0, 10).map(etl => ({
+    name: etl.etl_name.replace('ingest-', '').replace('twelvedata-', 'TD-'),
+    runs: Number(etl.total_runs),
+    inserted: Number(etl.total_inserted),
+    success: Number(etl.success_runs)
   })) || [];
 
-  const costData = usageSummary?.filter(api => Number(api.estimated_cost) > 0).map(api => ({
-    name: api.api_name,
-    cost: Number(api.estimated_cost)
+  const rowsInsertedData = ingestSummary?.filter(etl => etl.total_inserted > 0).slice(0, 8).map(etl => ({
+    name: etl.etl_name.replace('ingest-', '').replace('twelvedata-', 'TD-'),
+    value: Number(etl.total_inserted)
   })) || [];
 
-  // Calculate real costs from actual API usage data
-  // AUDITED: Based on actual 30-day data from ingest_logs (Dec 23, 2025)
-  // 
-  // VERIFIED FROM DATABASE QUERY:
-  // - Twelve Data: 21,744 runs - Fixed $79/mo (Grow plan)
-  // - Perplexity: 382 calls - LAST USED DEC 17, NO LONGER ACTIVE
-  // - Lovable AI: 248 calls (236 Multi-source + 12 Batch) - 6-hourly via cron
-  // - Firecrawl: 4 calls total (Dec 18-20 only) - rarely triggered
-  // - SEC EDGAR, RSS Feeds, OpenFIGI: Free APIs (active daily)
-  const actualCosts = {
-    twelveData: {
-      monthlyFixed: 79, // Grow plan fixed cost
-      callsPerMonth: 21744,
-      description: "Grow plan (55 credits/min, unlimited daily)"
-    },
-    firecrawl: {
-      // ACTUAL: Only 4 Firecrawl Search calls in 30 days (Dec 18-20)
-      // Breaking-news uses Firecrawl but rarely triggers
-      callsPerMonth: 4,
-      costPerCall: 0.002,
-      get monthlyCost() {
-        return this.callsPerMonth * this.costPerCall;
-      }
-    },
-    lovableAI: {
-      // ACTUAL: 236 (Multi-source) + 12 (Batch) = 248 calls in 30 days
-      // Runs every 6 hours via cron (ingest-ai-research)
-      callsPerMonth: 248,
-      costPerCall: 0.0002, // $0.20 per 1M tokens, ~1000 tokens avg
-      get monthlyCost() {
-        return this.callsPerMonth * this.costPerCall;
-      }
-    },
-    perplexity: {
-      // ACTUAL: 382 calls total - LAST USED DEC 17, NOW DEPRECATED
-      // Setting to 0 for monthly projection since no longer active
-      callsPerMonth: 0,
-      historicalCalls: 382, // For reference only
-      lastUsed: "Dec 17, 2025",
-      costPerCall: 0.005,
-      get monthlyCost() {
-        return this.callsPerMonth * this.costPerCall;
-      }
-    },
-    freeAPIs: {
-      description: "SEC EDGAR, RSS Feeds, OpenFIGI, FRED",
-      monthlyCost: 0
-    },
-    get totalMonthly() {
-      return this.twelveData.monthlyFixed + 
-             this.firecrawl.monthlyCost + 
-             this.lovableAI.monthlyCost + 
-             this.perplexity.monthlyCost + 
-             this.freeAPIs.monthlyCost;
-    },
-    get dailyAverage() {
-      return this.totalMonthly / 30;
-    }
+  // Monthly cost estimate
+  const monthlyCosts = {
+    twelveData: 79, // Fixed monthly
+    firecrawl: 0.01, // ~4 calls/month @ $0.002
+    lovableAI: 0.05, // ~248 calls @ $0.0002
+    get total() { return this.twelveData + this.firecrawl + this.lovableAI; }
   };
+
+  const mappingPercentage = signalStats 
+    ? ((signalStats.mapped_signals / signalStats.total_signals) * 100).toFixed(1)
+    : "0";
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="API Usage Dashboard"
-        description="Real-time monitoring of external API usage, costs, and reliability"
+        title="Data Pipeline Dashboard"
+        description="Real-time monitoring of ingestion functions, signal processing, and theme scoring"
       />
 
-      {/* Info Banner - Twelve Data Migration */}
+      {/* Info Banner */}
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          <strong>Price Data Provider:</strong> Prices are now powered by Twelve Data (Grow plan - $79/mo). 
-          Crypto/Forex refresh every 10 min, Stocks/Commodities every 30 min.
+          <strong>Live Data:</strong> This dashboard shows real metrics from your ingestion pipeline. 
+          Prices powered by Twelve Data ($79/mo fixed). Signal-to-theme mapping runs every 15 minutes.
         </AlertDescription>
       </Alert>
 
-
-      {/* Monthly Cost Estimate Card - Based on Actual Usage */}
-      <Card className="md:col-span-2 lg:col-span-4">
-        <CardHeader>
-          <CardTitle>Monthly API Costs (Based on Actual Usage)</CardTitle>
-          <CardDescription>Calculated from real 30-day API call logs</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-5">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Twelve Data (Prices)</div>
-              <div className="text-2xl font-bold">${actualCosts.twelveData.monthlyFixed}/mo</div>
-              <div className="text-xs text-muted-foreground">
-                Fixed monthly cost
-                <div className="mt-1 space-y-0.5">
-                  <div>• 55 credits/min limit</div>
-                  <div>• Unlimited daily calls</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Firecrawl (Scraping)</div>
-              <div className="text-2xl font-bold">${actualCosts.firecrawl.monthlyCost.toFixed(2)}/mo</div>
-              <div className="text-xs text-muted-foreground">
-                ~{actualCosts.firecrawl.callsPerMonth} calls/mo
-                <div className="mt-1 space-y-0.5">
-                  <div>• ${actualCosts.firecrawl.costPerCall}/call</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Lovable AI (Gemini)</div>
-              <div className="text-2xl font-bold">${actualCosts.lovableAI.monthlyCost.toFixed(2)}/mo</div>
-              <div className="text-xs text-muted-foreground">
-                ~{actualCosts.lovableAI.callsPerMonth} calls/mo
-                <div className="mt-1 space-y-0.5">
-                  <div>• AI Research + Multi-source</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Perplexity AI</div>
-              <div className="text-2xl font-bold text-muted-foreground">$0.00/mo</div>
-              <div className="text-xs text-muted-foreground">
-                <span className="text-amber-500 font-medium">DEPRECATED</span>
-                <div className="mt-1 space-y-0.5">
-                  <div>• Last used: Dec 17</div>
-                  <div>• Historical: 382 calls</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Total Monthly Cost</div>
-              <div className="text-2xl font-bold text-primary">${actualCosts.totalMonthly.toFixed(2)}/mo</div>
-              <div className="text-lg font-semibold mt-2">${actualCosts.dailyAverage.toFixed(2)}/day</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                Based on actual 30-day usage
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 p-3 bg-muted rounded-lg text-sm">
-            <div className="font-medium mb-2">📊 Cost Breakdown:</div>
-            <div className="grid grid-cols-2 gap-2 text-muted-foreground">
-              <div>• Twelve Data: Fixed ${actualCosts.twelveData.monthlyFixed}/mo (price data)</div>
-              <div>• Perplexity: $0/mo (deprecated Dec 17)</div>
-              <div>• Firecrawl: ${actualCosts.firecrawl.monthlyCost.toFixed(2)}/mo (web scraping)</div>
-              <div>• Lovable AI: ${actualCosts.lovableAI.monthlyCost.toFixed(2)}/mo (research reports)</div>
-              <div className="col-span-2">• Free APIs: SEC EDGAR, RSS Feeds, OpenFIGI, FRED</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Signal Mapping Status Alert */}
+      {signalStats && signalStats.unmapped_signals > 1000 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Signal Backlog:</strong> {signalStats.unmapped_signals.toLocaleString()} signals pending theme mapping. 
+            The mapper processes ~1,000 signals every 15 minutes. Estimated clear time: {Math.ceil(signalStats.unmapped_signals / 4000)} hours.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total API Calls</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Ingestion Runs</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loadingUsage ? (
+            {loadingIngest ? (
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="text-2xl font-bold">{totalCalls.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Last {timeRange} hours</p>
+                <div className="text-2xl font-bold">{totalRuns.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Last {timeRange}</p>
               </>
             )}
           </CardContent>
@@ -254,17 +234,51 @@ export default function APIUsage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Variable API Cost</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Rows Inserted</CardTitle>
+            <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loadingUsage ? (
+            {loadingIngest ? (
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="text-2xl font-bold">${totalCost.toFixed(4)}</div>
+                <div className="text-2xl font-bold">{totalInserted.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">New records added</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loadingIngest ? (
+              <Skeleton className="h-8 w-24" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{avgSuccessRate.toFixed(1)}%</div>
+                <p className="text-xs text-muted-foreground">Across all ETLs</p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Signal Mapping</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            {loadingSignals ? (
+              <Skeleton className="h-8 w-24" />
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{mappingPercentage}%</div>
                 <p className="text-xs text-muted-foreground">
-                  Excl. Twelve Data fixed cost
+                  {signalStats?.mapped_signals.toLocaleString()} / {signalStats?.total_signals.toLocaleString()}
                 </p>
               </>
             )}
@@ -273,198 +287,278 @@ export default function APIUsage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Success Rate</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Monthly Cost</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loadingUsage ? (
-              <Skeleton className="h-8 w-24" />
+            <div className="text-2xl font-bold">${monthlyCosts.total.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">TwelveData + AI APIs</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Time Range Selector */}
+      <div className="flex items-center gap-4">
+        <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as "24h" | "7d" | "30d")}>
+          <TabsList>
+            <TabsTrigger value="24h">Last 24 Hours</TabsTrigger>
+            <TabsTrigger value="7d">Last 7 Days</TabsTrigger>
+            <TabsTrigger value="30d">Last 30 Days</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Button variant="outline" size="sm" onClick={() => refetchIngest()}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Ingestion Runs Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Ingestion Activity</CardTitle>
+            <CardDescription>Runs and success counts per ETL</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingIngest ? (
+              <Skeleton className="h-80 w-full" />
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={ingestionChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} fontSize={10} />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="runs" fill="#8884d8" name="Total Runs" />
+                  <Bar dataKey="success" fill="#82ca9d" name="Success" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Rows Inserted Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Data Volume Distribution</CardTitle>
+            <CardDescription>Rows inserted by ETL</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingIngest ? (
+              <Skeleton className="h-80 w-full" />
+            ) : rowsInsertedData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={rowsInsertedData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={(entry) => `${entry.name}: ${entry.value.toLocaleString()}`}
+                  >
+                    {rowsInsertedData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No data inserted in this period
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Pipeline Status Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Ingestion Pipeline Status</CardTitle>
+          <CardDescription>Real-time status of all ETL functions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingIngest ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2">ETL Function</th>
+                    <th className="text-right p-2">Total Runs</th>
+                    <th className="text-right p-2">Success</th>
+                    <th className="text-right p-2">Success Rate</th>
+                    <th className="text-right p-2">Rows Inserted</th>
+                    <th className="text-right p-2">Avg Duration</th>
+                    <th className="text-right p-2">Last Run</th>
+                    <th className="text-center p-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ingestSummary?.map((etl) => {
+                    const successRate = (etl.success_runs / etl.total_runs) * 100;
+                    const lastRunDate = new Date(etl.last_run);
+                    const hoursAgo = (Date.now() - lastRunDate.getTime()) / (1000 * 60 * 60);
+                    const isStale = hoursAgo > 6;
+                    
+                    return (
+                      <tr key={etl.etl_name} className="border-b hover:bg-muted/50">
+                        <td className="p-2 font-medium">{etl.etl_name}</td>
+                        <td className="text-right p-2">{Number(etl.total_runs).toLocaleString()}</td>
+                        <td className="text-right p-2 text-green-600">{Number(etl.success_runs).toLocaleString()}</td>
+                        <td className="text-right p-2">
+                          <Badge variant={successRate >= 95 ? "default" : successRate >= 80 ? "secondary" : "destructive"}>
+                            {successRate.toFixed(1)}%
+                          </Badge>
+                        </td>
+                        <td className="text-right p-2">{Number(etl.total_inserted).toLocaleString()}</td>
+                        <td className="text-right p-2">{Number(etl.avg_duration_sec).toFixed(1)}s</td>
+                        <td className="text-right p-2 text-xs">
+                          {formatDistanceToNow(lastRunDate, { addSuffix: true })}
+                        </td>
+                        <td className="text-center p-2">
+                          {isStale ? (
+                            <Badge variant="destructive">Stale</Badge>
+                          ) : successRate >= 95 ? (
+                            <Badge variant="default">Healthy</Badge>
+                          ) : (
+                            <Badge variant="secondary">Warning</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Signal & Theme Status */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Signal Processing</CardTitle>
+            <CardDescription>Signal generation and theme mapping status</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loadingSignals ? (
+              <Skeleton className="h-24 w-full" />
             ) : (
               <>
-                <div className="text-2xl font-bold">{avgSuccessRate.toFixed(1)}%</div>
-                <p className="text-xs text-muted-foreground">Across all APIs</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Signals</p>
+                    <p className="text-2xl font-bold">{signalStats?.total_signals.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">New (24h)</p>
+                    <p className="text-2xl font-bold text-green-600">{signalStats?.signals_24h.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Mapped to Themes</p>
+                    <p className="text-2xl font-bold">{signalStats?.mapped_signals.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pending Mapping</p>
+                    <p className="text-2xl font-bold text-amber-600">{signalStats?.unmapped_signals.toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="pt-4">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Mapping Progress</span>
+                    <span>{mappingPercentage}%</span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all" 
+                      style={{ width: `${mappingPercentage}%` }}
+                    />
+                  </div>
+                </div>
               </>
             )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Price Data Provider</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
+          <CardHeader>
+            <CardTitle>Theme Scoring</CardTitle>
+            <CardDescription>Theme score computation status</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Twelve Data</div>
-            <p className="text-xs text-muted-foreground">
-              Grow plan (55 credits/min)
-            </p>
+          <CardContent className="space-y-4">
+            {loadingThemes ? (
+              <Skeleton className="h-24 w-full" />
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Last Computed</p>
+                    <p className="text-lg font-medium">
+                      {themeStats?.last_computed 
+                        ? formatDistanceToNow(new Date(themeStats.last_computed), { addSuffix: true })
+                        : "Never"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Scores (24h)</p>
+                    <p className="text-2xl font-bold">{themeStats?.themes_scored || 0}</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-muted rounded-lg text-sm">
+                  <p className="font-medium mb-1">Pipeline Flow:</p>
+                  <p className="text-muted-foreground">
+                    Ingestion → Signals → Theme Mapping → Score Computation
+                  </p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Time Range Selector */}
-      <Tabs value={String(timeRange)} onValueChange={(v) => setTimeRange(Number(v) as 24 | 168 | 720)}>
-        <TabsList>
-          <TabsTrigger value="24">Last 24 Hours</TabsTrigger>
-          <TabsTrigger value="168">Last 7 Days</TabsTrigger>
-          <TabsTrigger value="720">Last 30 Days</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value={String(timeRange)} className="space-y-6">
-          {/* API Calls Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>API Calls by Source</CardTitle>
-              <CardDescription>Total calls, success, failure, and cache hits</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loadingUsage ? (
-                <Skeleton className="h-80 w-full" />
-              ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={apiCallsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="success" stackId="a" fill="#82ca9d" name="Success" />
-                    <Bar dataKey="failed" stackId="a" fill="#ff7c7c" name="Failed" />
-                    <Bar dataKey="cached" stackId="a" fill="#8dd1e1" name="Cached" />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Cost Distribution */}
-          {costData.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Cost Distribution</CardTitle>
-                <CardDescription>Estimated cost by API (variable costs only)</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={costData}
-                      dataKey="cost"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={(entry) => `${entry.name}: $${entry.cost.toFixed(4)}`}
-                    >
-                      {costData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Detailed API Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>API Usage Details</CardTitle>
-              <CardDescription>Comprehensive metrics for each API</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loadingUsage ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2">API</th>
-                        <th className="text-right p-2">Total Calls</th>
-                        <th className="text-right p-2">Success</th>
-                        <th className="text-right p-2">Failed</th>
-                        <th className="text-right p-2">Cached</th>
-                        <th className="text-right p-2">Success Rate</th>
-                        <th className="text-right p-2">Avg Response</th>
-                        <th className="text-right p-2">Cost</th>
-                        <th className="text-center p-2">Type</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usageSummary?.map((api) => {
-                        const costInfo = apiCosts?.find(c => c.api_name === api.api_name);
-                        return (
-                          <tr key={api.api_name} className="border-b hover:bg-muted/50">
-                            <td className="p-2 font-medium">{api.api_name}</td>
-                            <td className="text-right p-2">{Number(api.total_calls).toLocaleString()}</td>
-                            <td className="text-right p-2 text-green-600">{Number(api.successful_calls).toLocaleString()}</td>
-                            <td className="text-right p-2 text-red-600">{Number(api.failed_calls).toLocaleString()}</td>
-                            <td className="text-right p-2 text-blue-600">{Number(api.cached_calls).toLocaleString()}</td>
-                            <td className="text-right p-2">
-                              <Badge variant={Number(api.success_rate) >= 95 ? "default" : "destructive"}>
-                                {Number(api.success_rate).toFixed(1)}%
-                              </Badge>
-                            </td>
-                            <td className="text-right p-2">{Number(api.avg_response_time_ms).toFixed(0)}ms</td>
-                            <td className="text-right p-2">${Number(api.estimated_cost).toFixed(4)}</td>
-                            <td className="text-center p-2">
-                              <Badge variant={costInfo?.is_paid ? "secondary" : "outline"}>
-                                {costInfo?.is_paid ? "Paid" : "Free"}
-                              </Badge>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* API Costs Configuration */}
-          <Card>
-            <CardHeader>
-              <CardTitle>API Cost Configuration</CardTitle>
-              <CardDescription>Configured cost rates and limits for each API</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2">API Name</th>
-                      <th className="text-right p-2">Cost per Call</th>
-                      <th className="text-right p-2">Daily Limit</th>
-                      <th className="text-center p-2">Type</th>
-                      <th className="text-left p-2">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {apiCosts?.map((cost) => (
-                      <tr key={cost.api_name} className="border-b hover:bg-muted/50">
-                        <td className="p-2 font-medium">{cost.api_name}</td>
-                        <td className="text-right p-2">${cost.cost_per_call?.toFixed(4) || '0.0000'}</td>
-                        <td className="text-right p-2">{cost.daily_limit?.toLocaleString() || 'Unlimited'}</td>
-                        <td className="text-center p-2">
-                          <Badge variant={cost.is_paid ? "secondary" : "outline"}>
-                            {cost.is_paid ? "Paid" : "Free"}
-                          </Badge>
-                        </td>
-                        <td className="p-2 text-muted-foreground text-xs">{cost.notes || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Cost Breakdown */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Monthly API Costs</CardTitle>
+          <CardDescription>Estimated monthly costs based on actual usage</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="p-4 border rounded-lg">
+              <p className="text-sm text-muted-foreground">Twelve Data (Prices)</p>
+              <p className="text-2xl font-bold">${monthlyCosts.twelveData}/mo</p>
+              <p className="text-xs text-muted-foreground mt-1">Fixed - Grow plan</p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <p className="text-sm text-muted-foreground">Firecrawl (Scraping)</p>
+              <p className="text-2xl font-bold">~${monthlyCosts.firecrawl.toFixed(2)}/mo</p>
+              <p className="text-xs text-muted-foreground mt-1">~4 calls/month</p>
+            </div>
+            <div className="p-4 border rounded-lg">
+              <p className="text-sm text-muted-foreground">Lovable AI</p>
+              <p className="text-2xl font-bold">~${monthlyCosts.lovableAI.toFixed(2)}/mo</p>
+              <p className="text-xs text-muted-foreground mt-1">AI Research reports</p>
+            </div>
+            <div className="p-4 border rounded-lg bg-primary/5">
+              <p className="text-sm font-medium">Total Monthly</p>
+              <p className="text-2xl font-bold text-primary">${monthlyCosts.total.toFixed(2)}/mo</p>
+              <p className="text-xs text-muted-foreground mt-1">${(monthlyCosts.total / 30).toFixed(2)}/day</p>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-muted rounded-lg text-sm text-muted-foreground">
+            <strong>Free APIs:</strong> SEC EDGAR, RSS Feeds (CNBC, MarketWatch, etc.), OpenFIGI, FRED
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
