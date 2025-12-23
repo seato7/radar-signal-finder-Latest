@@ -15,9 +15,11 @@ interface Message {
 interface AIAssistantChatProps {
   context?: any;
   onClose?: () => void;
+  initialQuery?: string;
 }
 
-export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
+export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantChatProps) => {
+  const hasProcessedInitialQuery = useRef(false);
   const [messages, setMessages] = useState<Message[]>(() => {
     // Load conversation history from localStorage on mount
     const saved = localStorage.getItem('ai-chat-history');
@@ -39,6 +41,14 @@ export const AIAssistantChat = ({ context, onClose }: AIAssistantChatProps) => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Auto-trigger chat for initial query from URL
+  useEffect(() => {
+    if (initialQuery && !hasProcessedInitialQuery.current && messages.length === 0) {
+      hasProcessedInitialQuery.current = true;
+      streamChat(initialQuery);
+    }
+  }, [initialQuery]);
 
   const streamChat = async (userMessage: string) => {
     const newMessages = [...messages, { role: 'user' as const, content: userMessage }];

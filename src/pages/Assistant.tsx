@@ -1,14 +1,18 @@
+import { useSearchParams } from 'react-router-dom';
 import { AIAssistantChat } from '@/components/AIAssistantChat';
 import { PageHeader } from '@/components/PageHeader';
 
 const Assistant = () => {
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get('q') || undefined;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="AI Investment Assistant"
         description="Ask questions about themes, signals, and market opportunities"
       />
-      <AIAssistantChat />
+      <AIAssistantChat initialQuery={initialQuery} />
     </div>
   );
 };
