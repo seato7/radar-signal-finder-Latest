@@ -52,10 +52,6 @@ const MarketRadar = () => {
         <CardTitle className="flex items-center gap-2 text-lg">
           <Activity className="h-5 w-5 text-primary" />
           Today's Market Radar
-          <Badge variant="outline" className="ml-auto text-xs border-primary/30 text-primary">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary pulse-live mr-1.5" />
-            LIVE
-          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
