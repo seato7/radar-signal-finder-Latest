@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { IngestLogger } from "../_shared/log-ingest.ts";
 import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
 
 const corsHeaders = {
@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v3 - REAL DATA ONLY - NO ESTIMATIONS
+// v4 - REAL DATA ONLY - NO ESTIMATIONS - WITH PROPER LOGGING
 
 // CFTC COT Report Code to Ticker mapping
 const CFTC_CONTRACTS: Record<string, { ticker: string; name: string }> = {
@@ -45,15 +45,17 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const startTime = Date.now();
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   );
   const slackAlerter = new SlackAlerter();
+  const logger = new IngestLogger(supabaseClient, 'ingest-cot-reports');
 
   try {
-    console.log('[v3] Starting COT reports ingestion - REAL DATA ONLY, NO ESTIMATIONS');
+    // Start logging
+    await logger.start();
+    console.log('[v4] Starting COT reports ingestion - REAL DATA ONLY, NO ESTIMATIONS');
 
     // Fetch real CFTC COT data from Socrata API (free, no key required)
     const cftcUrl = 'https://publicreporting.cftc.gov/resource/72hh-3qpy.json?$limit=500&$order=report_date_as_yyyy_mm_dd DESC';
@@ -83,14 +85,11 @@ serve(async (req) => {
     if (cftcData.length === 0) {
       console.log('❌ No real CFTC data available - NOT inserting any fake data');
       
-      await logHeartbeat(supabaseClient, {
-        function_name: 'ingest-cot-reports',
-      status: 'success',
+      await logger.success({
+        source_used: 'none',
         rows_inserted: 0,
         rows_skipped: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: 'none',
-        metadata: { version: 'v3_no_estimation', reason: 'cftc_api_failed' }
+        metadata: { version: 'v4_no_estimation', reason: 'cftc_api_failed' }
       });
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-cot-reports', {
@@ -103,7 +102,7 @@ serve(async (req) => {
           success: true,
           processed: 0,
           message: 'No real CFTC data available - no fake data inserted',
-          version: 'v3_no_estimation'
+          version: 'v4_no_estimation'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -199,7 +198,7 @@ serve(async (req) => {
           contract_code: code,
           market_name: report.market_and_exchange_names,
           data_type: 'real',
-          version: 'v3_no_estimation'
+          version: 'v4_no_estimation'
         }
       });
     }
@@ -209,14 +208,11 @@ serve(async (req) => {
     if (insertData.length === 0) {
       console.log('❌ No matching COT data for our assets - NOT inserting any fake data');
       
-      await logHeartbeat(supabaseClient, {
-        function_name: 'ingest-cot-reports',
-        status: 'success',
+      await logger.success({
+        source_used: 'CFTC_Socrata_API',
         rows_inserted: 0,
         rows_skipped: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: 'CFTC_Socrata_API',
-        metadata: { version: 'v3_no_estimation', reason: 'no_matching_assets' }
+        metadata: { version: 'v4_no_estimation', reason: 'no_matching_assets' }
       });
       
       return new Response(
@@ -224,7 +220,7 @@ serve(async (req) => {
           success: true,
           processed: 0,
           message: 'No matching COT data for assets - no fake data inserted',
-          version: 'v3_no_estimation'
+          version: 'v4_no_estimation'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -246,16 +242,15 @@ serve(async (req) => {
       }
     }
 
-    const duration = Date.now() - startTime;
+    const duration = Date.now() - logger.startTime;
 
-    await logHeartbeat(supabaseClient, {
-      function_name: 'ingest-cot-reports',
-      status: 'success',
+    // Log success to both ingest_logs and function_status
+    await logger.success({
+      source_used: 'CFTC_Socrata_API',
       rows_inserted: insertedCount,
       rows_skipped: 0,
-      duration_ms: duration,
-      source_used: 'CFTC_Socrata_API',
-      metadata: { version: 'v3_no_estimation' }
+      verified_source: 'CFTC',
+      metadata: { version: 'v4_no_estimation', contracts_processed: latestByContract.size }
     });
 
     await slackAlerter.sendLiveAlert({
@@ -274,7 +269,7 @@ serve(async (req) => {
         success: true,
         processed: insertedCount,
         source: 'CFTC_Socrata_API',
-        version: 'v3_no_estimation',
+        version: 'v4_no_estimation',
         message: `Inserted ${insertedCount} REAL COT reports`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -283,16 +278,9 @@ serve(async (req) => {
   } catch (error) {
     console.error('Fatal error:', error);
 
-    const duration = Date.now() - startTime;
-
-    await logHeartbeat(supabaseClient, {
-      function_name: 'ingest-cot-reports',
-      status: 'failure',
-      rows_inserted: 0,
-      rows_skipped: 0,
-      duration_ms: duration,
+    // Log failure to both ingest_logs and function_status
+    await logger.failure(error instanceof Error ? error : new Error(String(error)), {
       source_used: 'CFTC_Socrata_API',
-      error_message: error instanceof Error ? error.message : 'Unknown error',
     });
 
     await slackAlerter.sendCriticalAlert({
