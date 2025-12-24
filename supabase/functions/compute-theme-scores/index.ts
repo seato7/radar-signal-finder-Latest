@@ -286,6 +286,32 @@ const SIGNAL_TYPE_TO_THEMES: Record<string, { themes: string[]; weights: number[
   "momentum_shift": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "trend_change": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
   "volatility_spike": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  
+  // === MISSING SIGNAL TYPES (83,584 signals now mapped!) ===
+  // TechEdge - 82,130 signals
+  "technical_stochastic": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "chart_pattern": { themes: ["Big Tech & Consumer", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  "technical_ma_crossover": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "technical_rsi": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  
+  // BigMoneyConfirm - 956 signals  
+  "bigmoney_hold_new": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "bigmoney_hold_increase": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "bigmoney_hold_decrease": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  "bigmoney_hold": { themes: ["Banks & Financials", "Big Tech & Consumer"], weights: [0.5, 0.5] },
+  
+  // FlowPressure - 161 signals
+  "crypto_exchange_outflow": { themes: ["Fintech & Crypto"], weights: [1.0] },
+  
+  // RiskFlags - 828 signals
+  "short_interest": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "supply_chain_indicator": { themes: ["Industrial & Infrastructure", "AI & Semiconductors"], weights: [0.5, 0.5] },
+  
+  // Attention - 659 signals
+  "news_sentiment": { themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
+  
+  // CapexMomentum - 30 signals
+  "innovation_patent": { themes: ["AI & Semiconductors", "Biotech & Healthcare"], weights: [0.5, 0.5] },
 };
 
 // ============================================================================
@@ -319,6 +345,9 @@ const DATA_SOURCE_CONFIGS: DataSourceConfig[] = [
   { table: 'breaking_news', tickerColumn: 'ticker', dateColumn: 'published_at', magnitudeField: 'sentiment_score', themes: ["Big Tech & Consumer", "Media & Entertainment"], weights: [0.5, 0.5] },
   { table: 'ai_research_reports', tickerColumn: 'ticker', dateColumn: 'generated_at', magnitudeField: 'confidence_score', themes: ["AI & Semiconductors", "Big Tech & Consumer"], weights: [0.5, 0.5] },
   { table: 'economic_indicators', tickerColumn: 'indicator_type', dateColumn: 'release_date', directionField: 'impact', themes: ["Banks & Financials", "Real Estate & REITs", "International & Emerging"], weights: [0.4, 0.3, 0.3] },
+  // NEW: Search trends (132,830 rows!) and social signals (5K rows)
+  { table: 'search_trends', tickerColumn: 'ticker', dateColumn: 'period_start', magnitudeField: 'trend_change', themes: ["Big Tech & Consumer", "Media & Entertainment", "Fintech & Crypto"], weights: [0.4, 0.3, 0.3] },
+  { table: 'social_signals', tickerColumn: 'ticker', dateColumn: 'created_at', magnitudeField: 'sentiment_score', themes: ["Fintech & Crypto", "Media & Entertainment", "Big Tech & Consumer"], weights: [0.4, 0.3, 0.3] },
 ];
 
 // Comprehensive SECTOR → THEME mapping (covers all 26k+ enriched assets)
