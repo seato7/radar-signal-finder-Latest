@@ -160,6 +160,30 @@ const SIGNAL_TYPE_TO_COMPONENT: Record<string, { component: string; multiplier: 
   'short_interest_low': { component: 'RiskFlags', multiplier: -1.0 },
   'volatility_spike': { component: 'RiskFlags', multiplier: 2.0 },
   'supply_disruption': { component: 'RiskFlags', multiplier: 2.5 },
+  'short_interest': { component: 'RiskFlags', multiplier: 2.5 },              // 828 signals!
+  'supply_chain_indicator': { component: 'RiskFlags', multiplier: 2.0 },
+  
+  // === MISSING SIGNAL TYPES (83,584 signals!) ===
+  // TechEdge - 82,130 signals were not being matched
+  'technical_stochastic': { component: 'TechEdge', multiplier: 2.0 },         // 48,516 signals
+  'chart_pattern': { component: 'TechEdge', multiplier: 2.5 },                // 33,077 signals
+  'technical_ma_crossover': { component: 'TechEdge', multiplier: 3.0 },       // 439 signals
+  'technical_rsi': { component: 'TechEdge', multiplier: 2.0 },                // 98 signals
+  
+  // BigMoneyConfirm - 956 signals
+  'bigmoney_hold_new': { component: 'BigMoneyConfirm', multiplier: 5.0 },
+  'bigmoney_hold_increase': { component: 'BigMoneyConfirm', multiplier: 3.0 },
+  'bigmoney_hold_decrease': { component: 'BigMoneyConfirm', multiplier: -2.0 },
+  'bigmoney_hold': { component: 'BigMoneyConfirm', multiplier: 2.0 },
+  
+  // FlowPressure - 161 signals
+  'crypto_exchange_outflow': { component: 'FlowPressure', multiplier: 4.0 },
+  
+  // Attention - 659 signals
+  'news_sentiment': { component: 'Attention', multiplier: 2.5 },
+  
+  // CapexMomentum - 30 signals
+  'innovation_patent': { component: 'CapexMomentum', multiplier: 3.0 },
 };
 
 // Helper: Logarithmic magnitude scaling for large numbers
@@ -252,7 +276,7 @@ Deno.serve(async (req) => {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
       // ========================================================================
-      // FETCH ALL DATA SOURCES IN PARALLEL (22 tables + signals)
+      // FETCH ALL DATA SOURCES IN PARALLEL (24 tables + signals)
       // ========================================================================
       const [
         // Original 13 data sources
@@ -289,6 +313,8 @@ Deno.serve(async (req) => {
         patentFilings,
         // NEW: Forex technicals
         forexTechnicals,
+        // NEW: Search trends (132,830 rows!)
+        searchTrends,
       ] = await Promise.all([
         // Original queries
         supabase.from('advanced_technicals').select('ticker, stochastic_k, stochastic_d, breakout_signal, trend_strength, stochastic_signal, adx, price_vs_vwap_pct').in('ticker', tickers),
@@ -324,6 +350,8 @@ Deno.serve(async (req) => {
         supabase.from('patent_filings').select('ticker, technology_category, innovation_score').in('ticker', tickers),
         // NEW: Forex technicals
         supabase.from('forex_technicals').select('ticker, rsi_14, rsi_signal, macd_crossover, ma_crossover').in('ticker', tickers),
+        // NEW: Search trends (132,830 rows!)
+        supabase.from('search_trends').select('ticker, search_volume, trend_change').in('ticker', tickers).order('period_start', { ascending: false }).limit(2000),
       ]);
 
       // ========================================================================
@@ -467,6 +495,18 @@ Deno.serve(async (req) => {
       
       // NEW: Forex technicals map
       const forexTechMap = new Map((forexTechnicals.data || []).map(f => [f.ticker, f]));
+      
+      // NEW: Search trends map (132,830 rows!)
+      const searchTrendsMap = new Map<string, { volume: number; change: number }>();
+      (searchTrends.data || []).forEach(s => {
+        // Only keep the first (most recent) entry per ticker
+        if (!searchTrendsMap.has(s.ticker)) {
+          searchTrendsMap.set(s.ticker, { 
+            volume: s.search_volume || 0, 
+            change: s.trend_change || 0 
+          });
+        }
+      });
 
       // Macro score (same for all)
       const econ = economicIndicators.data || [];
@@ -571,7 +611,24 @@ Deno.serve(async (req) => {
         }
 
         // ======================================================================
-        // PROCESS BREAKING NEWS (NEW!)
+        // PROCESS SEARCH TRENDS (NEW! 132,830 rows!)
+        // ======================================================================
+        const trends = searchTrendsMap.get(ticker);
+        if (trends) {
+          // Volume spike indicates attention
+          if (trends.volume > 1000) {
+            components.Attention += Math.min(Math.log10(trends.volume / 100) * 1.5, 3.0);
+          } else if (trends.volume > 100) {
+            components.Attention += Math.min(Math.log10(trends.volume / 10) * 0.5, 1.5);
+          }
+          // Trend change direction
+          if (trends.change > 50) components.Attention += 2.5;
+          else if (trends.change > 20) components.Attention += 1.5;
+          else if (trends.change > 0) components.Attention += 0.5;
+          else if (trends.change < -20) components.Attention -= 1.0;
+          else if (trends.change < -50) components.Attention -= 2.0;
+        }
+
         // ======================================================================
         const news = breakingNewsMap.get(ticker);
         if (news && news.count > 0) {
