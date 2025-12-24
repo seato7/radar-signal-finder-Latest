@@ -7,8 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v4 - Yahoo Finance Options Chain API
-// Replaces blocked Barchart/CBOE with Yahoo Finance
+// v5 - Yahoo Finance Options Chain API
+// Removed all Barchart and CBOE logic
 
 async function fetchYahooOptions(ticker: string): Promise<any[]> {
   try {
@@ -55,9 +55,9 @@ async function fetchYahooOptions(ticker: string): Promise<any[]> {
           volume: opt.volume || 0,
           open_interest: opt.openInterest || 0,
           implied_volatility: opt.impliedVolatility || 0,
-          // Do NOT fabricate sweep/block data - set to null if unavailable
+          // Set flow_type = null always (do not invent sweep/block)
           flow_type: null,
-          // Preserve sentiment logic: calls = bullish, puts = bearish
+          // Sentiment: calls = bullish, puts = bearish
           sentiment: optionType === 'call' ? 'bullish' : 'bearish',
           trade_date: new Date().toISOString(),
           metadata: { 
@@ -92,7 +92,7 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v4] Options flow ingestion - Yahoo Finance Options Chain API');
+    console.log('[v5] Options flow ingestion - Yahoo Finance Options Chain API');
     
     const allOptions: any[] = [];
     const tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
@@ -106,7 +106,7 @@ serve(async (req) => {
     
     console.log(`Total options found: ${allOptions.length}`);
 
-    // If zero rows inserted, treat as failure and emit warning
+    // If zero rows inserted, treat as failure and emit Slack alert
     if (allOptions.length === 0) {
       console.warn('⚠️ WARNING: No options data found - zero rows will be inserted');
       
@@ -124,14 +124,14 @@ serve(async (req) => {
         duration_ms: Date.now() - startTime,
         source_used: 'Yahoo_Finance_Options',
         error_message: 'Zero rows inserted - no data available',
-        metadata: { version: 'v4_yahoo_finance', reason: 'no_data_available' }
+        metadata: { version: 'v5_yahoo_finance', reason: 'no_data_available' }
       });
       
       return new Response(JSON.stringify({ 
         success: false, 
         count: 0, 
         source: 'Yahoo_Finance_Options',
-        version: 'v4_yahoo_finance',
+        version: 'v5_yahoo_finance',
         warning: 'No options data found - zero rows inserted'
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -167,14 +167,14 @@ serve(async (req) => {
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
       source_used: 'Yahoo_Finance_Options',
-      metadata: { version: 'v4_yahoo_finance' }
+      metadata: { version: 'v5_yahoo_finance' }
     });
 
     return new Response(JSON.stringify({ 
       success: true, 
       count: inserted, 
       source: 'Yahoo_Finance_Options',
-      version: 'v4_yahoo_finance',
+      version: 'v5_yahoo_finance',
       message: `Inserted ${inserted} options records`
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     
