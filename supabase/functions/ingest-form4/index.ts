@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { withRetry } from "../_shared/retry-wrapper.ts";
-import { SlackAlerter } from "../_shared/slack-alerts.ts";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts";
+import { SlackAlerter, sendNoDataFoundAlert } from "../_shared/slack-alerts.ts";
+import { XMLParser } from "https://esm.sh/fast-xml-parser@4.3.2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,9 +10,9 @@ const corsHeaders = {
 };
 
 // SEC-compliant User-Agent with explicit product name + contact
-const SEC_USER_AGENT = "LovableSignalsBot/1.0 (contact@lovable.dev)";
+const SEC_USER_AGENT = "InsiderPulse/1.0 (contact: support@insiderpulse.org)";
 
-// Parse Form 4 XML using proper XML parser (handles multiple namespace variants)
+// Parse Form 4 XML using fast-xml-parser (handles multiple namespace variants)
 function parseForm4XML(xmlText: string): {
   ticker: string | null;
   issuerName: string | null;
@@ -35,96 +35,84 @@ function parseForm4XML(xmlText: string): {
   };
 
   try {
-    // Use DOMParser for proper XML parsing
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlText, "text/xml");
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      removeNSPrefix: true, // This handles namespace prefixes automatically
+      parseTagValue: true,
+      trimValues: true,
+    });
+    
+    const doc = parser.parse(xmlText);
     
     if (!doc) {
       console.log('Failed to parse XML document');
       return result;
     }
 
-    // Helper to find element by local name (ignores namespace prefixes)
-    const findByLocalName = (parent: any, localName: string): any => {
-      if (!parent || !parent.getElementsByTagName) return null;
-      
-      // Try without namespace
-      let elements = parent.getElementsByTagName(localName);
-      if (elements && elements.length > 0) return elements[0];
-      
-      // Try with common namespace prefixes
-      for (const prefix of ['', 'ns1:', 'ns2:', 'ownershipDocument:']) {
-        elements = parent.getElementsByTagName(prefix + localName);
-        if (elements && elements.length > 0) return elements[0];
-      }
-      
-      return null;
-    };
-
-    const getAllByLocalName = (parent: any, localName: string): any[] => {
-      if (!parent || !parent.getElementsByTagName) return [];
-      
-      let elements = parent.getElementsByTagName(localName);
-      if (elements && elements.length > 0) return Array.from(elements);
-      
-      for (const prefix of ['', 'ns1:', 'ns2:', 'ownershipDocument:']) {
-        elements = parent.getElementsByTagName(prefix + localName);
-        if (elements && elements.length > 0) return Array.from(elements);
-      }
-      
-      return [];
-    };
-
-    // Extract issuer info
-    const issuer = findByLocalName(doc, 'issuer');
-    if (issuer) {
-      const tickerEl = findByLocalName(issuer, 'issuerTradingSymbol');
-      const nameEl = findByLocalName(issuer, 'issuerName');
-      
-      result.ticker = tickerEl?.textContent?.trim() || null;
-      result.issuerName = nameEl?.textContent?.trim() || null;
+    // Navigate to ownershipDocument (handles various namespace cases)
+    const ownership = doc.ownershipDocument || doc['ns1:ownershipDocument'] || doc['ns2:ownershipDocument'] || doc;
+    
+    if (!ownership) {
+      console.log('No ownershipDocument found in XML');
+      return result;
     }
 
-    // Extract transactions
-    const transactions = getAllByLocalName(doc, 'nonDerivativeTransaction');
-    
-    for (const tx of transactions) {
-      const codeEl = findByLocalName(tx, 'transactionCode');
-      const code = codeEl?.textContent?.trim() || '';
+    // Extract issuer info - ticker from issuerTradingSymbol
+    const issuer = ownership.issuer;
+    if (issuer) {
+      result.ticker = issuer.issuerTradingSymbol?.toString().trim() || null;
+      result.issuerName = issuer.issuerName?.toString().trim() || null;
+    }
+
+    // Extract transactions from nonDerivativeTable
+    const ndTable = ownership.nonDerivativeTable;
+    if (ndTable) {
+      let transactions = ndTable.nonDerivativeTransaction;
       
-      // Get shares - look in transactionAmounts
-      const amounts = findByLocalName(tx, 'transactionAmounts');
-      let shares = 0;
-      let pricePerShare: number | null = null;
-      let acquiredDisposed = '';
-      
-      if (amounts) {
-        const sharesEl = findByLocalName(amounts, 'transactionShares');
-        if (sharesEl) {
-          const valueEl = findByLocalName(sharesEl, 'value');
-          shares = parseFloat(valueEl?.textContent || '0') || 0;
-        }
-        
-        const priceEl = findByLocalName(amounts, 'transactionPricePerShare');
-        if (priceEl) {
-          const valueEl = findByLocalName(priceEl, 'value');
-          pricePerShare = parseFloat(valueEl?.textContent || '') || null;
-        }
-        
-        const adCodeEl = findByLocalName(amounts, 'transactionAcquiredDisposedCode');
-        if (adCodeEl) {
-          const valueEl = findByLocalName(adCodeEl, 'value');
-          acquiredDisposed = valueEl?.textContent?.trim() || '';
-        }
+      // Ensure it's an array
+      if (transactions && !Array.isArray(transactions)) {
+        transactions = [transactions];
       }
       
-      if (code && acquiredDisposed) {
-        result.transactions.push({
-          code,
-          shares,
-          acquiredDisposed,
-          pricePerShare
-        });
+      if (transactions && Array.isArray(transactions)) {
+        for (const tx of transactions) {
+          const transactionCoding = tx.transactionCoding;
+          const transactionAmounts = tx.transactionAmounts;
+          
+          if (!transactionCoding || !transactionAmounts) continue;
+          
+          const code = transactionCoding.transactionCode?.toString().trim() || '';
+          
+          // Get shares
+          let shares = 0;
+          const sharesObj = transactionAmounts.transactionShares;
+          if (sharesObj) {
+            shares = parseFloat(sharesObj.value?.toString() || '0') || 0;
+          }
+          
+          // Get price per share
+          let pricePerShare: number | null = null;
+          const priceObj = transactionAmounts.transactionPricePerShare;
+          if (priceObj && priceObj.value) {
+            pricePerShare = parseFloat(priceObj.value.toString()) || null;
+          }
+          
+          // Get acquired/disposed code
+          let acquiredDisposed = '';
+          const adObj = transactionAmounts.transactionAcquiredDisposedCode;
+          if (adObj) {
+            acquiredDisposed = adObj.value?.toString().trim() || '';
+          }
+          
+          if (code && acquiredDisposed) {
+            result.transactions.push({
+              code,
+              shares,
+              acquiredDisposed,
+              pricePerShare
+            });
+          }
+        }
       }
     }
 
@@ -163,7 +151,7 @@ serve(async (req) => {
   await slackAlerter.sendLiveAlert({
     etlName: 'ingest-form4',
     status: 'started',
-    metadata: { source: 'SEC EDGAR', version: 'v2_xml_parser' }
+    metadata: { source: 'SEC EDGAR', version: 'v3_fast_xml_parser' }
   });
 
   try {
@@ -177,7 +165,7 @@ serve(async (req) => {
     
     const feedUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&count=${limit}&output=atom`;
     
-    console.log(`[v2] Fetching Form 4 filings with proper XML parser...`);
+    console.log(`[v3] Fetching Form 4 filings with fast-xml-parser...`);
     
     const feedResponse = await withRetry(
       async () => await fetch(feedUrl, {
@@ -256,7 +244,7 @@ serve(async (req) => {
         
         const xmlText = await xmlResponse.text();
         
-        // Parse XML with proper parser
+        // Parse XML with fast-xml-parser
         const parsed = parseForm4XML(xmlText);
         
         // If ticker is missing (private company), skip with warning log
@@ -376,9 +364,14 @@ serve(async (req) => {
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     const latency = Date.now() - startTime;
 
-    // If zero rows inserted, treat as warning
+    // If zero rows inserted, send Slack "no data found" alert
     if (signalsCreated === 0 && signalsSkipped === 0) {
       console.warn('⚠️ WARNING: Zero signals created from Form 4 filings');
+      
+      await sendNoDataFoundAlert(slackAlerter, 'ingest-form4', {
+        sourcesAttempted: ['SEC EDGAR Form 4'],
+        reason: `Processed ${entries.length} entries but no signals created (${parseErrors} parse errors, ${privateCompanySkips} private company skips)`
+      });
     }
 
     await supabaseClient.from('ingest_logs').update({
@@ -391,7 +384,7 @@ serve(async (req) => {
       fallback_count: 0,
       latency_ms: latency,
       metadata: { 
-        version: 'v2_xml_parser',
+        version: 'v3_fast_xml_parser',
         parse_errors: parseErrors,
         private_company_skips: privateCompanySkips
       }
@@ -411,7 +404,7 @@ serve(async (req) => {
         filings_processed: Math.min(limit, entries.length),
         parse_errors: parseErrors,
         private_company_skips: privateCompanySkips,
-        version: 'v2_xml_parser'
+        version: 'v3_fast_xml_parser'
       }
     });
 
@@ -420,7 +413,7 @@ serve(async (req) => {
       status: signalsCreated > 0 ? 'success' : 'partial',
       duration: durationSeconds,
       latencyMs: latency,
-      sourceUsed: 'SEC EDGAR (XML Parser v2)',
+      sourceUsed: 'SEC EDGAR (fast-xml-parser v3)',
       fallbackRatio: 0,
       rowsInserted: signalsCreated,
       rowsSkipped: signalsSkipped
@@ -434,7 +427,7 @@ serve(async (req) => {
       signals_skipped: signalsSkipped,
       parse_errors: parseErrors,
       private_company_skips: privateCompanySkips,
-      version: 'v2_xml_parser'
+      version: 'v3_fast_xml_parser'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -460,7 +453,7 @@ serve(async (req) => {
       duration_ms: latency,
       source_used: 'SEC EDGAR',
       error_message: errorMessage,
-      metadata: { version: 'v2_xml_parser' }
+      metadata: { version: 'v3_fast_xml_parser' }
     });
 
     await supabaseClient.from('ingest_failures').insert({
@@ -471,7 +464,7 @@ serve(async (req) => {
       status_code: null,
       retry_count: 0,
       failed_at: new Date().toISOString(),
-      metadata: { version: 'v2_xml_parser' }
+      metadata: { version: 'v3_fast_xml_parser' }
     });
 
     await slackAlerter.sendLiveAlert({
