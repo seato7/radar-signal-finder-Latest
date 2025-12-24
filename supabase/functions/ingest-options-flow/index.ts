@@ -7,9 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v7 - Firecrawl browser scraping for options data
-// Uses Barchart options page with HTML parsing
-// Fallback to CBOE if Barchart fails
+// v8 - Firecrawl + embedded JSON extraction from Barchart
+// Extracts __NEXT_DATA__ or PRELOADED_STATE JSON instead of HTML table parsing
 
 interface ParsedOption {
   ticker: string;
@@ -26,7 +25,13 @@ interface ParsedOption {
   metadata: Record<string, any>;
 }
 
-async function scrapeWithFirecrawl(url: string, waitFor: number = 5000): Promise<{ html: string | null; status: number; error?: string }> {
+interface ExtractionResult {
+  method: '__NEXT_DATA__' | 'PRELOADED_STATE' | 'other_json' | 'none';
+  json: any;
+  error?: string;
+}
+
+async function scrapeWithFirecrawl(url: string): Promise<{ html: string | null; status: number; error?: string }> {
   const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
   if (!apiKey) {
     console.error('FIRECRAWL_API_KEY not configured');
@@ -43,8 +48,8 @@ async function scrapeWithFirecrawl(url: string, waitFor: number = 5000): Promise
       body: JSON.stringify({
         url,
         formats: ['html'],
-        waitFor,
-        onlyMainContent: false,
+        waitFor: 4000, // 4 seconds - balanced for JS render without timeout
+        onlyMainContent: false, // Keep script tags
       }),
     });
 
@@ -66,381 +71,415 @@ async function scrapeWithFirecrawl(url: string, waitFor: number = 5000): Promise
   }
 }
 
-function parseExpirationFromText(text: string): string | null {
-  // Try to parse dates like "Jan 17, 2025" or "01/17/25" or "2025-01-17"
-  const patterns = [
-    /(\d{4})-(\d{2})-(\d{2})/,  // YYYY-MM-DD
-    /(\d{2})\/(\d{2})\/(\d{2,4})/,  // MM/DD/YY or MM/DD/YYYY
-    /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})/i,
-  ];
-  
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      if (pattern === patterns[0]) {
-        return `${match[1]}-${match[2]}-${match[3]}`;
-      } else if (pattern === patterns[1]) {
-        const year = match[3].length === 2 ? `20${match[3]}` : match[3];
-        return `${year}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
-      } else if (pattern === patterns[2]) {
-        const months: Record<string, string> = {
-          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
-        };
-        const month = months[match[1].toLowerCase()];
-        const day = match[2].padStart(2, '0');
-        return `${match[3]}-${month}-${day}`;
+function extractJsonFromHtml(html: string, ticker: string): ExtractionResult {
+  // Log what patterns exist for debugging
+  const hasNextData = html.includes('__NEXT_DATA__');
+  const hasPreloaded = html.includes('__PRELOADED_STATE__');
+  const hasDataModule = html.includes('data-ng-') || html.includes('ng-init');
+  const hasVueData = html.includes('__NUXT__') || html.includes('__VUE__');
+  console.log(`${ticker} patterns: NEXT=${hasNextData}, PRELOADED=${hasPreloaded}, Angular=${hasDataModule}, Vue=${hasVueData}`);
+
+  // Priority 1: __NEXT_DATA__ script tag
+  const nextDataMatch = html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  if (nextDataMatch && nextDataMatch[1]) {
+    try {
+      const json = JSON.parse(nextDataMatch[1]);
+      console.log(`Extracted __NEXT_DATA__ JSON, size=${nextDataMatch[1].length}`);
+      return { method: '__NEXT_DATA__', json };
+    } catch (e) {
+      console.log(`__NEXT_DATA__ parse failed: ${e}`);
+    }
+  }
+
+  // Priority 2: window.__PRELOADED_STATE__
+  const preloadedMatch = html.match(/window\.__PRELOADED_STATE__\s*=\s*(\{[\s\S]*?\});?\s*(?:<\/script>|window\.)/);
+  if (preloadedMatch && preloadedMatch[1]) {
+    try {
+      const json = JSON.parse(preloadedMatch[1]);
+      console.log(`Extracted PRELOADED_STATE JSON, size=${preloadedMatch[1].length}`);
+      return { method: 'PRELOADED_STATE', json };
+    } catch (e) {
+      console.log(`PRELOADED_STATE parse failed: ${e}`);
+    }
+  }
+
+  // Priority 3: Barchart-specific patterns - look for data-ng-init with JSON
+  const ngInitMatch = html.match(/data-ng-init="[^"]*optionsData\s*=\s*(\{[\s\S]*?\})\s*[;"]?/);
+  if (ngInitMatch && ngInitMatch[1]) {
+    try {
+      // Angular escapes quotes, need to unescape
+      const unescaped = ngInitMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      const json = JSON.parse(unescaped);
+      console.log(`Extracted ng-init JSON, size=${ngInitMatch[1].length}`);
+      return { method: 'other_json', json };
+    } catch (e) {
+      console.log(`ng-init parse failed: ${e}`);
+    }
+  }
+
+  // Priority 4: Look for bc-options-table or similar data attributes with JSON
+  const bcDataMatch = html.match(/data-options="([^"]+)"/i) || 
+                      html.match(/data-options-chain="([^"]+)"/i) ||
+                      html.match(/data-symbol-data="([^"]+)"/i);
+  if (bcDataMatch && bcDataMatch[1]) {
+    try {
+      const decoded = bcDataMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+      const json = JSON.parse(decoded);
+      console.log(`Extracted data-attribute JSON, size=${bcDataMatch[1].length}`);
+      return { method: 'other_json', json };
+    } catch (e) {
+      console.log(`data-attribute parse failed: ${e}`);
+    }
+  }
+
+  // Priority 5: Extract data from HTML table directly (Barchart renders options as table)
+  // Look for table rows with options data
+  const tableData = extractFromBarchartTable(html, ticker);
+  if (tableData.length > 0) {
+    console.log(`Extracted ${tableData.length} options from HTML table`);
+    return { method: 'other_json', json: { options: tableData } };
+  }
+
+  // Priority 6: Any large inline script with optionsData
+  const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = scriptPattern.exec(html)) !== null) {
+    const content = match[1];
+    // Look for options-related data
+    if (content.includes('options') && content.includes('strike')) {
+      // Try to extract JSON object
+      const jsonMatch = content.match(/\{[\s\S]*?"strike"[\s\S]*?\}/);
+      if (jsonMatch) {
+        try {
+          const json = JSON.parse(jsonMatch[0]);
+          console.log(`Extracted inline script JSON with strike data`);
+          return { method: 'other_json', json };
+        } catch { }
       }
     }
   }
-  return null;
+
+  return { method: 'none', json: null, error: 'No extractable JSON found in HTML' };
 }
 
-function parseBarchartOptionsHtml(html: string, ticker: string): ParsedOption[] {
-  const options: ParsedOption[] = [];
-  const warnings: string[] = [];
+function extractFromBarchartTable(html: string, ticker: string): any[] {
+  const options: any[] = [];
   
-  console.log(`Parsing Barchart HTML for ${ticker}, length=${html.length}`);
+  // Barchart options page has two tables: Calls and Puts
+  // Each row typically has: Symbol, Last, Change, Bid, Ask, Volume, OI, IV
   
-  // Extract expiration date from page if present
-  let pageExpiration: string | null = null;
-  const expMatch = html.match(/Expiration[:\s]+([A-Za-z]+\s+\d{1,2},?\s+\d{4})/i) ||
-                   html.match(/data-expiration="([^"]+)"/i) ||
-                   html.match(/expiry[=:]"?(\d{4}-\d{2}-\d{2})/i);
-  if (expMatch) {
-    pageExpiration = parseExpirationFromText(expMatch[1] || expMatch[0]);
-  }
-  
-  // If no expiration found, use next Friday as default
-  if (!pageExpiration) {
-    const today = new Date();
-    const daysUntilFriday = (5 - today.getDay() + 7) % 7 || 7;
-    const nextFriday = new Date(today.getTime() + daysUntilFriday * 24 * 60 * 60 * 1000);
-    pageExpiration = nextFriday.toISOString().split('T')[0];
-    warnings.push('expiration_estimated');
-  }
-
-  // Barchart specific: Look for data rows with known class patterns
-  // They use classes like "bc-table-row" or specific data attributes
-  
-  // Strategy 1: Look for options symbols pattern (e.g., SPY250124C00600000)
-  const symbolPattern = new RegExp(`(${ticker})(\\d{6})([CP])(\\d{8})`, 'gi');
-  const symbolMatches = html.matchAll(symbolPattern);
-  
+  // Find option rows - look for rows containing option symbols like SPY250103C00590000
+  const symbolPattern = new RegExp(`(${ticker})(\\d{6})([CP])(\\d{8})`, 'g');
+  const matches = html.matchAll(symbolPattern);
   const seenSymbols = new Set<string>();
   
-  for (const match of symbolMatches) {
-    const fullSymbol = match[0].toUpperCase();
-    if (seenSymbols.has(fullSymbol)) continue;
-    seenSymbols.add(fullSymbol);
+  for (const match of matches) {
+    const symbol = match[0].toUpperCase();
+    if (seenSymbols.has(symbol)) continue;
+    seenSymbols.add(symbol);
     
-    // Parse the symbol: TICKER + YYMMDD + C/P + 00000000 (strike * 1000)
+    // Parse the symbol: TICKER + YYMMDD + C/P + SSSSS000 (strike * 1000)
     const dateStr = match[2]; // YYMMDD
     const optType = match[3].toUpperCase() === 'C' ? 'call' : 'put';
     const strikeRaw = parseInt(match[4]); // Strike * 1000
     const strike = strikeRaw / 1000;
     
-    // Parse date
+    // Parse expiration date
     const year = 2000 + parseInt(dateStr.slice(0, 2));
     const month = dateStr.slice(2, 4);
     const day = dateStr.slice(4, 6);
     const expDate = `${year}-${month}-${day}`;
     
-    // Now find volume/OI near this symbol in HTML
-    const symbolIndex = html.indexOf(fullSymbol);
-    const contextStart = Math.max(0, symbolIndex - 200);
-    const contextEnd = Math.min(html.length, symbolIndex + 800);
-    const context = html.slice(contextStart, contextEnd);
+    // Find the table row containing this symbol to extract volume/OI
+    const symbolIndex = html.indexOf(symbol);
+    const rowStart = html.lastIndexOf('<tr', symbolIndex);
+    const rowEnd = html.indexOf('</tr>', symbolIndex);
     
-    // Extract numbers from the row context
-    const numbers: number[] = [];
-    const numPattern = />([0-9,]+(?:\.\d+)?)</g;
-    let numMatch;
-    while ((numMatch = numPattern.exec(context)) !== null) {
-      const n = parseFloat(numMatch[1].replace(/,/g, ''));
-      if (!isNaN(n) && n > 0) {
-        numbers.push(n);
-      }
-    }
-    
-    // Find volume (larger integers, typically 3rd-5th column)
-    // Barchart order: Last, Change, Bid, Ask, Volume, OI, IV
-    let volume = 0;
-    let openInterest = 0;
-    let premium: number | null = null;
-    let iv: number | null = null;
-    
-    // Look for volume-like numbers (integers > 50, not matching strike)
-    for (const n of numbers) {
-      if (Math.abs(n - strike) < 1) continue; // Skip strike matches
+    if (rowStart >= 0 && rowEnd >= 0) {
+      const rowHtml = html.slice(rowStart, rowEnd + 5);
       
-      if (n > 50 && n < 50000000 && Number.isInteger(n)) {
-        if (volume === 0) {
-          volume = n;
-        } else if (openInterest === 0) {
-          openInterest = n;
-        }
-      } else if (n > 0 && n < 500 && !Number.isInteger(n)) {
-        // Premium (decimal, option price)
-        if (premium === null) {
-          premium = Math.round(n * 100);
-        }
-      } else if (n > 0 && n < 500 && iv === null && n !== volume && n !== openInterest) {
-        // IV percentage
-        iv = n / 100;
-      }
-    }
-    
-    if (volume > 50 && strike >= 10 && strike <= 2000) {
-      options.push({
-        ticker,
-        option_type: optType,
-        strike_price: strike,
-        expiration_date: expDate,
-        volume,
-        open_interest: openInterest > 0 ? openInterest : null,
-        implied_volatility: iv,
-        premium,
-        flow_type: null,
-        sentiment: optType === 'call' ? 'bullish' : 'bearish',
-        trade_date: new Date().toISOString(),
-        metadata: {
-          source: 'barchart_firecrawl',
-          url: `https://www.barchart.com/stocks/quotes/${ticker}/options`,
-          parsing_method: 'html_symbol',
-          contract_symbol: fullSymbol,
-          premium_available: premium !== null,
-          iv_available: iv !== null,
-          warnings: warnings.length > 0 ? warnings : undefined,
-        }
-      });
-    }
-  }
-  
-  console.log(`Barchart symbol parsing found ${options.length} contracts for ${ticker}`);
-  
-  // Strategy 2: If symbol parsing found nothing, try table row parsing
-  if (options.length === 0) {
-    console.log(`Trying fallback table parsing for ${ticker}...`);
-    
-    // Look for any row containing strike prices in SPY range (400-700)
-    const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let match;
-    
-    while ((match = rowPattern.exec(html)) !== null) {
-      const row = match[1];
-      
-      // Extract all numbers from cells
-      const cellNumbers: number[] = [];
-      const cellPattern = /<td[^>]*>([^<]*)<\/td>/gi;
+      // Extract numeric values from table cells
+      const cellPattern = /<td[^>]*>[\s]*([0-9,]+(?:\.\d+)?)[\s]*<\/td>/gi;
+      const numbers: number[] = [];
       let cellMatch;
       
-      while ((cellMatch = cellPattern.exec(row)) !== null) {
-        const val = cellMatch[1].replace(/[$,%,\s]/g, '').replace(/,/g, '');
-        const n = parseFloat(val);
-        if (!isNaN(n) && n > 0) {
-          cellNumbers.push(n);
+      while ((cellMatch = cellPattern.exec(rowHtml)) !== null) {
+        const n = parseFloat(cellMatch[1].replace(/,/g, ''));
+        if (!isNaN(n) && n >= 0) {
+          numbers.push(n);
         }
       }
       
-      if (cellNumbers.length < 4) continue;
+      // Also try matching numbers not in td tags (some might be in spans)
+      const spanPattern = />([0-9,]+(?:\.\d+)?)</g;
+      while ((cellMatch = spanPattern.exec(rowHtml)) !== null) {
+        const n = parseFloat(cellMatch[1].replace(/,/g, ''));
+        if (!isNaN(n) && n >= 0 && !numbers.includes(n)) {
+          numbers.push(n);
+        }
+      }
       
-      // Find reasonable strike for the ticker
-      let strike = 0;
+      // Barchart column order: Last, Change, Bid, Ask, Volume, OI, IV
+      // We need Volume (usually 5th number after strike-like numbers are filtered)
+      // Filter out strike (which matches our extracted strike)
+      const nonStrikeNumbers = numbers.filter(n => Math.abs(n - strike) > 0.5);
+      
+      // Find volume: should be a larger integer
       let volume = 0;
+      let openInterest = 0;
+      let lastPrice = 0;
+      let iv = 0;
       
-      const strikeRanges: Record<string, [number, number]> = {
-        'SPY': [400, 700],
-        'QQQ': [350, 600],
-        'AAPL': [150, 300],
-        'MSFT': [350, 500],
-        'NVDA': [100, 200],
-        'TSLA': [200, 500],
-        'AMD': [100, 200],
-        'META': [400, 700],
-      };
-      
-      const [minStrike, maxStrike] = strikeRanges[ticker] || [50, 1000];
-      
-      for (const n of cellNumbers) {
-        if (n >= minStrike && n <= maxStrike && strike === 0) {
-          strike = n;
-        } else if (n > 50 && n < 10000000 && Number.isInteger(n) && volume === 0) {
-          volume = n;
+      for (const n of nonStrikeNumbers) {
+        if (n > 0 && n < 100 && lastPrice === 0) {
+          lastPrice = n; // Option prices typically < $100
+        } else if (n >= 50 && n < 100000000 && Number.isInteger(n)) {
+          if (volume === 0) {
+            volume = n;
+          } else if (openInterest === 0) {
+            openInterest = n;
+          }
+        } else if (n > 0 && n < 500 && n !== lastPrice) {
+          // IV as percentage
+          if (iv === 0 && n > 1) {
+            iv = n;
+          }
         }
       }
       
-      if (strike > 0 && volume > 50) {
-        const isCall = row.toLowerCase().includes('call') || !row.toLowerCase().includes('put');
-        
+      if (volume > 50 && strike > 10 && strike < 10000) {
         options.push({
-          ticker,
-          option_type: isCall ? 'call' : 'put',
-          strike_price: strike,
-          expiration_date: pageExpiration,
+          symbol,
+          strike,
+          strikePrice: strike,
+          expiration: expDate,
+          expirationDate: expDate,
+          optionType: optType,
+          type: optType,
           volume,
-          open_interest: null,
-          implied_volatility: null,
-          premium: null,
-          flow_type: null,
-          sentiment: isCall ? 'bullish' : 'bearish',
-          trade_date: new Date().toISOString(),
-          metadata: {
-            source: 'barchart_firecrawl',
-            url: `https://www.barchart.com/stocks/quotes/${ticker}/options`,
-            parsing_method: 'html_table',
-            premium_available: false,
-            iv_available: false,
-            warnings: ['fallback_parsing'],
-          }
+          openInterest,
+          impliedVolatility: iv > 0 ? iv / 100 : null,
+          lastPrice,
+          last: lastPrice,
         });
       }
     }
-    
-    console.log(`Barchart table fallback found ${options.length} contracts for ${ticker}`);
   }
   
+  console.log(`Table extraction found ${options.length} options with volume > 50 for ${ticker}`);
   return options;
 }
 
-async function fetchOptionsViaFirecrawl(ticker: string, testMode: boolean = false): Promise<ParsedOption[]> {
-  // Primary source: Barchart options page
-  const barchartUrl = `https://www.barchart.com/stocks/quotes/${ticker}/options`;
+function findOptionsInJson(json: any, ticker: string): any[] {
+  // Helper to recursively search for options data
+  const options: any[] = [];
   
-  console.log(`Firecrawl scraping ${ticker} from Barchart...`);
-  
-  const result = await scrapeWithFirecrawl(barchartUrl, 8000);
-  
-  console.log(`Firecrawl ${ticker}: status=${result.status}, html_length=${result.html?.length || 0}`);
-  
-  if (result.html && result.html.length > 1000) {
-    const options = parseBarchartOptionsHtml(result.html, ticker);
+  function searchObject(obj: any, depth: number = 0): void {
+    if (depth > 10 || !obj) return;
     
-    // Test mode: log first 3 contracts
-    if (testMode && options.length > 0) {
-      console.log(`\n=== TEST MODE: First 3 contracts for ${ticker} ===`);
-      for (let i = 0; i < Math.min(3, options.length); i++) {
-        const opt = options[i];
-        console.log(`  ${i+1}. strike=${opt.strike_price}, exp=${opt.expiration_date}, type=${opt.option_type}, vol=${opt.volume}, OI=${opt.open_interest || 'N/A'}`);
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        // Check if item looks like an option contract
+        if (item && typeof item === 'object') {
+          const hasStrike = 'strike' in item || 'strikePrice' in item || 'Strike' in item;
+          const hasVolume = 'volume' in item || 'Volume' in item || 'totalVolume' in item;
+          const hasType = 'optionType' in item || 'type' in item || 'callPut' in item || 'putCall' in item;
+          
+          if (hasStrike && (hasVolume || hasType)) {
+            options.push(item);
+          } else {
+            searchObject(item, depth + 1);
+          }
+        }
       }
-      console.log(`=== END TEST MODE ===\n`);
+    } else if (typeof obj === 'object') {
+      // Check common container keys
+      const optionKeys = ['options', 'calls', 'puts', 'optionChain', 'data', 'items', 'contracts'];
+      
+      for (const key of Object.keys(obj)) {
+        if (optionKeys.includes(key.toLowerCase())) {
+          searchObject(obj[key], depth + 1);
+        }
+      }
+      
+      // Also check if this object itself is an option
+      const hasStrike = 'strike' in obj || 'strikePrice' in obj || 'Strike' in obj;
+      const hasVolume = 'volume' in obj || 'Volume' in obj || 'totalVolume' in obj;
+      
+      if (hasStrike && hasVolume) {
+        options.push(obj);
+      } else {
+        for (const value of Object.values(obj)) {
+          if (typeof value === 'object') {
+            searchObject(value, depth + 1);
+          }
+        }
+      }
     }
-    
-    console.log(`Firecrawl ${ticker}: parsed ${options.length} contracts (volume>50)`);
-    
-    // Limit to top 10 by volume
-    const sorted = options.sort((a, b) => b.volume - a.volume).slice(0, 10);
-    console.log(`Firecrawl ${ticker}: keeping top ${sorted.length} by volume`);
-    
-    return sorted;
   }
   
-  // Fallback: CBOE delayed quotes
-  console.log(`Barchart failed for ${ticker}, trying CBOE fallback...`);
-  const cboeUrl = `https://www.cboe.com/delayed_quotes/${ticker}/quote_table`;
-  
-  const cboeResult = await scrapeWithFirecrawl(cboeUrl, 6000);
-  
-  console.log(`CBOE ${ticker}: status=${cboeResult.status}, html_length=${cboeResult.html?.length || 0}`);
-  
-  if (cboeResult.html && cboeResult.html.length > 1000) {
-    // CBOE has simpler table structure
-    const options = parseCboeOptionsHtml(cboeResult.html, ticker);
-    
-    if (testMode && options.length > 0) {
-      console.log(`\n=== TEST MODE (CBOE): First 3 contracts for ${ticker} ===`);
-      for (let i = 0; i < Math.min(3, options.length); i++) {
-        const opt = options[i];
-        console.log(`  ${i+1}. strike=${opt.strike_price}, exp=${opt.expiration_date}, type=${opt.option_type}, vol=${opt.volume}, OI=${opt.open_interest || 'N/A'}`);
-      }
-      console.log(`=== END TEST MODE ===\n`);
-    }
-    
-    const sorted = options.sort((a, b) => b.volume - a.volume).slice(0, 10);
-    return sorted;
-  }
-  
-  console.log(`Both sources failed for ${ticker}`);
-  return [];
+  searchObject(json);
+  return options;
 }
 
-function parseCboeOptionsHtml(html: string, ticker: string): ParsedOption[] {
-  const options: ParsedOption[] = [];
-  
-  // Extract expiration from CBOE page
-  let pageExpiration: string | null = null;
-  const expMatch = html.match(/(\d{4}-\d{2}-\d{2})/) ||
-                   html.match(/([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4})/);
-  if (expMatch) {
-    pageExpiration = parseExpirationFromText(expMatch[1]);
-  }
-  
-  if (!pageExpiration) {
-    const today = new Date();
-    const daysUntilFriday = (5 - today.getDay() + 7) % 7 || 7;
-    const nextFriday = new Date(today.getTime() + daysUntilFriday * 24 * 60 * 60 * 1000);
-    pageExpiration = nextFriday.toISOString().split('T')[0];
-  }
-  
-  // CBOE table pattern - simpler extraction
-  const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let match;
-  
-  while ((match = rowPattern.exec(html)) !== null) {
-    const row = match[1];
+function normalizeOption(rawOpt: any, ticker: string): ParsedOption | null {
+  try {
+    // Extract strike price
+    const strike = rawOpt.strike || rawOpt.strikePrice || rawOpt.Strike || 
+                   rawOpt.strike_price || parseFloat(rawOpt.strikeDisplay);
+    if (!strike || strike <= 0 || strike > 10000) return null;
     
-    // Extract numbers
-    const numbers: number[] = [];
-    const numPattern = />[\s]*([0-9,]+\.?\d*)[\s]*</g;
-    let numMatch;
+    // Extract volume
+    const volume = rawOpt.volume || rawOpt.Volume || rawOpt.totalVolume || 
+                   rawOpt.tradeVolume || parseInt(rawOpt.volumeDisplay?.replace(/,/g, ''));
+    if (!volume || volume <= 50) return null; // Volume filter
     
-    while ((numMatch = numPattern.exec(row)) !== null) {
-      const n = parseFloat(numMatch[1].replace(/,/g, ''));
-      if (!isNaN(n) && n > 0) {
-        numbers.push(n);
+    // Extract option type
+    let optionType = 'call';
+    const typeVal = rawOpt.optionType || rawOpt.type || rawOpt.callPut || rawOpt.putCall || '';
+    if (typeof typeVal === 'string') {
+      optionType = typeVal.toLowerCase().includes('put') || typeVal === 'P' ? 'put' : 'call';
+    }
+    
+    // Extract expiration
+    let expiration: string | null = null;
+    const expVal = rawOpt.expiration || rawOpt.expirationDate || rawOpt.expiry || 
+                   rawOpt.expiryDate || rawOpt.Expiration;
+    if (expVal) {
+      if (typeof expVal === 'number') {
+        // Unix timestamp
+        expiration = new Date(expVal * (expVal > 1e12 ? 1 : 1000)).toISOString().split('T')[0];
+      } else if (typeof expVal === 'string') {
+        // Try to parse date string
+        const d = new Date(expVal);
+        if (!isNaN(d.getTime())) {
+          expiration = d.toISOString().split('T')[0];
+        } else {
+          // Try YYMMDD format
+          const match = expVal.match(/(\d{2})(\d{2})(\d{2})/);
+          if (match) {
+            expiration = `20${match[1]}-${match[2]}-${match[3]}`;
+          }
+        }
       }
     }
     
-    if (numbers.length < 3) continue;
+    // Extract open interest
+    const openInterest = rawOpt.openInterest || rawOpt.OpenInterest || rawOpt.oi || 
+                         rawOpt.open_interest || parseInt(rawOpt.openInterestDisplay?.replace(/,/g, '')) || null;
     
-    // Find strike (reasonable range) and volume
-    let strike = 0;
-    let volume = 0;
+    // Extract IV
+    let iv = rawOpt.impliedVolatility || rawOpt.iv || rawOpt.IV || rawOpt.impliedVol || null;
+    if (iv && iv > 10) iv = iv / 100; // Convert percentage to decimal if needed
     
-    for (const n of numbers) {
-      if (n >= 10 && n <= 2000 && strike === 0) {
-        strike = n;
-      } else if (n > 50 && n < 10000000 && Number.isInteger(n) && volume === 0) {
-        volume = n;
-      }
+    // Extract price for premium calculation
+    const price = rawOpt.lastPrice || rawOpt.last || rawOpt.mark || rawOpt.midpoint || 
+                  rawOpt.price || rawOpt.Last || null;
+    
+    // Premium as notional: price * volume * 100 (for contracts)
+    let premium: number | null = null;
+    if (price && price > 0) {
+      premium = Math.round(price * volume * 100);
     }
     
-    if (strike === 0 || volume <= 50) continue;
-    
-    const isCall = row.toLowerCase().includes('call') || !row.toLowerCase().includes('put');
-    
-    options.push({
+    return {
       ticker,
-      option_type: isCall ? 'call' : 'put',
+      option_type: optionType,
       strike_price: strike,
-      expiration_date: pageExpiration,
+      expiration_date: expiration,
       volume,
-      open_interest: null,
-      implied_volatility: null,
-      premium: null,
+      open_interest: openInterest,
+      implied_volatility: iv,
+      premium,
       flow_type: null,
-      sentiment: isCall ? 'bullish' : 'bearish',
+      sentiment: optionType === 'call' ? 'bullish' : 'bearish',
       trade_date: new Date().toISOString(),
       metadata: {
-        source: 'cboe_firecrawl',
-        parsing_method: 'html',
-        premium_available: false,
-        iv_available: false,
+        source: 'barchart_firecrawl_json',
+        premium_available: premium !== null,
+        iv_available: iv !== null,
+        raw_symbol: rawOpt.symbol || rawOpt.Symbol || rawOpt.contractSymbol || null,
       }
-    });
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchOptionsViaFirecrawl(ticker: string): Promise<{ options: ParsedOption[]; stats: any }> {
+  const stats = {
+    html_length: 0,
+    extraction_method: 'none' as string,
+    contracts_found: 0,
+    contracts_passing_filter: 0,
+    error: null as string | null,
+  };
+
+  const url = `https://www.barchart.com/stocks/quotes/${ticker}/options`;
+  console.log(`Scraping ${ticker} from ${url}...`);
+  
+  const result = await scrapeWithFirecrawl(url);
+  stats.html_length = result.html?.length || 0;
+  
+  console.log(`Firecrawl ${ticker}: status=${result.status}, html_length=${stats.html_length}`);
+  
+  if (!result.html || result.html.length < 5000) {
+    stats.error = result.error || 'HTML too short or missing';
+    return { options: [], stats };
   }
   
-  return options;
+  // Extract JSON from HTML
+  const extraction = extractJsonFromHtml(result.html, ticker);
+  stats.extraction_method = extraction.method;
+  
+  if (extraction.method === 'none' || !extraction.json) {
+    stats.error = extraction.error || 'No JSON extracted';
+    console.log(`${ticker}: ${stats.error}`);
+    return { options: [], stats };
+  }
+  
+  console.log(`${ticker}: Extracted JSON via ${extraction.method}`);
+  
+  // Find options in the JSON structure
+  let rawOptions = findOptionsInJson(extraction.json, ticker);
+  
+  // If extraction was from table, options are already in extraction.json.options
+  if (rawOptions.length === 0 && extraction.json?.options) {
+    rawOptions = extraction.json.options;
+    console.log(`${ticker}: Using pre-extracted table options: ${rawOptions.length}`);
+  }
+  
+  stats.contracts_found = rawOptions.length;
+  
+  console.log(`${ticker}: Found ${rawOptions.length} raw option contracts in JSON`);
+  
+  if (rawOptions.length === 0) {
+    // Log some JSON structure for debugging
+    const keys = Object.keys(extraction.json || {}).slice(0, 10);
+    console.log(`${ticker}: Top-level JSON keys: ${keys.join(', ')}`);
+  }
+  
+  // Normalize and filter options
+  const options: ParsedOption[] = [];
+  for (const raw of rawOptions) {
+    const normalized = normalizeOption(raw, ticker);
+    if (normalized) {
+      options.push(normalized);
+    }
+  }
+  
+  stats.contracts_passing_filter = options.length;
+  console.log(`${ticker}: ${options.length} contracts passed volume>50 filter`);
+  
+  // Keep top 10 by volume
+  const sorted = options.sort((a, b) => b.volume - a.volume).slice(0, 10);
+  
+  // Add extraction method to metadata
+  for (const opt of sorted) {
+    opt.metadata.extraction = extraction.method;
+  }
+  
+  return { options: sorted, stats };
 }
 
 serve(async (req) => {
@@ -453,63 +492,51 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v7] Options flow ingestion - Firecrawl browser scraping');
+    console.log('[v8] Options flow ingestion - Firecrawl + JSON extraction');
     
-    const allOptions: ParsedOption[] = [];
-    const tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
-    
-    // Parse request for test mode
-    let testMode = false;
-    let testTicker: string | null = null;
+    // Parse request body for custom tickers
+    let tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
     try {
       const body = await req.json();
-      testMode = body?.test === true;
-      testTicker = body?.ticker || null;
+      if (body?.tickers && Array.isArray(body.tickers) && body.tickers.length > 0) {
+        tickers = body.tickers;
+        console.log(`Using custom tickers: ${tickers.join(', ')}`);
+      }
     } catch {
-      // No body or invalid JSON
+      // No body or invalid JSON, use defaults
     }
     
-    // If test mode with specific ticker, only scrape that one
-    if (testMode && testTicker) {
-      console.log(`\n🧪 TEST MODE: Scraping only ${testTicker}`);
-      const options = await fetchOptionsViaFirecrawl(testTicker, true);
-      
-      return new Response(JSON.stringify({
-        success: true,
-        test_mode: true,
-        ticker: testTicker,
-        contracts_found: options.length,
-        sample_contracts: options.slice(0, 5).map(o => ({
-          strike: o.strike_price,
-          exp: o.expiration_date,
-          type: o.option_type,
-          volume: o.volume,
-          oi: o.open_interest,
-        })),
-        version: 'v7_firecrawl',
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    const allOptions: ParsedOption[] = [];
+    const allStats: Record<string, any> = {};
     
-    // Full ingestion
     for (const ticker of tickers) {
-      const options = await fetchOptionsViaFirecrawl(ticker, false);
+      const { options, stats } = await fetchOptionsViaFirecrawl(ticker);
       allOptions.push(...options);
+      allStats[ticker] = stats;
       
-      // Throttle between tickers to control Firecrawl cost (3 seconds)
-      console.log(`Waiting 3s before next ticker...`);
-      await new Promise(r => setTimeout(r, 3000));
+      // Throttle between tickers (400ms minimum)
+      if (tickers.indexOf(ticker) < tickers.length - 1) {
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
     
-    console.log(`Total options found: ${allOptions.length}`);
+    // Aggregate stats
+    const totalFound = Object.values(allStats).reduce((sum: number, s: any) => sum + (s.contracts_found || 0), 0);
+    const totalPassing = Object.values(allStats).reduce((sum: number, s: any) => sum + (s.contracts_passing_filter || 0), 0);
+    
+    console.log(`Total: ${totalFound} contracts found, ${totalPassing} passed volume filter, ${allOptions.length} to insert`);
 
-    // If zero rows inserted, treat as failure and emit Slack alert
+    // Handle zero rows case
     if (allOptions.length === 0) {
-      console.warn('⚠️ WARNING: No options data found - zero rows will be inserted');
-      console.log('Possible reasons: pages blocked, parsing failed, or no options meet volume > 50 criteria');
+      console.warn('⚠️ No options data to insert');
+      
+      const extractionSummary = Object.entries(allStats)
+        .map(([t, s]: [string, any]) => `${t}:${s.extraction_method}(${s.contracts_found}→${s.contracts_passing_filter})`)
+        .join(', ');
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: ['Barchart via Firecrawl', 'CBOE via Firecrawl'],
-        reason: 'No options data - scraping failed or no high-volume contracts found'
+        sourcesAttempted: ['Barchart via Firecrawl JSON'],
+        reason: `No data: ${extractionSummary} | tickers: ${tickers.join(',')} | found: ${totalFound}, passed: ${totalPassing}`
       });
       
       await supabase.from('function_status').insert({
@@ -517,23 +544,36 @@ serve(async (req) => {
         executed_at: new Date().toISOString(),
         status: 'warning',
         rows_inserted: 0,
-        rows_skipped: 0,
+        rows_skipped: totalFound - totalPassing,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl_Barchart_CBOE',
-        error_message: 'Zero rows inserted - no data available',
-        metadata: { version: 'v7_firecrawl', reason: 'no_data_available' }
+        source_used: 'Firecrawl_Barchart_JSON',
+        error_message: 'Zero rows inserted',
+        metadata: { 
+          version: 'v8_json_extraction',
+          reason: 'no_data',
+          contracts_found: totalFound,
+          contracts_passed_filter: totalPassing,
+          tickers,
+          per_ticker: allStats
+        }
       });
       
       return new Response(JSON.stringify({ 
         success: true, 
-        count: 0, 
-        source: 'Firecrawl_Barchart_CBOE',
-        version: 'v7_firecrawl',
-        warning: 'No options data found - zero rows inserted'
+        count: 0,
+        source: 'Firecrawl_Barchart_JSON',
+        version: 'v8_json_extraction',
+        stats: { 
+          contracts_found: totalFound,
+          contracts_passed_filter: totalPassing,
+          tickers_processed: tickers.length
+        },
+        per_ticker: allStats,
+        message: 'No options met volume>50 criteria'
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Insert options data in batches of 50
+    // Insert in batches of 50
     let inserted = 0;
     for (let i = 0; i < allOptions.length; i += 50) {
       const batch = allOptions.slice(i, i + 50);
@@ -545,14 +585,14 @@ serve(async (req) => {
       }
     }
     
-    console.log(`✅ Inserted ${inserted} options records via Firecrawl`);
+    console.log(`✅ Inserted ${inserted} options records`);
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-options-flow', 
       status: inserted > 0 ? 'success' : 'partial',
       rowsInserted: inserted, 
       rowsSkipped: allOptions.length - inserted, 
-      sourceUsed: 'Firecrawl_Barchart_CBOE', 
+      sourceUsed: 'Firecrawl_Barchart_JSON', 
       duration: Date.now() - startTime
     });
 
@@ -561,18 +601,28 @@ serve(async (req) => {
       executed_at: new Date().toISOString(),
       status: 'success',
       rows_inserted: inserted,
-      rows_skipped: allOptions.length - inserted,
+      rows_skipped: totalFound - inserted,
       duration_ms: Date.now() - startTime,
-      source_used: 'Firecrawl_Barchart_CBOE',
-      metadata: { version: 'v7_firecrawl', tickers_processed: tickers.length }
+      source_used: 'Firecrawl_Barchart_JSON',
+      metadata: { 
+        version: 'v8_json_extraction',
+        contracts_found: totalFound,
+        contracts_passed_filter: totalPassing,
+        tickers_processed: tickers.length
+      }
     });
 
     return new Response(JSON.stringify({ 
       success: true, 
       count: inserted, 
-      source: 'Firecrawl_Barchart_CBOE',
-      version: 'v7_firecrawl',
-      message: `Inserted ${inserted} options records from ${tickers.length} tickers`
+      source: 'Firecrawl_Barchart_JSON',
+      version: 'v8_json_extraction',
+      stats: {
+        contracts_found: totalFound,
+        contracts_passed_filter: totalPassing,
+        tickers_processed: tickers.length
+      },
+      message: `Inserted ${inserted} options records`
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     
   } catch (error) {
