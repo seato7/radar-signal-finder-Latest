@@ -9,18 +9,20 @@ const corsHeaders = {
 const ASSETS_PER_INVOCATION = 4000;
 const BATCH_SIZE = 1000;
 
-// Scoring weights aligned with backend/scoring.py v2.1 spec
+// ============================================================================
+// SCORING WEIGHTS - Synchronized with compute-theme-scores and backend/scoring.py v2.1
+// ============================================================================
 const WEIGHTS = {
-  BigMoneyConfirm: 1.5,
-  FlowPressure: 1.4,
-  InsiderPoliticianConfirm: 1.2,
-  CapexMomentum: 1.0,
-  PolicyMomentum: 0.8,
-  TechEdge: 0.7,
-  Attention: 0.6,
-  MacroEconomic: 0.5,
-  EarningsMomentum: 0.4,
-  RiskFlags: -2.0,
+  BigMoneyConfirm: 1.5,          // 13F holdings, smart money, whale activity
+  FlowPressure: 1.4,             // ETF/Dark pool flows, exchange flows
+  InsiderPoliticianConfirm: 1.2, // Form4, congressional trades
+  CapexMomentum: 1.0,            // Jobs, patents, R&D signals
+  PolicyMomentum: 0.8,           // Policy catalysts
+  TechEdge: 0.7,                 // Technical/options, patterns
+  Attention: 0.6,                // News/social sentiment
+  MacroEconomic: 0.5,            // Economic indicators, COT
+  EarningsMomentum: 0.4,         // Earnings surprises
+  RiskFlags: -2.0,               // Risk penalty (short interest, etc.)
 };
 
 // Maximum contribution per component (for normalization)
@@ -30,9 +32,134 @@ const MAX_COMPONENT_VALUE = 10;
 const CLASS_MODIFIERS: Record<string, Record<string, number>> = {
   stock: {},
   etf: { FlowPressure: 1.5 },
-  crypto: { BigMoneyConfirm: 2.0, TechEdge: 1.3 },
-  forex: { PolicyMomentum: 1.5, MacroEconomic: 1.5 },
+  crypto: { BigMoneyConfirm: 2.0, TechEdge: 1.3, FlowPressure: 1.3 },
+  forex: { PolicyMomentum: 1.5, MacroEconomic: 1.5, TechEdge: 1.2 },
   commodity: { MacroEconomic: 2.0, PolicyMomentum: 1.3 },
+};
+
+// ============================================================================
+// SIGNAL TYPE → COMPONENT MAPPING (matches signals table signal_type values)
+// ============================================================================
+const SIGNAL_TYPE_TO_COMPONENT: Record<string, { component: string; multiplier: number }> = {
+  // === BigMoneyConfirm ===
+  'filing_13f_new': { component: 'BigMoneyConfirm', multiplier: 5.0 },
+  'filing_13f_increase': { component: 'BigMoneyConfirm', multiplier: 3.0 },
+  'filing_13f_decrease': { component: 'BigMoneyConfirm', multiplier: -2.0 },
+  '13f_new_position': { component: 'BigMoneyConfirm', multiplier: 5.0 },
+  '13f_increase': { component: 'BigMoneyConfirm', multiplier: 3.0 },
+  '13f_decrease': { component: 'BigMoneyConfirm', multiplier: -2.0 },
+  'smart_money': { component: 'BigMoneyConfirm', multiplier: 4.0 },
+  'smart_money_flow': { component: 'BigMoneyConfirm', multiplier: 4.0 },
+  'institutional_buying': { component: 'BigMoneyConfirm', multiplier: 4.0 },
+  'institutional_selling': { component: 'BigMoneyConfirm', multiplier: -3.0 },
+  'crypto_whale_activity': { component: 'BigMoneyConfirm', multiplier: 5.0 },
+  'whale_accumulation': { component: 'BigMoneyConfirm', multiplier: 5.0 },
+  'whale_distribution': { component: 'BigMoneyConfirm', multiplier: -4.0 },
+  'onchain_whale': { component: 'BigMoneyConfirm', multiplier: 5.0 },
+  
+  // === FlowPressure ===
+  'dark_pool_activity': { component: 'FlowPressure', multiplier: 3.0 },
+  'darkpool_block': { component: 'FlowPressure', multiplier: 3.0 },
+  'darkpool_accumulation': { component: 'FlowPressure', multiplier: 4.0 },
+  'darkpool_distribution': { component: 'FlowPressure', multiplier: -3.0 },
+  'flow_pressure_etf': { component: 'FlowPressure', multiplier: 3.0 },
+  'flow_pressure': { component: 'FlowPressure', multiplier: 3.0 },
+  'etf_inflow': { component: 'FlowPressure', multiplier: 3.0 },
+  'etf_outflow': { component: 'FlowPressure', multiplier: -2.5 },
+  'crypto_exchange_flow': { component: 'FlowPressure', multiplier: 4.0 },
+  'exchange_inflow': { component: 'FlowPressure', multiplier: -3.0 },
+  'exchange_outflow': { component: 'FlowPressure', multiplier: 4.0 },
+  
+  // === InsiderPoliticianConfirm ===
+  'insider_buy': { component: 'InsiderPoliticianConfirm', multiplier: 4.0 },
+  'insider_sell': { component: 'InsiderPoliticianConfirm', multiplier: -2.5 },
+  'form4_buy': { component: 'InsiderPoliticianConfirm', multiplier: 4.0 },
+  'form4_sell': { component: 'InsiderPoliticianConfirm', multiplier: -2.5 },
+  'politician_buy': { component: 'InsiderPoliticianConfirm', multiplier: 5.0 },
+  'politician_sell': { component: 'InsiderPoliticianConfirm', multiplier: -3.0 },
+  'congressional_buy': { component: 'InsiderPoliticianConfirm', multiplier: 5.0 },
+  'congressional_sell': { component: 'InsiderPoliticianConfirm', multiplier: -3.0 },
+  
+  // === TechEdge ===
+  'technical_breakout': { component: 'TechEdge', multiplier: 3.0 },
+  'technical_breakdown': { component: 'TechEdge', multiplier: -2.5 },
+  'technical_signal': { component: 'TechEdge', multiplier: 2.0 },
+  'pattern_detected': { component: 'TechEdge', multiplier: 2.5 },
+  'bullish_pattern': { component: 'TechEdge', multiplier: 3.0 },
+  'bearish_pattern': { component: 'TechEdge', multiplier: -2.5 },
+  'reversal_pattern': { component: 'TechEdge', multiplier: 2.0 },
+  'continuation_pattern': { component: 'TechEdge', multiplier: 2.0 },
+  'support_bounce': { component: 'TechEdge', multiplier: 2.5 },
+  'resistance_break': { component: 'TechEdge', multiplier: 3.0 },
+  'vwap_signal': { component: 'TechEdge', multiplier: 2.0 },
+  'stochastic_signal': { component: 'TechEdge', multiplier: 2.0 },
+  'options_unusual': { component: 'TechEdge', multiplier: 3.0 },
+  'unusual_options': { component: 'TechEdge', multiplier: 3.0 },
+  'options_sweep': { component: 'TechEdge', multiplier: 3.5 },
+  'options_block': { component: 'TechEdge', multiplier: 3.0 },
+  'forex_breakout': { component: 'TechEdge', multiplier: 3.0 },
+  'forex_breakdown': { component: 'TechEdge', multiplier: -2.5 },
+  'forex_technical': { component: 'TechEdge', multiplier: 2.0 },
+  
+  // === Attention ===
+  'news_mention': { component: 'Attention', multiplier: 2.0 },
+  'breaking_news': { component: 'Attention', multiplier: 3.0 },
+  'news_alert': { component: 'Attention', multiplier: 2.5 },
+  'sentiment_shift': { component: 'Attention', multiplier: 2.0 },
+  'sentiment_bullish': { component: 'Attention', multiplier: 3.0 },
+  'sentiment_bearish': { component: 'Attention', multiplier: -2.5 },
+  'sentiment_extreme': { component: 'Attention', multiplier: 3.0 },
+  'social_mention': { component: 'Attention', multiplier: 2.0 },
+  'social_bullish': { component: 'Attention', multiplier: 3.0 },
+  'social_bearish': { component: 'Attention', multiplier: -2.5 },
+  'reddit_mention': { component: 'Attention', multiplier: 2.0 },
+  'stocktwits_mention': { component: 'Attention', multiplier: 2.0 },
+  'search_interest': { component: 'Attention', multiplier: 2.0 },
+  'search_spike': { component: 'Attention', multiplier: 3.0 },
+  'trending_topic': { component: 'Attention', multiplier: 2.5 },
+  
+  // === CapexMomentum ===
+  'capex_hiring': { component: 'CapexMomentum', multiplier: 4.0 },
+  'hiring_surge': { component: 'CapexMomentum', multiplier: 4.0 },
+  'job_growth': { component: 'CapexMomentum', multiplier: 3.0 },
+  'patent_filed': { component: 'CapexMomentum', multiplier: 3.0 },
+  'patent_granted': { component: 'CapexMomentum', multiplier: 4.0 },
+  'innovation_signal': { component: 'CapexMomentum', multiplier: 3.0 },
+  
+  // === PolicyMomentum ===
+  'policy_keyword': { component: 'PolicyMomentum', multiplier: 3.0 },
+  'policy_mention': { component: 'PolicyMomentum', multiplier: 2.5 },
+  'policy_approval': { component: 'PolicyMomentum', multiplier: 4.0 },
+  'policy_rejection': { component: 'PolicyMomentum', multiplier: -3.0 },
+  
+  // === MacroEconomic ===
+  'cot_positioning': { component: 'MacroEconomic', multiplier: 3.0 },
+  'cot_bullish': { component: 'MacroEconomic', multiplier: 3.5 },
+  'cot_bearish': { component: 'MacroEconomic', multiplier: -3.0 },
+  'commercial_positioning': { component: 'MacroEconomic', multiplier: 3.0 },
+  'macro_event': { component: 'MacroEconomic', multiplier: 2.0 },
+  'fed_decision': { component: 'MacroEconomic', multiplier: 4.0 },
+  'gdp_release': { component: 'MacroEconomic', multiplier: 3.0 },
+  'inflation_data': { component: 'MacroEconomic', multiplier: 3.0 },
+  'employment_data': { component: 'MacroEconomic', multiplier: 3.0 },
+  'economic_indicator': { component: 'MacroEconomic', multiplier: 2.5 },
+  'forex_sentiment': { component: 'MacroEconomic', multiplier: 2.5 },
+  'forex_bullish': { component: 'MacroEconomic', multiplier: 3.0 },
+  'forex_bearish': { component: 'MacroEconomic', multiplier: -2.5 },
+  'retail_positioning': { component: 'MacroEconomic', multiplier: 2.0 },
+  
+  // === EarningsMomentum ===
+  'earnings_surprise': { component: 'EarningsMomentum', multiplier: 4.0 },
+  'earnings_beat': { component: 'EarningsMomentum', multiplier: 4.0 },
+  'earnings_miss': { component: 'EarningsMomentum', multiplier: -3.5 },
+  'revenue_surprise': { component: 'EarningsMomentum', multiplier: 3.0 },
+  
+  // === RiskFlags ===
+  'short_squeeze': { component: 'RiskFlags', multiplier: 2.0 },
+  'short_interest_high': { component: 'RiskFlags', multiplier: 3.0 },
+  'short_interest_low': { component: 'RiskFlags', multiplier: -1.0 },
+  'volatility_spike': { component: 'RiskFlags', multiplier: 2.0 },
+  'supply_disruption': { component: 'RiskFlags', multiplier: 2.5 },
 };
 
 // Helper: Logarithmic magnitude scaling for large numbers
@@ -67,14 +194,6 @@ Deno.serve(async (req) => {
 
     // If no offset provided, find assets that need scoring (oldest scored first)
     if (body.offset === undefined) {
-      const { data: oldestScored } = await supabase
-        .from('assets')
-        .select('id')
-        .order('score_computed_at', { ascending: true, nullsFirst: true })
-        .limit(1);
-      
-      // Get the position of oldest scored asset to continue from there
-      // For simplicity, just cycle through by offset stored in function_status
       const { data: lastRun } = await supabase
         .from('function_status')
         .select('metadata')
@@ -130,9 +249,13 @@ Deno.serve(async (req) => {
 
       const tickers = assets.map(a => a.ticker);
       const assetIds = assets.map(a => a.id);
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      // Fetch all data sources in parallel (simplified for performance)
+      // ========================================================================
+      // FETCH ALL DATA SOURCES IN PARALLEL (22 tables + signals)
+      // ========================================================================
       const [
+        // Original 13 data sources
         technicals,
         darkPool,
         form4,
@@ -146,55 +269,110 @@ Deno.serve(async (req) => {
         cryptoOnchain,
         forexSentiment,
         economicIndicators,
+        // NEW: Aggregated signals table (from all 48 functions)
+        signals,
+        // NEW: Pattern recognition (493K rows)
+        patternRecognition,
+        // NEW: Smart money flow (16K rows)
+        smartMoneyFlow,
+        // NEW: Social signals (5K rows)
+        socialSignals,
+        // NEW: Breaking news (24K rows)
+        breakingNews,
+        // NEW: Job postings (4.7K rows)
+        jobPostings,
+        // NEW: COT reports (124 rows)
+        cotReports,
+        // NEW: Policy feeds
+        policyFeeds,
+        // NEW: Patent filings
+        patentFilings,
+        // NEW: Forex technicals
+        forexTechnicals,
       ] = await Promise.all([
-        supabase.from('advanced_technicals').select('ticker, stochastic_k, stochastic_d, breakout_signal, trend_strength, stochastic_signal').in('ticker', tickers),
-        supabase.from('dark_pool_activity').select('ticker, dark_pool_percentage').in('ticker', tickers),
-        supabase.from('form4_insider_trades').select('ticker, transaction_type, total_value, filing_date').in('ticker', tickers).gte('filing_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]),
-        supabase.from('holdings_13f').select('ticker, change_shares, value').in('ticker', tickers),
-        supabase.from('congressional_trades').select('ticker, transaction_type, transaction_date, amount_min, amount_max').in('ticker', tickers).gte('transaction_date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]),
-        supabase.from('news_sentiment_aggregate').select('ticker, sentiment_score, buzz_score').in('ticker', tickers),
-        supabase.from('options_flow').select('ticker, sentiment, premium').in('ticker', tickers),
-        supabase.from('short_interest').select('ticker, float_percentage').in('ticker', tickers),
-        supabase.from('earnings_sentiment').select('ticker, earnings_surprise').in('ticker', tickers),
-        supabase.from('etf_flows').select('ticker, net_flow').in('ticker', tickers),
-        supabase.from('crypto_onchain_metrics').select('ticker, whale_signal, exchange_flow_signal, fear_greed_index, mvrv_ratio').in('ticker', tickers),
-        supabase.from('forex_sentiment').select('ticker, retail_sentiment, retail_long_pct').in('ticker', tickers),
-        supabase.from('economic_indicators').select('impact').order('release_date', { ascending: false }).limit(50),
+        // Original queries
+        supabase.from('advanced_technicals').select('ticker, stochastic_k, stochastic_d, breakout_signal, trend_strength, stochastic_signal, adx, price_vs_vwap_pct').in('ticker', tickers),
+        supabase.from('dark_pool_activity').select('ticker, dark_pool_percentage, signal_strength, signal_type').in('ticker', tickers),
+        supabase.from('form4_insider_trades').select('ticker, transaction_type, total_value, filing_date').in('ticker', tickers).gte('filing_date', thirtyDaysAgo.split('T')[0]),
+        supabase.from('holdings_13f').select('ticker, change_shares, value, change_type').in('ticker', tickers),
+        supabase.from('congressional_trades').select('ticker, transaction_type, transaction_date, amount_min, amount_max').in('ticker', tickers).gte('transaction_date', thirtyDaysAgo.split('T')[0]),
+        supabase.from('news_sentiment_aggregate').select('ticker, sentiment_score, buzz_score, sentiment_label').in('ticker', tickers),
+        supabase.from('options_flow').select('ticker, sentiment, premium, flow_type').in('ticker', tickers),
+        supabase.from('short_interest').select('ticker, float_percentage, days_to_cover').in('ticker', tickers),
+        supabase.from('earnings_sentiment').select('ticker, earnings_surprise, revenue_surprise, sentiment_score').in('ticker', tickers),
+        supabase.from('etf_flows').select('ticker, net_flow, inflow, outflow').in('ticker', tickers),
+        supabase.from('crypto_onchain_metrics').select('ticker, whale_signal, exchange_flow_signal, fear_greed_index, mvrv_ratio, active_addresses_change_pct').in('ticker', tickers),
+        supabase.from('forex_sentiment').select('ticker, retail_sentiment, retail_long_pct, news_sentiment_score, social_sentiment_score').in('ticker', tickers),
+        supabase.from('economic_indicators').select('impact, indicator_type').order('release_date', { ascending: false }).limit(50),
+        // NEW: Signals table query (the aggregated layer from all 48 functions)
+        supabase.from('signals').select('asset_id, signal_type, magnitude, direction, composite_score').in('asset_id', assetIds).gte('observed_at', thirtyDaysAgo),
+        // NEW: Pattern recognition
+        supabase.from('pattern_recognition').select('ticker, pattern_type, pattern_category, confidence_score, risk_reward_ratio, status').in('ticker', tickers).eq('status', 'confirmed'),
+        // NEW: Smart money flow
+        supabase.from('smart_money_flow').select('ticker, smart_money_signal, institutional_net_flow, retail_net_flow, mfi_signal, mfi').in('ticker', tickers),
+        // NEW: Social signals
+        supabase.from('social_signals').select('ticker, sentiment_score, bullish_count, bearish_count, platform').in('ticker', tickers),
+        // NEW: Breaking news
+        supabase.from('breaking_news').select('ticker, sentiment_score, relevance_score').in('ticker', tickers),
+        // NEW: Job postings
+        supabase.from('job_postings').select('ticker, posting_count, growth_indicator').in('ticker', tickers),
+        // NEW: COT reports
+        supabase.from('cot_reports').select('ticker, sentiment, commercial_net, noncommercial_net, net_position_change').in('ticker', tickers),
+        // NEW: Policy feeds
+        supabase.from('policy_feeds').select('ticker, sentiment, relevance_score').in('ticker', tickers),
+        // NEW: Patent filings
+        supabase.from('patent_filings').select('ticker, technology_category, innovation_score').in('ticker', tickers),
+        // NEW: Forex technicals
+        supabase.from('forex_technicals').select('ticker, rsi_14, rsi_signal, macd_crossover, ma_crossover').in('ticker', tickers),
       ]);
 
-      // Build lookup maps
+      // ========================================================================
+      // BUILD LOOKUP MAPS FOR ALL DATA SOURCES
+      // ========================================================================
       const techMap = new Map((technicals.data || []).map(t => [t.ticker, t]));
-      const darkPoolMap = new Map<string, number[]>();
+      
+      const darkPoolMap = new Map<string, { avgPct: number; signalStrength: string; signalType: string }>();
       (darkPool.data || []).forEach(d => {
-        if (!darkPoolMap.has(d.ticker)) darkPoolMap.set(d.ticker, []);
-        darkPoolMap.get(d.ticker)!.push(d.dark_pool_percentage || 0);
+        const existing = darkPoolMap.get(d.ticker);
+        if (!existing || (d.dark_pool_percentage || 0) > existing.avgPct) {
+          darkPoolMap.set(d.ticker, { 
+            avgPct: d.dark_pool_percentage || 0, 
+            signalStrength: d.signal_strength || 'weak',
+            signalType: d.signal_type || ''
+          });
+        }
       });
+      
       const form4Map = new Map<string, any[]>();
       (form4.data || []).forEach(f => {
         if (!form4Map.has(f.ticker)) form4Map.set(f.ticker, []);
         form4Map.get(f.ticker)!.push(f);
       });
-      const holdings13fMap = new Map<string, { shares: number; value: number }>();
+      
+      const holdings13fMap = new Map<string, { shares: number; value: number; hasNew: boolean }>();
       (holdings13f.data || []).forEach(h => {
-        const current = holdings13fMap.get(h.ticker) || { shares: 0, value: 0 };
+        const current = holdings13fMap.get(h.ticker) || { shares: 0, value: 0, hasNew: false };
         holdings13fMap.set(h.ticker, {
           shares: current.shares + (h.change_shares || 0),
           value: current.value + (h.value || 0),
+          hasNew: current.hasNew || h.change_type === 'new_position',
         });
       });
-      const congressMap = new Map<string, { buys: number; totalValue: number }>();
+      
+      const congressMap = new Map<string, { buys: number; sells: number; totalValue: number }>();
       (congressionalTrades.data || []).forEach(c => {
         const isPurchase = c.transaction_type?.toLowerCase().includes('purchase');
-        if (isPurchase) {
-          const current = congressMap.get(c.ticker) || { buys: 0, totalValue: 0 };
-          const avgValue = ((c.amount_min || 0) + (c.amount_max || 0)) / 2;
-          congressMap.set(c.ticker, {
-            buys: current.buys + 1,
-            totalValue: current.totalValue + avgValue,
-          });
-        }
+        const current = congressMap.get(c.ticker) || { buys: 0, sells: 0, totalValue: 0 };
+        const avgValue = ((c.amount_min || 0) + (c.amount_max || 0)) / 2;
+        congressMap.set(c.ticker, {
+          buys: current.buys + (isPurchase ? 1 : 0),
+          sells: current.sells + (isPurchase ? 0 : 1),
+          totalValue: current.totalValue + (isPurchase ? avgValue : -avgValue),
+        });
       });
+      
       const newsSentMap = new Map((newsSentiment.data || []).map(n => [n.ticker, n]));
+      
       const optionsMap = new Map<string, { bullish: number; bearish: number; totalPremium: number }>();
       (optionsFlow.data || []).forEach(o => {
         if (!optionsMap.has(o.ticker)) optionsMap.set(o.ticker, { bullish: 0, bearish: 0, totalPremium: 0 });
@@ -203,23 +381,102 @@ Deno.serve(async (req) => {
         if (o.sentiment === 'bullish') entry.bullish++;
         else if (o.sentiment === 'bearish') entry.bearish++;
       });
-      const shortMap = new Map((shortInterest.data || []).map(s => [s.ticker, s.float_percentage]));
-      const earningsMap = new Map((earningsSentiment.data || []).map(e => [e.ticker, e.earnings_surprise]));
-      const etfMap = new Map<string, number>();
+      
+      const shortMap = new Map((shortInterest.data || []).map(s => [s.ticker, { floatPct: s.float_percentage, daysToCover: s.days_to_cover }]));
+      const earningsMap = new Map((earningsSentiment.data || []).map(e => [e.ticker, e]));
+      
+      const etfMap = new Map<string, { netFlow: number; inflow: number; outflow: number }>();
       (etfFlows.data || []).forEach(e => {
-        etfMap.set(e.ticker, (etfMap.get(e.ticker) || 0) + (e.net_flow || 0));
+        const current = etfMap.get(e.ticker) || { netFlow: 0, inflow: 0, outflow: 0 };
+        etfMap.set(e.ticker, {
+          netFlow: current.netFlow + (e.net_flow || 0),
+          inflow: current.inflow + (e.inflow || 0),
+          outflow: current.outflow + (e.outflow || 0),
+        });
       });
+      
       const cryptoMap = new Map((cryptoOnchain.data || []).map(c => [c.ticker, c]));
       const forexSentMap = new Map((forexSentiment.data || []).map(f => [f.ticker, f]));
+      
+      // NEW: Signals map (by asset_id)
+      const signalsMap = new Map<string, any[]>();
+      (signals.data || []).forEach(s => {
+        if (!signalsMap.has(s.asset_id)) signalsMap.set(s.asset_id, []);
+        signalsMap.get(s.asset_id)!.push(s);
+      });
+      
+      // NEW: Pattern recognition map
+      const patternMap = new Map<string, any[]>();
+      (patternRecognition.data || []).forEach(p => {
+        if (!patternMap.has(p.ticker)) patternMap.set(p.ticker, []);
+        patternMap.get(p.ticker)!.push(p);
+      });
+      
+      // NEW: Smart money flow map
+      const smartMoneyMap = new Map((smartMoneyFlow.data || []).map(s => [s.ticker, s]));
+      
+      // NEW: Social signals map
+      const socialMap = new Map<string, { score: number; bullish: number; bearish: number }>();
+      (socialSignals.data || []).forEach(s => {
+        const current = socialMap.get(s.ticker) || { score: 0, bullish: 0, bearish: 0 };
+        socialMap.set(s.ticker, {
+          score: current.score + (s.sentiment_score || 0),
+          bullish: current.bullish + (s.bullish_count || 0),
+          bearish: current.bearish + (s.bearish_count || 0),
+        });
+      });
+      
+      // NEW: Breaking news map
+      const breakingNewsMap = new Map<string, { avgSentiment: number; count: number }>();
+      (breakingNews.data || []).forEach(b => {
+        const current = breakingNewsMap.get(b.ticker) || { avgSentiment: 0, count: 0 };
+        breakingNewsMap.set(b.ticker, {
+          avgSentiment: (current.avgSentiment * current.count + (b.sentiment_score || 0)) / (current.count + 1),
+          count: current.count + 1,
+        });
+      });
+      
+      // NEW: Job postings map
+      const jobsMap = new Map<string, { totalPostings: number; avgGrowth: number }>();
+      (jobPostings.data || []).forEach(j => {
+        const current = jobsMap.get(j.ticker) || { totalPostings: 0, avgGrowth: 0 };
+        jobsMap.set(j.ticker, {
+          totalPostings: current.totalPostings + (j.posting_count || 1),
+          avgGrowth: (current.avgGrowth + (j.growth_indicator || 0)) / 2,
+        });
+      });
+      
+      // NEW: COT reports map
+      const cotMap = new Map((cotReports.data || []).map(c => [c.ticker, c]));
+      
+      // NEW: Policy feeds map
+      const policyMap = new Map<string, { sentiment: string; count: number }>();
+      (policyFeeds.data || []).forEach(p => {
+        if (!policyMap.has(p.ticker)) {
+          policyMap.set(p.ticker, { sentiment: p.sentiment || 'neutral', count: 1 });
+        } else {
+          policyMap.get(p.ticker)!.count++;
+        }
+      });
+      
+      // NEW: Patent filings map
+      const patentMap = new Map<string, number>();
+      (patentFilings.data || []).forEach(p => {
+        patentMap.set(p.ticker, (patentMap.get(p.ticker) || 0) + 1);
+      });
+      
+      // NEW: Forex technicals map
+      const forexTechMap = new Map((forexTechnicals.data || []).map(f => [f.ticker, f]));
 
       // Macro score (same for all)
       const econ = economicIndicators.data || [];
       const positiveImpact = econ.filter(e => e.impact === 'positive').length;
       const negativeImpact = econ.filter(e => e.impact === 'negative').length;
-      // Increased from 0.2/-0.15 to 2.0/-1.5 (10x)
       const macroBoost = positiveImpact > negativeImpact ? 2.0 : (negativeImpact > positiveImpact ? -1.5 : 0);
 
-      // Compute scores for each asset
+      // ========================================================================
+      // COMPUTE SCORES FOR EACH ASSET
+      // ========================================================================
       const updates: { id: string; score: number; breakdown: Record<string, number> }[] = [];
 
       for (const asset of assets) {
@@ -240,87 +497,293 @@ Deno.serve(async (req) => {
         const assetClass = asset.asset_class || 'stock';
         const classModifier = CLASS_MODIFIERS[assetClass] || {};
 
-        // Technical signals (10x increase: 0.3 -> 3.0, 0.4 -> 4.0, etc.)
-        const tech = techMap.get(ticker);
-        if (tech) {
-          // Use stochastic as momentum proxy (since rsi_14 doesn't exist in the table)
-          if (tech.stochastic_k !== null && tech.stochastic_k !== undefined) {
-            // Scale stochastic contribution based on how extreme it is
-            if (tech.stochastic_k < 20) {
-              const extremity = (20 - tech.stochastic_k) / 20; // 0-1 scale
-              components.TechEdge += 3.0 + extremity * 3.0; // 3-6 points for oversold
-            } else if (tech.stochastic_k > 80) {
-              const extremity = (tech.stochastic_k - 80) / 20;
-              components.TechEdge -= 2.0 + extremity * 2.0; // -2 to -4 points for overbought
-            }
+        // ======================================================================
+        // PROCESS SIGNALS FROM AGGREGATED SIGNALS TABLE (NEW!)
+        // ======================================================================
+        const assetSignals = signalsMap.get(asset.id) || [];
+        for (const signal of assetSignals) {
+          const mapping = SIGNAL_TYPE_TO_COMPONENT[signal.signal_type];
+          if (mapping) {
+            const directionMult = signal.direction === 'up' ? 1 : (signal.direction === 'down' ? -1 : 0.5);
+            const magnitude = signal.magnitude || 1.0;
+            const contribution = mapping.multiplier * Math.min(magnitude, 5) * directionMult;
+            components[mapping.component] = (components[mapping.component] || 0) + contribution;
           }
-          // Breakout signals - match actual database values (resistance_break, support_break)
-          if (tech.breakout_signal === 'resistance_break') components.TechEdge += 4.0;
-          if (tech.breakout_signal === 'support_break') components.TechEdge -= 3.0;
-          // Trend strength - match actual database values (strong_uptrend, strong_downtrend, weak_uptrend, weak_downtrend)
-          if (tech.trend_strength === 'strong_uptrend') components.TechEdge += 2.0;
-          if (tech.trend_strength === 'strong_downtrend') components.TechEdge -= 1.5;
-          if (tech.trend_strength === 'weak_uptrend') components.TechEdge += 0.5;
-          if (tech.trend_strength === 'weak_downtrend') components.TechEdge -= 0.5;
-          // Stochastic signal is already correct
-          if (tech.stochastic_signal === 'oversold') components.TechEdge += 2.0;
-          if (tech.stochastic_signal === 'overbought') components.TechEdge -= 1.5;
         }
 
-        // Dark pool - magnitude-based (10x base + scaling)
-        const dpPcts = darkPoolMap.get(ticker);
-        if (dpPcts && dpPcts.length > 0) {
-          const avgDpPct = dpPcts.reduce((a, b) => a + b, 0) / dpPcts.length;
-          // Scale by percentage: 40% = 3.0, 50% = 4.5, 60% = 6.0
+        // ======================================================================
+        // PROCESS PATTERN RECOGNITION (NEW!)
+        // ======================================================================
+        const patterns = patternMap.get(ticker) || [];
+        for (const pattern of patterns) {
+          const confidence = (pattern.confidence_score || 50) / 100;
+          const riskReward = Math.min(pattern.risk_reward_ratio || 1, 5);
+          
+          if (pattern.pattern_category === 'bullish' || pattern.pattern_type?.toLowerCase().includes('bottom')) {
+            components.TechEdge += confidence * riskReward * 3.0;
+          } else if (pattern.pattern_category === 'bearish' || pattern.pattern_type?.toLowerCase().includes('top')) {
+            components.TechEdge -= confidence * riskReward * 2.0;
+          } else {
+            components.TechEdge += confidence * 1.0; // Neutral patterns still contribute
+          }
+        }
+
+        // ======================================================================
+        // PROCESS SMART MONEY FLOW (NEW!)
+        // ======================================================================
+        const smartMoney = smartMoneyMap.get(ticker);
+        if (smartMoney) {
+          if (smartMoney.smart_money_signal === 'strong_buy') components.BigMoneyConfirm += 6.0;
+          else if (smartMoney.smart_money_signal === 'buy') components.BigMoneyConfirm += 3.0;
+          else if (smartMoney.smart_money_signal === 'strong_sell') components.BigMoneyConfirm -= 4.0;
+          else if (smartMoney.smart_money_signal === 'sell') components.BigMoneyConfirm -= 2.0;
+          
+          // Institutional vs retail flow differential
+          const instFlow = smartMoney.institutional_net_flow || 0;
+          const retailFlow = smartMoney.retail_net_flow || 0;
+          const netDiff = instFlow - retailFlow;
+          components.FlowPressure += magnitudeScale(netDiff, 100000, 5.0);
+          
+          // MFI signal
+          if (smartMoney.mfi_signal === 'oversold') components.TechEdge += 2.5;
+          else if (smartMoney.mfi_signal === 'overbought') components.TechEdge -= 2.0;
+          
+          // MFI value directly
+          if (smartMoney.mfi !== null && smartMoney.mfi !== undefined) {
+            if (smartMoney.mfi < 20) components.TechEdge += 2.0;
+            else if (smartMoney.mfi > 80) components.TechEdge -= 1.5;
+          }
+        }
+
+        // ======================================================================
+        // PROCESS SOCIAL SIGNALS (NEW!)
+        // ======================================================================
+        const social = socialMap.get(ticker);
+        if (social) {
+          // Net sentiment from bullish/bearish counts
+          const netSocial = social.bullish - social.bearish;
+          components.Attention += Math.min(netSocial * 0.5, 5.0);
+          
+          // Sentiment score contribution
+          if (social.score !== 0) {
+            components.Attention += social.score * 3.0;
+          }
+        }
+
+        // ======================================================================
+        // PROCESS BREAKING NEWS (NEW!)
+        // ======================================================================
+        const news = breakingNewsMap.get(ticker);
+        if (news && news.count > 0) {
+          // News volume contributes to attention
+          components.Attention += Math.min(news.count * 0.5, 3.0);
+          // Sentiment contribution
+          components.Attention += news.avgSentiment * 4.0;
+        }
+
+        // ======================================================================
+        // PROCESS JOB POSTINGS (NEW!)
+        // ======================================================================
+        const jobs = jobsMap.get(ticker);
+        if (jobs) {
+          // Job posting volume indicates growth
+          components.CapexMomentum += Math.min(Math.log10(1 + jobs.totalPostings) * 2.0, 4.0);
+          // Growth indicator
+          if (jobs.avgGrowth > 0) {
+            components.CapexMomentum += Math.min(jobs.avgGrowth * 3.0, 4.0);
+          }
+        }
+
+        // ======================================================================
+        // PROCESS PATENT FILINGS (NEW!)
+        // ======================================================================
+        const patentCount = patentMap.get(ticker) || 0;
+        if (patentCount > 0) {
+          components.CapexMomentum += Math.min(Math.log10(1 + patentCount) * 3.0, 5.0);
+        }
+
+        // ======================================================================
+        // PROCESS COT REPORTS (NEW!)
+        // ======================================================================
+        const cot = cotMap.get(ticker);
+        if (cot) {
+          if (cot.sentiment === 'bullish') components.MacroEconomic += 3.0;
+          else if (cot.sentiment === 'bearish') components.MacroEconomic -= 2.5;
+          
+          // Commercial vs non-commercial positioning
+          const commNet = cot.commercial_net || 0;
+          const nonCommNet = cot.noncommercial_net || 0;
+          
+          // Commercials are hedgers, non-commercials are speculators
+          // Speculators lead trends
+          if (nonCommNet > 0) {
+            components.MacroEconomic += magnitudeScale(nonCommNet, 10000, 3.0);
+          } else {
+            components.MacroEconomic += magnitudeScale(nonCommNet, 10000, 2.5);
+          }
+          
+          // Position change momentum
+          if (cot.net_position_change) {
+            components.FlowPressure += magnitudeScale(cot.net_position_change, 5000, 3.0);
+          }
+        }
+
+        // ======================================================================
+        // PROCESS POLICY FEEDS (NEW!)
+        // ======================================================================
+        const policy = policyMap.get(ticker);
+        if (policy) {
+          if (policy.sentiment === 'positive' || policy.sentiment === 'bullish') {
+            components.PolicyMomentum += 3.0 + Math.min(policy.count * 0.5, 2.0);
+          } else if (policy.sentiment === 'negative' || policy.sentiment === 'bearish') {
+            components.PolicyMomentum -= 2.5;
+          } else {
+            components.PolicyMomentum += Math.min(policy.count * 0.3, 1.5);
+          }
+        }
+
+        // ======================================================================
+        // ORIGINAL DATA SOURCE PROCESSING (enhanced)
+        // ======================================================================
+        
+        // Technical signals
+        const tech = techMap.get(ticker);
+        if (tech) {
+          // Stochastic momentum
+          if (tech.stochastic_k !== null && tech.stochastic_k !== undefined) {
+            if (tech.stochastic_k < 20) {
+              const extremity = (20 - tech.stochastic_k) / 20;
+              components.TechEdge += 3.0 + extremity * 3.0;
+            } else if (tech.stochastic_k > 80) {
+              const extremity = (tech.stochastic_k - 80) / 20;
+              components.TechEdge -= 2.0 + extremity * 2.0;
+            }
+          }
+          
+          // Breakout signals
+          if (tech.breakout_signal === 'resistance_break') components.TechEdge += 4.0;
+          else if (tech.breakout_signal === 'support_break') components.TechEdge -= 3.0;
+          
+          // Trend strength
+          if (tech.trend_strength === 'strong_uptrend') components.TechEdge += 2.5;
+          else if (tech.trend_strength === 'strong_downtrend') components.TechEdge -= 2.0;
+          else if (tech.trend_strength === 'weak_uptrend') components.TechEdge += 0.5;
+          else if (tech.trend_strength === 'weak_downtrend') components.TechEdge -= 0.5;
+          
+          // Stochastic signal
+          if (tech.stochastic_signal === 'oversold') components.TechEdge += 2.5;
+          else if (tech.stochastic_signal === 'overbought') components.TechEdge -= 2.0;
+          
+          // ADX (trend strength indicator)
+          if (tech.adx !== null && tech.adx !== undefined) {
+            if (tech.adx > 25) components.TechEdge += 1.5; // Strong trend
+            else if (tech.adx < 15) components.TechEdge -= 0.5; // Weak trend
+          }
+          
+          // VWAP deviation
+          if (tech.price_vs_vwap_pct !== null && tech.price_vs_vwap_pct !== undefined) {
+            if (tech.price_vs_vwap_pct < -5) components.TechEdge += 2.0; // Below VWAP = potential buy
+            else if (tech.price_vs_vwap_pct > 5) components.TechEdge -= 1.5; // Above VWAP = extended
+          }
+        }
+
+        // Forex technicals
+        const forexTech = forexTechMap.get(ticker);
+        if (forexTech && assetClass === 'forex') {
+          if (forexTech.rsi_14 !== null) {
+            if (forexTech.rsi_14 < 30) components.TechEdge += 3.0;
+            else if (forexTech.rsi_14 > 70) components.TechEdge -= 2.5;
+          }
+          if (forexTech.rsi_signal === 'oversold') components.TechEdge += 2.0;
+          else if (forexTech.rsi_signal === 'overbought') components.TechEdge -= 1.5;
+          
+          if (forexTech.macd_crossover === 'bullish') components.TechEdge += 2.5;
+          else if (forexTech.macd_crossover === 'bearish') components.TechEdge -= 2.0;
+          
+          if (forexTech.ma_crossover === 'golden_cross') components.TechEdge += 3.0;
+          else if (forexTech.ma_crossover === 'death_cross') components.TechEdge -= 2.5;
+        }
+
+        // Dark pool - enhanced
+        const dp = darkPoolMap.get(ticker);
+        if (dp) {
+          const avgDpPct = dp.avgPct;
           if (avgDpPct > 30) {
             const dpScore = Math.min((avgDpPct - 30) / 10 * 3.0, 9.0);
             components.FlowPressure += dpScore;
             components.BigMoneyConfirm += dpScore * 0.6;
           }
+          // Signal strength bonus
+          if (dp.signalStrength === 'strong') {
+            components.BigMoneyConfirm += 2.0;
+          }
+          // Signal type
+          if (dp.signalType === 'accumulation') {
+            components.BigMoneyConfirm += 3.0;
+          } else if (dp.signalType === 'distribution') {
+            components.BigMoneyConfirm -= 2.0;
+          }
         }
 
-        // Form 4 insider trades - magnitude-based scaling
+        // Form 4 insider trades - enhanced
         const f4Trades = form4Map.get(ticker) || [];
         const netInsider = f4Trades.reduce((sum, f) => {
           const mult = f.transaction_type?.toLowerCase().includes('purchase') ? 1 : -1;
           return sum + mult * (f.total_value || 0);
         }, 0);
-        // Use log scale: $100k = 4.0, $1M = 7.0, $10M = 10.0
         const insiderContrib = magnitudeScale(netInsider, 100000, MAX_COMPONENT_VALUE);
         components.InsiderPoliticianConfirm += insiderContrib;
+        
+        // Count of insider buys as bonus
+        const insiderBuys = f4Trades.filter(f => f.transaction_type?.toLowerCase().includes('purchase')).length;
+        if (insiderBuys >= 3) components.InsiderPoliticianConfirm += 2.0;
 
-        // 13F holdings - magnitude-based scaling
+        // 13F holdings - enhanced
         const h13fData = holdings13fMap.get(ticker);
         if (h13fData) {
-          // Scale by value in millions
           const valueContrib = magnitudeScale(h13fData.value, 1000000, MAX_COMPONENT_VALUE);
           const sharesContrib = magnitudeScale(h13fData.shares, 100000, MAX_COMPONENT_VALUE);
           components.BigMoneyConfirm += Math.max(valueContrib, sharesContrib * 0.5);
+          
+          // New position bonus
+          if (h13fData.hasNew) {
+            components.BigMoneyConfirm += 2.0;
+          }
         }
 
-        // Congressional trades - magnitude-based
+        // Congressional trades - enhanced
         const congData = congressMap.get(ticker);
-        if (congData && congData.buys > 0) {
-          // Multiple trades are more significant
-          const buyCountScore = Math.min(congData.buys * 2.0, 6.0);
-          const valueScore = magnitudeScale(congData.totalValue, 50000, 4.0);
-          components.InsiderPoliticianConfirm += buyCountScore + valueScore;
+        if (congData) {
+          const netCong = congData.buys - congData.sells;
+          if (netCong > 0) {
+            const buyCountScore = Math.min(netCong * 2.5, 6.0);
+            const valueScore = magnitudeScale(congData.totalValue, 50000, 4.0);
+            components.InsiderPoliticianConfirm += buyCountScore + valueScore;
+          } else if (netCong < 0) {
+            components.InsiderPoliticianConfirm -= Math.min(Math.abs(netCong) * 1.5, 4.0);
+          }
         }
 
-        // News sentiment - scaled by sentiment and buzz
+        // News sentiment - enhanced
         const newsSent = newsSentMap.get(ticker);
         if (newsSent) {
-          // Sentiment score is -1 to 1, scale to -6 to +6
           const sentimentContrib = (newsSent.sentiment_score || 0) * 6.0;
           components.Attention += sentimentContrib;
-          // Buzz score bonus
+          
           if (newsSent.buzz_score) {
             const buzzBonus = Math.min((newsSent.buzz_score / 100) * 4.0, 4.0);
             components.Attention += buzzBonus;
           }
+          
+          // Sentiment label bonus
+          if (newsSent.sentiment_label === 'bullish' || newsSent.sentiment_label === 'positive') {
+            components.Attention += 2.0;
+          } else if (newsSent.sentiment_label === 'bearish' || newsSent.sentiment_label === 'negative') {
+            components.Attention -= 1.5;
+          }
         }
 
-        // Options flow - magnitude-based
+        // Options flow - enhanced
         const opts = optionsMap.get(ticker);
         if (opts) {
           const netSentiment = opts.bullish - opts.bearish;
@@ -328,7 +791,6 @@ Deno.serve(async (req) => {
             const optScore = Math.min(netSentiment * 1.5, 6.0);
             components.TechEdge += optScore;
             components.FlowPressure += optScore * 0.5;
-            // Premium-based bonus
             const premiumBonus = magnitudeScale(opts.totalPremium, 1000000, 4.0);
             components.FlowPressure += premiumBonus;
           } else if (netSentiment < 0) {
@@ -336,31 +798,50 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Short interest - risk scaling (10x)
-        const siPct = shortMap.get(ticker);
-        if (siPct !== undefined && siPct > 0) {
-          // Linear scaling: 10% = 1.5, 20% = 3.0, 40% = 6.0
-          const siRisk = Math.min((siPct / 10) * 1.5, MAX_COMPONENT_VALUE);
-          components.RiskFlags += siRisk;
+        // Short interest - enhanced risk
+        const si = shortMap.get(ticker);
+        if (si) {
+          if (si.floatPct !== undefined && si.floatPct > 0) {
+            const siRisk = Math.min((si.floatPct / 10) * 1.5, MAX_COMPONENT_VALUE);
+            components.RiskFlags += siRisk;
+          }
+          // Days to cover adds to risk
+          if (si.daysToCover !== undefined && si.daysToCover > 5) {
+            components.RiskFlags += Math.min(si.daysToCover * 0.2, 2.0);
+          }
         }
 
-        // Earnings - magnitude-based
-        const earnSurprise = earningsMap.get(ticker);
-        if (earnSurprise !== undefined) {
-          // Scale by surprise percentage
-          const earnContrib = magnitudeScale(earnSurprise * 100, 10, 6.0);
-          components.EarningsMomentum += earnContrib;
+        // Earnings - enhanced
+        const earnings = earningsMap.get(ticker);
+        if (earnings) {
+          if (earnings.earnings_surprise !== undefined) {
+            const earnContrib = magnitudeScale(earnings.earnings_surprise * 100, 10, 6.0);
+            components.EarningsMomentum += earnContrib;
+          }
+          if (earnings.revenue_surprise !== undefined) {
+            const revContrib = magnitudeScale(earnings.revenue_surprise * 100, 10, 4.0);
+            components.EarningsMomentum += revContrib;
+          }
+          if (earnings.sentiment_score !== undefined) {
+            components.EarningsMomentum += earnings.sentiment_score * 2.0;
+          }
         }
 
-        // ETF flows - magnitude-based
-        const netFlow = etfMap.get(ticker);
-        if (netFlow !== undefined && netFlow !== 0) {
-          // Scale by flow in millions
-          const flowContrib = magnitudeScale(netFlow, 10000000, 8.0);
+        // ETF flows - enhanced
+        const etf = etfMap.get(ticker);
+        if (etf) {
+          const flowContrib = magnitudeScale(etf.netFlow, 10000000, 8.0);
           components.FlowPressure += flowContrib;
+          
+          // Inflow/outflow ratio
+          if (etf.inflow > 0 && etf.outflow > 0) {
+            const ratio = etf.inflow / etf.outflow;
+            if (ratio > 2) components.FlowPressure += 2.0;
+            else if (ratio < 0.5) components.FlowPressure -= 1.5;
+          }
         }
 
-        // Crypto-specific (10x + magnitude)
+        // Crypto-specific - enhanced
         if (assetClass === 'crypto') {
           const crypto = cryptoMap.get(ticker);
           if (crypto) {
@@ -371,7 +852,6 @@ Deno.serve(async (req) => {
             else if (crypto.exchange_flow_signal === 'inflow') components.FlowPressure -= 2.0;
             
             if (crypto.fear_greed_index !== null) {
-              // Fear = opportunity (under 25), greed = risk (over 75)
               if (crypto.fear_greed_index < 25) {
                 components.TechEdge += (25 - crypto.fear_greed_index) / 25 * 5.0;
               } else if (crypto.fear_greed_index > 75) {
@@ -379,7 +859,6 @@ Deno.serve(async (req) => {
               }
             }
             
-            // MVRV ratio: <1 = undervalued, >3 = overvalued
             if (crypto.mvrv_ratio !== null) {
               if (crypto.mvrv_ratio < 1) {
                 components.BigMoneyConfirm += (1 - crypto.mvrv_ratio) * 6.0;
@@ -387,10 +866,19 @@ Deno.serve(async (req) => {
                 components.RiskFlags += Math.min((crypto.mvrv_ratio - 3) * 2.0, 6.0);
               }
             }
+            
+            // Active addresses change
+            if (crypto.active_addresses_change_pct !== null) {
+              if (crypto.active_addresses_change_pct > 10) {
+                components.Attention += 2.0;
+              } else if (crypto.active_addresses_change_pct < -10) {
+                components.Attention -= 1.5;
+              }
+            }
           }
         }
 
-        // Forex-specific (10x + positioning data)
+        // Forex-specific - enhanced
         if (assetClass === 'forex') {
           const fxData = forexSentMap.get(ticker);
           if (fxData) {
@@ -399,16 +887,28 @@ Deno.serve(async (req) => {
             
             // Contrarian retail positioning
             if (fxData.retail_long_pct !== null) {
-              // Extreme retail positioning is contrarian signal
               if (fxData.retail_long_pct > 75) {
-                components.RiskFlags += 2.0; // Too many longs = potential reversal
+                components.RiskFlags += 2.0;
+                components.TechEdge -= 1.0; // Contrarian signal
               } else if (fxData.retail_long_pct < 25) {
-                components.TechEdge += 2.0; // Few longs = potential upside
+                components.TechEdge += 2.0;
               }
+            }
+            
+            // News and social sentiment
+            if (fxData.news_sentiment_score !== null) {
+              components.Attention += fxData.news_sentiment_score * 3.0;
+            }
+            if (fxData.social_sentiment_score !== null) {
+              components.Attention += fxData.social_sentiment_score * 2.0;
             }
           }
         }
 
+        // ======================================================================
+        // APPLY ASSET-CLASS MODIFIERS AND NORMALIZE
+        // ======================================================================
+        
         // Apply asset-class-specific weight modifiers
         for (const [key, modifier] of Object.entries(classModifier)) {
           if (components[key] !== undefined) {
@@ -425,7 +925,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Compute weighted score with new normalization
+        // Compute weighted score with normalization
         let rawScore = 0;
         let activeComponentsMax = 0;
         
@@ -440,12 +940,10 @@ Deno.serve(async (req) => {
         }
 
         // Normalize relative to active components (prevents sparse data from clustering at 50)
-        // Minimum active components contribution to avoid division by tiny numbers
         const effectiveMax = Math.max(activeComponentsMax, 3.0 * MAX_COMPONENT_VALUE);
         const normalizedRaw = rawScore / effectiveMax;
         
         // Map to 15-85 range, centered at 50
-        // normalizedRaw of -1 = 15, 0 = 50, +1 = 85
         const finalScore = Math.max(15, Math.min(85, 50 + normalizedRaw * 35));
         
         updates.push({ 
@@ -491,6 +989,8 @@ Deno.serve(async (req) => {
         end_offset: offset,
         next_offset: nextOffset,
         total_assets: totalAssets,
+        data_sources_queried: 23,
+        signal_types_mapped: Object.keys(SIGNAL_TYPE_TO_COMPONENT).length,
       },
     });
 
@@ -500,6 +1000,7 @@ Deno.serve(async (req) => {
         processed: processedCount, 
         duration_ms: duration,
         next_offset: nextOffset,
+        data_sources_queried: 23,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
