@@ -7,24 +7,54 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v5 - Yahoo Finance Options Chain API
-// Removed all Barchart and CBOE logic
+// v6 - Yahoo Finance Options Chain API with proper headers
+// Fixed: Added browser-like headers to avoid 401 Unauthorized
+// Fixed: Insert if (volume > 50) OR (openInterest > 500)
 
 async function fetchYahooOptions(ticker: string): Promise<any[]> {
   try {
-    const url = `https://query2.finance.yahoo.com/v7/finance/options/${ticker}`;
+    // Try query1 first (less strict), then query2 as fallback
+    const urls = [
+      `https://query1.finance.yahoo.com/v7/finance/options/${ticker}`,
+      `https://query2.finance.yahoo.com/v7/finance/options/${ticker}`,
+    ];
     
     console.log(`Fetching Yahoo options for ${ticker}`);
     
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
+    let response: Response | null = null;
+    let successUrl = '';
+    
+    for (const url of urls) {
+      try {
+        const r = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+          }
+        });
+        
+        if (r.ok) {
+          response = r;
+          successUrl = url;
+          break;
+        }
+        console.log(`Yahoo ${ticker} (${url.includes('query1') ? 'q1' : 'q2'}): HTTP ${r.status}`);
+      } catch (e) {
+        console.log(`Yahoo ${ticker} fetch error: ${e}`);
       }
-    });
+    }
+    
+    if (!response || !response.ok) {
+      console.log(`Yahoo ${ticker}: All endpoints failed`);
+      return [];
+    }
+    
+    // Debug: log response details
+    console.log(`Yahoo ${ticker}: status=${response.status}, source=${successUrl.includes('query1') ? 'q1' : 'q2'}`);
     
     if (!response.ok) {
-      console.log(`Yahoo ${ticker}: ${response.status}`);
+      console.log(`Yahoo ${ticker}: HTTP ${response.status}`);
       return [];
     }
     
@@ -32,16 +62,30 @@ async function fetchYahooOptions(ticker: string): Promise<any[]> {
     const result = data?.optionChain?.result?.[0];
     
     if (!result) {
-      console.log(`Yahoo ${ticker}: no result in response`);
+      console.log(`Yahoo ${ticker}: no optionChain.result in response`);
       return [];
     }
     
+    // Debug: log chain details
+    const expirationDates = result.expirationDates || [];
+    const calls = result.options?.[0]?.calls || [];
+    const puts = result.options?.[0]?.puts || [];
+    console.log(`Yahoo ${ticker}: ${expirationDates.length} expiries, ${calls.length} calls, ${puts.length} puts`);
+    
     const options: any[] = [];
-    const allOptions = [...(result.options?.[0]?.calls || []), ...(result.options?.[0]?.puts || [])];
+    const allOptions = [...calls, ...puts];
+    
+    // Calculate average volume to detect market hours
+    const totalVolume = allOptions.reduce((sum, opt) => sum + (opt.volume || 0), 0);
+    const avgVolume = allOptions.length > 0 ? totalVolume / allOptions.length : 0;
+    const marketHoursLikely = avgVolume > 0;
     
     for (const opt of allOptions) {
-      // Only insert records where volume > 50
-      if ((opt.volume || 0) > 50) {
+      const volume = opt.volume || 0;
+      const openInterest = opt.openInterest || 0;
+      
+      // Insert if (volume > 50) OR (openInterest > 500)
+      if (volume > 50 || openInterest > 500) {
         const optionType = opt.contractSymbol?.includes('C') && !opt.contractSymbol?.includes('P') 
           ? 'call' 
           : 'put';
@@ -52,8 +96,8 @@ async function fetchYahooOptions(ticker: string): Promise<any[]> {
           strike_price: opt.strike || 0,
           expiration_date: opt.expiration ? new Date(opt.expiration * 1000).toISOString().split('T')[0] : null,
           premium: Math.round((opt.lastPrice || 0) * 100), // Convert to cents
-          volume: opt.volume || 0,
-          open_interest: opt.openInterest || 0,
+          volume: volume,
+          open_interest: openInterest,
           implied_volatility: opt.impliedVolatility || 0,
           // Set flow_type = null always (do not invent sweep/block)
           flow_type: null,
@@ -61,8 +105,8 @@ async function fetchYahooOptions(ticker: string): Promise<any[]> {
           sentiment: optionType === 'call' ? 'bullish' : 'bearish',
           trade_date: new Date().toISOString(),
           metadata: { 
-            source: 'Yahoo_Finance_Options', 
-            data_type: 'real',
+            source: 'yahoo_finance', 
+            marketHoursLikely,
             contract_symbol: opt.contractSymbol,
             bid: opt.bid,
             ask: opt.ask,
@@ -74,7 +118,7 @@ async function fetchYahooOptions(ticker: string): Promise<any[]> {
       }
     }
     
-    console.log(`Yahoo ${ticker}: found ${options.length} options with volume > 50`);
+    console.log(`Yahoo ${ticker}: found ${options.length} options (volume>50 OR OI>500)`);
     return options;
   } catch (err) {
     console.log(`Yahoo error for ${ticker}: ${err}`);
@@ -92,7 +136,7 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v5] Options flow ingestion - Yahoo Finance Options Chain API');
+    console.log('[v6] Options flow ingestion - Yahoo Finance Options Chain API');
     
     const allOptions: any[] = [];
     const tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
@@ -109,10 +153,11 @@ serve(async (req) => {
     // If zero rows inserted, treat as failure and emit Slack alert
     if (allOptions.length === 0) {
       console.warn('⚠️ WARNING: No options data found - zero rows will be inserted');
+      console.log('Possible reasons: outside market hours, API blocking, or no options meet criteria');
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
         sourcesAttempted: ['Yahoo Finance Options API'],
-        reason: 'No options data from Yahoo Finance API'
+        reason: 'No options data - likely outside US market hours or API rate limited'
       });
       
       await supabase.from('function_status').insert({
@@ -124,14 +169,14 @@ serve(async (req) => {
         duration_ms: Date.now() - startTime,
         source_used: 'Yahoo_Finance_Options',
         error_message: 'Zero rows inserted - no data available',
-        metadata: { version: 'v5_yahoo_finance', reason: 'no_data_available' }
+        metadata: { version: 'v6_yahoo_finance', reason: 'no_data_available' }
       });
       
       return new Response(JSON.stringify({ 
         success: false, 
         count: 0, 
         source: 'Yahoo_Finance_Options',
-        version: 'v5_yahoo_finance',
+        version: 'v6_yahoo_finance',
         warning: 'No options data found - zero rows inserted'
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -167,14 +212,14 @@ serve(async (req) => {
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
       source_used: 'Yahoo_Finance_Options',
-      metadata: { version: 'v5_yahoo_finance' }
+      metadata: { version: 'v6_yahoo_finance' }
     });
 
     return new Response(JSON.stringify({ 
       success: true, 
       count: inserted, 
       source: 'Yahoo_Finance_Options',
-      version: 'v5_yahoo_finance',
+      version: 'v6_yahoo_finance',
       message: `Inserted ${inserted} options records`
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     
