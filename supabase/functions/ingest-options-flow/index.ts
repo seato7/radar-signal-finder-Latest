@@ -7,8 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v8 - Firecrawl + embedded JSON extraction from Barchart
-// Extracts __NEXT_DATA__ or PRELOADED_STATE JSON instead of HTML table parsing
+// v9 - OCC symbol extraction from Barchart HTML via Firecrawl
+// Extracts OCC option symbols (e.g., SPY241227C00590000) and nearby volume/OI data
 
 interface ParsedOption {
   ticker: string;
@@ -25,10 +25,17 @@ interface ParsedOption {
   metadata: Record<string, any>;
 }
 
-interface ExtractionResult {
-  method: '__NEXT_DATA__' | 'PRELOADED_STATE' | 'other_json' | 'none';
-  json: any;
-  error?: string;
+interface OCCSymbolData {
+  symbol: string;
+  underlying: string;
+  expiry: string; // YYYY-MM-DD
+  option_type: 'call' | 'put';
+  strike: number;
+  volume: number | null;
+  openInterest: number | null;
+  impliedVolatility: number | null;
+  lastPrice: number | null;
+  windowSnippet?: string; // For debug mode
 }
 
 async function scrapeWithFirecrawl(url: string): Promise<{ html: string | null; status: number; error?: string }> {
@@ -48,8 +55,8 @@ async function scrapeWithFirecrawl(url: string): Promise<{ html: string | null; 
       body: JSON.stringify({
         url,
         formats: ['html'],
-        waitFor: 4000, // 4 seconds - balanced for JS render without timeout
-        onlyMainContent: false, // Keep script tags
+        waitFor: 4000, // 4 seconds for JS render
+        onlyMainContent: false, // Keep script tags and full HTML
       }),
     });
 
@@ -71,347 +78,250 @@ async function scrapeWithFirecrawl(url: string): Promise<{ html: string | null; 
   }
 }
 
-function extractJsonFromHtml(html: string, ticker: string): ExtractionResult {
-  // Log what patterns exist for debugging
-  const hasNextData = html.includes('__NEXT_DATA__');
-  const hasPreloaded = html.includes('__PRELOADED_STATE__');
-  const hasDataModule = html.includes('data-ng-') || html.includes('ng-init');
-  const hasVueData = html.includes('__NUXT__') || html.includes('__VUE__');
-  console.log(`${ticker} patterns: NEXT=${hasNextData}, PRELOADED=${hasPreloaded}, Angular=${hasDataModule}, Vue=${hasVueData}`);
+// Parse OCC option symbol: TICKER + YYMMDD + C/P + SSSSS000 (strike * 1000)
+function parseOCCSymbol(symbol: string): { underlying: string; expiry: string; option_type: 'call' | 'put'; strike: number } | null {
+  // Pattern: 1-6 letters + 6 digits (YYMMDD) + C/P + 8 digits
+  const match = symbol.toUpperCase().match(/^([A-Z]{1,6})(\d{6})([CP])(\d{8})$/);
+  if (!match) return null;
 
-  // Priority 1: __NEXT_DATA__ script tag
-  const nextDataMatch = html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
-  if (nextDataMatch && nextDataMatch[1]) {
-    try {
-      const json = JSON.parse(nextDataMatch[1]);
-      console.log(`Extracted __NEXT_DATA__ JSON, size=${nextDataMatch[1].length}`);
-      return { method: '__NEXT_DATA__', json };
-    } catch (e) {
-      console.log(`__NEXT_DATA__ parse failed: ${e}`);
-    }
-  }
+  const underlying = match[1];
+  const dateStr = match[2]; // YYMMDD
+  const optType = match[3] === 'C' ? 'call' : 'put';
+  const strikeRaw = parseInt(match[4]); // Strike * 1000
+  const strike = strikeRaw / 1000;
 
-  // Priority 2: window.__PRELOADED_STATE__
-  const preloadedMatch = html.match(/window\.__PRELOADED_STATE__\s*=\s*(\{[\s\S]*?\});?\s*(?:<\/script>|window\.)/);
-  if (preloadedMatch && preloadedMatch[1]) {
-    try {
-      const json = JSON.parse(preloadedMatch[1]);
-      console.log(`Extracted PRELOADED_STATE JSON, size=${preloadedMatch[1].length}`);
-      return { method: 'PRELOADED_STATE', json };
-    } catch (e) {
-      console.log(`PRELOADED_STATE parse failed: ${e}`);
-    }
-  }
+  // Parse expiration date
+  const year = 2000 + parseInt(dateStr.slice(0, 2));
+  const month = dateStr.slice(2, 4);
+  const day = dateStr.slice(4, 6);
+  const expiry = `${year}-${month}-${day}`;
 
-  // Priority 3: Barchart-specific patterns - look for data-ng-init with JSON
-  const ngInitMatch = html.match(/data-ng-init="[^"]*optionsData\s*=\s*(\{[\s\S]*?\})\s*[;"]?/);
-  if (ngInitMatch && ngInitMatch[1]) {
-    try {
-      // Angular escapes quotes, need to unescape
-      const unescaped = ngInitMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-      const json = JSON.parse(unescaped);
-      console.log(`Extracted ng-init JSON, size=${ngInitMatch[1].length}`);
-      return { method: 'other_json', json };
-    } catch (e) {
-      console.log(`ng-init parse failed: ${e}`);
-    }
-  }
+  return { underlying, expiry, option_type: optType, strike };
+}
 
-  // Priority 4: Look for bc-options-table or similar data attributes with JSON
-  const bcDataMatch = html.match(/data-options="([^"]+)"/i) || 
-                      html.match(/data-options-chain="([^"]+)"/i) ||
-                      html.match(/data-symbol-data="([^"]+)"/i);
-  if (bcDataMatch && bcDataMatch[1]) {
-    try {
-      const decoded = bcDataMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-      const json = JSON.parse(decoded);
-      console.log(`Extracted data-attribute JSON, size=${bcDataMatch[1].length}`);
-      return { method: 'other_json', json };
-    } catch (e) {
-      console.log(`data-attribute parse failed: ${e}`);
-    }
-  }
+// Extract numeric values from text window around symbol
+function extractDataFromWindow(window: string): { volume: number | null; openInterest: number | null; iv: number | null; price: number | null } {
+  let volume: number | null = null;
+  let openInterest: number | null = null;
+  let iv: number | null = null;
+  let price: number | null = null;
 
-  // Priority 5: Extract data from HTML table directly (Barchart renders options as table)
-  // Look for table rows with options data
-  const tableData = extractFromBarchartTable(html, ticker);
-  if (tableData.length > 0) {
-    console.log(`Extracted ${tableData.length} options from HTML table`);
-    return { method: 'other_json', json: { options: tableData } };
-  }
-
-  // Priority 6: Any large inline script with optionsData
-  const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-  let match;
-  while ((match = scriptPattern.exec(html)) !== null) {
-    const content = match[1];
-    // Look for options-related data
-    if (content.includes('options') && content.includes('strike')) {
-      // Try to extract JSON object
-      const jsonMatch = content.match(/\{[\s\S]*?"strike"[\s\S]*?\}/);
-      if (jsonMatch) {
-        try {
-          const json = JSON.parse(jsonMatch[0]);
-          console.log(`Extracted inline script JSON with strike data`);
-          return { method: 'other_json', json };
-        } catch { }
+  // Look for volume patterns
+  const volumePatterns = [
+    /["']?volume["']?\s*[:\=]\s*["']?([0-9,]+)["']?/i,
+    /\bvol\b[:\s]*([0-9,]+)/i,
+    /Volume[:\s]*([0-9,]+)/i,
+    />([0-9,]+)<\/(?:td|span)[^>]*>\s*<(?:td|span)[^>]*>([0-9,]+)</i, // table cells
+  ];
+  
+  for (const pattern of volumePatterns) {
+    const match = window.match(pattern);
+    if (match) {
+      const val = parseInt(match[1].replace(/,/g, ''));
+      if (!isNaN(val) && val > 0 && val < 100000000) {
+        volume = val;
+        break;
       }
     }
   }
 
-  return { method: 'none', json: null, error: 'No extractable JSON found in HTML' };
+  // Look for open interest patterns
+  const oiPatterns = [
+    /["']?openInterest["']?\s*[:\=]\s*["']?([0-9,]+)["']?/i,
+    /open\s*interest[:\s]*([0-9,]+)/i,
+    /\bOI\b[:\s]*([0-9,]+)/i,
+  ];
+  
+  for (const pattern of oiPatterns) {
+    const match = window.match(pattern);
+    if (match) {
+      const val = parseInt(match[1].replace(/,/g, ''));
+      if (!isNaN(val) && val >= 0 && val < 100000000) {
+        openInterest = val;
+        break;
+      }
+    }
+  }
+
+  // Look for IV patterns
+  const ivPatterns = [
+    /["']?(?:impliedVolatility|iv)["']?\s*[:\=]\s*["']?([0-9.]+)["']?/i,
+    /\bIV\b[:\s]*([0-9.]+)%?/i,
+    /implied\s*vol(?:atility)?[:\s]*([0-9.]+)/i,
+  ];
+  
+  for (const pattern of ivPatterns) {
+    const match = window.match(pattern);
+    if (match) {
+      let val = parseFloat(match[1]);
+      if (!isNaN(val) && val > 0) {
+        // Convert percentage to decimal if > 1
+        if (val > 1) val = val / 100;
+        if (val < 5) { // Reasonable IV range 0-500%
+          iv = val;
+          break;
+        }
+      }
+    }
+  }
+
+  // Look for price patterns
+  const pricePatterns = [
+    /["']?(?:lastPrice|last|mark|midpoint)["']?\s*[:\=]\s*["']?([0-9.]+)["']?/i,
+    /\$([0-9.]+)/,
+    /Last[:\s]*([0-9.]+)/i,
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const match = window.match(pattern);
+    if (match) {
+      const val = parseFloat(match[1]);
+      if (!isNaN(val) && val > 0 && val < 10000) { // Reasonable option price
+        price = val;
+        break;
+      }
+    }
+  }
+
+  return { volume, openInterest, iv, price };
 }
 
-function extractFromBarchartTable(html: string, ticker: string): any[] {
-  const options: any[] = [];
-  
-  // Barchart options page has two tables: Calls and Puts
-  // Each row typically has: Symbol, Last, Change, Bid, Ask, Volume, OI, IV
-  
-  // Find option rows - look for rows containing option symbols like SPY250103C00590000
-  const symbolPattern = new RegExp(`(${ticker})(\\d{6})([CP])(\\d{8})`, 'g');
-  const matches = html.matchAll(symbolPattern);
+function extractOCCSymbolsFromHtml(html: string, ticker: string, debug: boolean): OCCSymbolData[] {
+  const results: OCCSymbolData[] = [];
   const seenSymbols = new Set<string>();
+
+  // OCC symbol regex - case insensitive
+  // Pattern: 1-6 letters + 6 digits (YYMMDD) + C or P + 8 digits
+  const occPattern = new RegExp(`\\b([A-Za-z]{1,6})(\\d{6})([CcPp])(\\d{8})\\b`, 'g');
   
-  for (const match of matches) {
+  let match;
+  let matchCount = 0;
+  const debugMatches: { symbol: string; window: string }[] = [];
+  
+  while ((match = occPattern.exec(html)) !== null) {
     const symbol = match[0].toUpperCase();
+    const underlying = match[1].toUpperCase();
+    
+    // Filter to only our target ticker
+    if (underlying !== ticker.toUpperCase()) continue;
+    
+    // Skip duplicates
     if (seenSymbols.has(symbol)) continue;
     seenSymbols.add(symbol);
+    matchCount++;
     
-    // Parse the symbol: TICKER + YYMMDD + C/P + SSSSS000 (strike * 1000)
-    const dateStr = match[2]; // YYMMDD
-    const optType = match[3].toUpperCase() === 'C' ? 'call' : 'put';
-    const strikeRaw = parseInt(match[4]); // Strike * 1000
-    const strike = strikeRaw / 1000;
+    // Parse the OCC symbol
+    const parsed = parseOCCSymbol(symbol);
+    if (!parsed) continue;
     
-    // Parse expiration date
-    const year = 2000 + parseInt(dateStr.slice(0, 2));
-    const month = dateStr.slice(2, 4);
-    const day = dateStr.slice(4, 6);
-    const expDate = `${year}-${month}-${day}`;
+    // Get a window around the match to find volume/OI/IV/price
+    const matchStart = match.index;
+    const matchEnd = matchStart + match[0].length;
+    const windowStart = Math.max(0, matchStart - 400);
+    const windowEnd = Math.min(html.length, matchEnd + 400);
+    const window = html.slice(windowStart, windowEnd);
     
-    // Find the table row containing this symbol to extract volume/OI
-    const symbolIndex = html.indexOf(symbol);
-    const rowStart = html.lastIndexOf('<tr', symbolIndex);
-    const rowEnd = html.indexOf('</tr>', symbolIndex);
-    
-    if (rowStart >= 0 && rowEnd >= 0) {
-      const rowHtml = html.slice(rowStart, rowEnd + 5);
-      
-      // Extract numeric values from table cells
-      const cellPattern = /<td[^>]*>[\s]*([0-9,]+(?:\.\d+)?)[\s]*<\/td>/gi;
-      const numbers: number[] = [];
-      let cellMatch;
-      
-      while ((cellMatch = cellPattern.exec(rowHtml)) !== null) {
-        const n = parseFloat(cellMatch[1].replace(/,/g, ''));
-        if (!isNaN(n) && n >= 0) {
-          numbers.push(n);
-        }
-      }
-      
-      // Also try matching numbers not in td tags (some might be in spans)
-      const spanPattern = />([0-9,]+(?:\.\d+)?)</g;
-      while ((cellMatch = spanPattern.exec(rowHtml)) !== null) {
-        const n = parseFloat(cellMatch[1].replace(/,/g, ''));
-        if (!isNaN(n) && n >= 0 && !numbers.includes(n)) {
-          numbers.push(n);
-        }
-      }
-      
-      // Barchart column order: Last, Change, Bid, Ask, Volume, OI, IV
-      // We need Volume (usually 5th number after strike-like numbers are filtered)
-      // Filter out strike (which matches our extracted strike)
-      const nonStrikeNumbers = numbers.filter(n => Math.abs(n - strike) > 0.5);
-      
-      // Find volume: should be a larger integer
-      let volume = 0;
-      let openInterest = 0;
-      let lastPrice = 0;
-      let iv = 0;
-      
-      for (const n of nonStrikeNumbers) {
-        if (n > 0 && n < 100 && lastPrice === 0) {
-          lastPrice = n; // Option prices typically < $100
-        } else if (n >= 50 && n < 100000000 && Number.isInteger(n)) {
-          if (volume === 0) {
-            volume = n;
-          } else if (openInterest === 0) {
-            openInterest = n;
-          }
-        } else if (n > 0 && n < 500 && n !== lastPrice) {
-          // IV as percentage
-          if (iv === 0 && n > 1) {
-            iv = n;
-          }
-        }
-      }
-      
-      if (volume > 50 && strike > 10 && strike < 10000) {
-        options.push({
-          symbol,
-          strike,
-          strikePrice: strike,
-          expiration: expDate,
-          expirationDate: expDate,
-          optionType: optType,
-          type: optType,
-          volume,
-          openInterest,
-          impliedVolatility: iv > 0 ? iv / 100 : null,
-          lastPrice,
-          last: lastPrice,
-        });
-      }
-    }
-  }
-  
-  console.log(`Table extraction found ${options.length} options with volume > 50 for ${ticker}`);
-  return options;
-}
-
-function findOptionsInJson(json: any, ticker: string): any[] {
-  // Helper to recursively search for options data
-  const options: any[] = [];
-  
-  function searchObject(obj: any, depth: number = 0): void {
-    if (depth > 10 || !obj) return;
-    
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
-        // Check if item looks like an option contract
-        if (item && typeof item === 'object') {
-          const hasStrike = 'strike' in item || 'strikePrice' in item || 'Strike' in item;
-          const hasVolume = 'volume' in item || 'Volume' in item || 'totalVolume' in item;
-          const hasType = 'optionType' in item || 'type' in item || 'callPut' in item || 'putCall' in item;
-          
-          if (hasStrike && (hasVolume || hasType)) {
-            options.push(item);
-          } else {
-            searchObject(item, depth + 1);
-          }
-        }
-      }
-    } else if (typeof obj === 'object') {
-      // Check common container keys
-      const optionKeys = ['options', 'calls', 'puts', 'optionChain', 'data', 'items', 'contracts'];
-      
-      for (const key of Object.keys(obj)) {
-        if (optionKeys.includes(key.toLowerCase())) {
-          searchObject(obj[key], depth + 1);
-        }
-      }
-      
-      // Also check if this object itself is an option
-      const hasStrike = 'strike' in obj || 'strikePrice' in obj || 'Strike' in obj;
-      const hasVolume = 'volume' in obj || 'Volume' in obj || 'totalVolume' in obj;
-      
-      if (hasStrike && hasVolume) {
-        options.push(obj);
-      } else {
-        for (const value of Object.values(obj)) {
-          if (typeof value === 'object') {
-            searchObject(value, depth + 1);
-          }
-        }
-      }
-    }
-  }
-  
-  searchObject(json);
-  return options;
-}
-
-function normalizeOption(rawOpt: any, ticker: string): ParsedOption | null {
-  try {
-    // Extract strike price
-    const strike = rawOpt.strike || rawOpt.strikePrice || rawOpt.Strike || 
-                   rawOpt.strike_price || parseFloat(rawOpt.strikeDisplay);
-    if (!strike || strike <= 0 || strike > 10000) return null;
-    
-    // Extract volume
-    const volume = rawOpt.volume || rawOpt.Volume || rawOpt.totalVolume || 
-                   rawOpt.tradeVolume || parseInt(rawOpt.volumeDisplay?.replace(/,/g, ''));
-    if (!volume || volume <= 50) return null; // Volume filter
-    
-    // Extract option type
-    let optionType = 'call';
-    const typeVal = rawOpt.optionType || rawOpt.type || rawOpt.callPut || rawOpt.putCall || '';
-    if (typeof typeVal === 'string') {
-      optionType = typeVal.toLowerCase().includes('put') || typeVal === 'P' ? 'put' : 'call';
+    // Collect debug info for first few matches
+    if (debug && debugMatches.length < 3) {
+      const shortWindow = html.slice(Math.max(0, matchStart - 150), Math.min(html.length, matchEnd + 150));
+      debugMatches.push({ symbol, window: shortWindow });
     }
     
-    // Extract expiration
-    let expiration: string | null = null;
-    const expVal = rawOpt.expiration || rawOpt.expirationDate || rawOpt.expiry || 
-                   rawOpt.expiryDate || rawOpt.Expiration;
-    if (expVal) {
-      if (typeof expVal === 'number') {
-        // Unix timestamp
-        expiration = new Date(expVal * (expVal > 1e12 ? 1 : 1000)).toISOString().split('T')[0];
-      } else if (typeof expVal === 'string') {
-        // Try to parse date string
-        const d = new Date(expVal);
-        if (!isNaN(d.getTime())) {
-          expiration = d.toISOString().split('T')[0];
-        } else {
-          // Try YYMMDD format
-          const match = expVal.match(/(\d{2})(\d{2})(\d{2})/);
-          if (match) {
-            expiration = `20${match[1]}-${match[2]}-${match[3]}`;
-          }
-        }
-      }
-    }
+    // Extract numeric data from the window
+    const { volume, openInterest, iv, price } = extractDataFromWindow(window);
     
-    // Extract open interest
-    const openInterest = rawOpt.openInterest || rawOpt.OpenInterest || rawOpt.oi || 
-                         rawOpt.open_interest || parseInt(rawOpt.openInterestDisplay?.replace(/,/g, '')) || null;
-    
-    // Extract IV
-    let iv = rawOpt.impliedVolatility || rawOpt.iv || rawOpt.IV || rawOpt.impliedVol || null;
-    if (iv && iv > 10) iv = iv / 100; // Convert percentage to decimal if needed
-    
-    // Extract price for premium calculation
-    const price = rawOpt.lastPrice || rawOpt.last || rawOpt.mark || rawOpt.midpoint || 
-                  rawOpt.price || rawOpt.Last || null;
-    
-    // Premium as notional: price * volume * 100 (for contracts)
-    let premium: number | null = null;
-    if (price && price > 0) {
-      premium = Math.round(price * volume * 100);
-    }
-    
-    return {
-      ticker,
-      option_type: optionType,
-      strike_price: strike,
-      expiration_date: expiration,
+    results.push({
+      symbol,
+      underlying: parsed.underlying,
+      expiry: parsed.expiry,
+      option_type: parsed.option_type,
+      strike: parsed.strike,
       volume,
-      open_interest: openInterest,
-      implied_volatility: iv,
-      premium,
-      flow_type: null,
-      sentiment: optionType === 'call' ? 'bullish' : 'bearish',
-      trade_date: new Date().toISOString(),
-      metadata: {
-        source: 'barchart_firecrawl_json',
-        premium_available: premium !== null,
-        iv_available: iv !== null,
-        raw_symbol: rawOpt.symbol || rawOpt.Symbol || rawOpt.contractSymbol || null,
-      }
-    };
-  } catch (e) {
+      openInterest,
+      impliedVolatility: iv,
+      lastPrice: price,
+    });
+  }
+  
+  // Debug logging
+  if (debug && ticker === 'SPY') {
+    console.log(`[DEBUG] ${ticker}: html_length=${html.length}`);
+    console.log(`[DEBUG] ${ticker}: occ_symbols_found=${matchCount}`);
+    
+    const uniqueSymbols = [...seenSymbols].slice(0, 10);
+    console.log(`[DEBUG] ${ticker}: first_10_symbols=${JSON.stringify(uniqueSymbols)}`);
+    
+    for (let i = 0; i < debugMatches.length; i++) {
+      console.log(`[DEBUG] ${ticker}: match_${i+1}_symbol=${debugMatches[i].symbol}`);
+      console.log(`[DEBUG] ${ticker}: match_${i+1}_window=${debugMatches[i].window.replace(/\n/g, ' ').slice(0, 300)}`);
+    }
+  }
+  
+  return results;
+}
+
+function convertToInsertableOption(data: OCCSymbolData): ParsedOption | null {
+  // Only insert if volume found and > 50
+  if (data.volume === null || data.volume <= 50) {
     return null;
   }
+  
+  // Validate strike is reasonable
+  if (data.strike <= 0 || data.strike > 10000) {
+    return null;
+  }
+  
+  // Calculate premium if price available
+  let premium: number | null = null;
+  if (data.lastPrice && data.lastPrice > 0) {
+    premium = Math.round(data.lastPrice * data.volume * 100);
+  }
+  
+  const missingFields: string[] = [];
+  if (data.openInterest === null) missingFields.push('openInterest');
+  if (data.impliedVolatility === null) missingFields.push('iv');
+  if (data.lastPrice === null) missingFields.push('price');
+  
+  return {
+    ticker: data.underlying,
+    option_type: data.option_type,
+    strike_price: data.strike,
+    expiration_date: data.expiry,
+    volume: data.volume,
+    open_interest: data.openInterest,
+    implied_volatility: data.impliedVolatility,
+    premium,
+    flow_type: null,
+    sentiment: data.option_type === 'call' ? 'bullish' : 'bearish',
+    trade_date: new Date().toISOString(),
+    metadata: {
+      source: 'barchart_firecrawl_occ',
+      occ_symbol: data.symbol,
+      premium_available: premium !== null,
+      iv_available: data.impliedVolatility !== null,
+      oi_available: data.openInterest !== null,
+      missing_fields: missingFields.length > 0 ? missingFields : undefined,
+    }
+  };
 }
 
-async function fetchOptionsViaFirecrawl(ticker: string): Promise<{ options: ParsedOption[]; stats: any }> {
+interface FetchResult {
+  options: ParsedOption[];
+  stats: {
+    html_length: number;
+    occ_symbols_found: number;
+    contracts_with_volume_found: number;
+    contracts_inserted: number;
+    error: string | null;
+  };
+}
+
+async function fetchOptionsViaFirecrawl(ticker: string, debug: boolean): Promise<FetchResult> {
   const stats = {
     html_length: 0,
-    extraction_method: 'none' as string,
-    contracts_found: 0,
-    contracts_passing_filter: 0,
+    occ_symbols_found: 0,
+    contracts_with_volume_found: 0,
+    contracts_inserted: 0,
     error: null as string | null,
   };
 
@@ -428,55 +338,45 @@ async function fetchOptionsViaFirecrawl(ticker: string): Promise<{ options: Pars
     return { options: [], stats };
   }
   
-  // Extract JSON from HTML
-  const extraction = extractJsonFromHtml(result.html, ticker);
-  stats.extraction_method = extraction.method;
+  // Extract OCC symbols from HTML
+  const occData = extractOCCSymbolsFromHtml(result.html, ticker, debug);
+  stats.occ_symbols_found = occData.length;
   
-  if (extraction.method === 'none' || !extraction.json) {
-    stats.error = extraction.error || 'No JSON extracted';
-    console.log(`${ticker}: ${stats.error}`);
+  console.log(`${ticker}: Found ${occData.length} OCC symbols`);
+  
+  if (occData.length === 0) {
+    stats.error = 'no OCC symbols found in HTML; site may be rendering data via XHR';
     return { options: [], stats };
   }
   
-  console.log(`${ticker}: Extracted JSON via ${extraction.method}`);
+  // Count how many have volume
+  const withVolume = occData.filter(d => d.volume !== null && d.volume > 0);
+  stats.contracts_with_volume_found = withVolume.length;
   
-  // Find options in the JSON structure
-  let rawOptions = findOptionsInJson(extraction.json, ticker);
+  console.log(`${ticker}: ${withVolume.length} symbols have volume data`);
   
-  // If extraction was from table, options are already in extraction.json.options
-  if (rawOptions.length === 0 && extraction.json?.options) {
-    rawOptions = extraction.json.options;
-    console.log(`${ticker}: Using pre-extracted table options: ${rawOptions.length}`);
-  }
-  
-  stats.contracts_found = rawOptions.length;
-  
-  console.log(`${ticker}: Found ${rawOptions.length} raw option contracts in JSON`);
-  
-  if (rawOptions.length === 0) {
-    // Log some JSON structure for debugging
-    const keys = Object.keys(extraction.json || {}).slice(0, 10);
-    console.log(`${ticker}: Top-level JSON keys: ${keys.join(', ')}`);
-  }
-  
-  // Normalize and filter options
+  // Convert to insertable options (applies volume > 50 filter)
   const options: ParsedOption[] = [];
-  for (const raw of rawOptions) {
-    const normalized = normalizeOption(raw, ticker);
-    if (normalized) {
-      options.push(normalized);
+  for (const data of occData) {
+    const opt = convertToInsertableOption(data);
+    if (opt) {
+      options.push(opt);
     }
   }
   
-  stats.contracts_passing_filter = options.length;
   console.log(`${ticker}: ${options.length} contracts passed volume>50 filter`);
   
-  // Keep top 10 by volume
+  // Sort by volume desc and take top 10
   const sorted = options.sort((a, b) => b.volume - a.volume).slice(0, 10);
+  stats.contracts_inserted = sorted.length;
   
-  // Add extraction method to metadata
+  // Add debug stats to metadata
   for (const opt of sorted) {
-    opt.metadata.extraction = extraction.method;
+    opt.metadata.debug = {
+      occ_symbols_found: stats.occ_symbols_found,
+      contracts_with_volume_found: stats.contracts_with_volume_found,
+      contracts_inserted: stats.contracts_inserted,
+    };
   }
   
   return { options: sorted, stats };
@@ -492,15 +392,21 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v8] Options flow ingestion - Firecrawl + JSON extraction');
+    console.log('[v9] Options flow ingestion - OCC symbol extraction from Barchart HTML');
     
-    // Parse request body for custom tickers
+    // Parse request body for custom tickers and debug mode
     let tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
+    let debug = false;
+    
     try {
       const body = await req.json();
       if (body?.tickers && Array.isArray(body.tickers) && body.tickers.length > 0) {
         tickers = body.tickers;
         console.log(`Using custom tickers: ${tickers.join(', ')}`);
+      }
+      if (body?.debug === true) {
+        debug = true;
+        console.log('[DEBUG MODE ENABLED]');
       }
     } catch {
       // No body or invalid JSON, use defaults
@@ -510,33 +416,43 @@ serve(async (req) => {
     const allStats: Record<string, any> = {};
     
     for (const ticker of tickers) {
-      const { options, stats } = await fetchOptionsViaFirecrawl(ticker);
+      const { options, stats } = await fetchOptionsViaFirecrawl(ticker, debug);
       allOptions.push(...options);
       allStats[ticker] = stats;
       
-      // Throttle between tickers (400ms minimum)
+      // Throttle between tickers (500ms)
       if (tickers.indexOf(ticker) < tickers.length - 1) {
         await new Promise(r => setTimeout(r, 500));
       }
     }
     
     // Aggregate stats
-    const totalFound = Object.values(allStats).reduce((sum: number, s: any) => sum + (s.contracts_found || 0), 0);
-    const totalPassing = Object.values(allStats).reduce((sum: number, s: any) => sum + (s.contracts_passing_filter || 0), 0);
+    const totalOccSymbols = Object.values(allStats).reduce((sum: number, s: any) => sum + (s.occ_symbols_found || 0), 0);
+    const totalWithVolume = Object.values(allStats).reduce((sum: number, s: any) => sum + (s.contracts_with_volume_found || 0), 0);
+    const totalToInsert = allOptions.length;
     
-    console.log(`Total: ${totalFound} contracts found, ${totalPassing} passed volume filter, ${allOptions.length} to insert`);
+    console.log(`Total: ${totalOccSymbols} OCC symbols found, ${totalWithVolume} have volume, ${totalToInsert} to insert`);
 
     // Handle zero rows case
     if (allOptions.length === 0) {
       console.warn('⚠️ No options data to insert');
       
+      let reason = '';
+      if (totalOccSymbols === 0) {
+        reason = 'no OCC symbols found in HTML; site may be rendering data via XHR';
+      } else if (totalWithVolume === 0) {
+        reason = 'symbols found but volume not extractable from HTML';
+      } else {
+        reason = `symbols found but none passed volume>50 filter (${totalWithVolume} had volume)`;
+      }
+      
       const extractionSummary = Object.entries(allStats)
-        .map(([t, s]: [string, any]) => `${t}:${s.extraction_method}(${s.contracts_found}→${s.contracts_passing_filter})`)
+        .map(([t, s]: [string, any]) => `${t}:${s.occ_symbols_found}occ/${s.contracts_with_volume_found}vol`)
         .join(', ');
       
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: ['Barchart via Firecrawl JSON'],
-        reason: `No data: ${extractionSummary} | tickers: ${tickers.join(',')} | found: ${totalFound}, passed: ${totalPassing}`
+        sourcesAttempted: ['Barchart via Firecrawl OCC'],
+        reason: `${reason} | ${extractionSummary}`
       });
       
       await supabase.from('function_status').insert({
@@ -544,32 +460,35 @@ serve(async (req) => {
         executed_at: new Date().toISOString(),
         status: 'warning',
         rows_inserted: 0,
-        rows_skipped: totalFound - totalPassing,
+        rows_skipped: totalWithVolume,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl_Barchart_JSON',
-        error_message: 'Zero rows inserted',
+        source_used: 'Firecrawl_Barchart_OCC',
+        error_message: reason,
         metadata: { 
-          version: 'v8_json_extraction',
-          reason: 'no_data',
-          contracts_found: totalFound,
-          contracts_passed_filter: totalPassing,
+          version: 'v9_occ_extraction',
+          reason,
+          occ_symbols_found: totalOccSymbols,
+          contracts_with_volume_found: totalWithVolume,
           tickers,
-          per_ticker: allStats
+          per_ticker: allStats,
+          debug_mode: debug
         }
       });
       
       return new Response(JSON.stringify({ 
         success: true, 
         count: 0,
-        source: 'Firecrawl_Barchart_JSON',
-        version: 'v8_json_extraction',
+        source: 'Firecrawl_Barchart_OCC',
+        version: 'v9_occ_extraction',
+        debug_mode: debug,
         stats: { 
-          contracts_found: totalFound,
-          contracts_passed_filter: totalPassing,
+          occ_symbols_found: totalOccSymbols,
+          contracts_with_volume_found: totalWithVolume,
           tickers_processed: tickers.length
         },
         per_ticker: allStats,
-        message: 'No options met volume>50 criteria'
+        reason,
+        message: 'No options met criteria'
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -592,7 +511,7 @@ serve(async (req) => {
       status: inserted > 0 ? 'success' : 'partial',
       rowsInserted: inserted, 
       rowsSkipped: allOptions.length - inserted, 
-      sourceUsed: 'Firecrawl_Barchart_JSON', 
+      sourceUsed: 'Firecrawl_Barchart_OCC', 
       duration: Date.now() - startTime
     });
 
@@ -601,25 +520,27 @@ serve(async (req) => {
       executed_at: new Date().toISOString(),
       status: 'success',
       rows_inserted: inserted,
-      rows_skipped: totalFound - inserted,
+      rows_skipped: totalWithVolume - inserted,
       duration_ms: Date.now() - startTime,
-      source_used: 'Firecrawl_Barchart_JSON',
+      source_used: 'Firecrawl_Barchart_OCC',
       metadata: { 
-        version: 'v8_json_extraction',
-        contracts_found: totalFound,
-        contracts_passed_filter: totalPassing,
-        tickers_processed: tickers.length
+        version: 'v9_occ_extraction',
+        occ_symbols_found: totalOccSymbols,
+        contracts_with_volume_found: totalWithVolume,
+        tickers_processed: tickers.length,
+        debug_mode: debug
       }
     });
 
     return new Response(JSON.stringify({ 
       success: true, 
       count: inserted, 
-      source: 'Firecrawl_Barchart_JSON',
-      version: 'v8_json_extraction',
+      source: 'Firecrawl_Barchart_OCC',
+      version: 'v9_occ_extraction',
+      debug_mode: debug,
       stats: {
-        contracts_found: totalFound,
-        contracts_passed_filter: totalPassing,
+        occ_symbols_found: totalOccSymbols,
+        contracts_with_volume_found: totalWithVolume,
         tickers_processed: tickers.length
       },
       message: `Inserted ${inserted} options records`
