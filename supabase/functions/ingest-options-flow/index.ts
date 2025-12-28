@@ -120,20 +120,49 @@ function findCandidateEndpoints(text: string): string[] {
   return uniqueLimit(filtered, 200);
 }
 
-function extractBundleScriptSrcs(html: string): string[] {
+function extractBundleScriptSrcs(html: string, limit = 8): string[] {
   const urls: string[] = [];
-  const re = /<script[^>]+src="([^"]+)"[^>]*>/gi;
+  const seen = new Set<string>();
+  const re = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
   let m;
+  
+  const priorityKeywords = ['main', 'app', 'bundle', 'chunk', 'runtime', 'vendor'];
+  const allSrcs: { src: string; priority: number }[] = [];
+  
   while ((m = re.exec(html)) !== null) {
-    const src = m[1];
+    let src = m[1];
     if (!src) continue;
+    
+    // Normalize URL
+    if (src.startsWith('//')) src = `https:${src}`;
+    else if (src.startsWith('/')) src = `https://www.barchart.com${src}`;
+    else if (!src.startsWith('http')) src = `https://www.barchart.com/${src}`;
+    
+    if (seen.has(src)) continue;
+    seen.add(src);
+    
     const lc = src.toLowerCase();
-    const isBundle = lc.includes('/_next/') || lc.includes('bundle') || lc.includes('app') || lc.includes('main') || lc.includes('.js');
-    if (!isBundle) continue;
-    const full = src.startsWith('http') ? src : `https://www.barchart.com${src.startsWith('/') ? '' : '/'}${src}`;
-    urls.push(full);
-    if (urls.length >= 3) break;
+    // Must be a JS file
+    if (!lc.includes('.js')) continue;
+    
+    // Calculate priority (higher = better)
+    let priority = 0;
+    for (const kw of priorityKeywords) {
+      if (lc.includes(kw)) priority += 10;
+    }
+    if (lc.includes('/_next/')) priority += 5;
+    
+    allSrcs.push({ src, priority });
   }
+  
+  // Sort by priority descending
+  allSrcs.sort((a, b) => b.priority - a.priority);
+  
+  for (const { src } of allSrcs) {
+    urls.push(src);
+    if (urls.length >= limit) break;
+  }
+  
   return urls;
 }
 
@@ -393,47 +422,83 @@ function normalizeContract(raw: any, ticker: string, endpointUsed: string, fetch
   };
 }
 
-async function discoverEndpointFromHtmlOrBundles(html: string, debug: boolean) {
-  const htmlCandidates = findCandidateEndpoints(html);
-
-  // Best candidate from HTML
-  const sortedHtml = [...htmlCandidates].sort((a, b) => scoreEndpointCandidate(b) - scoreEndpointCandidate(a));
-  const bestHtml = sortedHtml[0] ? toAbsoluteBarchartUrl(sortedHtml[0]) : null;
-
-  return { htmlCandidates, bestHtml };
+interface ScoredCandidate {
+  url: string;
+  score: number;
+  isHighSignal: boolean;
+  source: 'html' | 'js';
 }
 
-async function discoverEndpointViaBundlesIfNeeded(html: string, debug: boolean) {
-  const bundleUrls = extractBundleScriptSrcs(html);
-  if (bundleUrls.length === 0) {
-    return { bundleUrls, bundleWinners: [] as { url: string; candidates: string[] }[] };
+function scoreCandidates(candidates: string[], source: 'html' | 'js'): ScoredCandidate[] {
+  return candidates.map(c => ({
+    url: toAbsoluteBarchartUrl(c),
+    score: scoreEndpointCandidate(c),
+    isHighSignal: isHighSignalEndpoint(c),
+    source,
+  }));
+}
+
+function hasAnyHighSignalCandidate(candidates: ScoredCandidate[]): boolean {
+  return candidates.some(c => c.isHighSignal);
+}
+
+function getBestScore(candidates: ScoredCandidate[]): number {
+  if (candidates.length === 0) return -999;
+  return Math.max(...candidates.map(c => c.score));
+}
+
+async function discoverEndpointsFromJsBundles(html: string, debug: boolean, maxBundles = 3): Promise<{ bundleUrls: string[]; jsCandidates: ScoredCandidate[] }> {
+  const allBundleUrls = extractBundleScriptSrcs(html, 8);
+  const bundleUrls = allBundleUrls.slice(0, maxBundles);
+  
+  if (debug) {
+    console.log(`[DEBUG] js_bundle_count=${allBundleUrls.length}`);
+    console.log(`[DEBUG] top_3_js_bundles=${JSON.stringify(bundleUrls)}`);
   }
-
-  const winners: { url: string; candidates: string[] }[] = [];
-
+  
+  const jsCandidates: ScoredCandidate[] = [];
+  
   for (const url of bundleUrls) {
-    // low waitFor for static js
     const jsRes = await firecrawlScrape(url, { waitFor: 0, formats: ['rawHtml', 'html'], onlyMainContent: false });
-    await throttle(400);
-
+    await throttle(300);
+    
     const js = jsRes.content;
-    if (!js || js.length < 5000) continue;
-
-    const cands = findCandidateEndpoints(js);
-    if (cands.length > 0) {
-      winners.push({ url, candidates: cands });
-      // stop early once we have candidates from a bundle
+    if (!js) continue;
+    
+    // Scan only first 2MB
+    const text = js.slice(0, 2 * 1024 * 1024);
+    const cands = findCandidateEndpoints(text);
+    const scored = scoreCandidates(cands, 'js');
+    jsCandidates.push(...scored);
+    
+    // If we found high-signal endpoints, stop early
+    if (hasAnyHighSignalCandidate(scored)) {
+      if (debug) console.log(`[DEBUG] high_signal_found_in_bundle=${url}`);
       break;
     }
   }
-
-  return { bundleUrls, bundleWinners: winners };
+  
+  return { bundleUrls, jsCandidates };
 }
 
-function chooseEndpointDeterministically(candidates: string[]): string | null {
-  if (!candidates.length) return null;
-  const sorted = [...candidates].sort((a, b) => scoreEndpointCandidate(b) - scoreEndpointCandidate(a));
-  return toAbsoluteBarchartUrl(sorted[0]);
+function selectBestEndpoint(htmlCandidates: ScoredCandidate[], jsCandidates: ScoredCandidate[]): ScoredCandidate | null {
+  // Priority 1: High-signal JS endpoints
+  const highSignalJs = jsCandidates.filter(c => c.isHighSignal).sort((a, b) => b.score - a.score);
+  if (highSignalJs.length > 0) return highSignalJs[0];
+  
+  // Priority 2: High-signal HTML endpoints
+  const highSignalHtml = htmlCandidates.filter(c => c.isHighSignal).sort((a, b) => b.score - a.score);
+  if (highSignalHtml.length > 0) return highSignalHtml[0];
+  
+  // Priority 3: Best scored from any source (but penalize page URLs heavily)
+  const all = [...jsCandidates, ...htmlCandidates].sort((a, b) => b.score - a.score);
+  
+  // Filter out obvious page URLs (score < 0)
+  const nonPageUrls = all.filter(c => c.score >= 0);
+  if (nonPageUrls.length > 0) return nonPageUrls[0];
+  
+  // Fallback to best overall (may be a page URL)
+  return all.length > 0 ? all[0] : null;
 }
 
 async function fetchOptionsJsonViaEndpoint(endpointUrl: string) {
@@ -442,15 +507,15 @@ async function fetchOptionsJsonViaEndpoint(endpointUrl: string) {
   const preview = jsonPreview(content, 120);
 
   if (!res.ok || !res.content) {
-    return { ok: false, status: res.status, json: null as any, preview, error: res.error ?? 'Firecrawl scrape failed' };
+    return { ok: false, status: res.status, json: null as any, preview, contentLength: content.length, error: res.error ?? 'Firecrawl scrape failed' };
   }
 
   const parsed = extractJsonPayload(content);
   if (!parsed.ok) {
-    return { ok: false, status: res.status, json: null as any, preview, error: parsed.error ?? 'Not JSON' };
+    return { ok: false, status: res.status, json: null as any, preview, contentLength: content.length, error: parsed.error ?? 'Not JSON' };
   }
 
-  return { ok: true, status: res.status, json: parsed.json, preview, error: null as string | null };
+  return { ok: true, status: res.status, json: parsed.json, preview, contentLength: content.length, error: null as string | null };
 }
 
 serve(async (req) => {
@@ -524,42 +589,48 @@ serve(async (req) => {
 
     await throttle(400);
 
-    const { htmlCandidates } = await discoverEndpointFromHtmlOrBundles(html, debug);
+    // Step 1: Extract HTML candidates
+    const htmlCandidatesRaw = findCandidateEndpoints(html);
+    const htmlCandidates = scoreCandidates(htmlCandidatesRaw, 'html');
+    const bestHtmlScore = getBestScore(htmlCandidates);
+    const hasHighSignalHtml = hasAnyHighSignalCandidate(htmlCandidates);
 
     if (debug) {
-      const first10 = uniqueLimit(htmlCandidates, 10).map((s) => s.slice(0, 200));
       console.log(`[DEBUG] html_length=${htmlLength}`);
-      console.log(`[DEBUG] num_candidate_endpoints_found=${htmlCandidates.length}`);
-      console.log(`[DEBUG] first_10_candidate_endpoints=${JSON.stringify(first10)}`);
-    }
-
-    let allCandidates = [...htmlCandidates];
-
-    // Step 2: If none found in HTML, scrape up to 3 JS bundles via Firecrawl and scan
-    let bundleDiscovery: { bundleUrls: string[]; bundleWinners: { url: string; candidates: string[] }[] } | null = null;
-    if (allCandidates.length === 0) {
-      bundleDiscovery = await discoverEndpointViaBundlesIfNeeded(html, debug);
-      const winners = bundleDiscovery.bundleWinners;
-      if (winners.length > 0) {
-        // merge candidates from the winner bundle
-        allCandidates = winners[0].candidates;
-        if (debug) {
-          console.log(`[DEBUG] bundle_candidates_from=${winners[0].url}`);
-          const first10 = uniqueLimit(winners[0].candidates, 10).map((s) => s.slice(0, 200));
-          console.log(`[DEBUG] bundle_num_candidate_endpoints_found=${winners[0].candidates.length}`);
-          console.log(`[DEBUG] bundle_first_10_candidate_endpoints=${JSON.stringify(first10)}`);
-        }
-      } else {
-        if (debug) {
-          console.log(`[DEBUG] bundle_urls_scanned=${JSON.stringify(bundleDiscovery.bundleUrls)}`);
-          console.log('[DEBUG] bundle_candidates_found=0');
-        }
+      console.log(`[DEBUG] html_candidates_count=${htmlCandidates.length}`);
+      const top5Html = htmlCandidates.sort((a, b) => b.score - a.score).slice(0, 5);
+      for (let i = 0; i < top5Html.length; i++) {
+        console.log(`[DEBUG] html_candidate_${i+1}: score=${top5Html[i].score} highSignal=${top5Html[i].isHighSignal} url=${top5Html[i].url.slice(0, 150)}`);
       }
     }
 
-    // Step 2 (deterministic selection)
-    const chosenCandidate = chooseEndpointDeterministically(allCandidates);
-    if (!chosenCandidate) {
+    // Step 2: Force JS bundle scanning if HTML is low-signal
+    const mustScanBundles = htmlCandidates.length === 0 || bestHtmlScore < 30 || !hasHighSignalHtml;
+    
+    let jsCandidates: ScoredCandidate[] = [];
+    let bundleUrls: string[] = [];
+
+    if (mustScanBundles) {
+      if (debug) console.log(`[DEBUG] scanning_js_bundles=true (html_score=${bestHtmlScore}, hasHighSignal=${hasHighSignalHtml})`);
+      const bundleResult = await discoverEndpointsFromJsBundles(html, debug, 3);
+      bundleUrls = bundleResult.bundleUrls;
+      jsCandidates = bundleResult.jsCandidates;
+
+      if (debug) {
+        console.log(`[DEBUG] js_candidates_count=${jsCandidates.length}`);
+        const top5Js = jsCandidates.sort((a, b) => b.score - a.score).slice(0, 5);
+        for (let i = 0; i < top5Js.length; i++) {
+          console.log(`[DEBUG] js_candidate_${i+1}: score=${top5Js[i].score} highSignal=${top5Js[i].isHighSignal} url=${top5Js[i].url.slice(0, 150)}`);
+        }
+      }
+    } else {
+      if (debug) console.log(`[DEBUG] scanning_js_bundles=false (using high-signal HTML candidates)`);
+    }
+
+    // Step 3: Select best endpoint using priority logic
+    const selected = selectBestEndpoint(htmlCandidates, jsCandidates);
+
+    if (!selected) {
       const reason = 'no xhr endpoints found in html/js bundles';
 
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
@@ -577,33 +648,45 @@ serve(async (req) => {
         source_used: 'Firecrawl_Barchart_XHR',
         error_message: reason,
         metadata: {
-          version: 'v10_xhr_discovery',
+          version: 'v11_xhr_discovery',
           reason,
           tickers,
           html_length: htmlLength,
-          html_candidates_found: htmlCandidates.length,
-          bundle_discovery: bundleDiscovery,
+          html_candidates_count: htmlCandidates.length,
+          js_candidates_count: jsCandidates.length,
+          bundle_urls: bundleUrls,
         },
       });
 
-      return new Response(JSON.stringify({ success: true, count: 0, reason, version: 'v10_xhr_discovery' }), {
+      return new Response(JSON.stringify({ success: true, count: 0, reason, version: 'v11_xhr_discovery' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const chosenEndpointTemplate = toAbsoluteBarchartUrl(chosenCandidate);
-    console.log(`Chosen endpoint template: ${chosenEndpointTemplate.slice(0, 200)}`);
+    const selectedEndpoint = selected.url;
+    if (debug) {
+      console.log(`[DEBUG] selected_endpoint=${selectedEndpoint}`);
+      console.log(`[DEBUG] selected_score=${selected.score} selected_source=${selected.source} selected_highSignal=${selected.isHighSignal}`);
+    }
+    console.log(`Chosen endpoint: ${selectedEndpoint.slice(0, 200)}`);
 
-    // Step 3/4: Fetch JSON per ticker and parse contracts
+    // In debug mode, only process first ticker
+    const tickersToProcess = debug ? [tickers[0]] : tickers;
+
+    // Step 4: Fetch JSON per ticker and parse contracts
     const allOptions: ParsedOption[] = [];
     const perTicker: Record<string, any> = {};
 
-    for (let idx = 0; idx < tickers.length; idx++) {
-      const ticker = tickers[idx];
-      const endpointUrl = applyTickerToEndpoint(chosenEndpointTemplate, ticker);
+    for (const ticker of tickersToProcess) {
+      const endpointUrl = applyTickerToEndpoint(selectedEndpoint, ticker);
 
       const jsonRes = await fetchOptionsJsonViaEndpoint(endpointUrl);
       await throttle(400);
+
+      if (debug) {
+        console.log(`[DEBUG] endpoint_fetch: ticker=${ticker} status=${jsonRes.status} contentLength=${jsonRes.contentLength}`);
+        console.log(`[DEBUG] endpoint_preview="${jsonRes.preview}"`);
+      }
 
       if (!jsonRes.ok) {
         console.log(`${ticker}: endpoint_fetch_failed status=${jsonRes.status} preview="${jsonRes.preview}"`);
@@ -651,6 +734,9 @@ serve(async (req) => {
         inserted: top.length,
       };
 
+      if (debug) {
+        console.log(`[DEBUG] ${ticker}: contracts_found=${contractsFound} contracts_passing_filter=${normalized.length} inserted=${top.length}`);
+      }
       console.log(`${ticker}: contracts_found=${contractsFound}, passing_volume_filter=${normalized.length}, selected_top10=${top.length}`);
     }
 
@@ -662,14 +748,14 @@ serve(async (req) => {
       const totalPassing = Object.values(perTicker).reduce((sum: number, s: any) => sum + (s.contracts_passing_filter || 0), 0);
 
       let reason = 'no_data';
-      if (allCandidates.length === 0) reason = 'no xhr endpoints found in html/js bundles';
+      if (htmlCandidates.length === 0 && jsCandidates.length === 0) reason = 'no xhr endpoints found in html/js bundles';
       else if (anyFetchBlocked) reason = 'xhr fetch blocked/unauthorized (see response_preview)';
       else if (totalFound > 0 && totalPassing === 0) reason = 'contracts found but none passed volume>50 filter';
       else if (totalFound === 0) reason = 'endpoint returned no contracts';
 
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
         sourcesAttempted: ['Barchart via Firecrawl XHR'],
-        reason: `${reason} | endpoint=${chosenEndpointTemplate.slice(0, 120)} | found=${totalFound} passed=${totalPassing}`,
+        reason: `${reason} | endpoint=${selectedEndpoint.slice(0, 120)} | found=${totalFound} passed=${totalPassing}`,
       });
 
       await supabase.from('function_status').insert({
@@ -682,12 +768,12 @@ serve(async (req) => {
         source_used: 'Firecrawl_Barchart_XHR',
         error_message: reason,
         metadata: {
-          version: 'v10_xhr_discovery',
+          version: 'v11_xhr_discovery',
           reason,
-          endpoint_template: chosenEndpointTemplate,
-          html_candidates_found: htmlCandidates.length,
-          candidates_used_count: allCandidates.length,
-          tickers,
+          selected_endpoint: selectedEndpoint,
+          html_candidates_count: htmlCandidates.length,
+          js_candidates_count: jsCandidates.length,
+          tickers: tickersToProcess,
           per_ticker: perTicker,
           debug_mode: debug,
         },
@@ -698,8 +784,8 @@ serve(async (req) => {
           success: true,
           count: 0,
           source: 'Firecrawl_Barchart_XHR',
-          version: 'v10_xhr_discovery',
-          endpoint_template: chosenEndpointTemplate,
+          version: 'v11_xhr_discovery',
+          selected_endpoint: selectedEndpoint,
           reason,
           per_ticker: perTicker,
         }),
@@ -741,11 +827,11 @@ serve(async (req) => {
       duration_ms: Date.now() - startTime,
       source_used: 'Firecrawl_Barchart_XHR',
       metadata: {
-        version: 'v10_xhr_discovery',
-        endpoint_template: chosenEndpointTemplate,
+        version: 'v11_xhr_discovery',
+        selected_endpoint: selectedEndpoint,
         contracts_found: totalContractsFound,
         contracts_passed_filter: totalPassing,
-        tickers_processed: tickers.length,
+        tickers_processed: tickersToProcess.length,
         debug_mode: debug,
       },
     });
@@ -755,8 +841,8 @@ serve(async (req) => {
         success: true,
         count: inserted,
         source: 'Firecrawl_Barchart_XHR',
-        version: 'v10_xhr_discovery',
-        endpoint_template: chosenEndpointTemplate,
+        version: 'v11_xhr_discovery',
+        selected_endpoint: selectedEndpoint,
         per_ticker: perTicker,
         message: `Inserted ${inserted} options records`,
       }),
