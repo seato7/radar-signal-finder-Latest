@@ -6,7 +6,7 @@ import logging
 import os
 from backend.db import init_db, close_db
 from backend.init_admin import init_admin
-from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin, auth, broker, api_keys, analytics, assets_populate, prices
+from backend.routers import health, radar, ingest, alerts, backtest, watchlist, assets, themes, healthz, bots, payments, admin, auth, broker, api_keys, analytics, assets_populate, prices, options
 from backend.config import settings
 from backend.logging_config import setup_logging
 from backend.metrics import metrics
@@ -116,6 +116,7 @@ app.include_router(broker.router)
 app.include_router(api_keys.router)
 app.include_router(analytics.router)
 app.include_router(prices.router, prefix="/api/prices", tags=["prices"])
+app.include_router(options.router, tags=["options"])
 
 # Request counting middleware
 @app.middleware("http")

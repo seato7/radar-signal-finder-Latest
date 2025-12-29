@@ -7,515 +7,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v10 - Discover Barchart XHR endpoints (from HTML/JS via Firecrawl) and fetch options chain JSON via Firecrawl
-// Constraints: single-file change, no new env vars, flow_type always null, bounded waits to avoid Edge timeouts.
+// v12 - Railway trigger-only. Edge no longer scrapes; calls Railway backend for options ingestion.
 
-interface ParsedOption {
-  ticker: string;
-  option_type: string;
-  strike_price: number;
-  expiration_date: string | null;
-  volume: number;
-  open_interest: number | null;
-  implied_volatility: number | null;
-  premium: number | null;
-  flow_type: null;
-  sentiment: string;
-  trade_date: string;
-  metadata: Record<string, any>;
-}
-
-type FirecrawlFormats = ('html' | 'rawHtml')[];
-
-async function firecrawlScrape(url: string, opts: { waitFor: number; formats: FirecrawlFormats; onlyMainContent?: boolean }) {
-  const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
-  if (!apiKey) {
-    return { ok: false, status: 500, content: null as string | null, error: 'FIRECRAWL_API_KEY not configured' };
-  }
-
-  try {
-    const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url,
-        formats: opts.formats,
-        waitFor: opts.waitFor,
-        onlyMainContent: opts.onlyMainContent ?? false,
-      }),
-    });
-
-    const status = res.status;
-    if (!res.ok) {
-      const txt = await res.text();
-      return { ok: false, status, content: null, error: txt.slice(0, 200) };
-    }
-
-    const data = await res.json();
-    const html = data?.data?.html ?? data?.html ?? null;
-    const rawHtml = data?.data?.rawHtml ?? data?.rawHtml ?? null;
-    const content = (rawHtml && typeof rawHtml === 'string') ? rawHtml : (typeof html === 'string' ? html : null);
-
-    return { ok: true, status, content, error: null as string | null };
-  } catch (e) {
-    return { ok: false, status: 0, content: null, error: String(e) };
-  }
-}
-
-async function throttle(ms: number) {
-  await new Promise((r) => setTimeout(r, ms));
-}
-
-function uniqueLimit(arr: string[], limit: number) {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const s of arr) {
-    const key = s.trim();
-    if (!key) continue;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(key);
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-
-function findCandidateEndpoints(text: string): string[] {
-  const candidates: string[] = [];
-
-  const pushAll = (re: RegExp) => {
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      // strip trailing punctuation that often appears in bundles
-      let s = m[0];
-      s = s.replace(/\\u002F/g, '/');
-      s = s.replace(/["'`\)\]\}>,;]+$/g, '');
-      candidates.push(s);
-    }
-  };
-
-  // Relative paths
-  pushAll(/\/proxies\/core-api\/[A-Za-z0-9_\-\/\?\=\&\.%]+/g);
-  pushAll(/\/(?:api|apis|data)\/[A-Za-z0-9_\-\/\?\=\&\.%]+/g);
-
-  // Common keywords that might appear as endpoints or fragments
-  pushAll(/\/[A-Za-z0-9_\-\/\?\=\&\.%]*(?:options\/chain|option-chain|options\-chain)[A-Za-z0-9_\-\/\?\=\&\.%]*/gi);
-  pushAll(/\/[A-Za-z0-9_\-\/\?\=\&\.%]*(?:getQuote|quote|quotes)[A-Za-z0-9_\-\/\?\=\&\.%]*/gi);
-  pushAll(/\/[A-Za-z0-9_\-\/\?\=\&\.%]+\.json\b/gi);
-  pushAll(/\/[A-Za-z0-9_\-\/\?\=\&\.%]*graphql[A-Za-z0-9_\-\/\?\=\&\.%]*/gi);
-
-  // Absolute URLs
-  pushAll(/https?:\/\/[A-Za-z0-9\-\.]+barchart\.com[A-Za-z0-9_\-\/\?\=\&\.%]+/gi);
-
-  // Filter down to things that look like endpoints (must contain one of the target hints)
-  const hints = ['proxies/core-api', 'options', 'chain', 'option-chain', 'getQuote', 'quote', '.json', 'graphql'];
-  const filtered = candidates.filter((c) => {
-    const lc = c.toLowerCase();
-    return hints.some((h) => lc.includes(h));
-  });
-
-  return uniqueLimit(filtered, 200);
-}
-
-function extractBundleScriptSrcs(html: string, limit = 8): string[] {
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  const re = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
-  let m;
-  
-  const priorityKeywords = ['main', 'app', 'bundle', 'chunk', 'runtime', 'vendor'];
-  const allSrcs: { src: string; priority: number }[] = [];
-  
-  while ((m = re.exec(html)) !== null) {
-    let src = m[1];
-    if (!src) continue;
-    
-    // Normalize URL
-    if (src.startsWith('//')) src = `https:${src}`;
-    else if (src.startsWith('/')) src = `https://www.barchart.com${src}`;
-    else if (!src.startsWith('http')) src = `https://www.barchart.com/${src}`;
-    
-    if (seen.has(src)) continue;
-    seen.add(src);
-    
-    const lc = src.toLowerCase();
-    // Must be a JS file
-    if (!lc.includes('.js')) continue;
-    
-    // Calculate priority (higher = better)
-    let priority = 0;
-    for (const kw of priorityKeywords) {
-      if (lc.includes(kw)) priority += 10;
-    }
-    if (lc.includes('/_next/')) priority += 5;
-    
-    allSrcs.push({ src, priority });
-  }
-  
-  // Sort by priority descending
-  allSrcs.sort((a, b) => b.priority - a.priority);
-  
-  for (const { src } of allSrcs) {
-    urls.push(src);
-    if (urls.length >= limit) break;
-  }
-  
-  return urls;
-}
-
-function scoreEndpointCandidate(candidate: string): number {
-  const lc = candidate.toLowerCase();
-  let score = 0;
-  if (lc.includes('proxies/core-api')) score += 50;
-  if (lc.includes('options')) score += 30;
-  if (lc.includes('chain') || lc.includes('option-chain')) score += 30;
-  if (lc.includes('symbol=') || lc.includes('ticker=') || lc.includes('symbols=')) score += 20;
-  if (lc.includes('.json') || lc.includes('graphql')) score += 10;
-  if (lc.includes('getquote') || lc.includes('quote')) score -= 5;
-  // Penalize obvious navigation URLs that are not XHR endpoints
-  if (lc.includes('/stocks/quotes/') && lc.includes('/options')) score -= 30;
-  if (lc.endsWith('/options') || lc.includes('/options"') || lc.includes('/options<')) score -= 20;
-  return score;
-}
-
-function isHighSignalEndpoint(candidate: string): boolean {
-  const lc = candidate.toLowerCase();
-  // We only treat these as likely XHR/API endpoints (otherwise we keep scanning bundles)
-  const isCoreApi = lc.includes('proxies/core-api');
-  const isOptionsChain = lc.includes('options/chain') || lc.includes('option-chain') || (lc.includes('options') && lc.includes('chain'));
-  const isJsonLike = lc.includes('.json') || lc.includes('graphql');
-  const hasSymbolParam = lc.includes('symbol=') || lc.includes('ticker=') || lc.includes('symbols=');
-
-  // Prefer endpoints that look like API calls, not page URLs
-  if (isCoreApi) return true;
-  if (isOptionsChain && (hasSymbolParam || isJsonLike)) return true;
-  if (isOptionsChain && hasSymbolParam) return true;
-  if (isJsonLike && (hasSymbolParam || lc.includes('options'))) return true;
-  return false;
-}
-
-function toAbsoluteBarchartUrl(candidate: string): string {
-  if (candidate.startsWith('http://') || candidate.startsWith('https://')) return candidate;
-  if (candidate.startsWith('/')) return `https://www.barchart.com${candidate}`;
-  // handle protocol-relative URLs like //www.barchart.com/...
-  if (candidate.startsWith('//')) return `https:${candidate}`;
-  return `https://www.barchart.com/${candidate}`;
-}
-
-function applyTickerToEndpoint(endpointUrl: string, ticker: string): string {
-  try {
-    const url = new URL(endpointUrl);
-    // Replace common query keys
-    const keys = ['symbol', 'ticker', 'symbols'];
-    for (const key of keys) {
-      if (url.searchParams.has(key)) {
-        url.searchParams.set(key, ticker);
-      }
-    }
-    // Some endpoints use "symbols" as comma list; keep single
-    if (url.searchParams.has('symbols')) {
-      url.searchParams.set('symbols', ticker);
-    }
-    const s = url.toString();
-    // Also replace path segments that might embed the ticker
-    return s.replaceAll('/SPY/', `/${ticker}/`).replaceAll('/spy/', `/${ticker.toLowerCase()}/`);
-  } catch {
-    return endpointUrl;
-  }
-}
-
-function jsonPreview(text: string, maxLen: number) {
-  const t = text.replace(/\s+/g, ' ').trim();
-  return t.slice(0, maxLen);
-}
-
-function extractJsonPayload(text: string): { ok: boolean; json: any; error?: string } {
-  const trimmed = text.trim();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      return { ok: true, json: JSON.parse(trimmed) };
-    } catch (e) {
-      return { ok: false, json: null, error: `JSON.parse failed: ${String(e)}` };
-    }
-  }
-
-  // Sometimes JSON is wrapped in <pre> or HTML. Try to locate first { and last }.
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
-  if (first >= 0 && last > first) {
-    const slice = text.slice(first, last + 1);
-    try {
-      return { ok: true, json: JSON.parse(slice) };
-    } catch (e) {
-      return { ok: false, json: null, error: `JSON.parse (slice) failed: ${String(e)}` };
-    }
-  }
-
-  return { ok: false, json: null, error: 'Response does not look like JSON' };
-}
-
-function parseDateToISO(val: any): string | null {
-  if (!val) return null;
-  if (typeof val === 'string') {
-    // already ISO
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-    const d = new Date(val);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-    // YYMMDD
-    const m = val.match(/\b(\d{2})(\d{2})(\d{2})\b/);
-    if (m) return `20${m[1]}-${m[2]}-${m[3]}`;
-  }
-  if (typeof val === 'number') {
-    const d = new Date(val * (val > 1e12 ? 1 : 1000));
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-  }
-  return null;
-}
-
-function toInt(val: any): number | null {
-  if (val === null || val === undefined) return null;
-  if (typeof val === 'number') {
-    if (!isFinite(val)) return null;
-    return Math.round(val);
-  }
-  if (typeof val === 'string') {
-    const n = parseInt(val.replace(/,/g, ''));
-    return isNaN(n) ? null : n;
-  }
-  return null;
-}
-
-function toFloat(val: any): number | null {
-  if (val === null || val === undefined) return null;
-  if (typeof val === 'number') {
-    if (!isFinite(val)) return null;
-    return val;
-  }
-  if (typeof val === 'string') {
-    const n = parseFloat(val.replace(/,/g, ''));
-    return isNaN(n) ? null : n;
-  }
-  return null;
-}
-
-function normalizeIV(iv: number | null): number | null {
-  if (iv === null) return null;
-  let v = iv;
-  // percent -> decimal
-  if (v > 1) v = v / 100;
-  if (v <= 0 || v > 5) return null;
-  return v;
-}
-
-function findOptionContractsInJson(json: any): any[] {
-  const out: any[] = [];
-  const seen = new Set<string>();
-
-  const push = (obj: any) => {
-    if (!obj || typeof obj !== 'object') return;
-    // Try to create a stable key to dedupe
-    const key = JSON.stringify({
-      s: obj.symbol ?? obj.contractSymbol ?? obj.occSymbol ?? obj.id ?? null,
-      k: obj.strike ?? obj.strikePrice ?? obj.Strike ?? null,
-      e: obj.expiration ?? obj.expirationDate ?? obj.expiry ?? obj.expiryDate ?? null,
-      v: obj.volume ?? obj.totalVolume ?? obj.Volume ?? null,
-      t: obj.optionType ?? obj.type ?? obj.putCall ?? obj.callPut ?? null,
-    });
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(obj);
-  };
-
-  function walk(node: any, depth: number, forcedType?: 'call' | 'put') {
-    if (!node || depth > 10) return;
-
-    if (Array.isArray(node)) {
-      for (const item of node) {
-        walk(item, depth + 1, forcedType);
-      }
-      return;
-    }
-
-    if (typeof node !== 'object') return;
-
-    const hasStrike = node.strike !== undefined || node.strikePrice !== undefined || node.Strike !== undefined;
-    const hasVol = node.volume !== undefined || node.totalVolume !== undefined || node.Volume !== undefined;
-
-    if (hasStrike && hasVol) {
-      // annotate if we have a forced type
-      if (forcedType && node.optionType === undefined && node.type === undefined && node.putCall === undefined && node.callPut === undefined) {
-        (node as any).__forcedType = forcedType;
-      }
-      push(node);
-      // still keep walking in case nested objects exist
-    }
-
-    for (const [k, v] of Object.entries(node)) {
-      const lk = k.toLowerCase();
-      if (lk === 'calls') walk(v, depth + 1, 'call');
-      else if (lk === 'puts') walk(v, depth + 1, 'put');
-      else walk(v, depth + 1, forcedType);
-    }
-  }
-
-  walk(json, 0);
-  return out;
-}
-
-function normalizeContract(raw: any, ticker: string, endpointUsed: string, fetchStatus: number): ParsedOption | null {
-  const strike = toFloat(raw.strike ?? raw.strikePrice ?? raw.Strike ?? raw.strike_price);
-  if (!strike || strike <= 0 || strike > 10000) return null;
-
-  const volume = toInt(raw.volume ?? raw.totalVolume ?? raw.Volume ?? raw.tradeVolume);
-  if (!volume || volume <= 0) return null;
-
-  // filter volume > 50
-  if (volume <= 50) return null;
-
-  let optionType: 'call' | 'put' = 'call';
-  const typeVal = raw.optionType ?? raw.type ?? raw.callPut ?? raw.putCall ?? raw.__forcedType ?? '';
-  if (typeof typeVal === 'string') {
-    const t = typeVal.toLowerCase();
-    optionType = (t.includes('put') || t === 'p') ? 'put' : 'call';
-  } else if (typeVal === 'put' || typeVal === 'call') {
-    optionType = typeVal;
-  }
-
-  const exp = parseDateToISO(raw.expiration ?? raw.expirationDate ?? raw.expiry ?? raw.expiryDate ?? raw.Expiration);
-
-  const openInterest = toInt(raw.openInterest ?? raw.OpenInterest ?? raw.oi ?? raw.open_interest ?? raw.openInt) ?? null;
-  const iv = normalizeIV(toFloat(raw.impliedVolatility ?? raw.implied_volatility ?? raw.iv ?? raw.IV ?? raw.impliedVol) ?? null);
-
-  const price = toFloat(raw.lastPrice ?? raw.last ?? raw.mark ?? raw.midpoint ?? raw.price ?? raw.Last ?? raw.last_price ?? raw.markPrice) ?? null;
-  const premium = (price && price > 0) ? Math.round(price * volume * 100) : null;
-
-  const missing: string[] = [];
-  if (openInterest === null) missing.push('open_interest');
-  if (iv === null) missing.push('implied_volatility');
-  if (price === null) missing.push('price');
-
-  return {
-    ticker,
-    option_type: optionType,
-    strike_price: strike,
-    expiration_date: exp,
-    volume,
-    open_interest: openInterest,
-    implied_volatility: iv,
-    premium,
-    flow_type: null,
-    sentiment: optionType === 'call' ? 'bullish' : 'bearish',
-    trade_date: new Date().toISOString(),
-    metadata: {
-      source: 'barchart_firecrawl_xhr',
-      endpoint_used: endpointUsed,
-      fetch_status: fetchStatus,
-      premium_available: premium !== null,
-      iv_available: iv !== null,
-      extraction: 'json',
-      warnings: missing.length ? [`missing:${missing.join(',')}`] : undefined,
-      raw_symbol: raw.symbol ?? raw.Symbol ?? raw.contractSymbol ?? raw.occSymbol ?? null,
-    }
-  };
-}
-
-interface ScoredCandidate {
-  url: string;
-  score: number;
-  isHighSignal: boolean;
-  source: 'html' | 'js';
-}
-
-function scoreCandidates(candidates: string[], source: 'html' | 'js'): ScoredCandidate[] {
-  return candidates.map(c => ({
-    url: toAbsoluteBarchartUrl(c),
-    score: scoreEndpointCandidate(c),
-    isHighSignal: isHighSignalEndpoint(c),
-    source,
-  }));
-}
-
-function hasAnyHighSignalCandidate(candidates: ScoredCandidate[]): boolean {
-  return candidates.some(c => c.isHighSignal);
-}
-
-function getBestScore(candidates: ScoredCandidate[]): number {
-  if (candidates.length === 0) return -999;
-  return Math.max(...candidates.map(c => c.score));
-}
-
-async function discoverEndpointsFromJsBundles(html: string, debug: boolean, maxBundles = 3): Promise<{ bundleUrls: string[]; jsCandidates: ScoredCandidate[] }> {
-  const allBundleUrls = extractBundleScriptSrcs(html, 8);
-  const bundleUrls = allBundleUrls.slice(0, maxBundles);
-  
-  if (debug) {
-    console.log(`[DEBUG] js_bundle_count=${allBundleUrls.length}`);
-    console.log(`[DEBUG] top_3_js_bundles=${JSON.stringify(bundleUrls)}`);
-  }
-  
-  const jsCandidates: ScoredCandidate[] = [];
-  
-  for (const url of bundleUrls) {
-    const jsRes = await firecrawlScrape(url, { waitFor: 0, formats: ['rawHtml', 'html'], onlyMainContent: false });
-    await throttle(300);
-    
-    const js = jsRes.content;
-    if (!js) continue;
-    
-    // Scan only first 2MB
-    const text = js.slice(0, 2 * 1024 * 1024);
-    const cands = findCandidateEndpoints(text);
-    const scored = scoreCandidates(cands, 'js');
-    jsCandidates.push(...scored);
-    
-    // If we found high-signal endpoints, stop early
-    if (hasAnyHighSignalCandidate(scored)) {
-      if (debug) console.log(`[DEBUG] high_signal_found_in_bundle=${url}`);
-      break;
-    }
-  }
-  
-  return { bundleUrls, jsCandidates };
-}
-
-function selectBestEndpoint(htmlCandidates: ScoredCandidate[], jsCandidates: ScoredCandidate[]): ScoredCandidate | null {
-  // Priority 1: High-signal JS endpoints
-  const highSignalJs = jsCandidates.filter(c => c.isHighSignal).sort((a, b) => b.score - a.score);
-  if (highSignalJs.length > 0) return highSignalJs[0];
-  
-  // Priority 2: High-signal HTML endpoints
-  const highSignalHtml = htmlCandidates.filter(c => c.isHighSignal).sort((a, b) => b.score - a.score);
-  if (highSignalHtml.length > 0) return highSignalHtml[0];
-  
-  // Priority 3: Best scored from any source (but penalize page URLs heavily)
-  const all = [...jsCandidates, ...htmlCandidates].sort((a, b) => b.score - a.score);
-  
-  // Filter out obvious page URLs (score < 0)
-  const nonPageUrls = all.filter(c => c.score >= 0);
-  if (nonPageUrls.length > 0) return nonPageUrls[0];
-  
-  // Fallback to best overall (may be a page URL)
-  return all.length > 0 ? all[0] : null;
-}
-
-async function fetchOptionsJsonViaEndpoint(endpointUrl: string) {
-  const res = await firecrawlScrape(endpointUrl, { waitFor: 1500, formats: ['rawHtml', 'html'], onlyMainContent: false });
-  const content = res.content ?? '';
-  const preview = jsonPreview(content, 120);
-
-  if (!res.ok || !res.content) {
-    return { ok: false, status: res.status, json: null as any, preview, contentLength: content.length, error: res.error ?? 'Firecrawl scrape failed' };
-  }
-
-  const parsed = extractJsonPayload(content);
-  if (!parsed.ok) {
-    return { ok: false, status: res.status, json: null as any, preview, contentLength: content.length, error: parsed.error ?? 'Not JSON' };
-  }
-
-  return { ok: true, status: res.status, json: parsed.json, preview, contentLength: content.length, error: null as string | null };
+interface RailwayResponse {
+  success: boolean;
+  inserted: number;
+  source?: string;
+  reason?: string;
+  details?: Record<string, any>;
 }
 
 serve(async (req) => {
@@ -524,257 +23,267 @@ serve(async (req) => {
   }
 
   const startTime = Date.now();
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
   const slackAlerter = new SlackAlerter();
 
+  // Parse request body
+  let tickers: string[] = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT', 'AMZN', 'META', 'GOOGL'];
+  let debug = false;
+
   try {
-    console.log('[v10] Options flow ingestion - Discover Barchart XHR endpoint via Firecrawl');
+    const body = await req.json();
+    if (body.tickers && Array.isArray(body.tickers)) {
+      tickers = body.tickers;
+    }
+    if (body.debug === true) {
+      debug = true;
+    }
+  } catch {
+    // Use defaults if body parsing fails
+  }
 
-    // Request body: tickers + debug
-    let tickers = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'META'];
-    let debug = false;
+  // Resolve Railway base URL
+  const railwayBaseUrl = Deno.env.get('RAILWAY_BASE_URL') || Deno.env.get('BACKEND_BASE_URL');
+  
+  if (!railwayBaseUrl) {
+    const errorMsg = 'Missing RAILWAY_BASE_URL/BACKEND_BASE_URL environment variable';
+    console.error(`[ERROR] ${errorMsg}`);
 
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-options-flow',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'railway_trigger',
+      error_message: errorMsg,
+      metadata: {
+        version: 'v12_railway_trigger',
+        tickers_requested: tickers.length,
+        debug_mode: debug,
+      },
+    });
+
+    await slackAlerter.sendCriticalAlert({
+      type: 'halted',
+      etlName: 'ingest-options-flow',
+      message: errorMsg,
+    });
+
+    return new Response(
+      JSON.stringify({ success: false, error: errorMsg }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Build request to Railway
+  const railwayEndpoint = `${railwayBaseUrl.replace(/\/$/, '')}/api/options/ingest`;
+  const backendJwt = Deno.env.get('BACKEND_JWT');
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (backendJwt) {
+    headers['Authorization'] = `Bearer ${backendJwt}`;
+  }
+
+  if (debug) {
+    console.log(`[DEBUG] Calling Railway: ${railwayEndpoint}`);
+    console.log(`[DEBUG] Tickers: ${tickers.join(', ')}`);
+    console.log(`[DEBUG] Auth header present: ${!!backendJwt}`);
+  }
+
+  try {
+    // Call Railway with 20s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    let response: Response;
     try {
-      const body = await req.json();
-      if (body?.tickers && Array.isArray(body.tickers) && body.tickers.length > 0) {
-        tickers = body.tickers;
-        console.log(`Using custom tickers: ${tickers.join(', ')}`);
-      }
-      if (body?.debug === true) {
-        debug = true;
-        console.log('[DEBUG MODE ENABLED]');
-      }
-    } catch {
-      // ignore
+      response = await fetch(railwayEndpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ tickers, debug }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
     }
 
-    // Step 1: Scrape first ticker options page and discover endpoints
-    const firstTicker = tickers[0];
-    const optionsPageUrl = `https://www.barchart.com/stocks/quotes/${firstTicker}/options`;
-    const pageRes = await firecrawlScrape(optionsPageUrl, { waitFor: 4000, formats: ['rawHtml', 'html'], onlyMainContent: false });
-
-    const html = pageRes.content ?? '';
-    const htmlLength = html.length;
-    console.log(`Firecrawl page ${firstTicker}: status=${pageRes.status}, html_length=${htmlLength}`);
-
-    if (!pageRes.ok || !html || htmlLength < 5000) {
-      const reason = `Failed to fetch options page HTML: status=${pageRes.status} err=${pageRes.error ?? 'unknown'}`;
-
-      await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: ['Barchart via Firecrawl (page scrape)'],
-        reason,
-      });
-
-      await supabase.from('function_status').insert({
-        function_name: 'ingest-options-flow',
-        executed_at: new Date().toISOString(),
-        status: 'warning',
-        rows_inserted: 0,
-        rows_skipped: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl_Barchart_XHR',
-        error_message: reason,
-        metadata: {
-          version: 'v10_xhr_discovery',
-          reason,
-          tickers,
-          page_status: pageRes.status,
-        },
-      });
-
-      return new Response(JSON.stringify({ success: true, count: 0, reason, version: 'v10_xhr_discovery' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    await throttle(400);
-
-    // Step 1: Extract HTML candidates
-    const htmlCandidatesRaw = findCandidateEndpoints(html);
-    const htmlCandidates = scoreCandidates(htmlCandidatesRaw, 'html');
-    const bestHtmlScore = getBestScore(htmlCandidates);
-    const hasHighSignalHtml = hasAnyHighSignalCandidate(htmlCandidates);
-
-    if (debug) {
-      console.log(`[DEBUG] html_length=${htmlLength}`);
-      console.log(`[DEBUG] html_candidates_count=${htmlCandidates.length}`);
-      const top5Html = htmlCandidates.sort((a, b) => b.score - a.score).slice(0, 5);
-      for (let i = 0; i < top5Html.length; i++) {
-        console.log(`[DEBUG] html_candidate_${i+1}: score=${top5Html[i].score} highSignal=${top5Html[i].isHighSignal} url=${top5Html[i].url.slice(0, 150)}`);
-      }
-    }
-
-    // Step 2: Force JS bundle scanning if HTML is low-signal
-    const mustScanBundles = htmlCandidates.length === 0 || bestHtmlScore < 30 || !hasHighSignalHtml;
+    const responseStatus = response.status;
     
-    let jsCandidates: ScoredCandidate[] = [];
-    let bundleUrls: string[] = [];
-
-    if (mustScanBundles) {
-      if (debug) console.log(`[DEBUG] scanning_js_bundles=true (html_score=${bestHtmlScore}, hasHighSignal=${hasHighSignalHtml})`);
-      const bundleResult = await discoverEndpointsFromJsBundles(html, debug, 3);
-      bundleUrls = bundleResult.bundleUrls;
-      jsCandidates = bundleResult.jsCandidates;
-
-      if (debug) {
-        console.log(`[DEBUG] js_candidates_count=${jsCandidates.length}`);
-        const top5Js = jsCandidates.sort((a, b) => b.score - a.score).slice(0, 5);
-        for (let i = 0; i < top5Js.length; i++) {
-          console.log(`[DEBUG] js_candidate_${i+1}: score=${top5Js[i].score} highSignal=${top5Js[i].isHighSignal} url=${top5Js[i].url.slice(0, 150)}`);
-        }
-      }
-    } else {
-      if (debug) console.log(`[DEBUG] scanning_js_bundles=false (using high-signal HTML candidates)`);
-    }
-
-    // Step 3: Select best endpoint using priority logic
-    const selected = selectBestEndpoint(htmlCandidates, jsCandidates);
-
-    if (!selected) {
-      const reason = 'no xhr endpoints found in html/js bundles';
-
-      await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: ['Barchart via Firecrawl (endpoint discovery)'],
-        reason,
-      });
+    // Handle auth errors
+    if (responseStatus === 401 || responseStatus === 403) {
+      const errorMsg = `Railway auth failed (${responseStatus}): ${backendJwt ? 'Invalid BACKEND_JWT' : 'BACKEND_JWT not configured'}`;
+      console.error(`[ERROR] ${errorMsg}`);
 
       await supabase.from('function_status').insert({
         function_name: 'ingest-options-flow',
         executed_at: new Date().toISOString(),
-        status: 'warning',
+        status: 'failure',
         rows_inserted: 0,
-        rows_skipped: 0,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl_Barchart_XHR',
-        error_message: reason,
+        source_used: 'railway_trigger',
+        error_message: errorMsg,
         metadata: {
-          version: 'v11_xhr_discovery',
-          reason,
-          tickers,
-          html_length: htmlLength,
-          html_candidates_count: htmlCandidates.length,
-          js_candidates_count: jsCandidates.length,
-          bundle_urls: bundleUrls,
+          version: 'v12_railway_trigger',
+          railway_endpoint: railwayEndpoint,
+          response_status: responseStatus,
+          tickers_requested: tickers.length,
+          debug_mode: debug,
         },
       });
 
-      return new Response(JSON.stringify({ success: true, count: 0, reason, version: 'v11_xhr_discovery' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      await slackAlerter.sendCriticalAlert({
+        type: 'halted',
+        etlName: 'ingest-options-flow',
+        message: errorMsg,
       });
+
+      return new Response(
+        JSON.stringify({ success: false, error: errorMsg }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    const selectedEndpoint = selected.url;
+    // Handle non-200 responses
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      const errorMsg = `Railway returned ${responseStatus}: ${errorText.slice(0, 200)}`;
+      console.error(`[ERROR] ${errorMsg}`);
+
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-options-flow',
+        executed_at: new Date().toISOString(),
+        status: 'failure',
+        rows_inserted: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'railway_trigger',
+        error_message: errorMsg,
+        metadata: {
+          version: 'v12_railway_trigger',
+          railway_endpoint: railwayEndpoint,
+          response_status: responseStatus,
+          tickers_requested: tickers.length,
+          debug_mode: debug,
+        },
+      });
+
+      await slackAlerter.sendCriticalAlert({
+        type: 'halted',
+        etlName: 'ingest-options-flow',
+        message: errorMsg,
+      });
+
+      return new Response(
+        JSON.stringify({ success: false, error: errorMsg }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Parse Railway response
+    let railwayData: RailwayResponse;
+    try {
+      railwayData = await response.json();
+    } catch (e) {
+      const errorMsg = 'Railway returned non-JSON response';
+      console.error(`[ERROR] ${errorMsg}`);
+
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-options-flow',
+        executed_at: new Date().toISOString(),
+        status: 'failure',
+        rows_inserted: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'railway_trigger',
+        error_message: errorMsg,
+        metadata: {
+          version: 'v12_railway_trigger',
+          railway_endpoint: railwayEndpoint,
+          debug_mode: debug,
+        },
+      });
+
+      await slackAlerter.sendCriticalAlert({
+        type: 'halted',
+        etlName: 'ingest-options-flow',
+        message: errorMsg,
+      });
+
+      return new Response(
+        JSON.stringify({ success: false, error: errorMsg }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (debug) {
-      console.log(`[DEBUG] selected_endpoint=${selectedEndpoint}`);
-      console.log(`[DEBUG] selected_score=${selected.score} selected_source=${selected.source} selected_highSignal=${selected.isHighSignal}`);
-    }
-    console.log(`Chosen endpoint: ${selectedEndpoint.slice(0, 200)}`);
-
-    // In debug mode, only process first ticker
-    const tickersToProcess = debug ? [tickers[0]] : tickers;
-
-    // Step 4: Fetch JSON per ticker and parse contracts
-    const allOptions: ParsedOption[] = [];
-    const perTicker: Record<string, any> = {};
-
-    for (const ticker of tickersToProcess) {
-      const endpointUrl = applyTickerToEndpoint(selectedEndpoint, ticker);
-
-      const jsonRes = await fetchOptionsJsonViaEndpoint(endpointUrl);
-      await throttle(400);
-
-      if (debug) {
-        console.log(`[DEBUG] endpoint_fetch: ticker=${ticker} status=${jsonRes.status} contentLength=${jsonRes.contentLength}`);
-        console.log(`[DEBUG] endpoint_preview="${jsonRes.preview}"`);
-      }
-
-      if (!jsonRes.ok) {
-        console.log(`${ticker}: endpoint_fetch_failed status=${jsonRes.status} preview="${jsonRes.preview}"`);
-        perTicker[ticker] = {
-          endpoint_used: endpointUrl,
-          fetch_ok: false,
-          fetch_status: jsonRes.status,
-          response_preview: jsonRes.preview,
-          error: jsonRes.error,
-          contracts_found: 0,
-          contracts_passing_filter: 0,
-          inserted: 0,
-        };
-        continue;
-      }
-
-      const rawContracts = findOptionContractsInJson(jsonRes.json);
-      const contractsFound = rawContracts.length;
-
-      // Normalize + filter volume>50
-      const normalized: ParsedOption[] = [];
-      for (const raw of rawContracts) {
-        const opt = normalizeContract(raw, ticker, endpointUrl, jsonRes.status);
-        if (opt) normalized.push(opt);
-      }
-
-      // keep top 10 by volume
-      const top = normalized.sort((a, b) => b.volume - a.volume).slice(0, 10);
-
-      // Add summary metadata per contract
-      for (const opt of top) {
-        opt.metadata.contracts_found = contractsFound;
-        opt.metadata.contracts_passing_filter = normalized.length;
-      }
-
-      allOptions.push(...top);
-
-      perTicker[ticker] = {
-        endpoint_used: endpointUrl,
-        fetch_ok: true,
-        fetch_status: jsonRes.status,
-        response_preview: debug ? jsonRes.preview : undefined,
-        contracts_found: contractsFound,
-        contracts_passing_filter: normalized.length,
-        inserted: top.length,
-      };
-
-      if (debug) {
-        console.log(`[DEBUG] ${ticker}: contracts_found=${contractsFound} contracts_passing_filter=${normalized.length} inserted=${top.length}`);
-      }
-      console.log(`${ticker}: contracts_found=${contractsFound}, passing_volume_filter=${normalized.length}, selected_top10=${top.length}`);
+      console.log(`[DEBUG] Railway response: ${JSON.stringify(railwayData)}`);
     }
 
-    // Step 5: Insert in batches of 50
-    if (allOptions.length === 0) {
-      // Determine reason
-      const anyFetchBlocked = Object.values(perTicker).some((s: any) => s.fetch_ok === false);
-      const totalFound = Object.values(perTicker).reduce((sum: number, s: any) => sum + (s.contracts_found || 0), 0);
-      const totalPassing = Object.values(perTicker).reduce((sum: number, s: any) => sum + (s.contracts_passing_filter || 0), 0);
+    // Handle Railway response
+    if (!railwayData.success) {
+      const errorMsg = railwayData.reason || 'Railway returned success=false';
+      console.error(`[ERROR] ${errorMsg}`);
 
-      let reason = 'no_data';
-      if (htmlCandidates.length === 0 && jsCandidates.length === 0) reason = 'no xhr endpoints found in html/js bundles';
-      else if (anyFetchBlocked) reason = 'xhr fetch blocked/unauthorized (see response_preview)';
-      else if (totalFound > 0 && totalPassing === 0) reason = 'contracts found but none passed volume>50 filter';
-      else if (totalFound === 0) reason = 'endpoint returned no contracts';
+      await supabase.from('function_status').insert({
+        function_name: 'ingest-options-flow',
+        executed_at: new Date().toISOString(),
+        status: 'failure',
+        rows_inserted: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: railwayData.source || 'railway',
+        error_message: errorMsg,
+        metadata: {
+          version: 'v12_railway_trigger',
+          railway_endpoint: railwayEndpoint,
+          railway_response: railwayData,
+          tickers_requested: tickers.length,
+          debug_mode: debug,
+        },
+      });
+
+      await slackAlerter.sendCriticalAlert({
+        type: 'halted',
+        etlName: 'ingest-options-flow',
+        message: errorMsg,
+      });
+
+      return new Response(
+        JSON.stringify({ success: false, error: errorMsg, details: railwayData }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const inserted = railwayData.inserted || 0;
+    const source = railwayData.source || 'railway';
+    const reason = railwayData.reason;
+
+    // No data case
+    if (inserted === 0) {
+      const noDataReason = reason || 'no_data_from_provider';
+      console.log(`[INFO] No options data inserted: ${noDataReason}`);
 
       await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: ['Barchart via Firecrawl XHR'],
-        reason: `${reason} | endpoint=${selectedEndpoint.slice(0, 120)} | found=${totalFound} passed=${totalPassing}`,
+        sourcesAttempted: [source],
+        reason: noDataReason,
       });
 
       await supabase.from('function_status').insert({
         function_name: 'ingest-options-flow',
         executed_at: new Date().toISOString(),
-        status: 'warning',
+        status: 'no_data',
         rows_inserted: 0,
-        rows_skipped: totalFound,
         duration_ms: Date.now() - startTime,
-        source_used: 'Firecrawl_Barchart_XHR',
-        error_message: reason,
+        source_used: source,
+        error_message: noDataReason,
         metadata: {
-          version: 'v11_xhr_discovery',
-          reason,
-          selected_endpoint: selectedEndpoint,
-          html_candidates_count: htmlCandidates.length,
-          js_candidates_count: jsCandidates.length,
-          tickers: tickersToProcess,
-          per_ticker: perTicker,
+          version: 'v12_railway_trigger',
+          railway_endpoint: railwayEndpoint,
+          railway_response: railwayData,
+          tickers_requested: tickers.length,
           debug_mode: debug,
         },
       });
@@ -783,55 +292,39 @@ serve(async (req) => {
         JSON.stringify({
           success: true,
           count: 0,
-          source: 'Firecrawl_Barchart_XHR',
-          version: 'v11_xhr_discovery',
-          selected_endpoint: selectedEndpoint,
-          reason,
-          per_ticker: perTicker,
+          source,
+          version: 'v12_railway_trigger',
+          reason: noDataReason,
+          details: railwayData.details,
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    let inserted = 0;
-    for (let i = 0; i < allOptions.length; i += 50) {
-      const batch = allOptions.slice(i, i + 50);
-      const { data, error } = await supabase.from('options_flow').insert(batch).select('id');
-      if (error) {
-        console.error('Insert error:', error.message);
-      } else {
-        inserted += (data?.length || 0);
-      }
-    }
-
-    console.log(`✅ Inserted ${inserted} options records`);
+    // Success case
+    console.log(`✅ Options ingestion successful: ${inserted} records via ${source}`);
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-options-flow',
-      status: inserted > 0 ? 'success' : 'partial',
+      status: 'success',
       rowsInserted: inserted,
-      rowsSkipped: allOptions.length - inserted,
-      sourceUsed: 'Firecrawl_Barchart_XHR',
+      rowsSkipped: 0,
+      sourceUsed: source,
       duration: Date.now() - startTime,
     });
-
-    const totalContractsFound = Object.values(perTicker).reduce((sum: number, s: any) => sum + (s.contracts_found || 0), 0);
-    const totalPassing = Object.values(perTicker).reduce((sum: number, s: any) => sum + (s.contracts_passing_filter || 0), 0);
 
     await supabase.from('function_status').insert({
       function_name: 'ingest-options-flow',
       executed_at: new Date().toISOString(),
       status: 'success',
       rows_inserted: inserted,
-      rows_skipped: Math.max(0, totalPassing - inserted),
       duration_ms: Date.now() - startTime,
-      source_used: 'Firecrawl_Barchart_XHR',
+      source_used: source,
       metadata: {
-        version: 'v11_xhr_discovery',
-        selected_endpoint: selectedEndpoint,
-        contracts_found: totalContractsFound,
-        contracts_passed_filter: totalPassing,
-        tickers_processed: tickersToProcess.length,
+        version: 'v12_railway_trigger',
+        railway_endpoint: railwayEndpoint,
+        railway_response: railwayData,
+        tickers_processed: tickers.length,
         debug_mode: debug,
       },
     });
@@ -840,24 +333,47 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         count: inserted,
-        source: 'Firecrawl_Barchart_XHR',
-        version: 'v11_xhr_discovery',
-        selected_endpoint: selectedEndpoint,
-        per_ticker: perTicker,
-        message: `Inserted ${inserted} options records`,
+        source,
+        version: 'v12_railway_trigger',
+        details: railwayData.details,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
-    console.error('Error:', error);
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    const errorMsg = isTimeout
+      ? 'Railway request timed out (20s)'
+      : `Railway call failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    
+    console.error(`[ERROR] ${errorMsg}`);
+
+    await supabase.from('function_status').insert({
+      function_name: 'ingest-options-flow',
+      executed_at: new Date().toISOString(),
+      status: 'failure',
+      rows_inserted: 0,
+      duration_ms: Date.now() - startTime,
+      source_used: 'railway_trigger',
+      error_message: errorMsg,
+      metadata: {
+        version: 'v12_railway_trigger',
+        railway_endpoint: railwayBaseUrl ? `${railwayBaseUrl}/api/options/ingest` : 'unknown',
+        tickers_requested: tickers.length,
+        debug_mode: debug,
+        is_timeout: isTimeout,
+      },
+    });
+
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'ingest-options-flow',
-      message: `Failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+      message: errorMsg,
     });
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+
+    return new Response(
+      JSON.stringify({ success: false, error: errorMsg }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 });
