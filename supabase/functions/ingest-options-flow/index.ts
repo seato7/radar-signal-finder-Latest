@@ -261,32 +261,78 @@ serve(async (req) => {
     const source = railwayData.source || 'railway';
     const reason = railwayData.reason;
 
-    // No data case
+    // No data case - with explicit error handling for observability
     if (inserted === 0) {
-      const noDataReason = reason || 'no_data_from_provider';
+      const noDataReason = railwayData.reason || reason || 'no_data_from_provider';
       console.log(`[INFO] No options data inserted: ${noDataReason}`);
+      console.log(`[INFO] Railway endpoint used: ${railwayEndpoint}`);
+      console.log(`[INFO] Railway response: ${JSON.stringify(railwayData)}`);
 
-      await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-        sourcesAttempted: [source],
-        reason: noDataReason,
-      });
+      // Attempt Slack alert with explicit error handling
+      let slackSuccess = false;
+      try {
+        await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
+          sourcesAttempted: [source],
+          reason: noDataReason,
+        });
+        slackSuccess = true;
+        console.log('[INFO] Slack no-data alert sent successfully');
+      } catch (slackErr) {
+        const slackErrMsg = slackErr instanceof Error ? slackErr.message : String(slackErr);
+        const slackStack = slackErr instanceof Error ? slackErr.stack : undefined;
+        console.error(`[ERROR] Slack no-data alert failed: ${slackErrMsg}`);
+        if (slackStack) {
+          console.error(`[ERROR] Slack error stack: ${slackStack}`);
+        }
+      }
 
-      await supabase.from('function_status').insert({
-        function_name: 'ingest-options-flow',
-        executed_at: new Date().toISOString(),
-        status: 'no_data',
-        rows_inserted: 0,
-        duration_ms: Date.now() - startTime,
-        source_used: source,
-        error_message: noDataReason,
-        metadata: {
-          version: 'v12_railway_trigger',
-          railway_endpoint: railwayEndpoint,
-          railway_response: railwayData,
-          tickers_requested: tickers.length,
-          debug_mode: debug,
-        },
-      });
+      // Attempt function_status insert with explicit error handling
+      let fsInsertSuccess = false;
+      try {
+        const { error: fsError } = await supabase.from('function_status').insert({
+          function_name: 'ingest-options-flow',
+          executed_at: new Date().toISOString(),
+          status: 'success',  // Using 'success' as status constraint only allows success/failure/skipped; no_data is tracked via metadata.outcome
+          rows_inserted: 0,
+          rows_skipped: 0,
+          duration_ms: Date.now() - startTime,
+          source_used: source,
+          error_message: noDataReason,
+          metadata: {
+            version: 'v12_railway_trigger',
+            outcome: 'no_data',  // Tracks the actual outcome since status='success' due to constraint
+            railway_endpoint: railwayEndpoint,
+            reason: noDataReason,
+            tickers_requested: tickers.length,
+            debug_mode: debug,
+            railway_status: responseStatus,
+            railway_response: {
+              success: railwayData.success,
+              inserted: railwayData.inserted,
+              source: railwayData.source,
+              reason: railwayData.reason,
+            },
+            slack_alert_sent: slackSuccess,
+          },
+        });
+
+        if (fsError) {
+          console.error(`[ERROR] function_status insert failed: ${JSON.stringify(fsError)}`);
+        } else {
+          fsInsertSuccess = true;
+          console.log('[INFO] function_status row inserted successfully for no_data');
+        }
+      } catch (dbErr) {
+        const dbErrMsg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+        const dbStack = dbErr instanceof Error ? dbErr.stack : undefined;
+        console.error(`[ERROR] function_status insert exception: ${dbErrMsg}`);
+        if (dbStack) {
+          console.error(`[ERROR] DB error stack: ${dbStack}`);
+        }
+      }
+
+      // Log final observability status before returning
+      console.log(`[INFO] Observability status - Slack: ${slackSuccess ? 'OK' : 'FAILED'}, function_status: ${fsInsertSuccess ? 'OK' : 'FAILED'}`);
 
       return new Response(
         JSON.stringify({
@@ -296,6 +342,10 @@ serve(async (req) => {
           version: 'v12_railway_trigger',
           reason: noDataReason,
           details: railwayData.details,
+          observability: {
+            slack_alert: slackSuccess,
+            function_status_insert: fsInsertSuccess,
+          },
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
