@@ -326,6 +326,11 @@ serve(async (req) => {
 
     const durationMs = Date.now() - startTime;
     
+    // Standardized outcome classification for 0-insert runs
+    const reasonCode = insertedCount === 0 
+      ? (signals.length > 0 ? 'no_new_records' : 'provider_empty_response')
+      : null;
+    
     await logHeartbeat(supabase, {
       function_name: 'ingest-supply-chain',
       status: 'success',
@@ -333,6 +338,17 @@ serve(async (req) => {
       rows_skipped: signals.length - insertedCount,
       duration_ms: durationMs,
       source_used: 'RSS Supply Chain Feeds v7',
+      error_message: reasonCode,
+      metadata: {
+        outcome: insertedCount > 0 ? 'success' : 'no_data',
+        reason: reasonCode,
+        explanation: insertedCount === 0 
+          ? (signals.length > 0 ? 'All signals already exist in database' : 'No supply chain signals extracted from RSS feeds')
+          : null,
+        feeds_processed: feedsProcessed,
+        feeds_failed: feedsFailed,
+        total_items: totalItems,
+      }
     });
 
     if (insertedCount > 0 || feedsProcessed > 0) {

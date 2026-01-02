@@ -86,9 +86,15 @@ Deno.serve(async (req) => {
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'Firecrawl (no results)',
+        error_message: 'provider_empty_response',
+        metadata: {
+          outcome: 'no_data',
+          reason: 'provider_empty_response',
+          explanation: 'Firecrawl search returned no results for trending topics'
+        }
       });
       
-      return new Response(JSON.stringify({ success: true, inserted: 0, skipped: 0 }), {
+      return new Response(JSON.stringify({ success: true, inserted: 0, skipped: 0, outcome: 'no_data', reason: 'provider_empty_response' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -216,6 +222,11 @@ ${combinedContent.substring(0, 12000)}`
     
     const durationMs = Date.now() - startTime;
     
+    // Standardized outcome classification
+    const reasonCode = inserted === 0 
+      ? (skipped > 0 ? 'no_new_records' : 'provider_empty_response')
+      : null;
+    
     await logHeartbeat(supabase, {
       function_name: 'ingest-search-trends',
       status: 'success',
@@ -223,6 +234,14 @@ ${combinedContent.substring(0, 12000)}`
       rows_skipped: skipped,
       duration_ms: durationMs,
       source_used: 'Firecrawl + Lovable AI',
+      error_message: reasonCode,
+      metadata: {
+        outcome: inserted > 0 ? 'success' : 'no_data',
+        reason: reasonCode,
+        explanation: inserted === 0 
+          ? (skipped > 0 ? 'All trend records already exist in database' : 'No trend data extracted by AI')
+          : null
+      }
     });
 
     await slackAlerter.sendLiveAlert({
