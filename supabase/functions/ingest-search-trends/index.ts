@@ -237,10 +237,8 @@ ${combinedContent.substring(0, 12000)}`
       error_message: reasonCode,
       metadata: {
         outcome: inserted > 0 ? 'success' : 'no_data',
-        reason: reasonCode,
-        explanation: inserted === 0 
-          ? (skipped > 0 ? 'All trend records already exist in database' : 'No trend data extracted by AI')
-          : null
+        reason: inserted > 0 ? null : reasonCode,
+        explanation: inserted > 0 ? null : (skipped > 0 ? 'All trend records already exist in database' : 'No trend data extracted by AI')
       }
     });
 
