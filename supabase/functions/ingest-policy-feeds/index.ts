@@ -184,7 +184,11 @@ serve(async (req) => {
       latency_ms: latency,
     }).eq('id', logId);
 
-    // @guard: Heartbeat log to function_status
+    // @guard: Heartbeat log to function_status with standardized outcome classification
+    const reasonCode = inserted === 0 
+      ? (skipped > 0 ? 'no_new_records' : 'provider_empty_response')
+      : null;
+    
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-policy-feeds',
       executed_at: new Date().toISOString(),
@@ -194,8 +198,15 @@ serve(async (req) => {
       fallback_used: null,
       duration_ms: latency,
       source_used: sourceUsed,
-      error_message: null,
-      metadata: { feeds_processed: feed_urls.length }
+      error_message: reasonCode,
+      metadata: { 
+        feeds_processed: feed_urls.length,
+        outcome: inserted > 0 ? 'success' : 'no_data',
+        reason: reasonCode,
+        explanation: inserted === 0 
+          ? (skipped > 0 ? 'All records already exist in database' : 'No matching policy entries found in feeds')
+          : null
+      }
     });
 
     // Send success alert
