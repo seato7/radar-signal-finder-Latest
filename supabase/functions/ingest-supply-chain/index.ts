@@ -341,10 +341,8 @@ serve(async (req) => {
       error_message: reasonCode,
       metadata: {
         outcome: insertedCount > 0 ? 'success' : 'no_data',
-        reason: reasonCode,
-        explanation: insertedCount === 0 
-          ? (signals.length > 0 ? 'All signals already exist in database' : 'No supply chain signals extracted from RSS feeds')
-          : null,
+        reason: insertedCount > 0 ? null : reasonCode,
+        explanation: insertedCount > 0 ? null : (signals.length > 0 ? 'All signals already exist in database' : 'No supply chain signals extracted from RSS feeds'),
         feeds_processed: feedsProcessed,
         feeds_failed: feedsFailed,
         total_items: totalItems,

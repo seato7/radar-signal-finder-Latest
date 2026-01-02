@@ -202,10 +202,8 @@ serve(async (req) => {
       metadata: { 
         feeds_processed: feed_urls.length,
         outcome: inserted > 0 ? 'success' : 'no_data',
-        reason: reasonCode,
-        explanation: inserted === 0 
-          ? (skipped > 0 ? 'All records already exist in database' : 'No matching policy entries found in feeds')
-          : null
+        reason: inserted > 0 ? null : reasonCode,
+        explanation: inserted > 0 ? null : (skipped > 0 ? 'All records already exist in database' : 'No matching policy entries found in feeds')
       }
     });
 
