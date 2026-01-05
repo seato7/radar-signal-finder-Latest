@@ -60,7 +60,7 @@ export default function Auth() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/`
+        emailRedirectTo: `${window.location.origin}/auth`
       }
     });
     setLoading(false);
@@ -80,8 +80,8 @@ export default function Auth() {
       }
     } else {
       toast({
-        title: "Success!",
-        description: "Account created successfully. You can now sign in."
+        title: "Check your email",
+        description: "We've sent you a confirmation link. Please check your inbox and click the link to verify your account before signing in."
       });
     }
   };
