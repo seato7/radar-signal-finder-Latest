@@ -201,7 +201,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            AI Investment Assistant
+            InsiderPulse AI Assistant
           </CardTitle>
           {messages.length > 0 && (
             <Button
@@ -219,8 +219,8 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
-              <p className="mb-2">👋 Hi! I'm your AI investment analyst.</p>
-              <p className="text-sm">Ask me about themes, signals, or market opportunities!</p>
+              <p className="mb-2">👋 Hi! I'm the InsiderPulse AI Assistant.</p>
+              <p className="text-sm">Ask me about themes, signals, or market opportunities across all asset classes!</p>
               <p className="text-xs mt-4">✨ I can also generate charts and visualizations!</p>
             </div>
           ) : (
