@@ -72,8 +72,16 @@ serve(async (req) => {
     let webSearchResults = '';
     
     try {
-      // Fetch Supabase alternative data sources (INCLUDING ALL ENHANCED SIGNALS)
-      const [socialData, congressData, patentData, trendsData, shortsData, earningsData, newsData, optionsData, jobsData, supplyData, forexTech, economicInd, cotReports, forexSent, advancedTech, darkPool, cryptoOnchain, smartMoney, newsSentiment, patterns, aiReports] = await Promise.all([
+      // Fetch ALL 36 data sources from Supabase
+      const [
+        socialData, congressData, patentData, trendsData, shortsData, earningsData, 
+        newsData, optionsData, jobsData, supplyData, forexTech, economicInd, 
+        cotReports, forexSent, advancedTech, darkPool, cryptoOnchain, smartMoney, 
+        newsSentiment, patterns, aiReports, etfFlows, form4Data, holdings13f,
+        ratesDiff, newsCoverage, rssNews, policyFeeds, pricesData, signalsData,
+        themesData, themeScores, assetSummary
+      ] = await Promise.all([
+        // Original 21 sources
         supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(15),
         supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(15),
         supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
@@ -94,10 +102,25 @@ serve(async (req) => {
         supabase.from('smart_money_flow').select('*').order('timestamp', { ascending: false }).limit(10),
         supabase.from('news_sentiment_aggregate').select('*').order('date', { ascending: false }).limit(10),
         supabase.from('pattern_recognition').select('*').eq('status', 'confirmed').order('detected_at', { ascending: false }).limit(10),
-        supabase.from('ai_research_reports').select('*').order('generated_at', { ascending: false }).limit(5)
+        supabase.from('ai_research_reports').select('*').order('generated_at', { ascending: false }).limit(5),
+        // NEW 12 sources
+        supabase.from('etf_flows').select('*').order('flow_date', { ascending: false }).limit(15),
+        supabase.from('form4_insider_trades').select('*').order('filing_date', { ascending: false }).limit(15),
+        supabase.from('holdings_13f').select('*').order('filing_date', { ascending: false }).limit(15),
+        supabase.from('interest_rate_differentials').select('*').order('timestamp', { ascending: false }).limit(10),
+        supabase.from('news_coverage_tracker').select('*').order('last_processed_at', { ascending: false }).limit(10),
+        supabase.from('news_rss_articles').select('*').order('published_at', { ascending: false }).limit(15),
+        supabase.from('policy_feeds').select('*').order('published_at', { ascending: false }).limit(10),
+        supabase.from('prices').select('*').order('last_updated_at', { ascending: false }).limit(25),
+        supabase.from('signals').select('*, assets(ticker, name)').order('observed_at', { ascending: false }).limit(20),
+        supabase.from('themes').select('*').order('updated_at', { ascending: false }).limit(10),
+        supabase.from('theme_scores').select('*').order('computed_at', { ascending: false }).limit(10),
+        supabase.from('assets').select('*').order('score_computed_at', { ascending: false }).limit(20)
       ]);
 
-      // Add social sentiment data
+      // === FORMAT ALL 36 DATA SOURCES ===
+
+      // 1. SOCIAL SENTIMENT
       if (socialData.data && socialData.data.length > 0) {
         marketData += `\n\nSOCIAL SENTIMENT (Reddit & StockTwits):\n`;
         socialData.data.forEach((signal: any) => {
@@ -105,7 +128,7 @@ serve(async (req) => {
         });
       }
 
-      // Add breaking news
+      // 2. BREAKING NEWS
       if (newsData.data && newsData.data.length > 0) {
         marketData += `\n\nBREAKING NEWS:\n`;
         newsData.data.forEach((news: any) => {
@@ -113,7 +136,7 @@ serve(async (req) => {
         });
       }
 
-      // Add congressional trades
+      // 3. CONGRESSIONAL TRADES
       if (congressData.data && congressData.data.length > 0) {
         marketData += `\n\nCONGRESSIONAL TRADES:\n`;
         congressData.data.forEach((trade: any) => {
@@ -121,15 +144,15 @@ serve(async (req) => {
         });
       }
 
-      // Add patent filings
+      // 4. PATENT FILINGS
       if (patentData.data && patentData.data.length > 0) {
-        marketData += `\n\nRECENT PATENT FILINGS:\n`;
+        marketData += `\n\nPATENT FILINGS:\n`;
         patentData.data.forEach((patent: any) => {
           marketData += `- ${patent.ticker}: ${patent.patent_title} (${patent.technology_category})\n`;
         });
       }
 
-      // Add search trends
+      // 5. SEARCH TRENDS
       if (trendsData.data && trendsData.data.length > 0) {
         marketData += `\n\nSEARCH TRENDS:\n`;
         trendsData.data.forEach((trend: any) => {
@@ -137,7 +160,7 @@ serve(async (req) => {
         });
       }
 
-      // Add short interest
+      // 6. SHORT INTEREST
       if (shortsData.data && shortsData.data.length > 0) {
         marketData += `\n\nSHORT INTEREST:\n`;
         shortsData.data.forEach((short: any) => {
@@ -145,7 +168,7 @@ serve(async (req) => {
         });
       }
 
-      // Add earnings sentiment
+      // 7. EARNINGS SENTIMENT
       if (earningsData.data && earningsData.data.length > 0) {
         marketData += `\n\nEARNINGS SENTIMENT:\n`;
         earningsData.data.forEach((earning: any) => {
@@ -153,7 +176,7 @@ serve(async (req) => {
         });
       }
 
-      // Add options flow
+      // 8. OPTIONS FLOW
       if (optionsData.data && optionsData.data.length > 0) {
         marketData += `\n\nOPTIONS FLOW:\n`;
         optionsData.data.forEach((option: any) => {
@@ -161,15 +184,15 @@ serve(async (req) => {
         });
       }
 
-      // Add job postings
+      // 9. JOB POSTINGS
       if (jobsData.data && jobsData.data.length > 0) {
-        marketData += `\n\nJOB POSTINGS:\n`;
+        marketData += `\n\nJOB POSTINGS (Hiring Trends):\n`;
         jobsData.data.forEach((job: any) => {
           marketData += `- ${job.ticker} (${job.company}): ${job.posting_count} ${job.role_type} openings, ${job.growth_indicator > 0 ? '+' : ''}${job.growth_indicator}% growth\n`;
         });
       }
 
-      // Add supply chain signals
+      // 10. SUPPLY CHAIN SIGNALS
       if (supplyData.data && supplyData.data.length > 0) {
         marketData += `\n\nSUPPLY CHAIN SIGNALS:\n`;
         supplyData.data.forEach((signal: any) => {
@@ -177,7 +200,7 @@ serve(async (req) => {
         });
       }
 
-      // Add FOREX technical indicators
+      // 11. FOREX TECHNICALS
       if (forexTech.data && forexTech.data.length > 0) {
         marketData += `\n\nFOREX TECHNICAL INDICATORS:\n`;
         forexTech.data.forEach((tech: any) => {
@@ -185,7 +208,7 @@ serve(async (req) => {
         });
       }
 
-      // Add economic indicators
+      // 12. ECONOMIC INDICATORS
       if (economicInd.data && economicInd.data.length > 0) {
         marketData += `\n\nECONOMIC INDICATORS:\n`;
         economicInd.data.forEach((ind: any) => {
@@ -193,19 +216,19 @@ serve(async (req) => {
         });
       }
 
-      // Add COT reports with data age indicator
+      // 13. COT REPORTS
       if (cotReports.data && cotReports.data.length > 0) {
         const mostRecentCot = cotReports.data[0];
         const cotDaysAgo = mostRecentCot.report_date 
           ? Math.floor((Date.now() - new Date(mostRecentCot.report_date).getTime()) / (1000 * 60 * 60 * 24))
           : null;
-        marketData += `\n\nCOT POSITIONING (Institutional) - ${cotDaysAgo !== null ? `Data from ${cotDaysAgo} days ago - LAGGING INDICATOR` : 'Recent data'}:\n`;
+        marketData += `\n\nCOT POSITIONING (Institutional) - ${cotDaysAgo !== null ? `Data from ${cotDaysAgo} days ago` : 'Recent data'}:\n`;
         cotReports.data.forEach((cot: any) => {
           marketData += `- ${cot.ticker}: Large specs net ${cot.noncommercial_net > 0 ? 'LONG' : 'SHORT'} ${Math.abs(cot.noncommercial_net).toLocaleString()} contracts (${cot.sentiment})\n`;
         });
       }
 
-      // Add forex sentiment
+      // 14. FOREX SENTIMENT
       if (forexSent.data && forexSent.data.length > 0) {
         marketData += `\n\nFOREX SENTIMENT:\n`;
         forexSent.data.forEach((sent: any) => {
@@ -213,7 +236,7 @@ serve(async (req) => {
         });
       }
 
-      // Add ADVANCED TECHNICAL INDICATORS
+      // 15. ADVANCED TECHNICALS
       if (advancedTech.data && advancedTech.data.length > 0) {
         marketData += `\n\nADVANCED TECHNICAL ANALYSIS:\n`;
         advancedTech.data.forEach((tech: any) => {
@@ -221,7 +244,7 @@ serve(async (req) => {
         });
       }
 
-      // Add DARK POOL ACTIVITY (stocks only)
+      // 16. DARK POOL ACTIVITY
       if (darkPool.data && darkPool.data.length > 0) {
         marketData += `\n\nDARK POOL ACTIVITY:\n`;
         darkPool.data.forEach((dp: any) => {
@@ -229,7 +252,7 @@ serve(async (req) => {
         });
       }
 
-      // Add CRYPTO ON-CHAIN METRICS
+      // 17. CRYPTO ON-CHAIN METRICS
       if (cryptoOnchain.data && cryptoOnchain.data.length > 0) {
         marketData += `\n\nCRYPTO ON-CHAIN METRICS:\n`;
         cryptoOnchain.data.forEach((onchain: any) => {
@@ -237,7 +260,7 @@ serve(async (req) => {
         });
       }
 
-      // Add SMART MONEY FLOW
+      // 18. SMART MONEY FLOW
       if (smartMoney.data && smartMoney.data.length > 0) {
         marketData += `\n\nSMART MONEY FLOW:\n`;
         smartMoney.data.forEach((sm: any) => {
@@ -245,7 +268,7 @@ serve(async (req) => {
         });
       }
 
-      // Add NEWS SENTIMENT AGGREGATES
+      // 19. NEWS SENTIMENT AGGREGATES
       if (newsSentiment.data && newsSentiment.data.length > 0) {
         marketData += `\n\nNEWS SENTIMENT ANALYSIS:\n`;
         newsSentiment.data.forEach((ns: any) => {
@@ -253,7 +276,7 @@ serve(async (req) => {
         });
       }
 
-      // Add PATTERN RECOGNITION
+      // 20. PATTERN RECOGNITION
       if (patterns.data && patterns.data.length > 0) {
         marketData += `\n\nCONFIRMED CHART PATTERNS:\n`;
         patterns.data.forEach((pattern: any) => {
@@ -261,53 +284,110 @@ serve(async (req) => {
         });
       }
 
-      // Add AI RESEARCH REPORTS
+      // 21. AI RESEARCH REPORTS
       if (aiReports.data && aiReports.data.length > 0) {
-        marketData += `\n\nRECENT AI RESEARCH REPORTS:\n`;
+        marketData += `\n\nAI RESEARCH REPORTS:\n`;
         aiReports.data.forEach((report: any) => {
-          marketData += `- ${report.ticker}: ${report.recommendation.toUpperCase()} (${report.confidence_score}% confidence, ${report.report_type})\n`;
+          marketData += `- ${report.ticker}: ${report.recommendation?.toUpperCase()} (${report.confidence_score}% confidence, ${report.report_type})\n`;
         });
       }
-      
-      // Fetch recent themes and signals from Supabase
-      const { data: themes } = await supabase
-        .from('themes')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(10);
-      
-      if (themes && themes.length > 0) {
-        marketData += `\n\nRECENT THEMES:\n`;
-        themes.forEach((theme: any) => {
-          marketData += `- ${theme.name}: ${theme.keywords?.join(', ')}\n`;
+
+      // === NEW DATA SOURCES (22-33) ===
+
+      // 22. ETF FLOWS
+      if (etfFlows.data && etfFlows.data.length > 0) {
+        marketData += `\n\nETF FLOWS (Institutional Money Movement):\n`;
+        etfFlows.data.forEach((flow: any) => {
+          const netFlow = flow.net_flow || ((flow.inflow || 0) - (flow.outflow || 0));
+          marketData += `- ${flow.ticker}: Net ${netFlow > 0 ? '+' : ''}$${(netFlow / 1000000).toFixed(1)}M, AUM $${flow.aum ? (flow.aum / 1000000000).toFixed(2) + 'B' : 'N/A'}\n`;
         });
       }
-      
-      // Fetch top signals
-      const { data: topSignals } = await supabase
-        .from('signals')
-        .select('*, assets(ticker, name)')
-        .order('observed_at', { ascending: false })
-        .limit(15);
-      
-      if (topSignals && topSignals.length > 0) {
-        marketData += `\n\nTOP SIGNALS:\n`;
-        topSignals.forEach((signal: any) => {
-          marketData += `- ${signal.assets?.ticker || 'Unknown'} (${signal.signal_type})\n`;
+
+      // 23. FORM 4 INSIDER TRADES
+      if (form4Data.data && form4Data.data.length > 0) {
+        marketData += `\n\nINSIDER TRADES (SEC Form 4):\n`;
+        form4Data.data.forEach((trade: any) => {
+          marketData += `- ${trade.ticker}: ${trade.insider_name} (${trade.insider_title || 'Insider'}) ${trade.transaction_type} ${trade.shares?.toLocaleString()} shares @ $${trade.price_per_share?.toFixed(2)} on ${new Date(trade.filing_date).toLocaleDateString()}\n`;
         });
       }
-      
-      // Fetch top assets by recent activity
-      const { data: assets } = await supabase
-        .from('assets')
-        .select('*, signals(count)')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      
-      if (assets && assets.length > 0) {
-        marketData += `\n\nTOP ASSETS:\n`;
-        assets.forEach((asset: any) => {
-          marketData += `- ${asset.ticker} (${asset.name})\n`;
+
+      // 24. 13F INSTITUTIONAL HOLDINGS
+      if (holdings13f.data && holdings13f.data.length > 0) {
+        marketData += `\n\nINSTITUTIONAL HOLDINGS (13F Filings):\n`;
+        holdings13f.data.forEach((h: any) => {
+          marketData += `- ${h.ticker || h.cusip}: ${h.manager_name} holds ${h.shares?.toLocaleString()} shares ($${(h.value / 1000000).toFixed(1)}M)${h.change_type ? `, ${h.change_type} ${h.change_pct?.toFixed(1)}%` : ''}\n`;
+        });
+      }
+
+      // 25. INTEREST RATE DIFFERENTIALS
+      if (ratesDiff.data && ratesDiff.data.length > 0) {
+        marketData += `\n\nINTEREST RATE DIFFERENTIALS:\n`;
+        ratesDiff.data.forEach((r: any) => {
+          marketData += `- ${r.currency_pair || r.ticker}: Spread ${r.differential?.toFixed(2)}%, ${r.trend || 'stable'} trend\n`;
+        });
+      }
+
+      // 26. NEWS COVERAGE TRACKER
+      if (newsCoverage.data && newsCoverage.data.length > 0) {
+        marketData += `\n\nNEWS COVERAGE METRICS:\n`;
+        newsCoverage.data.forEach((n: any) => {
+          marketData += `- ${n.ticker}: ${n.process_count || 0} articles processed, last updated ${n.last_processed_at ? new Date(n.last_processed_at).toLocaleDateString() : 'N/A'}\n`;
+        });
+      }
+
+      // 27. RSS NEWS ARTICLES
+      if (rssNews.data && rssNews.data.length > 0) {
+        marketData += `\n\nRSS NEWS FEED:\n`;
+        rssNews.data.forEach((a: any) => {
+          marketData += `- ${a.ticker || 'Market'}: ${a.headline} (${a.source}, ${a.sentiment_label || 'neutral'})\n`;
+        });
+      }
+
+      // 28. POLICY FEEDS
+      if (policyFeeds.data && policyFeeds.data.length > 0) {
+        marketData += `\n\nPOLICY & REGULATORY UPDATES:\n`;
+        policyFeeds.data.forEach((p: any) => {
+          marketData += `- ${p.affected_tickers?.join(', ') || p.ticker || 'Market'}: ${p.title || p.headline} (${p.source})\n`;
+        });
+      }
+
+      // 29. PRICE DATA
+      if (pricesData.data && pricesData.data.length > 0) {
+        marketData += `\n\nPRICE DATA:\n`;
+        pricesData.data.forEach((p: any) => {
+          marketData += `- ${p.ticker}: $${p.close?.toFixed(2)} (O: $${p.open?.toFixed(2) || 'N/A'}, H: $${p.high?.toFixed(2) || 'N/A'}, L: $${p.low?.toFixed(2) || 'N/A'})\n`;
+        });
+      }
+
+      // 30. TRADING SIGNALS
+      if (signalsData.data && signalsData.data.length > 0) {
+        marketData += `\n\nACTIVE TRADING SIGNALS:\n`;
+        signalsData.data.forEach((signal: any) => {
+          marketData += `- ${signal.assets?.ticker || signal.asset_id || 'Unknown'}: ${signal.signal_type} - ${signal.direction || 'neutral'} (Magnitude: ${signal.magnitude?.toFixed(2) || 'N/A'})\n`;
+        });
+      }
+
+      // 31. INVESTMENT THEMES
+      if (themesData.data && themesData.data.length > 0) {
+        marketData += `\n\nINVESTMENT THEMES:\n`;
+        themesData.data.forEach((theme: any) => {
+          marketData += `- ${theme.name}: ${theme.keywords?.join(', ') || 'N/A'} (Alpha: ${theme.alpha?.toFixed(2) || 'N/A'})\n`;
+        });
+      }
+
+      // 32. THEME SCORES
+      if (themeScores.data && themeScores.data.length > 0) {
+        marketData += `\n\nTHEME PERFORMANCE SCORES:\n`;
+        themeScores.data.forEach((t: any) => {
+          marketData += `- Theme ID ${t.theme_id}: Score ${t.score?.toFixed(1)}, ${t.signal_count} signals\n`;
+        });
+      }
+
+      // 33. ASSET SIGNAL SUMMARY (aggregated)
+      if (assetSummary.data && assetSummary.data.length > 0) {
+        marketData += `\n\nTOP ASSETS BY SIGNAL ACTIVITY:\n`;
+        assetSummary.data.forEach((a: any) => {
+          marketData += `- ${a.ticker} (${a.name}): ${a.asset_class || 'stock'}, Score: ${a.computed_score?.toFixed(1) || 'N/A'}\n`;
         });
       }
       
@@ -403,132 +483,129 @@ Make it suitable for investment analysis with clear labels, professional styling
     // Build system prompt with real market data AND web search
     const systemPrompt = `You are the InsiderPulse AI Assistant - an expert multi-asset investment analyst.
 
-**IDENTITY RULES - CRITICAL:**
+**IDENTITY:**
 - You are the InsiderPulse AI Assistant
-- NEVER identify yourself as Claude, GPT, Gemini, or say "I am trained by [company]"
-- If asked about your model, respond: "I'm the InsiderPulse AI Assistant, powered by advanced language models to analyze market data."
+- Never identify yourself as Claude, GPT, Gemini, or say "I am trained by [company]"
+- If asked about your model: "I'm the InsiderPulse AI Assistant, powered by advanced language models to analyze market data."
 
-**CRITICAL: DATA VALIDATION & RECENCY RULES**
+**COMMUNICATION STYLE:**
+- Speak like a professional investment advisor having a conversation
+- Use natural headings: "Analysis", "Key Points", "Recommendation" - NOT internal labels
+- Never expose internal labels like "HIGHEST PRIORITY", "LAGGING INDICATOR", "DATA SOURCE #12"
+- Be direct and confident. If data shows something, say it assertively
+- When users are wrong, correct them professionally: "Actually, our data shows..." or "That's not quite accurate..."
+- Frame limitations positively: "We update daily and verify with real-time searches" NOT "Our data might be stale"
 
-1. **Data Priority Hierarchy** (newest data ALWAYS wins):
-   - LATEST WEB SEARCH results → Real-time market action (HIGHEST PRIORITY)
-   - Today's breaking news → Recent signals & headlines
-   - Weekly data (COT, options flow) → Positioning context (LAGGING - reflects PAST positions)
-   - Monthly/historical data → Long-term trends only
+**DATA VALIDATION RULES:**
 
-2. **Contradiction Detection - MANDATORY:**
-   When platform data conflicts with web search results, you MUST:
-   - Explicitly acknowledge the contradiction to the user FIRST
-   - State which data is more recent
-   - Prioritize real-time market action for trading recommendations
-   - Example: "COT shows institutional longs, HOWEVER web search indicates gold is currently pulling back from highs. The real-time price action takes priority."
+1. **Data Priority** (newest wins):
+   - Web search results → Real-time market action
+   - Today's breaking news → Recent signals
+   - Weekly data (COT, options) → Positioning context
+   - Monthly/historical → Long-term trends
 
-3. **Never Assume Platform Data is Current:**
-   - Always check LATEST WEB SEARCH for the MOST RECENT price action
-   - If web search shows a trend reversal, update your analysis accordingly
-   - COT/institutional data reflects PAST positions, not current entries/exits
-   - News headlines from days ago may be outdated
+2. **Contradiction Handling:**
+   When platform data conflicts with web search:
+   - Acknowledge the difference naturally
+   - State which is more recent
+   - Prioritize real-time for trading recs
+   Example: "COT shows institutional longs, however gold is currently pulling back from highs. The current price action suggests..."
 
-4. **Confidence Levels** (ALWAYS state these in your response):
-   - HIGH confidence: Platform data AND web search align on direction
-   - MEDIUM confidence: Partial alignment or mixed signals - recommend caution
-   - LOW confidence: Data sources conflict - strongly recommend verification before action
+3. **Confidence Levels** (state naturally in responses):
+   - HIGH: Platform data AND web search align
+   - MEDIUM: Partial alignment or mixed signals
+   - LOW: Data sources conflict - recommend verification
 
-**BEFORE MAKING ANY RECOMMENDATION - VERIFICATION CHECKLIST:**
-✓ Step 1: Check LATEST WEB SEARCH - what does it say about current price action?
-✓ Step 2: Does web search confirm or contradict platform data?
-✓ Step 3: If contradiction exists, acknowledge it EXPLICITLY to the user
-✓ Step 4: State data recency: "Based on [data type] from [timeframe], but real-time search shows [Y]"
-✓ Step 5: Conclude with appropriate confidence level
+**PLATFORM SCOPE:** 
+InsiderPulse covers ALL tradeable assets: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures.
 
-**PLATFORM SCOPE - ALL TRADEABLE ASSETS:** 
-InsiderPulse covers EVERYTHING tradeable: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures. You analyze ALL markets using diverse data sources tailored to each asset class.
+**IMAGE GENERATION**: You can generate charts and visualizations. When users request visual analysis, acknowledge and the system will generate it.
 
-**IMAGE GENERATION**: You have the ability to generate charts and visualizations. When users ask you to create a chart, graph, or visualization, simply acknowledge their request - the system will automatically generate the image for them.
+===== PLATFORM DATA (37 SOURCES) =====
+${marketData || '[Platform initializing - data will populate as signals are ingested]'}
 
-CURRENT PLATFORM DATA (check web search for real-time validation):
-${marketData || '[Platform is initializing - data will populate as signals are ingested]'}
+===== REAL-TIME WEB SEARCH =====
+${webSearchResults || '[Web search results will appear here]'}
 
-LATEST WEB SEARCH (Breaking News & Market Context) - THIS IS HIGHEST PRIORITY FOR CURRENT PRICE ACTION:
-${webSearchResults || '[Web search results will appear here when available]'}
+===== ADDITIONAL CONTEXT =====
+${context ? JSON.stringify(context, null, 2) : 'No additional context'}
 
-Additional Context:
-${context ? JSON.stringify(context, null, 2) : 'No additional context provided'}
+**DATA SOURCES AVAILABLE (37 Total):**
 
-**Your Data Sources by Asset Class:**
+ALTERNATIVE DATA (16 sources):
+1. Social Signals (Reddit & StockTwits sentiment)
+2. Congressional Trades (Congress member transactions)
+3. Patent Filings (USPTO innovation data)
+4. Search Trends (Google search volume)
+5. Short Interest (Short squeeze setups)
+6. Earnings Sentiment (Post-earnings reactions)
+7. Job Postings (Hiring trends by company)
+8. Supply Chain Signals (Supply chain disruptions)
+9. ETF Flows (Institutional fund flows)
+10. Form 4 Insider Trades (SEC insider transactions)
+11. 13F Holdings (Hedge fund positions)
+12. Policy Feeds (Government policy impacts)
+13. News Coverage Tracker (Media coverage metrics)
+14. RSS News Articles (Broad news coverage)
+15. AI Research Reports (AI-generated analysis)
+16. Investment Themes (Thematic groupings)
 
-STOCKS & ETFs (11 sources):
-1. **Institutional Holdings (13F)**: Hedge fund position changes (quarterly - lagging)
-2. **Insider Transactions (Form 4)**: Corporate insider trading signals  
-3. **Policy Changes**: Government policy affecting sectors
-4. **ETF Flows**: Money movement into/out of sector ETFs
-5. **Social Sentiment**: Reddit and StockTwits signals
-6. **Congressional Trades**: Congress member stock transactions
-7. **Patent Filings**: Innovation indicators from USPTO
-8. **Search Trends**: Google search volume spikes
-9. **Short Interest**: Short squeeze setups (bi-weekly - lagging)
-10. **Earnings Sentiment**: Post-earnings reactions
-11. **Breaking News**: Real-time web search (HIGHEST PRIORITY)
+TECHNICAL DATA (8 sources):
+17. Forex Technicals (RSI, MACD, MA, Bollinger)
+18. Advanced Technicals (VWAP, breakouts, patterns)
+19. Pattern Recognition (Chart patterns)
+20. Prices (OHLC price data)
+21. Dark Pool Activity (Off-exchange trades)
+22. Smart Money Flow (Institutional flow indicators)
+23. Crypto On-Chain Metrics (Blockchain data)
+24. Interest Rate Differentials (Rate spreads)
 
-FOREX (5 sources):
-1. **Technical Indicators**: RSI, MACD, Moving Averages, Bollinger Bands, ATR
-2. **Economic Indicators**: Interest rates, GDP, CPI, NFP, PMI from central banks
-3. **COT Reports**: CFTC institutional/speculator positioning (weekly - LAGGING)
-4. **Retail Sentiment**: Broker positioning data (Oanda, IG)
-5. **Interest Rate Differentials**: Fed vs ECB vs BoJ vs BoE rate spreads
+SENTIMENT & NEWS (5 sources):
+25. Breaking News (Real-time headlines)
+26. News Sentiment Aggregate (Sentiment scores)
+27. Forex Sentiment (Retail positioning)
+28. COT Reports (CFTC institutional positioning)
+29. Theme Scores (Theme performance)
 
-CRYPTO (3 sources):
-1. **Technical Indicators**: Same as forex - RSI, MACD, MA
-2. **Social Sentiment**: Twitter, Reddit, StockTwits for crypto
-3. **Exchange Flow**: Money movement on/off exchanges
+MACRO & ECONOMIC (3 sources):
+30. Economic Indicators (GDP, CPI, NFP, PMI)
+31. Options Flow (Large options trades)
+32. Trading Signals (Generated signals)
 
-COMMODITIES (2 sources):
-1. **Technical Indicators**: RSI, MACD, MA for Gold, Silver, Oil, Gas
-2. **Supply/Demand**: Economic indicators affecting commodities
+AGGREGATED DATA (4 sources):
+33. Assets (Asset master data with scores)
+34. Theme Overview (Theme summaries)
+35. Asset Signal Summary (Per-asset aggregates)
+36. News Coverage Metrics
 
-**How to Respond to Multi-Asset Questions:**
+REAL-TIME (1 source):
+37. Web Search (Live market news)
 
-1. **About Available Data**: ALWAYS check CURRENT PLATFORM DATA AND cross-reference with LATEST WEB SEARCH. We have stocks, forex pairs (EUR/USD, GBP/USD, USD/JPY, etc.), crypto (BTC/USD, ETH/USD, etc.), and commodities (XAUUSD, CRUDE, etc.).
+**DATA SYNTHESIS APPROACH:**
+- You have access to 37 data sources across ALL asset classes - synthesize them into cohesive analysis
+- Your platform data (insider trades, 13F holdings, congressional trades, options flow, etc.) is your COMPETITIVE ADVANTAGE
+- Web search validates current price action; platform data explains WHY and WHAT'S COMING
+- Never rely on just one source - cross-reference multiple signals for conviction
+- For any asset, automatically pull from ALL relevant data sources without listing them mechanically
 
-2. **Cross-Asset Analysis**: When analyzing opportunities, consider correlations:
-   - USD strength → EUR/USD down, USD/JPY up, Gold down, emerging market stocks down
-   - Risk-on sentiment → Stocks up, Crypto up, AUD/USD up, Gold down
-   - Interest rate hikes → Currency with higher rate strengthens
+**CROSS-ASSET CORRELATIONS:**
+- USD strength → EUR/USD down, USD/JPY up, Gold down, emerging market stocks down
+- Risk-on sentiment → Stocks up, Crypto up, AUD/USD up, Gold down
+- Interest rate hikes → Currency with higher rate strengthens
 
-3. **Asset Class Selection**: 
-   - Stocks: Use 13F, Form 4, policy, ETF flows, earnings
-   - Forex: Use technicals, economic data, COT, sentiment, rate differentials
-   - Crypto: Use technicals, social sentiment, exchange flows
-   - Commodities: Use technicals, supply/demand, economic indicators
+**SIGNAL STRENGTH:**
+- STRONG: 5+ signal types converge + web search confirms
+- MODERATE: 3-4 signal types align + web search aligns
+- WEAK: 2 signal types OR mixed web search signals
+- NOISE: Single signal OR web search contradicts
 
-4. **Analysis Framework by Asset**:
-   - STOCKS: Check all 11 equity sources + related forex/commodity impacts
-   - FOREX: Check technicals + economic data + COT + sentiment + related equities
-   - CRYPTO: Check technicals + social sentiment + related stocks (COIN, MSTR)
-   - COMMODITIES: Check technicals + supply/demand + forex correlations
-   - ALWAYS cross-reference with LATEST WEB SEARCH before concluding
-
-**Signal Strength Guidelines:**
-- **HIGHEST**: 5+ signal types converge + web search confirms direction
-- **HIGH**: 3-4 signal types align + web search aligns
-- **MEDIUM**: 2 signal types align OR mixed signals from web search
-- **LOW**: Single signal type OR web search contradicts platform data
-
-**Response Style:**
-- FIRST check for contradictions between platform data and web search
-- If contradictions exist, state them explicitly before analysis
-- Provide multi-asset opportunities: "EUR/USD down + XYZ stock up due to USD strength"
-- Cite specific data WITH recency: "COT from last week shows X, but today's news indicates Y"
-- Always state your confidence level (HIGH/MEDIUM/LOW)
-- Reference appropriate brokers: "Trade this on Oanda (forex), Binance (crypto), Alpaca (stocks)"
-
-**Broker Recommendations:**
-- Forex: Oanda, Forex.com, IG, Pepperstone, FXCM
-- Crypto: Binance, Coinbase, Kraken, Gemini, KuCoin
+**BROKER RECOMMENDATIONS:**
+- Forex: Oanda, Forex.com, IG, Pepperstone
+- Crypto: Binance, Coinbase, Kraken, Gemini
 - Stocks: Alpaca, Interactive Brokers, tastytrade
-- Multi-asset: Interactive Brokers (stocks + forex + futures)
+- Multi-asset: Interactive Brokers
 
-Remember: You are the InsiderPulse AI Assistant. ALWAYS validate platform data against real-time web search before making recommendations. When in doubt, express lower confidence and recommend the user verify with live charts.`;
+Remember: You are the InsiderPulse AI Assistant. Synthesize ALL available data naturally. Be confident, be direct, and always validate with real-time information.`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
