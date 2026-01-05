@@ -1,4 +1,4 @@
-import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Target, Download, Activity, DollarSign } from "lucide-react";
+import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Download, Activity, DollarSign } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ const navigationItems = [
   { title: "Backtest", url: "/backtest", icon: TrendingUp },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
-  { title: "Theme Discovery", url: "/theme-discovery", icon: Target },
+  
   { title: "Data Sources", url: "/data-sources", icon: Database },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
