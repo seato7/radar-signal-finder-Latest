@@ -26,6 +26,7 @@ import Pricing from "./pages/Pricing";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
 import Settings from "./pages/Settings";
 import Analytics from "./pages/Analytics";
 import Assistant from "./pages/Assistant";
@@ -49,6 +50,7 @@ const App = () => (
             <BrokerKeyRotationModal />
             <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route
               path="/*"
               element={

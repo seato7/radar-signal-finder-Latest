@@ -6,19 +6,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+
 const emailSchema = z.string().email("Invalid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
+
+// Password reset redirect URL - prefer env var, fallback to current origin
+const getResetRedirectUrl = () => {
+  const envUrl = import.meta.env.VITE_SUPABASE_PASSWORD_RESET_REDIRECT_URL;
+  if (envUrl) return envUrl;
+  return `${window.location.origin}/reset-password`;
+};
+
 export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
   const navigate = useNavigate();
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -44,9 +56,7 @@ export default function Auth() {
       return;
     }
     setLoading(true);
-    const {
-      error
-    } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -75,6 +85,7 @@ export default function Auth() {
       });
     }
   };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -91,9 +102,7 @@ export default function Auth() {
       }
     }
     setLoading(true);
-    const {
-      error
-    } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password
     });
@@ -108,7 +117,48 @@ export default function Auth() {
       navigate("/");
     }
   };
-  return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate email
+    try {
+      emailSchema.parse(resetEmail);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast({
+          title: "Validation Error",
+          description: error.issues[0].message,
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    setResetLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      redirectTo: getResetRedirectUrl(),
+    });
+    setResetLoading(false);
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Reset link sent",
+        description: "Check your inbox for the password reset link."
+      });
+      setForgotPasswordOpen(false);
+      setResetEmail("");
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">Insider Pulse</CardTitle>
@@ -136,6 +186,15 @@ export default function Auth() {
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Signing in..." : "Sign In"}
                 </Button>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => setForgotPasswordOpen(true)}
+                    className="text-sm text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
               </form>
             </TabsContent>
             
@@ -164,5 +223,47 @@ export default function Auth() {
           </Tabs>
         </CardContent>
       </Card>
-    </div>;
+
+      {/* Forgot Password Modal */}
+      <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              Enter your email address and we'll send you a link to reset your password.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reset-email">Email</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                placeholder="your@email.com"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setForgotPasswordOpen(false);
+                  setResetEmail("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1" disabled={resetLoading}>
+                {resetLoading ? "Sending..." : "Send Reset Link"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
