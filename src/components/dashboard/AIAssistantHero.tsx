@@ -40,11 +40,11 @@ const AIAssistantHero = () => {
           </div>
           <div>
             <h3 className="font-semibold text-lg flex items-center gap-2">
-              Ask the AI Assistant
+              InsiderPulse AI Assistant
               <Sparkles className="h-4 w-4 text-warning" />
             </h3>
             <p className="text-sm text-muted-foreground">
-              Analyze signals across 30+ data sources instantly
+              Analyze signals across 30+ data sources with real-time validation
             </p>
           </div>
         </div>

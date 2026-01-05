@@ -9,8 +9,8 @@ const Assistant = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="AI Investment Assistant"
-        description="Ask questions about themes, signals, and market opportunities"
+        title="InsiderPulse AI Assistant"
+        description="Ask questions about themes, signals, and market opportunities across all asset classes"
       />
       <AIAssistantChat initialQuery={initialQuery} />
     </div>
