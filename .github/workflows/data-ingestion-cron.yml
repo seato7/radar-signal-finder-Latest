@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        function: [ingest-cot-cftc, ingest-fred-economics]
+        function: [ingest-cot-cftc, ingest-fred-economics, mine-and-discover-themes]
     steps:
       - name: Run ${{ matrix.function }}
         run: |
