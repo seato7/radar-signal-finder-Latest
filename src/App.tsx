@@ -17,7 +17,7 @@ import Watchlist from "./pages/Watchlist";
 import Backtest from "./pages/Backtest";
 import AssetDetail from "./pages/AssetDetail";
 import Themes from "./pages/Themes";
-import ThemeDiscovery from "./pages/ThemeDiscovery";
+
 import DataSources from "./pages/DataSources";
 import Bots from "./pages/Bots";
 import APIUsage from "./pages/APIUsage";
@@ -69,7 +69,7 @@ const App = () => (
                             <Route path="/backtest" element={<Backtest />} />
                             <Route path="/asset/*" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
-                            <Route path="/theme-discovery" element={<ThemeDiscovery />} />
+                            
                             <Route path="/data-sources" element={<DataSources />} />
                             <Route path="/bots" element={<Bots />} />
                             <Route path="/pricing" element={<Pricing />} />
