@@ -44,7 +44,7 @@ const getSignupEmailHtml = (verifyLink: string) => `
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
-              <img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" style="width: 360px; height: 240px; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto; object-fit: contain;">
+              <img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" draggable="false" style="width: 360px; height: 240px; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Market Intelligence Platform</p>
             </td>
@@ -112,7 +112,7 @@ const getRecoveryEmailHtml = (resetLink: string) => `
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
-              <img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" style="width: 360px; height: 240px; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto; object-fit: contain;">
+              <img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" draggable="false" style="width: 360px; height: 240px; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Password Reset Request</p>
             </td>
