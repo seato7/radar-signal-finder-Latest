@@ -24,6 +24,9 @@ interface AuthEmailRequest {
   password?: string;
 }
 
+// Logo URL from Supabase Storage (publicly accessible)
+const LOGO_URL = "https://detxhoqiarohjevedmxh.supabase.co/storage/v1/object/public/email-assets/logo.png";
+
 // Email templates
 const getSignupEmailHtml = (verifyLink: string) => `
 <!DOCTYPE html>
@@ -41,7 +44,7 @@ const getSignupEmailHtml = (verifyLink: string) => `
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
-              <img src="https://insiderpulse.org/images/logo.png" alt="InsiderPulse" style="height: 60px; width: auto; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto;">
+              <img src="${LOGO_URL}" alt="InsiderPulse" style="height: 60px; width: auto; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Market Intelligence Platform</p>
             </td>
@@ -71,8 +74,7 @@ const getSignupEmailHtml = (verifyLink: string) => `
               </p>
               
               <p style="margin: 20px 0 0; color: #666666; font-size: 12px; line-height: 1.6;">
-                Button not working? Copy and paste this link into your browser:<br>
-                <a href="${verifyLink}" target="_blank" rel="noopener" style="color: #3b82f6; word-break: break-all;">${verifyLink}</a>
+                Having trouble with the button? <a href="${verifyLink}" target="_blank" rel="noopener" style="color: #3b82f6;">Click here to verify your email</a>
               </p>
             </td>
           </tr>
@@ -110,7 +112,7 @@ const getRecoveryEmailHtml = (resetLink: string) => `
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
-              <img src="https://insiderpulse.org/images/logo.png" alt="InsiderPulse" style="height: 60px; width: auto; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto;">
+              <img src="${LOGO_URL}" alt="InsiderPulse" style="height: 60px; width: auto; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Password Reset Request</p>
             </td>
@@ -142,8 +144,7 @@ const getRecoveryEmailHtml = (resetLink: string) => `
               </div>
               
               <p style="margin: 20px 0 0; color: #666666; font-size: 12px; line-height: 1.6;">
-                Button not working? Copy and paste this link into your browser:<br>
-                <a href="${resetLink}" target="_blank" rel="noopener" style="color: #f59e0b; word-break: break-all;">${resetLink}</a>
+                Having trouble with the button? <a href="${resetLink}" target="_blank" rel="noopener" style="color: #f59e0b;">Click here to reset your password</a>
               </p>
             </td>
           </tr>
