@@ -38,9 +38,10 @@ const getSignupEmailHtml = (verifyLink: string) => `
     <tr>
       <td align="center" style="padding: 40px 20px;">
         <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #1a1a1a; border-radius: 12px; overflow: hidden;">
-          <!-- Header -->
+          <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
+              <img src="https://insiderpulse.org/images/logo.png" alt="InsiderPulse" style="height: 60px; width: auto; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Market Intelligence Platform</p>
             </td>
@@ -54,10 +55,11 @@ const getSignupEmailHtml = (verifyLink: string) => `
                 Welcome to InsiderPulse! Click the button below to verify your email address and activate your account.
               </p>
               
-              <table role="presentation" style="width: 100%; border-collapse: collapse;">
+              <!-- Table-based button for better email client compatibility -->
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto;">
                 <tr>
-                  <td align="center">
-                    <a href="${verifyLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                  <td style="border-radius: 8px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
+                    <a href="${verifyLink}" target="_blank" rel="noopener" style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                       Verify Email Address
                     </a>
                   </td>
@@ -70,7 +72,7 @@ const getSignupEmailHtml = (verifyLink: string) => `
               
               <p style="margin: 20px 0 0; color: #666666; font-size: 12px; line-height: 1.6;">
                 Button not working? Copy and paste this link into your browser:<br>
-                <a href="${verifyLink}" style="color: #3b82f6; word-break: break-all;">${verifyLink}</a>
+                <a href="${verifyLink}" target="_blank" rel="noopener" style="color: #3b82f6; word-break: break-all;">${verifyLink}</a>
               </p>
             </td>
           </tr>
@@ -105,9 +107,10 @@ const getRecoveryEmailHtml = (resetLink: string) => `
     <tr>
       <td align="center" style="padding: 40px 20px;">
         <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #1a1a1a; border-radius: 12px; overflow: hidden;">
-          <!-- Header -->
+          <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
+              <img src="https://insiderpulse.org/images/logo.png" alt="InsiderPulse" style="height: 60px; width: auto; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Password Reset Request</p>
             </td>
@@ -121,10 +124,11 @@ const getRecoveryEmailHtml = (resetLink: string) => `
                 We received a request to reset your password. Click the button below to choose a new password.
               </p>
               
-              <table role="presentation" style="width: 100%; border-collapse: collapse;">
+              <!-- Table-based button for better email client compatibility -->
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto;">
                 <tr>
-                  <td align="center">
-                    <a href="${resetLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                  <td style="border-radius: 8px; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
+                    <a href="${resetLink}" target="_blank" rel="noopener" style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                       Reset Password
                     </a>
                   </td>
@@ -139,7 +143,7 @@ const getRecoveryEmailHtml = (resetLink: string) => `
               
               <p style="margin: 20px 0 0; color: #666666; font-size: 12px; line-height: 1.6;">
                 Button not working? Copy and paste this link into your browser:<br>
-                <a href="${resetLink}" style="color: #f59e0b; word-break: break-all;">${resetLink}</a>
+                <a href="${resetLink}" target="_blank" rel="noopener" style="color: #f59e0b; word-break: break-all;">${resetLink}</a>
               </p>
             </td>
           </tr>
