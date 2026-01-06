@@ -55,17 +55,21 @@ export default function Auth() {
       });
       return;
     }
+    
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth`
-      }
+    
+    // Call edge function instead of supabase.auth.signUp()
+    // This uses generateLink() to create official Supabase tokens
+    // and sends the verification email via Brevo from support@insiderpulse.org
+    const { data, error } = await supabase.functions.invoke('custom-auth-email', {
+      body: { action: 'signup', email, password }
     });
+    
     setLoading(false);
-    if (error) {
-      if (error.message.includes("already registered")) {
+    
+    if (error || (data && !data.success)) {
+      const errorMessage = data?.error || error?.message || "An error occurred";
+      if (errorMessage.includes("already registered")) {
         toast({
           title: "Account exists",
           description: "This email is already registered. Please sign in instead.",
@@ -74,14 +78,14 @@ export default function Auth() {
       } else {
         toast({
           title: "Error",
-          description: error.message,
+          description: errorMessage,
           variant: "destructive"
         });
       }
     } else {
       toast({
         title: "Check your email",
-        description: "We've sent you a confirmation link. Please check your inbox and click the link to verify your account before signing in."
+        description: "We've sent you a verification link from support@insiderpulse.org. Please check your inbox."
       });
     }
   };
@@ -136,21 +140,26 @@ export default function Auth() {
     }
 
     setResetLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: getResetRedirectUrl(),
+    
+    // Call edge function instead of supabase.auth.resetPasswordForEmail()
+    // This uses generateLink() to create official Supabase recovery tokens
+    // and sends the reset email via Brevo from support@insiderpulse.org
+    const { data, error } = await supabase.functions.invoke('custom-auth-email', {
+      body: { action: 'recovery', email: resetEmail }
     });
+    
     setResetLoading(false);
 
-    if (error) {
+    if (error || (data && !data.success)) {
       toast({
         title: "Error",
-        description: error.message,
+        description: data?.error || error?.message || "An error occurred",
         variant: "destructive"
       });
     } else {
       toast({
         title: "Reset link sent",
-        description: "Check your inbox for the password reset link."
+        description: "Check your inbox for the password reset link from support@insiderpulse.org."
       });
       setForgotPasswordOpen(false);
       setResetEmail("");

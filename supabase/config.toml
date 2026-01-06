@@ -1,5 +1,8 @@
 project_id = "detxhoqiarohjevedmxh"
 
+[functions.custom-auth-email]
+verify_jwt = false
+
 [functions.get-themes]
 verify_jwt = false
 
