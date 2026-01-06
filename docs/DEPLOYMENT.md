@@ -144,7 +144,7 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 ```
 
-Schedule jobs:
+Schedule jobs (update with YOUR Supabase project URL):
 ```sql
 -- Hourly ingestion
 SELECT cron.schedule(
@@ -152,7 +152,7 @@ SELECT cron.schedule(
   '0 * * * *',
   $$
   SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/ingest-orchestrator',
+    url:='https://gwoflyvcooepxxgflrvc.supabase.co/functions/v1/ingest-orchestrator',
     headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb,
     body:='{"frequency":"hourly"}'::jsonb
   );
@@ -165,7 +165,7 @@ SELECT cron.schedule(
   '*/15 * * * *',
   $$
   SELECT net.http_post(
-    url:='https://detxhoqiarohjevedmxh.supabase.co/functions/v1/watchdog-ingestion-health',
+    url:='https://gwoflyvcooepxxgflrvc.supabase.co/functions/v1/watchdog-ingestion-health',
     headers:='{"Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb
   );
   $$

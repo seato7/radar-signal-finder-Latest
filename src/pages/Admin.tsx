@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, Users, Bot, AlertCircle, TrendingUp, Shield, Database, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { SupabaseDebugPanel } from "@/components/SupabaseDebugPanel";
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -98,6 +99,9 @@ const Admin = () => {
         title="Admin Dashboard"
         description="Complete system overview and user management"
       />
+
+      {/* Supabase Debug Panel - Admin Only */}
+      <SupabaseDebugPanel />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
