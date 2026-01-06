@@ -223,9 +223,19 @@ const handler = async (req: Request): Promise<Response> => {
 
       if (createError) {
         console.error("Create user error:", createError);
-        // Handle "already registered" case
+        // Handle "already registered" case - return 200 so frontend can handle gracefully
         if (createError.message.includes("already been registered") || createError.message.includes("already exists")) {
-          throw new Error("This email is already registered. Please sign in instead.");
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: "This email is already registered. Please sign in instead.",
+              code: "EMAIL_EXISTS"
+            }),
+            {
+              status: 200, // Return 200 so it doesn't trigger error boundary
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            }
+          );
         }
         throw createError;
       }
