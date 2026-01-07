@@ -7,10 +7,12 @@ import { Loader2, CheckCircle2, XCircle, AlertTriangle, Play, RefreshCw } from "
 import { toast } from "sonner";
 
 interface ValidationResult {
-  test_name: string;
+  name: string;
   passed: boolean;
   message: string;
-  details?: Record<string, unknown>;
+  actual: string | number;
+  expected: string;
+  critical: boolean;
 }
 
 interface SignalStats {
@@ -111,12 +113,14 @@ export function SystemValidationCard() {
         setLastValidation(new Date().toISOString());
         
         const passedCount = data.results.filter((r: ValidationResult) => r.passed).length;
+        const criticalPassed = data.results.filter((r: ValidationResult) => r.critical && r.passed).length;
+        const criticalTotal = data.results.filter((r: ValidationResult) => r.critical).length;
         const totalCount = data.results.length;
         
         if (passedCount === totalCount) {
-          toast.success(`All ${totalCount} tests passed!`);
+          toast.success(`✅ All ${totalCount} tests passed! (${criticalPassed}/${criticalTotal} critical)`);
         } else {
-          toast.warning(`${passedCount}/${totalCount} tests passed`);
+          toast.warning(`${passedCount}/${totalCount} tests passed (${criticalPassed}/${criticalTotal} critical)`);
         }
       }
 
@@ -215,11 +219,16 @@ export function SystemValidationCard() {
                 >
                   {result.passed ? (
                     <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                  ) : (
+                  ) : result.critical ? (
                     <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{result.test_name}</div>
+                    <div className="font-medium truncate flex items-center gap-1">
+                      {result.name.replace(/_/g, ' ')}
+                      {result.critical && <Badge variant="outline" className="text-[10px] px-1">critical</Badge>}
+                    </div>
                     <div className="text-xs text-muted-foreground">{result.message}</div>
                   </div>
                   <Badge variant={result.passed ? "default" : "destructive"} className="shrink-0">
