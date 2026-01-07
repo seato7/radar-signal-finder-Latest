@@ -95,7 +95,10 @@ export function SystemValidationCard() {
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
     
     try {
-      const result = await supabase.functions.invoke(fnName, { body });
+      const result = await supabase.functions.invoke(fnName, {
+        body,
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
       return result as { data: T | null; error: Error | null };
     } catch (err) {
