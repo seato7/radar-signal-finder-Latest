@@ -90,10 +90,14 @@ serve(async (req) => {
 
       // Skip weak signals
       if (direction === 'neutral' && magnitude < 1) continue;
+      
+      // Use specific signal types that match scoring expectations
+      const signalType = direction === 'up' ? 'ai_research_buy' : 
+                         direction === 'down' ? 'ai_research_sell' : 'ai_research_hold';
 
       signals.push({
         asset_id: assetId,
-        signal_type: 'ai_research',
+        signal_type: signalType,
         direction,
         magnitude: Math.min(5, magnitude),
         observed_at: report.generated_at || new Date().toISOString(),

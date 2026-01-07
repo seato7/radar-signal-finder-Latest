@@ -75,9 +75,11 @@ serve(async (req) => {
         }
 
         if (direction !== 'neutral') {
+          // Use specific signal types that match scoring expectations
+          const signalType = direction === 'up' ? 'onchain_accumulation' : 'onchain_distribution';
           signals.push({
             asset_id: assetId,
-            signal_type: 'crypto_whale_activity',
+            signal_type: signalType,
             direction,
             magnitude,
             observed_at: metric.timestamp,
@@ -108,9 +110,11 @@ serve(async (req) => {
         }
 
         if (direction !== 'neutral') {
+          // Use specific signal types that match scoring expectations
+          const signalType = direction === 'up' ? 'onchain_exchange_outflow' : 'onchain_exchange_inflow';
           signals.push({
             asset_id: assetId,
-            signal_type: 'crypto_exchange_flow',
+            signal_type: signalType,
             direction,
             magnitude,
             observed_at: metric.timestamp,
@@ -140,9 +144,11 @@ serve(async (req) => {
         }
 
         if (direction !== 'neutral' && magnitude > 1) {
+          // Use specific signal types that match scoring expectations
+          const signalType = direction === 'up' ? 'onchain_fear' : 'onchain_greed';
           signals.push({
             asset_id: assetId,
-            signal_type: 'crypto_fear_greed',
+            signal_type: signalType,
             direction,
             magnitude,
             observed_at: metric.timestamp,

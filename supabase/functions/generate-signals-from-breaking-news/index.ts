@@ -77,10 +77,14 @@ serve(async (req) => {
 
       // Skip very weak signals
       if (magnitude < 0.5) continue;
+      
+      // Use specific signal types that match scoring expectations
+      const signalType = direction === 'up' ? 'breaking_news_bullish' : 
+                         direction === 'down' ? 'breaking_news_bearish' : 'breaking_news';
 
       signals.push({
         asset_id: assetId,
-        signal_type: 'breaking_news',
+        signal_type: signalType,
         direction,
         magnitude,
         observed_at: item.published_at || new Date().toISOString(),

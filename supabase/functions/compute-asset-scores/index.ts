@@ -10,19 +10,27 @@ const ASSETS_PER_INVOCATION = 4000;
 const BATCH_SIZE = 1000;
 
 // ============================================================================
-// SCORING WEIGHTS - Synchronized with compute-theme-scores and backend/scoring.py v2.1
+// SCORING WEIGHTS - PREDICTIVE FOCUS: Leading indicators weighted higher
+// Leading indicators predict future moves, lagging indicators confirm past moves
 // ============================================================================
 const WEIGHTS = {
-  BigMoneyConfirm: 1.5,          // 13F holdings, smart money, whale activity
-  FlowPressure: 1.4,             // ETF/Dark pool flows, exchange flows
-  InsiderPoliticianConfirm: 1.5, // Form4, congressional trades (increased)
-  CapexMomentum: 1.0,            // Jobs, patents, R&D signals
-  PolicyMomentum: 0.8,           // Policy catalysts
-  TechEdge: 1.5,                 // Technical/options, patterns (INCREASED from 0.7 - now we have 3M+ signals!)
-  Attention: 0.4,                // News/social sentiment (REDUCED from 0.6 - was inflating scores)
-  MacroEconomic: 0.6,            // Economic indicators, COT (INCREASED from 0.5)
-  EarningsMomentum: 0.4,         // Earnings surprises
-  RiskFlags: -1.5,               // Risk penalty (REDUCED from -2.0)
+  // LEADING INDICATORS (HIGH WEIGHT) - These PREDICT future price moves
+  InsiderPoliticianConfirm: 3.5, // Form4, congressional trades - insiders know before market
+  BigMoneyConfirm: 3.0,          // 13F holdings, smart money - institutions position BEFORE moves
+  FlowPressure: 2.5,             // ETF/Dark pool flows - capital direction before price
+  CapexMomentum: 2.0,            // Jobs, patents - forward-looking growth signals
+  
+  // COINCIDENT INDICATORS (MEDIUM WEIGHT) - These signal current momentum
+  TechEdge: 1.5,                 // Technical/options, patterns - timing signals
+  PolicyMomentum: 1.2,           // Policy catalysts - can lead or lag
+  MacroEconomic: 1.0,            // Economic indicators, COT - context
+  
+  // LAGGING INDICATORS (LOW WEIGHT) - These CONFIRM past moves, not predictive
+  Attention: 0.3,                // News/social sentiment - retail follows price
+  EarningsMomentum: 0.5,         // Earnings surprises - quarterly, delayed
+  
+  // PENALTY
+  RiskFlags: -2.0,               // Short interest, volatility - risk signals
 };
 
 // Maximum contribution per component (for normalization)

@@ -77,9 +77,11 @@ serve(async (req) => {
         }
 
         if (direction !== 'neutral') {
+          // Use specific signal types that match scoring expectations
+          const signalType = direction === 'up' ? 'forex_rsi_oversold' : 'forex_rsi_overbought';
           signals.push({
             asset_id: assetId,
-            signal_type: 'forex_rsi',
+            signal_type: signalType,
             direction,
             magnitude,
             observed_at: fx.timestamp,
