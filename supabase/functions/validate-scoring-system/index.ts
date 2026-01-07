@@ -35,16 +35,16 @@ serve(async (req) => {
     // ========================================================================
     // TEST 1: Momentum signals exist (last 24 hours)
     // ========================================================================
-    const { data: momentumCount, error: momentumError } = await supabaseClient
+    const { count: momentumCount, error: momentumError } = await supabaseClient
       .from('signals')
-      .select('id', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true })
       .like('signal_type', 'momentum_%')
       .gte('observed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     results.push({
       name: 'momentum_signals_exist_24h',
-      passed: !momentumError && (momentumCount || 0) >= 100,
-      actual: momentumCount || 0,
+      passed: !momentumError && (momentumCount ?? 0) >= 100,
+      actual: momentumCount ?? 0,
       expected: '>= 100',
       critical: true,
       message: momentumError ? momentumError.message : `Found ${momentumCount} momentum signals in last 24h`
@@ -82,16 +82,16 @@ serve(async (req) => {
     // TEST 3: No old unmapped signal types being created (last 1 hour)
     // ========================================================================
     const oldSignalTypes = ['momentum_5d', 'momentum_20d', 'smart_money_flow', 'forex_rsi', 'forex_sentiment'];
-    const { data: oldTypeCount, error: oldTypeError } = await supabaseClient
+    const { count: oldTypeCount, error: oldTypeError } = await supabaseClient
       .from('signals')
-      .select('id', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true })
       .in('signal_type', oldSignalTypes)
       .gte('observed_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
 
     results.push({
       name: 'no_old_signal_types_created',
-      passed: !oldTypeError && (oldTypeCount || 0) === 0,
-      actual: oldTypeCount || 0,
+      passed: !oldTypeError && (oldTypeCount ?? 0) === 0,
+      actual: oldTypeCount ?? 0,
       expected: '0',
       critical: true,
       message: oldTypeError ? oldTypeError.message : `${oldTypeCount} old signal types created in last hour`
@@ -192,16 +192,16 @@ serve(async (req) => {
     // ========================================================================
     // TEST 6: Assets have recent scores
     // ========================================================================
-    const { data: recentScores, error: recentScoresError } = await supabaseClient
+    const { count: recentScores, error: recentScoresError } = await supabaseClient
       .from('assets')
-      .select('id', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true })
       .not('computed_score', 'is', null)
       .gte('score_computed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     results.push({
       name: 'assets_have_recent_scores',
-      passed: !recentScoresError && (recentScores || 0) >= 1000,
-      actual: recentScores || 0,
+      passed: !recentScoresError && (recentScores ?? 0) >= 1000,
+      actual: recentScores ?? 0,
       expected: '>= 1000 assets scored in 24h',
       critical: false,
       message: recentScoresError ? recentScoresError.message : `${recentScores} assets have scores updated in last 24h`

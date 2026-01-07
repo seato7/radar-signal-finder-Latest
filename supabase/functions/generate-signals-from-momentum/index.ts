@@ -22,23 +22,32 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-MOMENTUM] Starting price momentum signal generation...');
 
-    // Use a smarter approach: fetch the LATEST price per ticker, then calculate momentum
-    // This avoids the 50K limit issue by processing in batches per asset
+    // Use assets table to get all tickers - this avoids Supabase's 1000 row default limit
+    // on the prices table query
     
-    // Step 1: Get all unique tickers from prices in the last 30 days
-    const { data: tickerData, error: tickerError } = await supabaseClient
-      .from('prices')
-      .select('ticker')
-      .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-      .order('ticker');
+    // Step 1: Get all assets with their tickers (paginated to handle 26K+ assets)
+    const allAssets: Array<{ id: string; ticker: string }> = [];
+    let offset = 0;
+    const pageSize = 5000;
+    
+    while (true) {
+      const { data: assetBatch, error: assetError } = await supabaseClient
+        .from('assets')
+        .select('id, ticker')
+        .range(offset, offset + pageSize - 1);
+      
+      if (assetError) throw assetError;
+      if (!assetBatch || assetBatch.length === 0) break;
+      
+      allAssets.push(...assetBatch);
+      offset += pageSize;
+      
+      if (assetBatch.length < pageSize) break;
+    }
 
-    if (tickerError) throw tickerError;
+    console.log(`[SIGNAL-GEN-MOMENTUM] Found ${allAssets.length} assets to process`);
 
-    // Get unique tickers
-    const uniqueTickers = [...new Set(tickerData?.map(p => p.ticker) || [])];
-    console.log(`[SIGNAL-GEN-MOMENTUM] Found ${uniqueTickers.length} unique tickers with price data`);
-
-    if (uniqueTickers.length === 0) {
+    if (allAssets.length === 0) {
       const duration = Date.now() - startTime;
       await logHeartbeat(supabaseClient, {
         function_name: 'generate-signals-from-momentum',
@@ -47,23 +56,29 @@ serve(async (req) => {
         duration_ms: duration,
         source_used: 'prices',
       });
-      return new Response(JSON.stringify({ message: 'No tickers to process', signals_created: 0 }), {
+      return new Response(JSON.stringify({ message: 'No assets to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Step 2: Get asset IDs for mapping
-    const { data: assets } = await supabaseClient
-      .from('assets')
-      .select('id, ticker')
-      .in('ticker', uniqueTickers);
-
+    // Create ticker to asset ID mapping
     const tickerToAssetId = new Map<string, string>();
-    for (const asset of assets || []) {
+    for (const asset of allAssets) {
       tickerToAssetId.set(asset.ticker, asset.id);
     }
 
-    const signals = [];
+    const uniqueTickers = allAssets.map(a => a.ticker);
+    const signals: Array<{
+      asset_id: string;
+      signal_type: string;
+      direction: string;
+      magnitude: number;
+      observed_at: string;
+      value_text: string;
+      checksum: string;
+      citation: object;
+      raw: object;
+    }> = [];
     const BATCH_SIZE = 500; // Process 500 tickers at a time
 
     // Step 3: Process in batches to avoid memory issues
@@ -116,7 +131,8 @@ serve(async (req) => {
 
           if (Math.abs(momentum5d) > 3) { // Only significant moves
             const direction = momentum5d > 0 ? 'up' : 'down';
-            const magnitude = Math.min(5, Math.abs(momentum5d) / 3);
+            // Magnitude must be between 0 and 1 - normalize using sigmoid-like function
+            const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum5d) / 100));
             const signalType = momentum5d > 0 ? 'momentum_5d_bullish' : 'momentum_5d_bearish';
 
             signals.push({
@@ -141,7 +157,8 @@ serve(async (req) => {
 
             if (Math.abs(momentum20d) > 5) { // Only significant moves
               const direction = momentum20d > 0 ? 'up' : 'down';
-              const magnitude = Math.min(5, Math.abs(momentum20d) / 5);
+              // Magnitude must be between 0 and 1 - normalize using sigmoid-like function
+              const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum20d) / 100));
               const signalType = momentum20d > 0 ? 'momentum_20d_bullish' : 'momentum_20d_bearish';
 
               signals.push({
