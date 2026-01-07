@@ -85,7 +85,7 @@ export default function Auth() {
     } else {
       toast({
         title: "Check your email",
-        description: "We've sent you a verification link from support@insiderpulse.org. Please check your inbox."
+        description: "We've sent you a verification link from support@insiderpulse.org. Please check your inbox and spam folder."
       });
     }
   };
@@ -159,7 +159,7 @@ export default function Auth() {
     } else {
       toast({
         title: "Reset link sent",
-        description: "Check your inbox for the password reset link from support@insiderpulse.org."
+        description: "Check your inbox and spam folder for the password reset link from support@insiderpulse.org."
       });
       setForgotPasswordOpen(false);
       setResetEmail("");
