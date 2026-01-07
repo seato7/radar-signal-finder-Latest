@@ -79,24 +79,29 @@ serve(async (req) => {
       citation: object;
       raw: object;
     }> = [];
-    const BATCH_SIZE = 500; // Process 500 tickers at a time
+    // CRITICAL: Reduce batch size to avoid Supabase's 1000 row limit on prices query
+    // 25 tickers * 30 days = 750 rows, safely under 1000
+    const BATCH_SIZE = 25;
 
     // Step 3: Process in batches to avoid memory issues
     for (let i = 0; i < uniqueTickers.length; i += BATCH_SIZE) {
       const tickerBatch = uniqueTickers.slice(i, i + BATCH_SIZE);
       
-      // Fetch ALL prices for this batch of tickers (no limit, but filtered to 30 days)
+      // Fetch prices for this batch - use range(0, 999) to explicitly request up to 1000 rows
       const { data: prices, error: pricesError } = await supabaseClient
         .from('prices')
         .select('asset_id, ticker, date, close')
         .in('ticker', tickerBatch)
         .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .range(0, 999);
 
       if (pricesError) {
         console.error(`[SIGNAL-GEN-MOMENTUM] Error fetching batch ${i}: ${pricesError.message}`);
         continue;
       }
+      
+      console.log(`[SIGNAL-GEN-MOMENTUM] Batch ${Math.floor(i / BATCH_SIZE) + 1}: fetched ${prices?.length || 0} price rows for ${tickerBatch.length} tickers`);
 
       // Group by ticker
       const pricesByTicker = new Map<string, Array<{ date: string; close: number; asset_id: string }>>();
