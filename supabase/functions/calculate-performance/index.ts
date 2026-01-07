@@ -1,255 +1,174 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    
-    const { period } = await req.json();
-    
-    // Get all snapshots to determine date range and assets
-    const { data: allSnapshots, error: snapshotError } = await supabase
+    const { period = 'ALL' } = await req.json().catch(() => ({}));
+
+    // Get all snapshots
+    const { data: snapshots, error: snapError } = await supabase
       .from('asset_score_snapshots')
-      .select('snapshot_date, ticker, asset_name, computed_score, rank')
-      .order('snapshot_date', { ascending: true })
-      .order('rank', { ascending: true });
-    
-    if (snapshotError) throw snapshotError;
-    
-    // Group by date
-    const snapshotsByDate: Record<string, Array<{ ticker: string; name: string; score: number }>> = {};
-    for (const s of allSnapshots || []) {
-      if (!snapshotsByDate[s.snapshot_date]) {
-        snapshotsByDate[s.snapshot_date] = [];
-      }
-      if (snapshotsByDate[s.snapshot_date].length < 10) {
-        snapshotsByDate[s.snapshot_date].push({
-          ticker: s.ticker,
-          name: s.asset_name || s.ticker,
-          score: s.computed_score || 0,
-        });
-      }
+      .select('*')
+      .order('snapshot_date', { ascending: true });
+
+    if (snapError) throw snapError;
+
+    if (!snapshots || snapshots.length === 0) {
+      return new Response(JSON.stringify({
+        portfolio_value: 10000,
+        portfolio_return_pct: 0,
+        spy_return_pct: 0,
+        outperformance: 0,
+        period_days: 0,
+        chart_data: [],
+        asset_breakdown: []
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    
-    const snapshotDates = Object.keys(snapshotsByDate).sort();
-    
-    if (snapshotDates.length === 0) {
-      // Fallback to current top assets if no snapshots
-      const { data: topAssets } = await supabase
-        .from('assets')
-        .select('ticker, name, computed_score')
-        .not('computed_score', 'is', null)
-        .order('computed_score', { ascending: false })
-        .limit(10);
-      
-      if (!topAssets || topAssets.length === 0) {
-        return new Response(
-          JSON.stringify({ error: 'No scored assets found' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-    
-    // Calculate period boundaries
-    const now = new Date();
-    let periodStartDate: Date;
-    
+
+    // Get unique dates and tickers
+    const allDates = [...new Set(snapshots.map(s => s.snapshot_date))].sort();
+    const tickers = [...new Set(snapshots.map(s => s.ticker))];
+
+    // Filter dates by period
+    let dates = allDates;
     if (period === '1W') {
-      periodStartDate = new Date(now);
-      periodStartDate.setDate(periodStartDate.getDate() - 7);
+      dates = allDates.slice(-7);
     } else if (period === '1M') {
-      periodStartDate = new Date(now);
-      periodStartDate.setMonth(periodStartDate.getMonth() - 1);
-    } else {
-      // 'ALL' - use earliest snapshot
-      periodStartDate = new Date(snapshotDates[0] || now);
+      dates = allDates.slice(-30);
     }
-    
-    const periodStartStr = periodStartDate.toISOString().split('T')[0];
-    
-    // Filter dates within period
-    const filteredDates = snapshotDates.filter(d => d >= periodStartStr);
-    
-    if (filteredDates.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No data available for selected period' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    const startDate = filteredDates[0];
-    const endDate = filteredDates[filteredDates.length - 1];
-    
-    // Get all unique tickers from filtered snapshots
-    const allTickers = new Set<string>();
-    for (const date of filteredDates) {
-      for (const asset of snapshotsByDate[date] || []) {
-        allTickers.add(asset.ticker);
-      }
-    }
-    allTickers.add('SPY');
-    
-    // Get price data
-    const { data: priceData, error: priceError } = await supabase
+
+    // Get prices
+    const { data: prices, error: pricesError } = await supabase
       .from('prices')
-      .select('ticker, date, close, updated_at')
-      .in('ticker', Array.from(allTickers))
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date', { ascending: true });
-    
-    if (priceError) throw priceError;
-    
-    // Organize prices
-    const pricesByDate: Record<string, Record<string, number>> = {};
-    let lastUpdatedAt: string | null = null;
-    
-    for (const p of priceData || []) {
-      if (!pricesByDate[p.date]) {
-        pricesByDate[p.date] = {};
-      }
-      pricesByDate[p.date][p.ticker] = p.close;
-      if (!lastUpdatedAt || p.updated_at > lastUpdatedAt) {
-        lastUpdatedAt = p.updated_at;
+      .select('ticker, date, close')
+      .in('ticker', [...tickers, 'SPY'])
+      .in('date', dates);
+
+    if (pricesError) throw pricesError;
+
+    // Build price lookup
+    const priceLookup: Record<string, Record<string, number>> = {};
+    for (const p of (prices || [])) {
+      if (!priceLookup[p.ticker]) priceLookup[p.ticker] = {};
+      priceLookup[p.ticker][p.date] = p.close;
+    }
+
+    // Group snapshots by date
+    const snapshotsByDate: Record<string, typeof snapshots> = {};
+    for (const s of snapshots) {
+      if (dates.includes(s.snapshot_date)) {
+        if (!snapshotsByDate[s.snapshot_date]) snapshotsByDate[s.snapshot_date] = [];
+        snapshotsByDate[s.snapshot_date].push(s);
       }
     }
-    
-    // Calculate cumulative returns
-    const STARTING_INVESTMENT = 10000;
-    const chartData: Array<{ date: string; portfolio: number; spy: number }> = [];
-    
-    let portfolioCumulative = STARTING_INVESTMENT;
-    let spyCumulative = STARTING_INVESTMENT;
-    
-    for (let i = 0; i < filteredDates.length; i++) {
-      const date = filteredDates[i];
-      const assets = snapshotsByDate[date] || [];
-      const todayPrices = pricesByDate[date] || {};
-      
-      if (i > 0) {
-        const prevDate = filteredDates[i - 1];
-        const prevPrices = pricesByDate[prevDate] || {};
+
+    // Calculate daily returns and cumulative values
+    const chartData: any[] = [];
+    let cumulativeValue = 10000;
+    let spyCumulativeValue = 10000;
+
+    for (let i = 0; i < dates.length; i++) {
+      const date = dates[i];
+      const daySnapshots = snapshotsByDate[date] || [];
+      const prevDate = i > 0 ? dates[i - 1] : null;
+
+      // Calculate portfolio daily return (average of top 10)
+      let portfolioReturns: number[] = [];
+      for (const snapshot of daySnapshots.slice(0, 10)) {
+        const currentPrice = priceLookup[snapshot.ticker]?.[date];
+        const prevPrice = prevDate ? priceLookup[snapshot.ticker]?.[prevDate] : currentPrice;
         
-        // Portfolio daily return
-        let portfolioReturn = 0;
-        let validCount = 0;
-        
-        for (const asset of assets) {
-          const todayPrice = todayPrices[asset.ticker];
-          const prevPrice = prevPrices[asset.ticker];
-          
-          if (todayPrice && prevPrice && prevPrice > 0) {
-            portfolioReturn += (todayPrice - prevPrice) / prevPrice;
-            validCount++;
-          } else if (asset.score) {
-            // Use stored daily return percentage
-            portfolioReturn += asset.score / 100;
-            validCount++;
-          }
-        }
-        
-        if (validCount > 0) {
-          portfolioReturn = portfolioReturn / validCount;
-          portfolioCumulative = portfolioCumulative * (1 + portfolioReturn);
-        }
-        
-        // SPY daily return
-        const todaySpyPrice = todayPrices['SPY'];
-        const prevSpyPrice = prevPrices['SPY'];
-        
-        if (todaySpyPrice && prevSpyPrice && prevSpyPrice > 0) {
-          const spyReturn = (todaySpyPrice - prevSpyPrice) / prevSpyPrice;
-          spyCumulative = spyCumulative * (1 + spyReturn);
+        if (prevPrice && currentPrice && prevPrice > 0) {
+          const dailyReturn = ((currentPrice - prevPrice) / prevPrice) * 100;
+          portfolioReturns.push(dailyReturn);
         }
       }
-      
+
+      const avgDailyReturn = portfolioReturns.length > 0 
+        ? portfolioReturns.reduce((a, b) => a + b, 0) / portfolioReturns.length 
+        : 0;
+
+      // Calculate SPY return
+      const spyCurrentPrice = priceLookup['SPY']?.[date];
+      const spyPrevPrice = prevDate ? priceLookup['SPY']?.[prevDate] : spyCurrentPrice;
+      let spyDailyReturn = 0;
+      if (spyPrevPrice && spyCurrentPrice && spyPrevPrice > 0) {
+        spyDailyReturn = ((spyCurrentPrice - spyPrevPrice) / spyPrevPrice) * 100;
+      }
+
+      // Update cumulative values
+      if (i > 0) {
+        cumulativeValue = cumulativeValue * (1 + avgDailyReturn / 100);
+        spyCumulativeValue = spyCumulativeValue * (1 + spyDailyReturn / 100);
+      }
+
       chartData.push({
         date,
-        portfolio: Math.round(portfolioCumulative),
-        spy: Math.round(spyCumulative),
+        portfolio: Math.round(cumulativeValue),
+        spy: Math.round(spyCumulativeValue)
       });
     }
-    
-    // Final values
-    const portfolioValue = chartData[chartData.length - 1]?.portfolio || STARTING_INVESTMENT;
-    const spyValue = chartData[chartData.length - 1]?.spy || STARTING_INVESTMENT;
-    
-    const portfolioReturnPct = ((portfolioValue - STARTING_INVESTMENT) / STARTING_INVESTMENT) * 100;
-    const spyReturnPct = ((spyValue - STARTING_INVESTMENT) / STARTING_INVESTMENT) * 100;
-    const outperformance = portfolioReturnPct - spyReturnPct;
-    
+
+    // Calculate period returns
+    const startValue = 10000;
+    const totalReturn = ((cumulativeValue - startValue) / startValue) * 100;
+    const spyReturn = ((spyCumulativeValue - startValue) / startValue) * 100;
+    const outperformance = totalReturn - spyReturn;
+
     // Get latest day's assets for breakdown
-    const latestAssets = snapshotsByDate[endDate] || [];
+    const latestDate = dates[dates.length - 1];
+    const firstDate = dates[0];
+    const latestSnapshots = snapshotsByDate[latestDate] || [];
     
-    // Calculate individual asset returns for the period
-    const assetBreakdown = latestAssets.map(asset => {
-      const firstPrice = pricesByDate[startDate]?.[asset.ticker];
-      const lastPrice = pricesByDate[endDate]?.[asset.ticker];
-      
-      let returnPct = 0;
-      let hasData = false;
-      
-      if (firstPrice && lastPrice && firstPrice > 0) {
-        returnPct = ((lastPrice - firstPrice) / firstPrice) * 100;
-        hasData = true;
-      } else {
-        // Use cumulative of daily scores
-        returnPct = asset.score;
-        hasData = true;
+    const assetBreakdown = latestSnapshots.slice(0, 10).map(s => {
+      const startPrice = priceLookup[s.ticker]?.[firstDate];
+      const endPrice = priceLookup[s.ticker]?.[latestDate];
+      let periodReturn = 0;
+      if (startPrice && endPrice && startPrice > 0) {
+        periodReturn = ((endPrice - startPrice) / startPrice) * 100;
       }
-      
       return {
-        ticker: asset.ticker,
-        name: asset.name,
-        score: asset.score,
-        return_pct: Math.round(returnPct * 100) / 100,
-        contribution: Math.round((returnPct / 10) * 100) / 100,
-        first_price: firstPrice || null,
-        last_price: lastPrice || null,
-        has_data: hasData,
+        ticker: s.ticker,
+        name: s.asset_name,
+        score: s.computed_score, // Real score from assets table (70+)
+        return_pct: Math.round(periodReturn * 100) / 100,
+        contribution: Math.round((periodReturn / 10) * 100) / 100
       };
     });
-    
-    const periodDays = filteredDates.length;
-    
-    console.log(`Performance calculated: Portfolio ${portfolioReturnPct.toFixed(2)}%, SPY ${spyReturnPct.toFixed(2)}%, Outperformance ${outperformance.toFixed(2)}%`);
-    console.log(`Date range: ${startDate} to ${endDate} (${periodDays} days)`);
-    
-    return new Response(
-      JSON.stringify({
-        portfolio_value: portfolioValue,
-        portfolio_return_pct: Math.round(portfolioReturnPct * 100) / 100,
-        spy_return_pct: Math.round(spyReturnPct * 100) / 100,
-        outperformance: Math.round(outperformance * 100) / 100,
-        period_days: periodDays,
-        start_date: startDate,
-        end_date: endDate,
-        chart_data: chartData,
-        asset_breakdown: assetBreakdown,
-        starting_investment: STARTING_INVESTMENT,
-        last_updated_at: lastUpdatedAt,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-    
-  } catch (error) {
-    console.error('Error in calculate-performance:', error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+
+    return new Response(JSON.stringify({
+      portfolio_value: Math.round(cumulativeValue),
+      portfolio_return_pct: Math.round(totalReturn * 100) / 100,
+      spy_return_pct: Math.round(spyReturn * 100) / 100,
+      outperformance: Math.round(outperformance * 100) / 100,
+      period_days: dates.length,
+      start_date: firstDate,
+      end_date: latestDate,
+      chart_data: chartData,
+      asset_breakdown: assetBreakdown,
+      starting_investment: startValue,
+      last_updated_at: new Date().toISOString()
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  } catch (error: unknown) {
+    console.error('Error:', error);
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: errMsg }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    });
   }
 });
