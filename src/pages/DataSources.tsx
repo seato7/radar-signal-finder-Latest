@@ -27,19 +27,7 @@ export default function DataSources() {
 
   useEffect(() => {
     fetchAllData();
-    
-    // Auto-populate data on first load if no data exists
-    const checkAndPopulate = async () => {
-      const hasRun = localStorage.getItem('datasources_initialized');
-      if (!hasRun) {
-        setTimeout(async () => {
-          await runAllIngestions();
-          localStorage.setItem('datasources_initialized', 'true');
-        }, 2000);
-      }
-    };
-    
-    checkAndPopulate();
+    // Removed auto-populate to prevent refresh interruptions during pipeline runs
   }, []);
 
   const fetchAllData = async () => {
