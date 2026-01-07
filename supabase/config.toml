@@ -278,3 +278,6 @@ verify_jwt = false
 
 [functions.generate-signals-from-news-rss]
 verify_jwt = false
+
+[functions.validate-scoring-system]
+verify_jwt = false

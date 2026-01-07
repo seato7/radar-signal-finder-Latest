@@ -22,19 +22,23 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-MOMENTUM] Starting price momentum signal generation...');
 
-    // Fetch recent prices (last 30 days)
-    const { data: prices, error: pricesError } = await supabaseClient
+    // Use a smarter approach: fetch the LATEST price per ticker, then calculate momentum
+    // This avoids the 50K limit issue by processing in batches per asset
+    
+    // Step 1: Get all unique tickers from prices in the last 30 days
+    const { data: tickerData, error: tickerError } = await supabaseClient
       .from('prices')
-      .select('asset_id, ticker, date, close')
+      .select('ticker')
       .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-      .order('date', { ascending: false })
-      .limit(50000);
+      .order('ticker');
 
-    if (pricesError) throw pricesError;
+    if (tickerError) throw tickerError;
 
-    console.log(`[SIGNAL-GEN-MOMENTUM] Found ${prices?.length || 0} price records`);
+    // Get unique tickers
+    const uniqueTickers = [...new Set(tickerData?.map(p => p.ticker) || [])];
+    console.log(`[SIGNAL-GEN-MOMENTUM] Found ${uniqueTickers.length} unique tickers with price data`);
 
-    if (!prices || prices.length === 0) {
+    if (uniqueTickers.length === 0) {
       const duration = Date.now() - startTime;
       await logHeartbeat(supabaseClient, {
         function_name: 'generate-signals-from-momentum',
@@ -43,74 +47,77 @@ serve(async (req) => {
         duration_ms: duration,
         source_used: 'prices',
       });
-      return new Response(JSON.stringify({ message: 'No prices to process', signals_created: 0 }), {
+      return new Response(JSON.stringify({ message: 'No tickers to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Group prices by ticker
-    const pricesByTicker = new Map<string, Array<{ date: string; close: number; asset_id: string }>>();
-    for (const price of prices) {
-      const ticker = price.ticker;
-      if (!pricesByTicker.has(ticker)) {
-        pricesByTicker.set(ticker, []);
-      }
-      pricesByTicker.get(ticker)!.push({
-        date: price.date,
-        close: price.close,
-        asset_id: price.asset_id
-      });
+    // Step 2: Get asset IDs for mapping
+    const { data: assets } = await supabaseClient
+      .from('assets')
+      .select('id, ticker')
+      .in('ticker', uniqueTickers);
+
+    const tickerToAssetId = new Map<string, string>();
+    for (const asset of assets || []) {
+      tickerToAssetId.set(asset.ticker, asset.id);
     }
 
     const signals = [];
-    const today = new Date().toISOString().split('T')[0];
+    const BATCH_SIZE = 500; // Process 500 tickers at a time
 
-    for (const [ticker, tickerPrices] of pricesByTicker) {
-      // Sort by date descending
-      tickerPrices.sort((a, b) => b.date.localeCompare(a.date));
+    // Step 3: Process in batches to avoid memory issues
+    for (let i = 0; i < uniqueTickers.length; i += BATCH_SIZE) {
+      const tickerBatch = uniqueTickers.slice(i, i + BATCH_SIZE);
+      
+      // Fetch ALL prices for this batch of tickers (no limit, but filtered to 30 days)
+      const { data: prices, error: pricesError } = await supabaseClient
+        .from('prices')
+        .select('asset_id, ticker, date, close')
+        .in('ticker', tickerBatch)
+        .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .order('date', { ascending: false });
 
-      if (tickerPrices.length < 6) continue; // Need at least 6 days of data
-
-      const assetId = tickerPrices[0].asset_id;
-      const latestPrice = tickerPrices[0].close;
-      const latestDate = tickerPrices[0].date;
-
-      // Calculate 5-day momentum
-      const price5d = tickerPrices[5]?.close;
-      if (price5d && price5d > 0) {
-        const momentum5d = ((latestPrice - price5d) / price5d) * 100;
-
-        if (Math.abs(momentum5d) > 3) { // Only significant moves
-          const direction = momentum5d > 0 ? 'up' : 'down';
-          const magnitude = Math.min(5, Math.abs(momentum5d) / 3);
-          // Use specific signal types that match scoring: momentum_5d_bullish or momentum_5d_bearish
-          const signalType = momentum5d > 0 ? 'momentum_5d_bullish' : 'momentum_5d_bearish';
-
-          signals.push({
-            asset_id: assetId,
-            signal_type: signalType,
-            direction,
-            magnitude,
-            observed_at: latestDate,
-            value_text: `5-day momentum: ${momentum5d > 0 ? '+' : ''}${momentum5d.toFixed(1)}%`,
-            checksum: JSON.stringify({ ticker, signal_type: 'momentum_5d', date: latestDate, momentum: momentum5d.toFixed(1) }),
-            citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
-            raw: { latest_price: latestPrice, price_5d_ago: price5d, momentum_pct: momentum5d }
-          });
-        }
+      if (pricesError) {
+        console.error(`[SIGNAL-GEN-MOMENTUM] Error fetching batch ${i}: ${pricesError.message}`);
+        continue;
       }
 
-      // Calculate 20-day momentum
-      if (tickerPrices.length >= 21) {
-        const price20d = tickerPrices[20]?.close;
-        if (price20d && price20d > 0) {
-          const momentum20d = ((latestPrice - price20d) / price20d) * 100;
+      // Group by ticker
+      const pricesByTicker = new Map<string, Array<{ date: string; close: number; asset_id: string }>>();
+      for (const price of prices || []) {
+        if (!pricesByTicker.has(price.ticker)) {
+          pricesByTicker.set(price.ticker, []);
+        }
+        pricesByTicker.get(price.ticker)!.push({
+          date: price.date,
+          close: price.close,
+          asset_id: price.asset_id || tickerToAssetId.get(price.ticker) || ''
+        });
+      }
 
-        if (Math.abs(momentum20d) > 5) { // Only significant moves
-            const direction = momentum20d > 0 ? 'up' : 'down';
-            const magnitude = Math.min(5, Math.abs(momentum20d) / 5);
-            // Use specific signal types that match scoring: momentum_20d_bullish or momentum_20d_bearish
-            const signalType = momentum20d > 0 ? 'momentum_20d_bullish' : 'momentum_20d_bearish';
+      // Calculate momentum for each ticker
+      for (const [ticker, tickerPrices] of pricesByTicker) {
+        // Sort by date descending (most recent first)
+        tickerPrices.sort((a, b) => b.date.localeCompare(a.date));
+
+        if (tickerPrices.length < 6) continue; // Need at least 6 days for 5-day momentum
+
+        const assetId = tickerPrices[0].asset_id || tickerToAssetId.get(ticker);
+        if (!assetId) continue; // Skip if no asset ID
+
+        const latestPrice = tickerPrices[0].close;
+        const latestDate = tickerPrices[0].date;
+
+        // Calculate 5-day momentum
+        const price5d = tickerPrices[5]?.close;
+        if (price5d && price5d > 0) {
+          const momentum5d = ((latestPrice - price5d) / price5d) * 100;
+
+          if (Math.abs(momentum5d) > 3) { // Only significant moves
+            const direction = momentum5d > 0 ? 'up' : 'down';
+            const magnitude = Math.min(5, Math.abs(momentum5d) / 3);
+            const signalType = momentum5d > 0 ? 'momentum_5d_bullish' : 'momentum_5d_bearish';
 
             signals.push({
               asset_id: assetId,
@@ -118,14 +125,42 @@ serve(async (req) => {
               direction,
               magnitude,
               observed_at: latestDate,
-              value_text: `20-day momentum: ${momentum20d > 0 ? '+' : ''}${momentum20d.toFixed(1)}%`,
-              checksum: JSON.stringify({ ticker, signal_type: 'momentum_20d', date: latestDate, momentum: momentum20d.toFixed(1) }),
+              value_text: `5-day momentum: ${momentum5d > 0 ? '+' : ''}${momentum5d.toFixed(1)}%`,
+              checksum: JSON.stringify({ ticker, signal_type: signalType, date: latestDate, momentum: momentum5d.toFixed(1) }),
               citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
-              raw: { latest_price: latestPrice, price_20d_ago: price20d, momentum_pct: momentum20d }
+              raw: { ticker, latest_price: latestPrice, price_5d_ago: price5d, momentum_pct: momentum5d }
             });
           }
         }
+
+        // Calculate 20-day momentum
+        if (tickerPrices.length >= 21) {
+          const price20d = tickerPrices[20]?.close;
+          if (price20d && price20d > 0) {
+            const momentum20d = ((latestPrice - price20d) / price20d) * 100;
+
+            if (Math.abs(momentum20d) > 5) { // Only significant moves
+              const direction = momentum20d > 0 ? 'up' : 'down';
+              const magnitude = Math.min(5, Math.abs(momentum20d) / 5);
+              const signalType = momentum20d > 0 ? 'momentum_20d_bullish' : 'momentum_20d_bearish';
+
+              signals.push({
+                asset_id: assetId,
+                signal_type: signalType,
+                direction,
+                magnitude,
+                observed_at: latestDate,
+                value_text: `20-day momentum: ${momentum20d > 0 ? '+' : ''}${momentum20d.toFixed(1)}%`,
+                checksum: JSON.stringify({ ticker, signal_type: signalType, date: latestDate, momentum: momentum20d.toFixed(1) }),
+                citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
+                raw: { ticker, latest_price: latestPrice, price_20d_ago: price20d, momentum_pct: momentum20d }
+              });
+            }
+          }
+        }
       }
+
+      console.log(`[SIGNAL-GEN-MOMENTUM] Batch ${i / BATCH_SIZE + 1}: Processed ${tickerBatch.length} tickers, ${signals.length} signals so far`);
     }
 
     // Batch upsert
@@ -139,6 +174,7 @@ serve(async (req) => {
         .select('id');
       
       if (!insertError) insertedCount += data?.length || 0;
+      else console.error(`[SIGNAL-GEN-MOMENTUM] Batch insert error: ${insertError.message}`);
     }
 
     console.log(`[SIGNAL-GEN-MOMENTUM] ✅ Created ${insertedCount} momentum signals (${signals.length - insertedCount} duplicates)`);
@@ -151,11 +187,16 @@ serve(async (req) => {
       rows_skipped: signals.length - insertedCount,
       duration_ms: duration,
       source_used: 'prices',
+      metadata: {
+        unique_tickers: uniqueTickers.length,
+        total_signals_generated: signals.length,
+        tickers_with_6plus_days: signals.length
+      }
     });
 
     return new Response(JSON.stringify({ 
       success: true,
-      tickers_processed: pricesByTicker.size,
+      tickers_processed: uniqueTickers.length,
       signals_created: insertedCount,
       duplicates_skipped: signals.length - insertedCount
     }), {
