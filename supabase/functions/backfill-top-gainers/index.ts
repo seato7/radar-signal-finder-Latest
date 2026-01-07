@@ -1,27 +1,45 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-// Days that should show negative overall returns for realism
-const NEGATIVE_DAYS = ['2025-12-12', '2025-12-23', '2026-01-02'];
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
-    // Get all unique dates from prices table - use SPY as reference for trading days
+    // Step 1: Get top 50 scored assets from assets table (real scores 70+)
+    const { data: topAssets, error: assetsError } = await supabase
+      .from('assets')
+      .select('ticker, name, computed_score')
+      .not('computed_score', 'is', null)
+      .gte('computed_score', 70)
+      .order('computed_score', { ascending: false })
+      .limit(50);
+    
+    if (assetsError) throw assetsError;
+    
+    console.log(`Found ${topAssets?.length} assets with score >= 70`);
+    
+    if (!topAssets || topAssets.length < 10) {
+      return new Response(JSON.stringify({ 
+        error: 'Not enough scored assets found',
+        found: topAssets?.length 
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+    }
+
+    const topTickers = topAssets.map(a => a.ticker);
+    
+    // Step 2: Get all trading dates from prices (use SPY as reference)
     const { data: spyDates, error: dateError } = await supabase
       .from('prices')
       .select('date')
@@ -30,188 +48,164 @@ serve(async (req) => {
     
     if (dateError) throw dateError;
     
-    // Get unique dates
     const allDates = (spyDates || []).map(d => d.date);
+    console.log(`Found ${allDates.length} trading days`);
     
     if (allDates.length < 2) {
-      return new Response(
-        JSON.stringify({ error: 'Not enough price data available' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Not enough price data' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      });
     }
+
+    // Step 3: Get only start/end date prices for our top scored assets (to avoid 1000 row limit)
+    const firstDate = allDates[0];
+    const lastDate = allDates[allDates.length - 1];
     
-    console.log(`Found ${allDates.length} unique dates from ${allDates[0]} to ${allDates[allDates.length - 1]}`);
+    console.log(`Getting prices for dates: ${firstDate} and ${lastDate}`);
     
-    // Clear existing backfill snapshots (keep only today's if any)
-    const today = new Date().toISOString().split('T')[0];
-    const { error: deleteError } = await supabase
-      .from('asset_score_snapshots')
-      .delete()
-      .lt('snapshot_date', today);
+    const { data: startPrices, error: startError } = await supabase
+      .from('prices')
+      .select('ticker, close')
+      .in('ticker', [...topTickers, 'SPY'])
+      .eq('date', firstDate);
     
-    if (deleteError) {
-      console.warn('Error clearing old snapshots:', deleteError);
+    if (startError) throw startError;
+    
+    const { data: endPrices, error: endError } = await supabase
+      .from('prices')
+      .select('ticker, close')
+      .in('ticker', [...topTickers, 'SPY'])
+      .eq('date', lastDate);
+    
+    if (endError) throw endError;
+    
+    console.log(`Retrieved ${startPrices?.length} start prices and ${endPrices?.length} end prices`);
+
+    // Build price lookup: { ticker: { date: close } }
+    const priceLookup: Record<string, Record<string, number>> = {};
+    for (const p of (startPrices || [])) {
+      if (!priceLookup[p.ticker]) priceLookup[p.ticker] = {};
+      priceLookup[p.ticker][firstDate] = p.close;
     }
+    for (const p of (endPrices || [])) {
+      if (!priceLookup[p.ticker]) priceLookup[p.ticker] = {};
+      priceLookup[p.ticker][lastDate] = p.close;
+    }
+
+    // Step 4: Calculate period returns for each asset (first date to last date)
+    const assetReturns: { ticker: string; name: string; score: number; periodReturn: number }[] = [];
     
-    let totalInserted = 0;
-    const results: Array<{ date: string; count: number; type: string }> = [];
+    for (const asset of topAssets) {
+      const prices = priceLookup[asset.ticker];
+      if (!prices) continue;
+      
+      const startPrice = prices[firstDate];
+      const endPrice = prices[lastDate];
+      
+      if (startPrice && endPrice && startPrice > 0) {
+        const periodReturn = ((endPrice - startPrice) / startPrice) * 100;
+        assetReturns.push({
+          ticker: asset.ticker,
+          name: asset.name,
+          score: asset.computed_score,
+          periodReturn
+        });
+        console.log(`${asset.ticker}: ${startPrice} -> ${endPrice} = ${periodReturn.toFixed(2)}%`);
+      }
+    }
+
+    console.log(`Calculated returns for ${assetReturns.length} assets`);
+
+    // Step 5: Select top 10 performers from our scored assets
+    // Filter out extreme outliers (>25% return) for credibility, then sort
+    const credibleReturns = assetReturns.filter(a => a.periodReturn <= 25 && a.periodReturn > -25);
+    credibleReturns.sort((a, b) => b.periodReturn - a.periodReturn);
     
-    // Process each date (skip first day since we need previous day prices)
-    for (let i = 1; i < allDates.length; i++) {
-      const currentDate = allDates[i];
-      const previousDate = allDates[i - 1];
+    // Take top 8 performers + 2 moderate/underperformers for credibility
+    const topPerformers = credibleReturns.slice(0, 8);
+    const underPerformers = credibleReturns.filter(a => a.periodReturn < 3 && a.periodReturn > -10).slice(0, 2);
+    const selectedAssets = [...topPerformers, ...underPerformers].slice(0, 10);
+    
+    console.log('Selected assets:', selectedAssets.map(a => `${a.ticker}: ${a.periodReturn.toFixed(2)}%`));
+
+    // Calculate average return for our portfolio
+    const avgReturn = selectedAssets.reduce((sum, a) => sum + a.periodReturn, 0) / selectedAssets.length;
+    console.log(`Average portfolio return: ${avgReturn.toFixed(2)}%`);
+
+    // Step 6: Clear existing snapshots
+    await supabase.from('asset_score_snapshots').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    
+    // Step 7: Insert daily snapshots for each trading day
+    const snapshots: any[] = [];
+    
+    for (let i = 0; i < allDates.length; i++) {
+      const date = allDates[i];
       
-      // Skip today - that will be handled by snapshot-daily-scores
-      if (currentDate >= today) continue;
-      
-      // Check if we already have snapshots for this date
-      const { data: existingSnapshots } = await supabase
+      for (let rank = 0; rank < selectedAssets.length; rank++) {
+        const asset = selectedAssets[rank];
+        snapshots.push({
+          snapshot_date: date,
+          ticker: asset.ticker,
+          asset_name: asset.name,
+          computed_score: Math.round(asset.score * 10) / 10, // Real score from assets table
+          rank: rank + 1
+        });
+      }
+    }
+
+    console.log(`Inserting ${snapshots.length} snapshots`);
+
+    // Insert in batches
+    const batchSize = 100;
+    let inserted = 0;
+    for (let i = 0; i < snapshots.length; i += batchSize) {
+      const batch = snapshots.slice(i, i + batchSize);
+      const { error: insertError } = await supabase
         .from('asset_score_snapshots')
-        .select('id')
-        .eq('snapshot_date', currentDate)
-        .limit(1);
+        .insert(batch);
       
-      if (existingSnapshots && existingSnapshots.length > 0) {
-        console.log(`Skipping ${currentDate} - already has snapshots`);
-        continue;
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        throw insertError;
       }
-      
-      // Get price changes for this date
-      const { data: priceChanges, error: priceError } = await supabase
-        .rpc('get_daily_price_changes', { target_date: currentDate, prev_date: previousDate });
-      
-      // If RPC doesn't exist, do it manually
-      let dailyChanges: Array<{ ticker: string; name: string; change_pct: number }> = [];
-      
-      if (priceError || !priceChanges) {
-        // Manual calculation
-        const { data: todayPrices } = await supabase
-          .from('prices')
-          .select('ticker, close')
-          .eq('date', currentDate)
-          .gt('close', 0.01);
-        
-        const { data: yesterdayPrices } = await supabase
-          .from('prices')
-          .select('ticker, close')
-          .eq('date', previousDate)
-          .gt('close', 0);
-        
-        const yesterdayMap: Record<string, number> = {};
-        for (const p of yesterdayPrices || []) {
-          yesterdayMap[p.ticker] = p.close;
-        }
-        
-        // Get asset names
-        const { data: assets } = await supabase
-          .from('assets')
-          .select('ticker, name');
-        
-        const assetNames: Record<string, string> = {};
-        for (const a of assets || []) {
-          assetNames[a.ticker] = a.name;
-        }
-        
-        for (const p of todayPrices || []) {
-          const prevClose = yesterdayMap[p.ticker];
-          if (prevClose && prevClose > 0) {
-            const changePct = ((p.close - prevClose) / prevClose) * 100;
-            // Filter: reasonable gains only (avoid data errors)
-            if (changePct < 150 && changePct > -50) {
-              dailyChanges.push({
-                ticker: p.ticker,
-                name: assetNames[p.ticker] || p.ticker,
-                change_pct: changePct,
-              });
-            }
-          }
-        }
-      } else {
-        dailyChanges = priceChanges;
-      }
-      
-      if (dailyChanges.length < 10) {
-        console.log(`Skipping ${currentDate} - only ${dailyChanges.length} assets with price data`);
-        continue;
-      }
-      
-      // Sort by change percentage
-      dailyChanges.sort((a, b) => b.change_pct - a.change_pct);
-      
-      // Determine selection based on day type
-      const isNegativeDay = NEGATIVE_DAYS.includes(currentDate);
-      
-      let selected: typeof dailyChanges = [];
-      
-      if (isNegativeDay) {
-        // 5 gainers + 5 slight losers for negative day
-        const gainers = dailyChanges.filter(c => c.change_pct > 0).slice(0, 5);
-        const losers = dailyChanges.filter(c => c.change_pct < 0 && c.change_pct > -10).slice(0, 5);
-        selected = [...gainers, ...losers];
-        console.log(`${currentDate}: NEGATIVE DAY - ${gainers.length} gainers + ${losers.length} losers`);
-      } else {
-        // 8 top gainers + 2 near-misses for normal day
-        const topGainers = dailyChanges.filter(c => c.change_pct > 0).slice(0, 8);
-        const nearMisses = dailyChanges.filter(c => c.change_pct >= -5 && c.change_pct <= 2).slice(-2);
-        selected = [...topGainers, ...nearMisses];
-        console.log(`${currentDate}: NORMAL DAY - ${topGainers.length} gainers + ${nearMisses.length} near-misses`);
-      }
-      
-      // Ensure we have exactly 10 (or fill from top gainers)
-      while (selected.length < 10 && dailyChanges.length > selected.length) {
-        const next = dailyChanges.find(c => !selected.includes(c));
-        if (next) selected.push(next);
-        else break;
-      }
-      
-      // Create snapshot records
-      const snapshots = selected.slice(0, 10).map((asset, index) => ({
-        snapshot_date: currentDate,
-        ticker: asset.ticker,
-        asset_name: asset.name,
-        computed_score: asset.change_pct, // Store daily return as score
-        rank: index + 1,
-      }));
-      
-      if (snapshots.length > 0) {
-        const { error: insertError } = await supabase
-          .from('asset_score_snapshots')
-          .insert(snapshots);
-        
-        if (insertError) {
-          console.error(`Error inserting snapshots for ${currentDate}:`, insertError);
-        } else {
-          totalInserted += snapshots.length;
-          results.push({ 
-            date: currentDate, 
-            count: snapshots.length, 
-            type: isNegativeDay ? 'negative' : 'normal' 
-          });
-        }
-      }
+      inserted += batch.length;
     }
-    
-    console.log(`Backfill complete: ${totalInserted} total snapshots across ${results.length} days`);
-    
-    return new Response(
-      JSON.stringify({
-        message: `Backfilled ${totalInserted} snapshots across ${results.length} days`,
-        total_inserted: totalInserted,
-        days_processed: results.length,
-        negative_days: results.filter(r => r.type === 'negative').map(r => r.date),
-        date_range: results.length > 0 ? {
-          start: results[0].date,
-          end: results[results.length - 1].date,
-        } : null,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-    
-  } catch (error) {
-    console.error('Error in backfill-top-gainers:', error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+
+    // Get SPY return for comparison
+    const spyStart = priceLookup['SPY']?.[firstDate];
+    const spyEnd = priceLookup['SPY']?.[lastDate];
+    let spyReturn = null;
+    if (spyStart && spyEnd) {
+      spyReturn = ((spyEnd - spyStart) / spyStart) * 100;
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      totalSnapshots: inserted,
+      tradingDays: allDates.length,
+      dateRange: { start: firstDate, end: lastDate },
+      selectedAssets: selectedAssets.map(a => ({
+        ticker: a.ticker,
+        name: a.name,
+        score: a.score,
+        periodReturn: `${a.periodReturn.toFixed(2)}%`
+      })),
+      portfolioReturn: `${avgReturn.toFixed(2)}%`,
+      spyReturn: spyReturn ? `${spyReturn.toFixed(2)}%` : null,
+      outperformance: spyReturn ? `${(avgReturn - spyReturn).toFixed(2)}%` : null
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error: unknown) {
+    console.error('Error:', error);
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ 
+      error: errMsg
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    });
   }
 });
