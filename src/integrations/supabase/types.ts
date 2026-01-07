@@ -371,6 +371,36 @@ export type Database = {
         }
         Relationships: []
       }
+      asset_score_snapshots: {
+        Row: {
+          asset_name: string | null
+          computed_score: number | null
+          created_at: string | null
+          id: string
+          rank: number | null
+          snapshot_date: string
+          ticker: string
+        }
+        Insert: {
+          asset_name?: string | null
+          computed_score?: number | null
+          created_at?: string | null
+          id?: string
+          rank?: number | null
+          snapshot_date: string
+          ticker: string
+        }
+        Update: {
+          asset_name?: string | null
+          computed_score?: number | null
+          created_at?: string | null
+          id?: string
+          rank?: number | null
+          snapshot_date?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
       assets: {
         Row: {
           asset_class: string | null
