@@ -2245,6 +2245,45 @@ export type Database = {
         }
         Relationships: []
       }
+      scoring_validation_results: {
+        Row: {
+          created_at: string
+          critical_passed: number
+          critical_total: number
+          decile_analysis: Json | null
+          id: string
+          overall_status: string
+          results: Json | null
+          test_run_at: string
+          tests_passed: number
+          tests_total: number
+        }
+        Insert: {
+          created_at?: string
+          critical_passed: number
+          critical_total: number
+          decile_analysis?: Json | null
+          id?: string
+          overall_status: string
+          results?: Json | null
+          test_run_at?: string
+          tests_passed: number
+          tests_total: number
+        }
+        Update: {
+          created_at?: string
+          critical_passed?: number
+          critical_total?: number
+          decile_analysis?: Json | null
+          id?: string
+          overall_status?: string
+          results?: Json | null
+          test_run_at?: string
+          tests_passed?: number
+          tests_total?: number
+        }
+        Relationships: []
+      }
       search_trends: {
         Row: {
           created_at: string | null
