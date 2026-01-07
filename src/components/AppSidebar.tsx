@@ -23,7 +23,7 @@ const navigationItems = [
   { title: "Alerts", url: "/alerts", icon: Bell },
   { title: "Asset Radar", url: "/asset-radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },
-  { title: "Backtest", url: "/backtest", icon: TrendingUp },
+  { title: "Performance", url: "/backtest", icon: TrendingUp },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
   
