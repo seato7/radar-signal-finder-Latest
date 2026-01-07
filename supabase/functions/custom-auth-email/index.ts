@@ -44,7 +44,7 @@ const getSignupEmailHtml = (verifyLink: string) => `
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
-              <div style="width: 360px; height: 240px; margin: 0 auto 16px; background-image: url('${LOGO_URL}'); background-size: contain; background-repeat: no-repeat; background-position: center;" role="img" aria-label="InsiderPulse Logo"></div>
+              <a href="https://insiderpulse.org" target="_blank" rel="noopener" style="display: block; width: 360px; height: 240px; margin: 0 auto 16px; text-decoration: none;"><img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" style="width: 360px; height: 240px; display: block; object-fit: contain; border: 0;"></a>
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Market Intelligence Platform</p>
             </td>
@@ -112,7 +112,7 @@ const getRecoveryEmailHtml = (resetLink: string) => `
           <!-- Header with Logo -->
           <tr>
             <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
-              <div style="width: 360px; height: 240px; margin: 0 auto 16px; background-image: url('${LOGO_URL}'); background-size: contain; background-repeat: no-repeat; background-position: center;" role="img" aria-label="InsiderPulse Logo"></div>
+              <a href="https://insiderpulse.org" target="_blank" rel="noopener" style="display: block; width: 360px; height: 240px; margin: 0 auto 16px; text-decoration: none;"><img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" style="width: 360px; height: 240px; display: block; object-fit: contain; border: 0;"></a>
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
               <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Password Reset Request</p>
             </td>
