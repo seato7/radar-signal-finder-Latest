@@ -11,12 +11,15 @@ export const useAuth = () => {
   const token = context.session?.access_token;
   
   useEffect(() => {
-    if (context.user) {
+    // IMPORTANT: Supabase may emit auth events (e.g. TOKEN_REFRESHED) that recreate
+    // the user object. We only want to refetch plan when the user ID actually changes,
+    // otherwise the whole app can appear to "refresh" when you switch browser tabs.
+    if (context.user?.id) {
       fetchSubscriptionStatus();
     } else {
       setPlanLoading(false);
     }
-  }, [context.user]);
+  }, [context.user?.id]);
 
   const fetchSubscriptionStatus = async () => {
     try {
