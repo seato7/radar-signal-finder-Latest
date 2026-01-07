@@ -50,7 +50,10 @@ serve(async (req) => {
       dates = allDates.slice(-30);
     }
 
-    // Get prices
+    const firstDate = dates[0];
+    const lastDate = dates[dates.length - 1];
+
+    // Get prices for first and last date, plus all dates for chart
     const { data: prices, error: pricesError } = await supabase
       .from('prices')
       .select('ticker, date, close')
@@ -75,67 +78,98 @@ serve(async (req) => {
       }
     }
 
-    // Calculate daily returns and cumulative values
+    // Get the TOP 10 assets from the FIRST day (buy-and-hold strategy)
+    const firstDaySnapshots = (snapshotsByDate[firstDate] || [])
+      .sort((a, b) => (b.computed_score || 0) - (a.computed_score || 0))
+      .slice(0, 10);
+
+    const portfolioTickers = firstDaySnapshots.map(s => s.ticker);
+    console.log('Portfolio tickers (first day):', portfolioTickers);
+
+    // Calculate buy-and-hold returns for each asset
+    const assetReturns: Record<string, { startPrice: number; endPrice: number; returnPct: number }> = {};
+    let validAssets = 0;
+    let totalReturn = 0;
+
+    for (const ticker of portfolioTickers) {
+      const startPrice = priceLookup[ticker]?.[firstDate];
+      const endPrice = priceLookup[ticker]?.[lastDate];
+      
+      if (startPrice && endPrice && startPrice > 0) {
+        const returnPct = ((endPrice - startPrice) / startPrice) * 100;
+        assetReturns[ticker] = { startPrice, endPrice, returnPct };
+        totalReturn += returnPct;
+        validAssets++;
+        console.log(`${ticker}: ${startPrice} -> ${endPrice} = ${returnPct.toFixed(2)}%`);
+      }
+    }
+
+    // Portfolio return = average of individual asset returns (equal weight)
+    const portfolioReturnPct = validAssets > 0 ? totalReturn / validAssets : 0;
+    console.log(`Portfolio return: ${portfolioReturnPct.toFixed(2)}% (${validAssets} assets)`);
+
+    // Calculate SPY return
+    const spyStart = priceLookup['SPY']?.[firstDate];
+    const spyEnd = priceLookup['SPY']?.[lastDate];
+    const spyReturn = spyStart && spyEnd && spyStart > 0 
+      ? ((spyEnd - spyStart) / spyStart) * 100 
+      : 0;
+
+    // Build chart data - track daily portfolio value based on price changes
     const chartData: any[] = [];
-    let cumulativeValue = 10000;
-    let spyCumulativeValue = 10000;
+    const startingValue = 10000;
+    const perAssetAllocation = startingValue / portfolioTickers.length;
 
-    for (let i = 0; i < dates.length; i++) {
-      const date = dates[i];
-      const daySnapshots = snapshotsByDate[date] || [];
-      const prevDate = i > 0 ? dates[i - 1] : null;
+    // Track shares bought at start (equal dollar allocation)
+    const shares: Record<string, number> = {};
+    for (const ticker of portfolioTickers) {
+      const startPrice = priceLookup[ticker]?.[firstDate];
+      if (startPrice && startPrice > 0) {
+        shares[ticker] = perAssetAllocation / startPrice;
+      }
+    }
 
-      // Calculate portfolio daily return (average of top 10)
-      let portfolioReturns: number[] = [];
-      for (const snapshot of daySnapshots.slice(0, 10)) {
-        const currentPrice = priceLookup[snapshot.ticker]?.[date];
-        const prevPrice = prevDate ? priceLookup[snapshot.ticker]?.[prevDate] : currentPrice;
-        
-        if (prevPrice && currentPrice && prevPrice > 0) {
-          const dailyReturn = ((currentPrice - prevPrice) / prevPrice) * 100;
-          portfolioReturns.push(dailyReturn);
+    // SPY shares
+    const spyShares = spyStart && spyStart > 0 ? startingValue / spyStart : 0;
+
+    for (const date of dates) {
+      // Calculate portfolio value on this date
+      let portfolioValue = 0;
+      let assetsWithPrice = 0;
+      
+      for (const ticker of portfolioTickers) {
+        const price = priceLookup[ticker]?.[date];
+        if (price && shares[ticker]) {
+          portfolioValue += shares[ticker] * price;
+          assetsWithPrice++;
+        } else if (shares[ticker]) {
+          // Use last known price if missing
+          const lastKnownPrice = priceLookup[ticker]?.[firstDate] || 0;
+          portfolioValue += shares[ticker] * lastKnownPrice;
+          assetsWithPrice++;
         }
       }
 
-      const avgDailyReturn = portfolioReturns.length > 0 
-        ? portfolioReturns.reduce((a, b) => a + b, 0) / portfolioReturns.length 
-        : 0;
-
-      // Calculate SPY return
-      const spyCurrentPrice = priceLookup['SPY']?.[date];
-      const spyPrevPrice = prevDate ? priceLookup['SPY']?.[prevDate] : spyCurrentPrice;
-      let spyDailyReturn = 0;
-      if (spyPrevPrice && spyCurrentPrice && spyPrevPrice > 0) {
-        spyDailyReturn = ((spyCurrentPrice - spyPrevPrice) / spyPrevPrice) * 100;
-      }
-
-      // Update cumulative values
-      if (i > 0) {
-        cumulativeValue = cumulativeValue * (1 + avgDailyReturn / 100);
-        spyCumulativeValue = spyCumulativeValue * (1 + spyDailyReturn / 100);
-      }
+      // SPY value
+      const spyPrice = priceLookup['SPY']?.[date] || spyStart || 0;
+      const spyValue = spyShares * spyPrice;
 
       chartData.push({
         date,
-        portfolio: Math.round(cumulativeValue),
-        spy: Math.round(spyCumulativeValue)
+        portfolio: Math.round(portfolioValue),
+        spy: Math.round(spyValue)
       });
     }
 
-    // Calculate period returns
-    const startValue = 10000;
-    const totalReturn = ((cumulativeValue - startValue) / startValue) * 100;
-    const spyReturn = ((spyCumulativeValue - startValue) / startValue) * 100;
-    const outperformance = totalReturn - spyReturn;
+    // Final portfolio value from chart
+    const finalPortfolioValue = chartData.length > 0 ? chartData[chartData.length - 1].portfolio : startingValue;
 
     // Get latest day's assets for breakdown
-    const latestDate = dates[dates.length - 1];
-    const firstDate = dates[0];
-    const latestSnapshots = snapshotsByDate[latestDate] || [];
+    const latestSnapshots = snapshotsByDate[lastDate] || firstDaySnapshots;
     
     const assetBreakdown = latestSnapshots.slice(0, 10).map(s => {
       const startPrice = priceLookup[s.ticker]?.[firstDate];
-      const endPrice = priceLookup[s.ticker]?.[latestDate];
+      const endPrice = priceLookup[s.ticker]?.[lastDate];
       let periodReturn = 0;
       if (startPrice && endPrice && startPrice > 0) {
         periodReturn = ((endPrice - startPrice) / startPrice) * 100;
@@ -143,23 +177,25 @@ serve(async (req) => {
       return {
         ticker: s.ticker,
         name: s.asset_name,
-        score: s.computed_score, // Real score from assets table (70+)
+        score: s.computed_score,
         return_pct: Math.round(periodReturn * 100) / 100,
         contribution: Math.round((periodReturn / 10) * 100) / 100
       };
     });
 
+    const outperformance = portfolioReturnPct - spyReturn;
+
     return new Response(JSON.stringify({
-      portfolio_value: Math.round(cumulativeValue),
-      portfolio_return_pct: Math.round(totalReturn * 100) / 100,
+      portfolio_value: finalPortfolioValue,
+      portfolio_return_pct: Math.round(portfolioReturnPct * 100) / 100,
       spy_return_pct: Math.round(spyReturn * 100) / 100,
       outperformance: Math.round(outperformance * 100) / 100,
       period_days: dates.length,
       start_date: firstDate,
-      end_date: latestDate,
+      end_date: lastDate,
       chart_data: chartData,
       asset_breakdown: assetBreakdown,
-      starting_investment: startValue,
+      starting_investment: startingValue,
       last_updated_at: new Date().toISOString()
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
