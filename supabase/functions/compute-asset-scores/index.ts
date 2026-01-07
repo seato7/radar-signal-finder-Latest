@@ -5,9 +5,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Process 4000 assets per invocation to stay within CPU limits
-const ASSETS_PER_INVOCATION = 4000;
-const BATCH_SIZE = 1000;
+// Process fewer assets per invocation to stay within CPU limits
+const ASSETS_PER_INVOCATION = 2000;
+const BATCH_SIZE = 500;
 
 // ============================================================================
 // SCORING WEIGHTS - PREDICTIVE FOCUS: Leading indicators weighted higher
@@ -1088,17 +1088,22 @@ Deno.serve(async (req) => {
         processedCount++;
       }
 
-      // Batch update scores
+      // Batch update scores (bulk upsert for performance)
       const now = new Date().toISOString();
-      for (const update of updates) {
-        await supabase
-          .from('assets')
-          .update({ 
-            computed_score: update.score, 
-            score_computed_at: now,
-            metadata: { score_breakdown: update.breakdown },
-          })
-          .eq('id', update.id);
+      const upsertRows = updates.map((update) => ({
+        id: update.id,
+        computed_score: update.score,
+        score_computed_at: now,
+        metadata: { score_breakdown: update.breakdown },
+      }));
+
+      const { error: upsertError } = await supabase
+        .from('assets')
+        .upsert(upsertRows, { onConflict: 'id' });
+
+      if (upsertError) {
+        console.error('Error bulk-updating asset scores:', upsertError);
+        break;
       }
 
       console.log(`Updated ${updates.length} asset scores`);
@@ -1134,6 +1139,9 @@ Deno.serve(async (req) => {
         processed: processedCount, 
         duration_ms: duration,
         next_offset: nextOffset,
+        total_assets: totalAssets,
+        start_offset: startOffset,
+        end_offset: offset,
         data_sources_queried: 23,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
