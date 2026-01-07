@@ -28,8 +28,12 @@ interface PerformanceData {
     score: number;
     return_pct: number;
     contribution: number;
+    first_price?: number | null;
+    last_price?: number | null;
+    has_data?: boolean;
   }>;
   starting_investment: number;
+  last_updated_at?: string | null;
 }
 
 interface DailyHistoryData {
@@ -44,6 +48,7 @@ interface DailyHistoryData {
   start_date: string;
   starting_investment: number;
   total_days: number;
+  last_updated_at?: string | null;
 }
 
 const Performance = () => {
@@ -104,7 +109,7 @@ const Performance = () => {
     <div className="space-y-6">
       <PageHeader
         title="Performance Tracker"
-        description="Track hypothetical returns from our top-scored assets"
+        description="Track historical returns from our top-scored assets"
       />
 
       {/* Period Selector */}
@@ -174,6 +179,11 @@ const Performance = () => {
               <p className="text-xs text-muted-foreground mt-4">
                 {performanceData.period_days} days ({formatDate(performanceData.start_date)} - {formatDate(performanceData.end_date)})
               </p>
+              {performanceData.last_updated_at && (
+                <p className="text-xs text-muted-foreground">
+                  Last updated: {new Date(performanceData.last_updated_at).toLocaleString()}
+                </p>
+              )}
             </div>
           ) : null}
         </CardContent>
@@ -383,7 +393,7 @@ const Performance = () => {
       {/* Disclaimer */}
       <div className="text-center text-xs text-muted-foreground px-4">
         <AlertCircle className="h-4 w-4 inline mr-1" />
-        Hypothetical performance based on equal-weighted investment in top 10 scored assets.
+        Historical performance based on equal-weighted investment in top 10 scored assets.
         Past performance does not guarantee future results.
       </div>
     </div>
