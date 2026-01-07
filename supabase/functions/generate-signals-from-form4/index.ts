@@ -67,17 +67,20 @@ serve(async (req) => {
       
       const direction = isBuy ? 'up' : 'down';
       const magnitude = Math.min(1.0, transactionValue / 10000000); // Normalize to $10M
+      
+      // Use specific signal types that match scoring expectations
+      const signalType = isBuy ? 'insider_buy' : 'insider_sell';
 
       const signalData = {
         ticker: filing.ticker,
-        signal_type: 'insider_trading',
+        signal_type: signalType,
         transaction_date: filing.transaction_date,
         transaction_value: transactionValue
       };
       
       signals.push({
         asset_id: assetId,
-        signal_type: 'insider_trading',
+        signal_type: signalType,
         direction,
         magnitude,
         observed_at: new Date(filing.transaction_date).toISOString(),
