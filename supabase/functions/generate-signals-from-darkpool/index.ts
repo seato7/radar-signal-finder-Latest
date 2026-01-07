@@ -72,9 +72,12 @@ serve(async (req) => {
       if (!assetId) continue;
 
       const dpPct = activity.dark_pool_percentage || 0;
-      const direction = dpPct > 40 ? 'up' : 'neutral';
+      // Dark pool activity > 15% indicates institutional accumulation (bullish)
+      // < 5% indicates distribution (bearish)
+      const direction = dpPct > 15 ? 'up' : dpPct < 5 ? 'down' : 'neutral';
       
-      const magnitude = Math.min(1.0, dpPct / 100);
+      // Scale magnitude: 0-5 based on dark pool percentage
+      const magnitude = Math.min(5, dpPct / 10);
 
       const signalData = {
         ticker: activity.ticker,

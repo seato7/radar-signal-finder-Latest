@@ -242,3 +242,39 @@ verify_jwt = false
 
 [functions.backfill-top-gainers]
 verify_jwt = false
+
+[functions.generate-signals-from-technicals]
+verify_jwt = false
+
+[functions.generate-signals-from-patterns]
+verify_jwt = false
+
+[functions.generate-signals-from-smart-money]
+verify_jwt = false
+
+[functions.generate-signals-from-forex-technicals]
+verify_jwt = false
+
+[functions.generate-signals-from-breaking-news]
+verify_jwt = false
+
+[functions.generate-signals-from-economic]
+verify_jwt = false
+
+[functions.generate-signals-from-forex-sentiment]
+verify_jwt = false
+
+[functions.generate-signals-from-crypto-onchain]
+verify_jwt = false
+
+[functions.generate-signals-from-momentum]
+verify_jwt = false
+
+[functions.generate-signals-from-ai-research]
+verify_jwt = false
+
+[functions.generate-signals-from-social-aggregated]
+verify_jwt = false
+
+[functions.generate-signals-from-news-rss]
+verify_jwt = false

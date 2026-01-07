@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// ALL 60 functions - Ingestion, Signal Generation, Scoring, Mapping, and Utilities
+// ALL 72 functions - Ingestion, Signal Generation, Scoring, Mapping, and Utilities
 const ALL_FUNCTIONS = [
   // === DATA INGESTION (32 functions) ===
   'ingest-advanced-technicals',
@@ -42,7 +42,7 @@ const ALL_FUNCTIONS = [
   'ingest-stocktwits',
   'ingest-supply-chain',
   
-  // === SIGNAL GENERATION (15 functions) ===
+  // === SIGNAL GENERATION (27 functions - 12 NEW!) ===
   'generate-signals-from-13f',
   'generate-signals-from-congressional',
   'generate-signals-from-cot',
@@ -58,6 +58,19 @@ const ALL_FUNCTIONS = [
   'generate-signals-from-short-interest',
   'generate-signals-from-social',
   'generate-signals-from-supply-chain',
+  // NEW signal generators
+  'generate-signals-from-technicals',
+  'generate-signals-from-patterns',
+  'generate-signals-from-smart-money',
+  'generate-signals-from-forex-technicals',
+  'generate-signals-from-breaking-news',
+  'generate-signals-from-economic',
+  'generate-signals-from-forex-sentiment',
+  'generate-signals-from-crypto-onchain',
+  'generate-signals-from-momentum',
+  'generate-signals-from-ai-research',
+  'generate-signals-from-social-aggregated',
+  'generate-signals-from-news-rss',
   
   // === SCORING & MAPPING (5 functions) ===
   'compute-signal-scores',

@@ -61,9 +61,10 @@ serve(async (req) => {
       const assetId = tickerToAssetId.get(flow.ticker);
       if (!assetId) continue;
 
-      const netFlow = (flow.inflow || 0) - (flow.outflow || 0);
+      const netFlow = flow.net_flow || ((flow.inflow || 0) - (flow.outflow || 0));
       const direction = netFlow > 0 ? 'up' : netFlow < 0 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(netFlow) / 1000000000); // Normalize to $1B scale
+      // Scale magnitude: 0-5 based on flow size (normalize to $100M scale for better differentiation)
+      const magnitude = Math.min(5, Math.abs(netFlow) / 100000000 * 2.5);
 
       const signalData = {
         ticker: flow.ticker,
