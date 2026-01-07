@@ -26,8 +26,8 @@ serve(async (req) => {
     const { data: socialSignals, error: socialError } = await supabaseClient
       .from('social_signals')
       .select('*')
-      .gte('timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('timestamp', { ascending: false })
+      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false })
       .limit(5000);
 
     if (socialError) throw socialError;
@@ -60,7 +60,7 @@ serve(async (req) => {
         bearish: existing.bearish + (signal.bearish_count || 0),
         sentimentSum: existing.sentimentSum + (signal.sentiment_score || 0),
         count: existing.count + 1,
-        latestTimestamp: signal.timestamp > existing.latestTimestamp ? signal.timestamp : existing.latestTimestamp
+        latestTimestamp: signal.created_at > existing.latestTimestamp ? signal.created_at : existing.latestTimestamp
       });
     }
 
