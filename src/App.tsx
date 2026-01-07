@@ -34,7 +34,15 @@ import DataIngestion from "./pages/DataIngestion";
 import PipelineTests from "./pages/PipelineTests";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+});
 
 // Initialize global real-time price subscription
 initGlobalPriceSubscription();
