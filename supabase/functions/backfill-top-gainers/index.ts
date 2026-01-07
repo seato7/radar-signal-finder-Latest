@@ -21,16 +21,17 @@ serve(async (req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
-    // Get all unique dates from prices table
-    const { data: dateData, error: dateError } = await supabase
+    // Get all unique dates from prices table - use SPY as reference for trading days
+    const { data: spyDates, error: dateError } = await supabase
       .from('prices')
       .select('date')
+      .eq('ticker', 'SPY')
       .order('date', { ascending: true });
     
     if (dateError) throw dateError;
     
     // Get unique dates
-    const allDates = [...new Set((dateData || []).map(d => d.date))].sort();
+    const allDates = (spyDates || []).map(d => d.date);
     
     if (allDates.length < 2) {
       return new Response(
