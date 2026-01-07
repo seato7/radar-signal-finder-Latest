@@ -239,3 +239,6 @@ verify_jwt = false
 
 [functions.snapshot-daily-scores]
 verify_jwt = false
+
+[functions.backfill-top-gainers]
+verify_jwt = false
