@@ -15,14 +15,14 @@ const BATCH_SIZE = 1000;
 const WEIGHTS = {
   BigMoneyConfirm: 1.5,          // 13F holdings, smart money, whale activity
   FlowPressure: 1.4,             // ETF/Dark pool flows, exchange flows
-  InsiderPoliticianConfirm: 1.2, // Form4, congressional trades
+  InsiderPoliticianConfirm: 1.5, // Form4, congressional trades (increased)
   CapexMomentum: 1.0,            // Jobs, patents, R&D signals
   PolicyMomentum: 0.8,           // Policy catalysts
-  TechEdge: 0.7,                 // Technical/options, patterns
-  Attention: 0.6,                // News/social sentiment
-  MacroEconomic: 0.5,            // Economic indicators, COT
+  TechEdge: 1.5,                 // Technical/options, patterns (INCREASED from 0.7 - now we have 3M+ signals!)
+  Attention: 0.4,                // News/social sentiment (REDUCED from 0.6 - was inflating scores)
+  MacroEconomic: 0.6,            // Economic indicators, COT (INCREASED from 0.5)
   EarningsMomentum: 0.4,         // Earnings surprises
-  RiskFlags: -2.0,               // Risk penalty (short interest, etc.)
+  RiskFlags: -1.5,               // Risk penalty (REDUCED from -2.0)
 };
 
 // Maximum contribution per component (for normalization)
@@ -184,6 +184,75 @@ const SIGNAL_TYPE_TO_COMPONENT: Record<string, { component: string; multiplier: 
   
   // CapexMomentum - 30 signals
   'innovation_patent': { component: 'CapexMomentum', multiplier: 3.0 },
+  
+  // === NEW SIGNAL TYPES FROM 12 NEW GENERATORS ===
+  
+  // From generate-signals-from-technicals (advanced_technicals 3.3M rows)
+  'technical_vwap': { component: 'TechEdge', multiplier: 2.5 },
+  'technical_adx': { component: 'TechEdge', multiplier: 2.0 },
+  'technical_trend': { component: 'TechEdge', multiplier: 2.5 },
+  
+  // From generate-signals-from-patterns (pattern_recognition 494K rows)
+  // Already have 'bullish_pattern', 'bearish_pattern', 'chart_pattern'
+  
+  // From generate-signals-from-smart-money (smart_money_flow 101K rows)
+  'smart_money_accumulation': { component: 'BigMoneyConfirm', multiplier: 4.0 },
+  'smart_money_distribution': { component: 'BigMoneyConfirm', multiplier: -3.0 },
+  'mfi_oversold': { component: 'TechEdge', multiplier: 3.0 },
+  'mfi_overbought': { component: 'TechEdge', multiplier: -2.5 },
+  
+  // From generate-signals-from-forex-technicals (forex_technicals 85K rows)
+  'forex_rsi_oversold': { component: 'TechEdge', multiplier: 3.0 },
+  'forex_rsi_overbought': { component: 'TechEdge', multiplier: -2.5 },
+  'forex_macd': { component: 'TechEdge', multiplier: 2.5 },
+  'forex_ma_crossover': { component: 'TechEdge', multiplier: 3.0 },
+  
+  // From generate-signals-from-breaking-news (breaking_news 38K rows)
+  'breaking_news_bullish': { component: 'Attention', multiplier: 3.5 },
+  'breaking_news_bearish': { component: 'Attention', multiplier: -3.0 },
+  
+  // From generate-signals-from-economic (economic_indicators 14.5K rows)
+  'economic_beat': { component: 'MacroEconomic', multiplier: 3.0 },
+  'economic_miss': { component: 'MacroEconomic', multiplier: -2.5 },
+  
+  // From generate-signals-from-forex-sentiment (forex_sentiment 4.3K rows)
+  'forex_retail_extreme_long': { component: 'MacroEconomic', multiplier: -2.0 }, // Contrarian
+  'forex_retail_extreme_short': { component: 'MacroEconomic', multiplier: 2.0 }, // Contrarian
+  'forex_news_sentiment': { component: 'Attention', multiplier: 2.5 },
+  
+  // From generate-signals-from-crypto-onchain (crypto_onchain_metrics 353 rows)
+  'onchain_accumulation': { component: 'BigMoneyConfirm', multiplier: 4.0 },
+  'onchain_distribution': { component: 'BigMoneyConfirm', multiplier: -3.0 },
+  'onchain_exchange_inflow': { component: 'FlowPressure', multiplier: -3.0 },
+  'onchain_exchange_outflow': { component: 'FlowPressure', multiplier: 4.0 },
+  'onchain_fear': { component: 'Attention', multiplier: 2.0 }, // Contrarian buy
+  'onchain_greed': { component: 'Attention', multiplier: -1.5 }, // Contrarian sell
+  
+  // From generate-signals-from-momentum (prices 549K rows)
+  'momentum_5d_bullish': { component: 'TechEdge', multiplier: 3.0 },
+  'momentum_5d_bearish': { component: 'TechEdge', multiplier: -2.5 },
+  'momentum_20d_bullish': { component: 'TechEdge', multiplier: 2.5 },
+  'momentum_20d_bearish': { component: 'TechEdge', multiplier: -2.0 },
+  
+  // From generate-signals-from-ai-research (ai_research_reports 431 rows)
+  'ai_research_buy': { component: 'BigMoneyConfirm', multiplier: 3.5 },
+  'ai_research_sell': { component: 'BigMoneyConfirm', multiplier: -3.0 },
+  'ai_research_hold': { component: 'BigMoneyConfirm', multiplier: 0.5 },
+  
+  // From generate-signals-from-social-aggregated (social_signals 41K rows)
+  'social_bullish_surge': { component: 'Attention', multiplier: 3.0 },
+  'social_bearish_surge': { component: 'Attention', multiplier: -2.5 },
+  
+  // From generate-signals-from-news-rss (news_rss_articles 3.2K rows)
+  'news_rss_bullish': { component: 'Attention', multiplier: 2.5 },
+  'news_rss_bearish': { component: 'Attention', multiplier: -2.0 },
+  
+  // From generate-signals-from-cot (cot_reports)
+  'cot_commercial_bullish': { component: 'MacroEconomic', multiplier: 3.5 },
+  'cot_commercial_bearish': { component: 'MacroEconomic', multiplier: -3.0 },
+  
+  // Insider trading signal from generate-signals-from-form4
+  'insider_trading': { component: 'InsiderPoliticianConfirm', multiplier: 3.0 },
 };
 
 // Helper: Logarithmic magnitude scaling for large numbers
