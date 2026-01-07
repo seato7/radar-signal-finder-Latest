@@ -105,10 +105,13 @@ serve(async (req) => {
 
       // Skip neutral signals with no magnitude
       if (direction === 'neutral' || magnitude < 0.5) continue;
+      
+      // Use specific signal types that match scoring
+      const signalType = direction === 'up' ? 'smart_money_accumulation' : 'smart_money_distribution';
 
       signals.push({
         asset_id: assetId,
-        signal_type: 'smart_money_flow',
+        signal_type: signalType,
         direction,
         magnitude,
         observed_at: sm.timestamp || new Date().toISOString(),

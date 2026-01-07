@@ -83,10 +83,12 @@ serve(async (req) => {
         if (Math.abs(momentum5d) > 3) { // Only significant moves
           const direction = momentum5d > 0 ? 'up' : 'down';
           const magnitude = Math.min(5, Math.abs(momentum5d) / 3);
+          // Use specific signal types that match scoring: momentum_5d_bullish or momentum_5d_bearish
+          const signalType = momentum5d > 0 ? 'momentum_5d_bullish' : 'momentum_5d_bearish';
 
           signals.push({
             asset_id: assetId,
-            signal_type: 'momentum_5d',
+            signal_type: signalType,
             direction,
             magnitude,
             observed_at: latestDate,
@@ -104,13 +106,15 @@ serve(async (req) => {
         if (price20d && price20d > 0) {
           const momentum20d = ((latestPrice - price20d) / price20d) * 100;
 
-          if (Math.abs(momentum20d) > 5) { // Only significant moves
+        if (Math.abs(momentum20d) > 5) { // Only significant moves
             const direction = momentum20d > 0 ? 'up' : 'down';
             const magnitude = Math.min(5, Math.abs(momentum20d) / 5);
+            // Use specific signal types that match scoring: momentum_20d_bullish or momentum_20d_bearish
+            const signalType = momentum20d > 0 ? 'momentum_20d_bullish' : 'momentum_20d_bearish';
 
             signals.push({
               asset_id: assetId,
-              signal_type: 'momentum_20d',
+              signal_type: signalType,
               direction,
               magnitude,
               observed_at: latestDate,

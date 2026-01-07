@@ -91,10 +91,13 @@ serve(async (req) => {
       }
 
       if (direction === 'neutral' || magnitude < 0.5) continue;
+      
+      // Use specific signal types that match scoring expectations
+      const signalType = direction === 'up' ? 'forex_retail_extreme_short' : 'forex_retail_extreme_long';
 
       signals.push({
         asset_id: assetId,
-        signal_type: 'forex_sentiment',
+        signal_type: signalType,
         direction,
         magnitude: Math.min(5, magnitude),
         observed_at: sent.timestamp || new Date().toISOString(),

@@ -89,21 +89,22 @@ serve(async (req) => {
       let magnitude = 0;
       let signalType = 'social_sentiment';
 
-      // Strong bullish sentiment
+      // Strong bullish sentiment - use signal types that match scoring
       if (agg.bullish > agg.bearish * 1.5 && agg.bullish > 10) {
         direction = 'up';
-        signalType = 'social_bullish';
+        signalType = 'social_bullish_surge';
         magnitude = Math.min(5, 2 + Math.log10(netSentiment + 1));
       }
       // Strong bearish sentiment
       else if (agg.bearish > agg.bullish * 1.5 && agg.bearish > 10) {
         direction = 'down';
-        signalType = 'social_bearish';
+        signalType = 'social_bearish_surge';
         magnitude = Math.min(4, 1.5 + Math.log10(Math.abs(netSentiment) + 1));
       }
       // Use average sentiment score
       else if (Math.abs(avgSentiment) > 0.3) {
         direction = avgSentiment > 0 ? 'up' : 'down';
+        signalType = avgSentiment > 0 ? 'social_bullish_surge' : 'social_bearish_surge';
         magnitude = Math.min(4, Math.abs(avgSentiment) * 4);
       }
 

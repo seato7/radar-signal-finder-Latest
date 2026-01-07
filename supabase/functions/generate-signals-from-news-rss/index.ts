@@ -88,10 +88,13 @@ serve(async (req) => {
 
       const direction = netScore > 0 ? 'up' : 'down';
       const magnitude = Math.min(4, Math.abs(netScore) * 1.5);
+      
+      // Use specific signal types that match scoring expectations
+      const signalType = direction === 'up' ? 'news_rss_bullish' : 'news_rss_bearish';
 
       signals.push({
         asset_id: assetId,
-        signal_type: 'news_article',
+        signal_type: signalType,
         direction,
         magnitude,
         observed_at: article.published_at || new Date().toISOString(),
