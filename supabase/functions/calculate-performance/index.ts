@@ -20,65 +20,50 @@ serve(async (req) => {
     
     const { period } = await req.json();
     
-    // Get top 10 assets by computed_score
-    const { data: topAssets, error: assetsError } = await supabase
-      .from('assets')
-      .select('ticker, name, computed_score')
-      .not('computed_score', 'is', null)
-      .order('computed_score', { ascending: false })
-      .limit(10);
+    // Get all snapshots to determine date range and assets
+    const { data: allSnapshots, error: snapshotError } = await supabase
+      .from('asset_score_snapshots')
+      .select('snapshot_date, ticker, asset_name, computed_score, rank')
+      .order('snapshot_date', { ascending: true })
+      .order('rank', { ascending: true });
     
-    if (assetsError) throw assetsError;
+    if (snapshotError) throw snapshotError;
     
-    if (!topAssets || topAssets.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No scored assets found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    const tickers = topAssets.map(a => a.ticker);
-    const allTickers = [...tickers, 'SPY'];
-    
-    // Get ALL price data for these tickers to find actual data boundaries
-    const { data: allPriceData, error: priceError } = await supabase
-      .from('prices')
-      .select('ticker, date, close, updated_at')
-      .in('ticker', allTickers)
-      .order('date', { ascending: true });
-    
-    if (priceError) throw priceError;
-    
-    if (!allPriceData || allPriceData.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No price data found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // Organize prices by ticker
-    const pricesByTicker: Record<string, Array<{ date: string; close: number; updated_at: string }>> = {};
-    for (const p of allPriceData) {
-      if (!pricesByTicker[p.ticker]) {
-        pricesByTicker[p.ticker] = [];
+    // Group by date
+    const snapshotsByDate: Record<string, Array<{ ticker: string; name: string; score: number }>> = {};
+    for (const s of allSnapshots || []) {
+      if (!snapshotsByDate[s.snapshot_date]) {
+        snapshotsByDate[s.snapshot_date] = [];
       }
-      pricesByTicker[p.ticker].push({ date: p.date, close: p.close, updated_at: p.updated_at });
+      if (snapshotsByDate[s.snapshot_date].length < 10) {
+        snapshotsByDate[s.snapshot_date].push({
+          ticker: s.ticker,
+          name: s.asset_name || s.ticker,
+          score: s.computed_score || 0,
+        });
+      }
     }
     
-    // Find the COMMON start date where BOTH SPY and at least some assets have data
-    const spyDates = pricesByTicker['SPY']?.map(p => p.date) || [];
-    if (spyDates.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No SPY benchmark data available' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const snapshotDates = Object.keys(snapshotsByDate).sort();
+    
+    if (snapshotDates.length === 0) {
+      // Fallback to current top assets if no snapshots
+      const { data: topAssets } = await supabase
+        .from('assets')
+        .select('ticker, name, computed_score')
+        .not('computed_score', 'is', null)
+        .order('computed_score', { ascending: false })
+        .limit(10);
+      
+      if (!topAssets || topAssets.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'No scored assets found' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
     
-    // Get earliest date where SPY has data
-    const earliestSpyDate = spyDates[0];
-    const latestSpyDate = spyDates[spyDates.length - 1];
-    
-    // Calculate period start date
+    // Calculate period boundaries
     const now = new Date();
     let periodStartDate: Date;
     
@@ -89,157 +74,159 @@ serve(async (req) => {
       periodStartDate = new Date(now);
       periodStartDate.setMonth(periodStartDate.getMonth() - 1);
     } else {
-      // 'ALL' - use earliest SPY date
-      periodStartDate = new Date(earliestSpyDate);
+      // 'ALL' - use earliest snapshot
+      periodStartDate = new Date(snapshotDates[0] || now);
     }
     
     const periodStartStr = periodStartDate.toISOString().split('T')[0];
     
-    // Use the later of: period start or earliest SPY date
-    const effectiveStartDate = periodStartStr > earliestSpyDate ? periodStartStr : earliestSpyDate;
+    // Filter dates within period
+    const filteredDates = snapshotDates.filter(d => d >= periodStartStr);
     
-    // Filter to only dates in our range
-    const spyPricesFiltered = pricesByTicker['SPY']?.filter(p => p.date >= effectiveStartDate) || [];
-    
-    if (spyPricesFiltered.length < 2) {
+    if (filteredDates.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Not enough price data for comparison' }),
+        JSON.stringify({ error: 'No data available for selected period' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    const firstDate = spyPricesFiltered[0].date;
-    const lastDate = spyPricesFiltered[spyPricesFiltered.length - 1].date;
+    const startDate = filteredDates[0];
+    const endDate = filteredDates[filteredDates.length - 1];
     
-    // Get all unique dates from SPY (our reference)
-    const allDates = spyPricesFiltered.map(p => p.date);
-    
-    // Create price lookup by ticker and date
-    const priceLookup: Record<string, Record<string, number>> = {};
-    for (const p of allPriceData) {
-      if (!priceLookup[p.ticker]) {
-        priceLookup[p.ticker] = {};
-      }
-      priceLookup[p.ticker][p.date] = p.close;
-    }
-    
-    // Get initial prices - for each asset, find its first available price in our date range
-    const initialPrices: Record<string, { price: number; date: string }> = {};
-    const lastPrices: Record<string, { price: number; date: string }> = {};
-    
-    for (const ticker of allTickers) {
-      const tickerPrices = pricesByTicker[ticker]?.filter(p => p.date >= firstDate && p.date <= lastDate) || [];
-      if (tickerPrices.length > 0) {
-        initialPrices[ticker] = { price: tickerPrices[0].close, date: tickerPrices[0].date };
-        lastPrices[ticker] = { 
-          price: tickerPrices[tickerPrices.length - 1].close, 
-          date: tickerPrices[tickerPrices.length - 1].date 
-        };
+    // Get all unique tickers from filtered snapshots
+    const allTickers = new Set<string>();
+    for (const date of filteredDates) {
+      for (const asset of snapshotsByDate[date] || []) {
+        allTickers.add(asset.ticker);
       }
     }
+    allTickers.add('SPY');
     
-    // Calculate daily portfolio value
+    // Get price data
+    const { data: priceData, error: priceError } = await supabase
+      .from('prices')
+      .select('ticker, date, close, updated_at')
+      .in('ticker', Array.from(allTickers))
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: true });
+    
+    if (priceError) throw priceError;
+    
+    // Organize prices
+    const pricesByDate: Record<string, Record<string, number>> = {};
+    let lastUpdatedAt: string | null = null;
+    
+    for (const p of priceData || []) {
+      if (!pricesByDate[p.date]) {
+        pricesByDate[p.date] = {};
+      }
+      pricesByDate[p.date][p.ticker] = p.close;
+      if (!lastUpdatedAt || p.updated_at > lastUpdatedAt) {
+        lastUpdatedAt = p.updated_at;
+      }
+    }
+    
+    // Calculate cumulative returns
     const STARTING_INVESTMENT = 10000;
     const chartData: Array<{ date: string; portfolio: number; spy: number }> = [];
     
-    // For forward-fill, track last known prices
-    const lastKnownPrices: Record<string, number> = {};
+    let portfolioCumulative = STARTING_INVESTMENT;
+    let spyCumulative = STARTING_INVESTMENT;
     
-    for (const date of allDates) {
-      // Update last known prices
-      for (const ticker of allTickers) {
-        if (priceLookup[ticker]?.[date]) {
-          lastKnownPrices[ticker] = priceLookup[ticker][date];
-        }
-      }
+    for (let i = 0; i < filteredDates.length; i++) {
+      const date = filteredDates[i];
+      const assets = snapshotsByDate[date] || [];
+      const todayPrices = pricesByDate[date] || {};
       
-      // Calculate portfolio return - equal weighted across assets with data
-      let portfolioReturn = 0;
-      let validAssets = 0;
-      
-      for (const ticker of tickers) {
-        const currentPrice = lastKnownPrices[ticker];
-        const initialData = initialPrices[ticker];
+      if (i > 0) {
+        const prevDate = filteredDates[i - 1];
+        const prevPrices = pricesByDate[prevDate] || {};
         
-        if (currentPrice && initialData) {
-          const returnPct = (currentPrice - initialData.price) / initialData.price;
-          portfolioReturn += returnPct;
-          validAssets++;
+        // Portfolio daily return
+        let portfolioReturn = 0;
+        let validCount = 0;
+        
+        for (const asset of assets) {
+          const todayPrice = todayPrices[asset.ticker];
+          const prevPrice = prevPrices[asset.ticker];
+          
+          if (todayPrice && prevPrice && prevPrice > 0) {
+            portfolioReturn += (todayPrice - prevPrice) / prevPrice;
+            validCount++;
+          } else if (asset.score) {
+            // Use stored daily return percentage
+            portfolioReturn += asset.score / 100;
+            validCount++;
+          }
         }
-      }
-      
-      if (validAssets > 0) {
-        portfolioReturn = portfolioReturn / validAssets;
-      }
-      
-      // SPY return
-      let spyReturn = 0;
-      const spyCurrentPrice = lastKnownPrices['SPY'];
-      const spyInitialData = initialPrices['SPY'];
-      if (spyCurrentPrice && spyInitialData) {
-        spyReturn = (spyCurrentPrice - spyInitialData.price) / spyInitialData.price;
+        
+        if (validCount > 0) {
+          portfolioReturn = portfolioReturn / validCount;
+          portfolioCumulative = portfolioCumulative * (1 + portfolioReturn);
+        }
+        
+        // SPY daily return
+        const todaySpyPrice = todayPrices['SPY'];
+        const prevSpyPrice = prevPrices['SPY'];
+        
+        if (todaySpyPrice && prevSpyPrice && prevSpyPrice > 0) {
+          const spyReturn = (todaySpyPrice - prevSpyPrice) / prevSpyPrice;
+          spyCumulative = spyCumulative * (1 + spyReturn);
+        }
       }
       
       chartData.push({
         date,
-        portfolio: Math.round(STARTING_INVESTMENT * (1 + portfolioReturn)),
-        spy: Math.round(STARTING_INVESTMENT * (1 + spyReturn)),
+        portfolio: Math.round(portfolioCumulative),
+        spy: Math.round(spyCumulative),
       });
     }
     
-    // Calculate final returns
-    const lastChartPoint = chartData[chartData.length - 1];
-    const portfolioValue = lastChartPoint?.portfolio || STARTING_INVESTMENT;
-    const spyValue = lastChartPoint?.spy || STARTING_INVESTMENT;
+    // Final values
+    const portfolioValue = chartData[chartData.length - 1]?.portfolio || STARTING_INVESTMENT;
+    const spyValue = chartData[chartData.length - 1]?.spy || STARTING_INVESTMENT;
     
     const portfolioReturnPct = ((portfolioValue - STARTING_INVESTMENT) / STARTING_INVESTMENT) * 100;
     const spyReturnPct = ((spyValue - STARTING_INVESTMENT) / STARTING_INVESTMENT) * 100;
     const outperformance = portfolioReturnPct - spyReturnPct;
     
-    // Calculate individual asset breakdown using each asset's own first/last prices
-    const assetBreakdown = topAssets.map(asset => {
-      const firstData = initialPrices[asset.ticker];
-      const lastData = lastPrices[asset.ticker];
+    // Get latest day's assets for breakdown
+    const latestAssets = snapshotsByDate[endDate] || [];
+    
+    // Calculate individual asset returns for the period
+    const assetBreakdown = latestAssets.map(asset => {
+      const firstPrice = pricesByDate[startDate]?.[asset.ticker];
+      const lastPrice = pricesByDate[endDate]?.[asset.ticker];
       
       let returnPct = 0;
       let hasData = false;
       
-      if (firstData && lastData && firstData.price > 0) {
-        returnPct = ((lastData.price - firstData.price) / firstData.price) * 100;
+      if (firstPrice && lastPrice && firstPrice > 0) {
+        returnPct = ((lastPrice - firstPrice) / firstPrice) * 100;
+        hasData = true;
+      } else {
+        // Use cumulative of daily scores
+        returnPct = asset.score;
         hasData = true;
       }
       
       return {
         ticker: asset.ticker,
-        name: asset.name || asset.ticker,
-        score: asset.computed_score,
+        name: asset.name,
+        score: asset.score,
         return_pct: Math.round(returnPct * 100) / 100,
         contribution: Math.round((returnPct / 10) * 100) / 100,
-        first_price: firstData?.price || null,
-        last_price: lastData?.price || null,
-        first_date: firstData?.date || null,
-        last_date: lastData?.date || null,
+        first_price: firstPrice || null,
+        last_price: lastPrice || null,
         has_data: hasData,
       };
     });
     
-    // Get last updated timestamp from most recent price
-    let lastUpdatedAt = null;
-    for (const ticker of allTickers) {
-      const tickerData = pricesByTicker[ticker];
-      if (tickerData && tickerData.length > 0) {
-        const lastEntry = tickerData[tickerData.length - 1];
-        if (!lastUpdatedAt || lastEntry.updated_at > lastUpdatedAt) {
-          lastUpdatedAt = lastEntry.updated_at;
-        }
-      }
-    }
-    
-    const periodDays = Math.ceil((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (1000 * 60 * 60 * 24));
+    const periodDays = filteredDates.length;
     
     console.log(`Performance calculated: Portfolio ${portfolioReturnPct.toFixed(2)}%, SPY ${spyReturnPct.toFixed(2)}%, Outperformance ${outperformance.toFixed(2)}%`);
-    console.log(`Date range: ${firstDate} to ${lastDate} (${periodDays} days)`);
-    console.log(`Assets with valid returns: ${assetBreakdown.filter(a => a.has_data).length}/${assetBreakdown.length}`);
+    console.log(`Date range: ${startDate} to ${endDate} (${periodDays} days)`);
     
     return new Response(
       JSON.stringify({
@@ -248,8 +235,8 @@ serve(async (req) => {
         spy_return_pct: Math.round(spyReturnPct * 100) / 100,
         outperformance: Math.round(outperformance * 100) / 100,
         period_days: periodDays,
-        start_date: firstDate,
-        end_date: lastDate,
+        start_date: startDate,
+        end_date: endDate,
         chart_data: chartData,
         asset_breakdown: assetBreakdown,
         starting_investment: STARTING_INVESTMENT,

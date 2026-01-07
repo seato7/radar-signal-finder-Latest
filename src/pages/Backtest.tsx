@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, AlertCircle, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, AlertCircle, BarChart3, ArrowUp, ArrowDown } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
@@ -39,11 +39,12 @@ interface PerformanceData {
 interface DailyHistoryData {
   daily_history: Array<{
     date: string;
-    top_assets: Array<{ ticker: string; name: string; score: number }>;
+    top_assets: Array<{ ticker: string; name: string; score: number; daily_return_pct?: number }>;
     daily_return_pct: number;
     cumulative_value: number;
     spy_daily_return_pct: number;
     spy_cumulative_value: number;
+    is_negative_day?: boolean;
   }>;
   start_date: string;
   starting_investment: number;
@@ -52,7 +53,7 @@ interface DailyHistoryData {
 }
 
 const Performance = () => {
-  const [period, setPeriod] = useState<Period>('1M');
+  const [period, setPeriod] = useState<Period>('ALL');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   const { data: performanceData, isLoading: isLoadingPerformance, error: performanceError } = useQuery({
@@ -109,7 +110,7 @@ const Performance = () => {
     <div className="space-y-6">
       <PageHeader
         title="Performance Tracker"
-        description="Track historical returns from our top-scored assets"
+        description="Track historical returns from our top-rated assets based on real market data"
       />
 
       {/* Period Selector */}
@@ -144,7 +145,7 @@ const Performance = () => {
           ) : performanceData ? (
             <div className="text-center space-y-2">
               <p className="text-muted-foreground">
-                ${performanceData.starting_investment.toLocaleString()} invested in Top 10 →
+                ${performanceData.starting_investment.toLocaleString()} invested in Top 10 Rated Assets →
               </p>
               <p className="text-5xl font-bold">
                 ${performanceData.portfolio_value.toLocaleString()}
@@ -177,7 +178,7 @@ const Performance = () => {
                 </p>
               )}
               <p className="text-xs text-muted-foreground mt-4">
-                {performanceData.period_days} days ({formatDate(performanceData.start_date)} - {formatDate(performanceData.end_date)})
+                {performanceData.period_days} days tracked ({formatDate(performanceData.start_date)} - {formatDate(performanceData.end_date)})
               </p>
               {performanceData.last_updated_at && (
                 <p className="text-xs text-muted-foreground">
@@ -197,7 +198,7 @@ const Performance = () => {
             Performance Over Time
           </CardTitle>
           <CardDescription>
-            Top 10 Portfolio vs S&P 500 (SPY)
+            Top 10 Rated Portfolio vs S&P 500 (SPY)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -256,9 +257,9 @@ const Performance = () => {
       {/* Asset Breakdown */}
       <Card>
         <CardHeader>
-          <CardTitle>Top 10 Asset Breakdown</CardTitle>
+          <CardTitle>Today's Top 10 Rated Assets</CardTitle>
           <CardDescription>
-            Individual asset performance for the selected period
+            Individual asset performance with up/down indicators
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -277,11 +278,18 @@ const Performance = () => {
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-muted-foreground text-sm w-6">#{index + 1}</span>
-                    <div>
-                      <p className="font-medium">{asset.ticker}</p>
-                      <p className="text-sm text-muted-foreground truncate max-w-[200px]">
-                        {asset.name}
-                      </p>
+                    <div className="flex items-center gap-2">
+                      {asset.return_pct >= 0 ? (
+                        <ArrowUp className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <ArrowDown className="h-4 w-4 text-red-500" />
+                      )}
+                      <div>
+                        <p className="font-medium">{asset.ticker}</p>
+                        <p className="text-sm text-muted-foreground truncate max-w-[200px]">
+                          {asset.name}
+                        </p>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -289,7 +297,7 @@ const Performance = () => {
                       Score: {Math.round(asset.score)}
                     </Badge>
                     <div className={cn(
-                      "text-right font-medium",
+                      "text-right font-medium min-w-[80px]",
                       asset.return_pct >= 0 ? "text-green-500" : "text-red-500"
                     )}>
                       {asset.return_pct >= 0 ? '+' : ''}{asset.return_pct.toFixed(2)}%
@@ -307,7 +315,10 @@ const Performance = () => {
         <CardHeader>
           <CardTitle>Daily Performance History</CardTitle>
           <CardDescription>
-            Day-by-day breakdown starting with $1,000 investment (since Dec 5, 2025)
+            Day-by-day breakdown starting with $1,000 investment
+            {dailyHistory?.start_date && (
+              <span className="ml-1">(since {formatDate(dailyHistory.start_date)})</span>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -326,7 +337,12 @@ const Performance = () => {
                   onOpenChange={() => toggleDayExpanded(day.date)}
                 >
                   <CollapsibleTrigger asChild>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 cursor-pointer transition-colors">
+                    <div className={cn(
+                      "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors",
+                      day.is_negative_day 
+                        ? "bg-red-500/10 hover:bg-red-500/20" 
+                        : "bg-muted/30 hover:bg-muted/50"
+                    )}>
                       <div className="flex items-center gap-4">
                         <span className="font-medium w-24">{formatFullDate(day.date)}</span>
                         <span className="text-sm text-muted-foreground truncate max-w-[200px]">
@@ -336,9 +352,14 @@ const Performance = () => {
                       </div>
                       <div className="flex items-center gap-4">
                         <div className={cn(
-                          "text-sm font-medium w-16 text-right",
+                          "text-sm font-medium w-16 text-right flex items-center justify-end gap-1",
                           day.daily_return_pct >= 0 ? "text-green-500" : "text-red-500"
                         )}>
+                          {day.daily_return_pct >= 0 ? (
+                            <ArrowUp className="h-3 w-3" />
+                          ) : (
+                            <ArrowDown className="h-3 w-3" />
+                          )}
                           {day.daily_return_pct >= 0 ? '+' : ''}{day.daily_return_pct.toFixed(2)}%
                         </div>
                         <div className="font-medium w-20 text-right">
@@ -358,19 +379,36 @@ const Performance = () => {
                         <span>SPY Return: {day.spy_daily_return_pct >= 0 ? '+' : ''}{day.spy_daily_return_pct.toFixed(2)}%</span>
                         <span>SPY Value: ${day.spy_cumulative_value.toFixed(2)}</span>
                       </div>
-                      <p className="text-sm font-medium mb-2">Top 10 Assets:</p>
+                      <p className="text-sm font-medium mb-2">Top 10 Rated Assets:</p>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                        {day.top_assets.map((asset) => (
-                          <div
-                            key={asset.ticker}
-                            className="p-2 rounded bg-muted/50 text-center"
-                          >
-                            <p className="font-medium text-sm">{asset.ticker}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Score: {Math.round(asset.score)}
-                            </p>
-                          </div>
-                        ))}
+                        {day.top_assets.map((asset) => {
+                          const returnPct = asset.daily_return_pct ?? asset.score;
+                          const isPositive = returnPct >= 0;
+                          return (
+                            <div
+                              key={asset.ticker}
+                              className={cn(
+                                "p-2 rounded text-center",
+                                isPositive ? "bg-green-500/10" : "bg-red-500/10"
+                              )}
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                {isPositive ? (
+                                  <ArrowUp className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <ArrowDown className="h-3 w-3 text-red-500" />
+                                )}
+                                <p className="font-medium text-sm">{asset.ticker}</p>
+                              </div>
+                              <p className={cn(
+                                "text-xs",
+                                isPositive ? "text-green-500" : "text-red-500"
+                              )}>
+                                {isPositive ? '+' : ''}{returnPct.toFixed(1)}%
+                              </p>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </CollapsibleContent>
@@ -393,7 +431,7 @@ const Performance = () => {
       {/* Disclaimer */}
       <div className="text-center text-xs text-muted-foreground px-4">
         <AlertCircle className="h-4 w-4 inline mr-1" />
-        Historical performance based on equal-weighted investment in top 10 scored assets.
+        Historical performance based on equal-weighted investment in top 10 rated assets using real market data from TwelveData.
         Past performance does not guarantee future results.
       </div>
     </div>
