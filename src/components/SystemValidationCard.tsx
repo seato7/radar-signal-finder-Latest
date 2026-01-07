@@ -38,7 +38,7 @@ interface PipelineProgress {
 const CHUNK_SIZE = 1000;
 const MAX_RETRIES = 3;
 const TIMEOUT_MS = 45000;
-
+const SCORE_TIMEOUT_MS = 120000;
 export function SystemValidationCard() {
   const [loading, setLoading] = useState(false);
   const [runningPipeline, setRunningPipeline] = useState(false);
@@ -88,11 +88,12 @@ export function SystemValidationCard() {
   };
 
   const invokeWithTimeout = async <T,>(
-    fnName: string, 
-    body?: object
+    fnName: string,
+    body?: object,
+    timeoutMs: number = TIMEOUT_MS
   ): Promise<{ data: T | null; error: Error | null }> => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     
     try {
       const result = await supabase.functions.invoke(fnName, {
@@ -113,7 +114,8 @@ export function SystemValidationCard() {
   const invokeWithRetry = async <T,>(
     fnName: string,
     body?: object,
-    context?: string
+    context?: string,
+    options?: { timeoutMs?: number }
   ): Promise<{ data: T | null; error: Error | null; retries: number }> => {
     let lastError: Error | null = null;
     
@@ -122,7 +124,7 @@ export function SystemValidationCard() {
         return { data: null, error: new Error('Cancelled'), retries: attempt };
       }
       
-      const { data, error } = await invokeWithTimeout<T>(fnName, body);
+      const { data, error } = await invokeWithTimeout<T>(fnName, body, options?.timeoutMs);
       
       if (!error && data !== null) {
         return { data, error: null, retries: attempt };
@@ -224,11 +226,56 @@ export function SystemValidationCard() {
 
       // Stage 3: Compute scores (70-90%)
       if (!cancelledRef.current) {
-        setPipelineProgress({ current: 75, total: 100, stage: 'Computing asset scores...' });
-        const { error: scoresError } = await invokeWithRetry('compute-asset-scores', undefined, 'Asset scores');
-        if (scoresError) {
-          console.error('Score computation error:', scoresError);
-          toast.warning('Score computation had issues, continuing...');
+        let scoreOffset = 0;
+        let scoreIterations = 0;
+        let totalProcessed = 0;
+
+        // Safety limit: avoid infinite loops if offsets bounce
+        const maxIterations = Math.max(10, Math.ceil(totalAssets / 2000) + 5);
+
+        while (!cancelledRef.current && scoreIterations < maxIterations) {
+          const progressPercent = Math.min(90, 70 + Math.round((scoreOffset / totalAssets) * 20));
+          setPipelineProgress({
+            current: progressPercent,
+            total: 100,
+            stage: `Computing asset scores (${scoreOffset.toLocaleString()} of ~${totalAssets.toLocaleString()})...`,
+          });
+
+          const { data, error, retries } = await invokeWithRetry<{
+            success?: boolean;
+            processed?: number;
+            next_offset?: number;
+            total_assets?: number;
+          }>(
+            'compute-asset-scores',
+            { offset: scoreOffset },
+            `Asset scores batch ${scoreOffset}`,
+            { timeoutMs: SCORE_TIMEOUT_MS }
+          );
+
+          if (cancelledRef.current) break;
+
+          if (error || !data) {
+            console.error(`Score batch at offset ${scoreOffset} failed after ${retries} retries:`, error);
+            toast.warning('Score computation had issues, continuing...');
+            break;
+          }
+
+          totalProcessed += data.processed ?? 0;
+          if (data.total_assets) totalAssets = data.total_assets;
+
+          const next = data.next_offset;
+          scoreIterations++;
+
+          if (!next || next === 0 || next === scoreOffset) {
+            break;
+          }
+
+          scoreOffset = next;
+        }
+
+        if (totalProcessed > 0) {
+          toast.success(`Scores computed for ${totalProcessed.toLocaleString()} assets`);
         }
       }
 
