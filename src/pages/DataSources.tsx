@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, TrendingUp, Users, FileText, Search, Shield, Newspaper, RefreshCw, Info, DollarSign, Briefcase, Package } from "lucide-react";
 import { toast } from "sonner";
+import { SystemValidationCard } from "@/components/SystemValidationCard";
 
 export default function DataSources() {
   const [loading, setLoading] = useState(true);
@@ -150,16 +151,21 @@ export default function DataSources() {
       />
 
       <div className="container py-6">
-        {/* Info Section */}
-        <Alert className="mb-6">
-          <Info className="h-4 w-4" />
-          <AlertTitle>About Alternative Data Sources</AlertTitle>
-          <AlertDescription>
-            These data sources provide unique market insights beyond traditional financial data. They run automatically on a schedule, 
-            but you can manually trigger ingestion anytime using the "Refresh All Data" button below. The AI Assistant combines all 
-            these sources to provide comprehensive market analysis.
-          </AlertDescription>
-        </Alert>
+        {/* System Validation Card */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="lg:col-span-2">
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>About Alternative Data Sources</AlertTitle>
+              <AlertDescription>
+                These data sources provide unique market insights beyond traditional financial data. They run automatically on a schedule, 
+                but you can manually trigger ingestion anytime using the "Refresh All Data" button below. The AI Assistant combines all 
+                these sources to provide comprehensive market analysis.
+              </AlertDescription>
+            </Alert>
+          </div>
+          <SystemValidationCard />
+        </div>
 
         {/* Manual Ingestion Controls */}
         <Card className="mb-6">
