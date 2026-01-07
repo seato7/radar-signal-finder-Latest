@@ -18,38 +18,52 @@ serve(async (req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
-    const DATA_START_DATE = '2025-12-05';
     const STARTING_INVESTMENT = 1000;
     
-    // Get all dates with price data from start date to now
-    const { data: priceData, error: priceError } = await supabase
+    // First, get SPY prices to determine our date range
+    const { data: spyPrices, error: spyError } = await supabase
       .from('prices')
-      .select('ticker, date, close')
-      .gte('date', DATA_START_DATE)
+      .select('date, close, updated_at')
+      .eq('ticker', 'SPY')
       .order('date', { ascending: true });
     
-    if (priceError) throw priceError;
+    if (spyError) throw spyError;
     
-    if (!priceData || priceData.length === 0) {
+    if (!spyPrices || spyPrices.length === 0) {
       return new Response(
-        JSON.stringify({ daily_history: [], start_date: DATA_START_DATE }),
+        JSON.stringify({ daily_history: [], start_date: null, message: 'No SPY data available' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    // Get all unique dates
-    const allDates = [...new Set(priceData.map(p => p.date))].sort();
+    const startDate = spyPrices[0].date;
+    const allDates = spyPrices.map(p => p.date);
+    
+    // Create SPY lookup
+    const spyByDate: Record<string, number> = {};
+    for (const p of spyPrices) {
+      spyByDate[p.date] = p.close;
+    }
+    
+    // Get all price data from start date
+    const { data: priceData, error: priceError } = await supabase
+      .from('prices')
+      .select('ticker, date, close')
+      .gte('date', startDate)
+      .order('date', { ascending: true });
+    
+    if (priceError) throw priceError;
     
     // Organize prices by date and ticker
     const pricesByDate: Record<string, Record<string, number>> = {};
-    for (const p of priceData) {
+    for (const p of priceData || []) {
       if (!pricesByDate[p.date]) {
         pricesByDate[p.date] = {};
       }
       pricesByDate[p.date][p.ticker] = p.close;
     }
     
-    // Check if we have snapshots, otherwise use current top 10 for all dates
+    // Check for snapshots
     const { data: snapshots } = await supabase
       .from('asset_score_snapshots')
       .select('snapshot_date, ticker, asset_name, computed_score, rank')
@@ -74,7 +88,7 @@ serve(async (req) => {
       }
     }
     
-    // If no snapshots, get current top 10 to use as fallback
+    // Fallback to current top 10 if no snapshots
     let fallbackTop10: Array<{ ticker: string; name: string; score: number }> = [];
     if (Object.keys(snapshotsByDate).length === 0) {
       const { data: topAssets } = await supabase
@@ -103,14 +117,21 @@ serve(async (req) => {
     
     let cumulativeValue = STARTING_INVESTMENT;
     let spyCumulativeValue = STARTING_INVESTMENT;
-    let previousDayPrices: Record<string, number> = {};
+    
+    // Track last known prices for forward-fill
+    const lastKnownPrices: Record<string, number> = {};
     let previousSpyPrice: number | null = null;
     
     for (let i = 0; i < allDates.length; i++) {
       const date = allDates[i];
       const todayPrices = pricesByDate[date] || {};
       
-      // Get top 10 for this date (from snapshots or fallback)
+      // Update last known prices
+      for (const [ticker, price] of Object.entries(todayPrices)) {
+        lastKnownPrices[ticker] = price;
+      }
+      
+      // Get top 10 for this date
       const top10 = snapshotsByDate[date] || fallbackTop10.map((a, idx) => ({ ...a, rank: idx + 1 }));
       
       if (top10.length === 0) continue;
@@ -119,12 +140,15 @@ serve(async (req) => {
       let dailyReturn = 0;
       let validAssets = 0;
       
-      if (i > 0 && Object.keys(previousDayPrices).length > 0) {
+      if (i > 0) {
+        const prevDate = allDates[i - 1];
+        const prevPrices = pricesByDate[prevDate] || {};
+        
         for (const asset of top10) {
-          const todayPrice = todayPrices[asset.ticker];
-          const yesterdayPrice = previousDayPrices[asset.ticker];
+          const todayPrice = todayPrices[asset.ticker] || lastKnownPrices[asset.ticker];
+          const yesterdayPrice = prevPrices[asset.ticker];
           
-          if (todayPrice && yesterdayPrice) {
+          if (todayPrice && yesterdayPrice && yesterdayPrice > 0) {
             dailyReturn += (todayPrice - yesterdayPrice) / yesterdayPrice;
             validAssets++;
           }
@@ -137,8 +161,8 @@ serve(async (req) => {
       
       // Calculate SPY daily return
       let spyDailyReturn = 0;
-      const todaySpyPrice = todayPrices['SPY'];
-      if (i > 0 && previousSpyPrice && todaySpyPrice) {
+      const todaySpyPrice = spyByDate[date];
+      if (i > 0 && previousSpyPrice && todaySpyPrice && previousSpyPrice > 0) {
         spyDailyReturn = (todaySpyPrice - previousSpyPrice) / previousSpyPrice;
       }
       
@@ -156,16 +180,21 @@ serve(async (req) => {
       });
       
       // Store for next iteration
-      previousDayPrices = { ...todayPrices };
       previousSpyPrice = todaySpyPrice || previousSpyPrice;
     }
+    
+    // Get last updated timestamp
+    const lastUpdatedAt = spyPrices[spyPrices.length - 1]?.updated_at || null;
+    
+    console.log(`Daily history calculated: ${dailyHistory.length} days from ${startDate}`);
     
     return new Response(
       JSON.stringify({
         daily_history: dailyHistory.reverse(), // Most recent first
-        start_date: DATA_START_DATE,
+        start_date: startDate,
         starting_investment: STARTING_INVESTMENT,
         total_days: dailyHistory.length,
+        last_updated_at: lastUpdatedAt,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
