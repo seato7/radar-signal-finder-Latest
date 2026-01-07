@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckCircle2, XCircle, AlertTriangle, Play, RefreshCw, Zap } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, AlertTriangle, Play, RefreshCw, Zap, StopCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 
@@ -35,6 +35,10 @@ interface PipelineProgress {
   stage: string;
 }
 
+const CHUNK_SIZE = 1000;
+const MAX_RETRIES = 3;
+const TIMEOUT_MS = 45000;
+
 export function SystemValidationCard() {
   const [loading, setLoading] = useState(false);
   const [runningPipeline, setRunningPipeline] = useState(false);
@@ -45,6 +49,7 @@ export function SystemValidationCard() {
   const [coverage, setCoverage] = useState<{ assets_with_signals: number; total_assets: number; percentage: number } | null>(null);
   const [lastValidation, setLastValidation] = useState<string | null>(null);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     fetchStats();
@@ -82,75 +87,165 @@ export function SystemValidationCard() {
     }
   };
 
+  const invokeWithTimeout = async <T,>(
+    fnName: string, 
+    body?: object
+  ): Promise<{ data: T | null; error: Error | null }> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    
+    try {
+      const result = await supabase.functions.invoke(fnName, { body });
+      clearTimeout(timeoutId);
+      return result as { data: T | null; error: Error | null };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === 'AbortError') {
+        return { data: null, error: new Error('Request timeout') };
+      }
+      return { data: null, error: err instanceof Error ? err : new Error('Unknown error') };
+    }
+  };
+
+  const invokeWithRetry = async <T,>(
+    fnName: string,
+    body?: object,
+    context?: string
+  ): Promise<{ data: T | null; error: Error | null; retries: number }> => {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (cancelledRef.current) {
+        return { data: null, error: new Error('Cancelled'), retries: attempt };
+      }
+      
+      const { data, error } = await invokeWithTimeout<T>(fnName, body);
+      
+      if (!error && data !== null) {
+        return { data, error: null, retries: attempt };
+      }
+      
+      lastError = error;
+      
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s
+        toast.info(`${context || fnName} failed, retrying (${attempt + 2}/${MAX_RETRIES})...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    
+    return { data: null, error: lastError, retries: MAX_RETRIES };
+  };
+
+  const cancelPipeline = () => {
+    cancelledRef.current = true;
+    toast.info('Cancelling pipeline...');
+  };
+
   const runFullPipeline = async () => {
     setRunningPipeline(true);
+    cancelledRef.current = false;
     setPipelineProgress({ current: 0, total: 100, stage: 'Starting...' });
     
     try {
-      // Stage 1: Run momentum generator with chunking
+      // Stage 1: Run momentum generator with chunking (0-40%)
       let offset = 0;
-      let totalAssets = 0;
-      let chunkCount = 0;
+      let totalAssets = 26622; // Default estimate, updated from response
+      let successfulChunks = 0;
+      let failedChunks = 0;
       
-      while (true) {
+      while (!cancelledRef.current) {
+        const progressPercent = Math.min(40, Math.round((offset / totalAssets) * 40));
         setPipelineProgress({ 
-          current: Math.min(40, chunkCount * 5), 
+          current: progressPercent, 
           total: 100, 
-          stage: `Generating momentum signals (chunk ${chunkCount + 1})...` 
+          stage: `Momentum signals (${offset.toLocaleString()} of ~${totalAssets.toLocaleString()})...` 
         });
         
-        const { data, error } = await supabase.functions.invoke('generate-signals-from-momentum', {
-          body: { offset }
-        });
+        const { data, error, retries } = await invokeWithRetry<{
+          complete?: boolean;
+          next_offset?: number;
+          total_assets?: number;
+          signals_created?: number;
+        }>('generate-signals-from-momentum', { offset }, `Momentum chunk ${offset}`);
+        
+        if (cancelledRef.current) break;
         
         if (error) {
-          console.error('Momentum chunk error:', error);
-          break;
+          console.error(`Momentum chunk at offset ${offset} failed after ${retries} retries:`, error);
+          failedChunks++;
+          
+          // Skip this chunk and continue
+          offset += CHUNK_SIZE;
+          
+          if (failedChunks > 5) {
+            toast.warning('Multiple failures, continuing with partial data');
+            break;
+          }
+          continue;
         }
         
+        successfulChunks++;
         totalAssets = data?.total_assets || totalAssets;
-        chunkCount++;
         
         if (data?.complete || !data?.next_offset) {
-          toast.success(`Momentum: ${chunkCount} chunks processed`);
           break;
         }
         
         offset = data.next_offset;
         
         // Safety limit
-        if (chunkCount > 50) {
-          console.warn('Safety limit reached');
+        if (offset > totalAssets + CHUNK_SIZE) {
+          console.warn('Exceeded total assets, breaking');
           break;
         }
       }
-
-      // Stage 2: Run other generators
-      setPipelineProgress({ current: 50, total: 100, stage: 'Running breaking news generator...' });
-      await supabase.functions.invoke('generate-signals-from-breaking-news');
       
-      setPipelineProgress({ current: 60, total: 100, stage: 'Running Form4 generator...' });
-      await supabase.functions.invoke('generate-signals-from-form4');
+      if (cancelledRef.current) {
+        toast.info('Pipeline cancelled');
+        return;
+      }
+      
+      toast.success(`Momentum: ${successfulChunks} chunks OK${failedChunks > 0 ? `, ${failedChunks} skipped` : ''}`);
 
-      // Stage 3: Compute scores
-      setPipelineProgress({ current: 80, total: 100, stage: 'Computing asset scores...' });
-      const { error: scoresError } = await supabase.functions.invoke('compute-asset-scores');
-      if (scoresError) {
-        console.error('Score computation error:', scoresError);
+      // Stage 2: Run other generators (40-70%)
+      if (!cancelledRef.current) {
+        setPipelineProgress({ current: 45, total: 100, stage: 'Breaking news signals...' });
+        await invokeWithRetry('generate-signals-from-breaking-news', undefined, 'Breaking news');
+      }
+      
+      if (!cancelledRef.current) {
+        setPipelineProgress({ current: 55, total: 100, stage: 'Form4 insider signals...' });
+        await invokeWithRetry('generate-signals-from-form4', undefined, 'Form4');
       }
 
-      // Stage 4: Run validation
-      setPipelineProgress({ current: 95, total: 100, stage: 'Running validation...' });
-      await runValidation();
+      // Stage 3: Compute scores (70-90%)
+      if (!cancelledRef.current) {
+        setPipelineProgress({ current: 75, total: 100, stage: 'Computing asset scores...' });
+        const { error: scoresError } = await invokeWithRetry('compute-asset-scores', undefined, 'Asset scores');
+        if (scoresError) {
+          console.error('Score computation error:', scoresError);
+          toast.warning('Score computation had issues, continuing...');
+        }
+      }
 
-      setPipelineProgress({ current: 100, total: 100, stage: 'Complete!' });
-      toast.success("Full pipeline completed!");
+      // Stage 4: Run validation (90-100%)
+      if (!cancelledRef.current) {
+        setPipelineProgress({ current: 92, total: 100, stage: 'Running validation...' });
+        await runValidation();
+      }
+
+      if (!cancelledRef.current) {
+        setPipelineProgress({ current: 100, total: 100, stage: 'Complete!' });
+        toast.success("Full pipeline completed!");
+      }
       
     } catch (error: unknown) {
       toast.error(`Pipeline failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setRunningPipeline(false);
       setPipelineProgress(null);
+      cancelledRef.current = false;
       await fetchStats();
     }
   };
@@ -318,19 +413,26 @@ export function SystemValidationCard() {
 
         {/* Action Buttons */}
         <div className="flex gap-2">
-          <Button 
-            onClick={runFullPipeline}
-            disabled={runningPipeline || loading}
-            variant="default"
-            className="flex-1"
-          >
-            {runningPipeline ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
+          {runningPipeline ? (
+            <Button 
+              onClick={cancelPipeline}
+              variant="destructive"
+              className="flex-1"
+            >
+              <StopCircle className="h-4 w-4 mr-2" />
+              Cancel Pipeline
+            </Button>
+          ) : (
+            <Button 
+              onClick={runFullPipeline}
+              disabled={loading}
+              variant="default"
+              className="flex-1"
+            >
               <Zap className="h-4 w-4 mr-2" />
-            )}
-            Run Full Pipeline
-          </Button>
+              Run Full Pipeline
+            </Button>
+          )}
           <Button 
             onClick={runValidation}
             disabled={loading || runningPipeline}
