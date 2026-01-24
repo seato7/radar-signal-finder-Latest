@@ -363,16 +363,27 @@ Deno.serve(async (req) => {
 
     console.log(`Loaded ${alphaMap.size} signal alphas`);
 
-    // Fetch all assets
-    const { data: assets } = await supabase
-      .from('assets')
-      .select('id, ticker, asset_class');
-
+    // Fetch all assets (paginated to overcome 1000 row limit)
     const assetMap = new Map<string, { id: string; ticker: string; asset_class: string }>();
     const tickerToAssetId = new Map<string, string>();
-    for (const a of assets || []) {
-      assetMap.set(a.id, a);
-      tickerToAssetId.set(a.ticker, a.id);
+    
+    let assetOffset = 0;
+    const assetPageSize = 1000;
+    while (true) {
+      const { data: assetPage } = await supabase
+        .from('assets')
+        .select('id, ticker, asset_class')
+        .range(assetOffset, assetOffset + assetPageSize - 1);
+      
+      if (!assetPage || assetPage.length === 0) break;
+      
+      for (const a of assetPage) {
+        assetMap.set(a.id, a);
+        tickerToAssetId.set(a.ticker, a.id);
+      }
+      
+      if (assetPage.length < assetPageSize) break;
+      assetOffset += assetPageSize;
     }
 
     console.log(`Loaded ${assetMap.size} assets`);
@@ -397,22 +408,39 @@ Deno.serve(async (req) => {
         // - Price >= MIN_PRICE_USD
         // ======================================================================
         
-        // Fetch prices for D and D+1
-        const { data: pricesD } = await supabase
-          .from('prices')
-          .select('ticker, close')
-          .eq('date', dateStr);
-
-        const { data: pricesD1 } = await supabase
-          .from('prices')
-          .select('ticker, close')
-          .eq('date', nextDateStr);
-
+        // Fetch prices for D and D+1 (paginated)
         const priceMapD = new Map<string, number>();
         const priceMapD1 = new Map<string, number>();
         
-        for (const p of pricesD || []) priceMapD.set(p.ticker, Number(p.close));
-        for (const p of pricesD1 || []) priceMapD1.set(p.ticker, Number(p.close));
+        // Fetch D prices
+        let priceOffset = 0;
+        while (true) {
+          const { data: pricePage } = await supabase
+            .from('prices')
+            .select('ticker, close')
+            .eq('date', dateStr)
+            .range(priceOffset, priceOffset + 999);
+          
+          if (!pricePage || pricePage.length === 0) break;
+          for (const p of pricePage) priceMapD.set(p.ticker, Number(p.close));
+          if (pricePage.length < 1000) break;
+          priceOffset += 1000;
+        }
+        
+        // Fetch D+1 prices
+        priceOffset = 0;
+        while (true) {
+          const { data: pricePage } = await supabase
+            .from('prices')
+            .select('ticker, close')
+            .eq('date', nextDateStr)
+            .range(priceOffset, priceOffset + 999);
+          
+          if (!pricePage || pricePage.length === 0) break;
+          for (const p of pricePage) priceMapD1.set(p.ticker, Number(p.close));
+          if (pricePage.length < 1000) break;
+          priceOffset += 1000;
+        }
 
         // Determine eligible assets
         const eligibleAssets: { id: string; ticker: string; priceD: number; priceD1: number }[] = [];
