@@ -220,7 +220,21 @@ Deno.serve(async (req) => {
         const assetPrices = priceLookup.get(signal.assetId);
         if (!assetPrices) continue;
 
-        const p0 = assetPrices.get(signal.date);
+        // ====================================================================
+        // CRITICAL FIX: Use "next available row" logic instead of exact date match
+        // This handles weekends, holidays, and non-trading days correctly
+        // ====================================================================
+        
+        // Get all dates for this asset sorted chronologically
+        const sortedDates = [...assetPrices.keys()].sort();
+        if (sortedDates.length === 0) continue;
+        
+        // Find p0: first price row with date >= signal.date
+        const p0DateIdx = sortedDates.findIndex(d => d >= signal.date);
+        if (p0DateIdx === -1) continue; // No price on or after signal date
+        
+        const p0Date = sortedDates[p0DateIdx];
+        const p0 = assetPrices.get(p0Date);
         
         // QUALITY FILTER: Price validity checks
         if (!Number.isFinite(p0) || p0 === null || p0 === undefined) continue;
@@ -229,14 +243,11 @@ Deno.serve(async (req) => {
 
         priceMatchCount++;
 
-        // Get future dates with prices for this asset
-        const futureDates = [...assetPrices.keys()]
-          .filter(d => d > signal.date)
-          .sort();
-
-        // 1-day forward return
-        if (futureDates.length >= 1) {
-          const p1 = assetPrices.get(futureDates[0]);
+        // 1-day forward return: next available price row after p0
+        const p1Idx = p0DateIdx + 1;
+        if (p1Idx < sortedDates.length) {
+          const p1Date = sortedDates[p1Idx];
+          const p1 = assetPrices.get(p1Date);
           if (p1 && Number.isFinite(p1) && p1 > 0) {
             const rawRet = (p1 / p0) - 1;
             const dirMult = signal.direction === 'down' ? -1 : 1;
@@ -247,9 +258,11 @@ Deno.serve(async (req) => {
           }
         }
 
-        // 3-day forward return
-        if (futureDates.length >= 3) {
-          const p3 = assetPrices.get(futureDates[2]);
+        // 3-day forward return: 3rd price row after p0
+        const p3Idx = p0DateIdx + 3;
+        if (p3Idx < sortedDates.length) {
+          const p3Date = sortedDates[p3Idx];
+          const p3 = assetPrices.get(p3Date);
           if (p3 && Number.isFinite(p3) && p3 > 0) {
             const rawRet = (p3 / p0) - 1;
             const dirMult = signal.direction === 'down' ? -1 : 1;
@@ -259,10 +272,11 @@ Deno.serve(async (req) => {
           }
         }
 
-        // 7-day forward return
-        if (futureDates.length >= 5) {
-          const targetIdx = Math.min(6, futureDates.length - 1);
-          const p7 = assetPrices.get(futureDates[targetIdx]);
+        // 7-day forward return: 7th price row after p0 (or last available if fewer)
+        const p7Idx = Math.min(p0DateIdx + 7, sortedDates.length - 1);
+        if (p7Idx > p0DateIdx) {
+          const p7Date = sortedDates[p7Idx];
+          const p7 = assetPrices.get(p7Date);
           if (p7 && Number.isFinite(p7) && p7 > 0) {
             const rawRet = (p7 / p0) - 1;
             const dirMult = signal.direction === 'down' ? -1 : 1;
