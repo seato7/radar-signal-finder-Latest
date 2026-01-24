@@ -325,9 +325,15 @@ async def _run_tiered_price_batch():
                 # Fetch prices
                 async with TwelveDataPriceFetcher() as fetcher:
                     prices, fetch_stats = await fetcher.fetch_prices_batch(batch_assets)
+                    ingestion_logs = fetcher.ingestion_logs  # Get per-ticker logs
                 
-                # Sync to Supabase
+                # Sync prices to Supabase
                 inserted, failed, errors = await sync.upsert_prices(prices)
+                
+                # Sync per-ticker ingestion logs
+                if ingestion_logs:
+                    logs_inserted, logs_failed, _ = await sync.upsert_ingestion_logs(ingestion_logs)
+                    logger.debug(f"📝 Ingestion logs: {logs_inserted} inserted, {logs_failed} failed")
                 
                 # Update tier offset
                 tier_stat["offset"] = end_offset
