@@ -419,6 +419,7 @@ export type Database = {
           rank: number
           snapshot_date: string
           ticker: string
+          top_n: number | null
         }
         Insert: {
           asset_id: string
@@ -432,6 +433,7 @@ export type Database = {
           rank: number
           snapshot_date: string
           ticker: string
+          top_n?: number | null
         }
         Update: {
           asset_id?: string
@@ -445,6 +447,7 @@ export type Database = {
           rank?: number
           snapshot_date?: string
           ticker?: string
+          top_n?: number | null
         }
         Relationships: [
           {
@@ -1905,6 +1908,63 @@ export type Database = {
           role_type?: string | null
           seniority_level?: string | null
           ticker?: string
+        }
+        Relationships: []
+      }
+      model_daily_metrics: {
+        Row: {
+          created_at: string | null
+          cumulative_return: number
+          graded_count: number
+          hit_rate: number
+          id: string
+          max_drawdown: number
+          mean_return: number
+          median_return: number
+          metadata: Json | null
+          model_version: string
+          objective_score: number
+          p5_return: number
+          predictions_count: number
+          snapshot_date: string
+          top_n: number
+          volatility: number
+        }
+        Insert: {
+          created_at?: string | null
+          cumulative_return?: number
+          graded_count?: number
+          hit_rate?: number
+          id?: string
+          max_drawdown?: number
+          mean_return?: number
+          median_return?: number
+          metadata?: Json | null
+          model_version: string
+          objective_score?: number
+          p5_return?: number
+          predictions_count?: number
+          snapshot_date: string
+          top_n: number
+          volatility?: number
+        }
+        Update: {
+          created_at?: string | null
+          cumulative_return?: number
+          graded_count?: number
+          hit_rate?: number
+          id?: string
+          max_drawdown?: number
+          mean_return?: number
+          median_return?: number
+          metadata?: Json | null
+          model_version?: string
+          objective_score?: number
+          p5_return?: number
+          predictions_count?: number
+          snapshot_date?: string
+          top_n?: number
+          volatility?: number
         }
         Relationships: []
       }
