@@ -3400,6 +3400,20 @@ export type Database = {
           sell_percentage: number
         }[]
       }
+      compute_and_update_coverage: {
+        Args: {
+          p_freshness_days?: number
+          p_snapshot_date: string
+          p_vendor?: string
+        }
+        Returns: {
+          assets_updated: number
+          coverage_rows_upserted: number
+          fresh_count: number
+          missing_count: number
+          stale_count: number
+        }[]
+      }
       get_api_usage_summary: {
         Args: { hours_back?: number }
         Returns: {
@@ -3421,6 +3435,20 @@ export type Database = {
           positive_components: string[]
           score: number
           signal_count: number
+        }[]
+      }
+      get_price_aggregates: {
+        Args: { p_freshness_days?: number; p_snapshot_date: string }
+        Returns: {
+          asset_class: string
+          asset_id: string
+          days_stale: number
+          last_price_date: string
+          points_30d: number
+          points_90d: number
+          reason: string
+          status: string
+          ticker: string
         }[]
       }
       get_stale_functions: {
@@ -3466,6 +3494,12 @@ export type Database = {
       is_subscribed_to_theme: {
         Args: { p_theme_id: string; p_user_id: string }
         Returns: boolean
+      }
+      update_assets_from_coverage: {
+        Args: { p_snapshot_date: string; p_vendor?: string }
+        Returns: {
+          updated_count: number
+        }[]
       }
     }
     Enums: {
