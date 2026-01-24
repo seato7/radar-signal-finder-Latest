@@ -6,8 +6,8 @@ const corsHeaders = {
 };
 
 // Process fewer assets per invocation to stay within CPU limits
-const ASSETS_PER_INVOCATION = 2000;
-const BATCH_SIZE = 500;
+const ASSETS_PER_INVOCATION = 500;
+const BATCH_SIZE = 100; // Smaller batches to avoid URL length limits
 
 // ============================================================================
 // HALF-LIFE BY SIGNAL CATEGORY (days)
