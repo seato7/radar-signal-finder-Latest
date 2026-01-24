@@ -17,7 +17,7 @@ interface AlphaRow {
 // ============================================================================
 // QUALITY FILTERS - Critical for preventing outlier contamination
 // ============================================================================
-const MIN_PRICE_USD = 0.10;           // Exclude extreme penny stocks (allow FX)
+const MIN_PRICE_USD = 0.50;           // Exclude extreme penny stocks (allow FX)
 const MAX_RETURN_WINSORIZE = 0.20;    // Cap returns at +-20%
 const MIN_SAMPLES_TO_STORE = 10;      // Minimum samples to store alpha
 const SHRINKAGE_K = 100;              // Shrinkage factor for small samples
@@ -39,7 +39,7 @@ function std(xs: number[]): number {
 }
 
 /**
- * Canonicalize signal type by removing _limited_data suffix
+ * Canonicalize signal type by removing _limited_data suffix ONLY
  * This collapses variants into their parent type for combined statistics
  */
 function canonicalSignalType(t: string): string {
@@ -52,13 +52,16 @@ Deno.serve(async (req) => {
   }
 
   const startTime = Date.now();
+  // CRITICAL: Track run start time for stale cleanup
+  const runStartedAt = new Date().toISOString();
   
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-    console.log('Starting signal alpha computation with quality filters...');
+    console.log('Starting signal alpha computation with asset_id-based price lookup...');
+    console.log(`Run started at: ${runStartedAt}`);
 
     // ========================================================================
     // Step 1: Get ALL distinct signal types from actual signals table
@@ -75,7 +78,7 @@ Deno.serve(async (req) => {
     const rawTypes = [...new Set((rawSignalTypes || []).map(s => s.signal_type))];
     console.log(`Found ${rawTypes.length} unique raw signal types`);
 
-    // Group signal types by their canonical form (collapsing _limited_data variants)
+    // Group signal types by their canonical form (collapsing _limited_data variants ONLY)
     const typeGroups = new Map<string, string[]>();
     for (const rawType of rawTypes) {
       const canonical = canonicalSignalType(rawType);
@@ -86,105 +89,124 @@ Deno.serve(async (req) => {
     }
     console.log(`Grouped into ${typeGroups.size} canonical types`);
 
-    // ========================================================================
-    // Step 2: Build asset_id -> ticker lookup map
-    // ========================================================================
-    const { data: allAssets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker');
-    
-    if (assetsError) throw assetsError;
-    
-    const assetIdToTicker = new Map<string, string>();
-    for (const a of allAssets || []) {
-      assetIdToTicker.set(a.id, a.ticker);
-    }
-    console.log(`Built lookup map for ${assetIdToTicker.size} assets`);
-
     const alphas: AlphaRow[] = [];
     let processedTypes = 0;
+    let skippedNoPrice = 0;
+    let skippedLowSamples = 0;
+
+    // Diagnostic tracking
+    const diagnostics: { type: string; signals: number; priceMatches: number; returns: number }[] = [];
 
     // ========================================================================
-    // Step 3: Process each CANONICAL signal type (including _limited_data)
+    // Step 2: Process each CANONICAL signal type
     // ========================================================================
     for (const [canonicalType, variants] of typeGroups) {
       // Build filter for all variants of this canonical type
-      // e.g., for "momentum_5d_bullish", query both "momentum_5d_bullish" and "momentum_5d_bullish_limited_data"
       const signalFilter = variants.map(v => `signal_type.eq.${v}`).join(',');
       
-      const { data: signals, error: sigError } = await supabase
-        .from('signals')
-        .select('asset_id, observed_at, magnitude, direction, signal_type')
-        .or(signalFilter)
-        .gte('observed_at', new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString())
-        .not('asset_id', 'is', null)
-        .limit(10000);
+      // CRITICAL: Paginate to avoid truncation bias
+      let allSignals: any[] = [];
+      let signalOffset = 0;
+      const SIGNAL_PAGE_SIZE = 5000;
 
-      if (sigError) {
-        console.error(`Error fetching signals for ${canonicalType}:`, sigError);
-        continue;
+      while (true) {
+        const { data: signalPage, error: sigError } = await supabase
+          .from('signals')
+          .select('asset_id, observed_at, magnitude, direction, signal_type')
+          .or(signalFilter)
+          .gte('observed_at', new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString())
+          .not('asset_id', 'is', null)
+          .order('observed_at', { ascending: true })
+          .range(signalOffset, signalOffset + SIGNAL_PAGE_SIZE - 1);
+
+        if (sigError) {
+          console.error(`Error fetching signals for ${canonicalType}:`, sigError);
+          break;
+        }
+
+        if (!signalPage || signalPage.length === 0) break;
+        allSignals = allSignals.concat(signalPage);
+        
+        if (signalPage.length < SIGNAL_PAGE_SIZE) break;
+        signalOffset += SIGNAL_PAGE_SIZE;
       }
 
-      if (!signals || signals.length === 0) continue;
+      if (allSignals.length === 0) continue;
 
-      // Group signals by ticker and date
-      const signalsByTickerDate = new Map<string, { 
+      // Get unique asset_ids
+      const assetIds = [...new Set(allSignals.map(s => s.asset_id))];
+      
+      // Build signals grouped by asset_id and date
+      const signalsByAssetDate = new Map<string, { 
         date: string; 
-        ticker: string; 
+        assetId: string;
         magnitude: number; 
         direction: string;
       }>();
       
-      for (const s of signals) {
-        const ticker = assetIdToTicker.get(s.asset_id);
-        if (!ticker) continue;
-        
+      for (const s of allSignals) {
         const dateStr = new Date(s.observed_at).toISOString().split('T')[0];
-        const key = `${ticker}_${dateStr}`;
+        const key = `${s.asset_id}_${dateStr}`;
         
-        // Keep only most recent signal per ticker/date
-        if (!signalsByTickerDate.has(key)) {
-          signalsByTickerDate.set(key, {
+        // Keep only most recent signal per asset/date
+        if (!signalsByAssetDate.has(key)) {
+          signalsByAssetDate.set(key, {
             date: dateStr,
-            ticker,
+            assetId: s.asset_id,
             magnitude: s.magnitude || 1,
             direction: s.direction || 'neutral'
           });
         }
       }
 
-      // Get unique tickers and date range
-      const tickers = [...new Set([...signalsByTickerDate.values()].map(s => s.ticker))];
-      const dates = [...new Set([...signalsByTickerDate.values()].map(s => s.date))].sort();
+      const dates = [...new Set([...signalsByAssetDate.values()].map(s => s.date))].sort();
+      if (dates.length === 0) continue;
 
-      if (tickers.length === 0 || dates.length === 0) continue;
-
-      // Fetch prices for these tickers covering the date range
       const minDate = dates[0];
-      const maxDate = new Date(new Date(dates[dates.length - 1]).getTime() + 8 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const maxDate = new Date(new Date(dates[dates.length - 1]).getTime() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-      const { data: prices, error: priceError } = await supabase
-        .from('prices')
-        .select('ticker, date, close')
-        .in('ticker', tickers.slice(0, 500))
-        .gte('date', minDate)
-        .lte('date', maxDate)
-        .order('date', { ascending: true });
+      // ========================================================================
+      // CRITICAL FIX: Fetch prices by ASSET_ID in small batches to avoid URL length issues
+      // Each UUID is 36 chars, so 50 UUIDs = ~1800 chars (safe for URLs)
+      // ========================================================================
+      const priceLookup = new Map<string, Map<string, number>>();
+      const PRICE_BATCH_SIZE = 50; // Small batches to avoid URL length issues
+      
+      let priceFetchFailed = false;
+      for (let i = 0; i < assetIds.length && i < 500; i += PRICE_BATCH_SIZE) {
+        const assetIdBatch = assetIds.slice(i, i + PRICE_BATCH_SIZE);
+        
+        const { data: prices, error: priceError } = await supabase
+          .from('prices')
+          .select('asset_id, date, close')
+          .in('asset_id', assetIdBatch)
+          .gte('date', minDate)
+          .lte('date', maxDate)
+          .order('date', { ascending: true });
 
-      if (priceError) {
-        console.error(`Error fetching prices for ${canonicalType}:`, priceError);
+        if (priceError) {
+          console.error(`Error fetching prices batch for ${canonicalType}:`, priceError);
+          priceFetchFailed = true;
+          break;
+        }
+
+        for (const p of prices || []) {
+          if (!priceLookup.has(p.asset_id)) {
+            priceLookup.set(p.asset_id, new Map());
+          }
+          priceLookup.get(p.asset_id)!.set(p.date, p.close);
+        }
+      }
+
+      if (priceFetchFailed) {
+        skippedNoPrice++;
         continue;
       }
 
-      if (!prices || prices.length === 0) continue;
-
-      // Build price lookup: ticker -> date -> close
-      const priceLookup = new Map<string, Map<string, number>>();
-      for (const p of prices) {
-        if (!priceLookup.has(p.ticker)) {
-          priceLookup.set(p.ticker, new Map());
-        }
-        priceLookup.get(p.ticker)!.set(p.date, p.close);
+      if (priceLookup.size === 0) {
+        skippedNoPrice++;
+        diagnostics.push({ type: canonicalType, signals: allSignals.length, priceMatches: 0, returns: 0 });
+        continue;
       }
 
       // Calculate forward returns for each horizon
@@ -192,40 +214,47 @@ Deno.serve(async (req) => {
       const returns3d: number[] = [];
       const returns7d: number[] = [];
 
-      for (const [, signal] of signalsByTickerDate) {
-        const tickerPrices = priceLookup.get(signal.ticker);
-        if (!tickerPrices) continue;
+      let priceMatchCount = 0;
 
-        const p0 = tickerPrices.get(signal.date);
+      for (const [, signal] of signalsByAssetDate) {
+        const assetPrices = priceLookup.get(signal.assetId);
+        if (!assetPrices) continue;
+
+        const p0 = assetPrices.get(signal.date);
         
         // QUALITY FILTER: Price validity checks
         if (!Number.isFinite(p0) || p0 === null || p0 === undefined) continue;
         if (p0 <= MIN_PRICE_USD) continue;
         if (p0 === 0) continue;
 
-        const futureDates = [...tickerPrices.keys()]
+        priceMatchCount++;
+
+        // Get future dates with prices for this asset
+        const futureDates = [...assetPrices.keys()]
           .filter(d => d > signal.date)
           .sort();
 
         // 1-day forward return
         if (futureDates.length >= 1) {
-          const p1 = tickerPrices.get(futureDates[0]);
+          const p1 = assetPrices.get(futureDates[0]);
           if (p1 && Number.isFinite(p1) && p1 > 0) {
             const rawRet = (p1 / p0) - 1;
             const dirMult = signal.direction === 'down' ? -1 : 1;
-            // QUALITY FILTER: Winsorize returns
-            const ret = clamp(rawRet, -MAX_RETURN_WINSORIZE, MAX_RETURN_WINSORIZE) * dirMult;
+            // QUALITY FILTER: Winsorize returns BEFORE applying direction
+            const clampedRet = clamp(rawRet, -MAX_RETURN_WINSORIZE, MAX_RETURN_WINSORIZE);
+            const ret = clampedRet * dirMult;
             returns1d.push(ret);
           }
         }
 
         // 3-day forward return
         if (futureDates.length >= 3) {
-          const p3 = tickerPrices.get(futureDates[2]);
+          const p3 = assetPrices.get(futureDates[2]);
           if (p3 && Number.isFinite(p3) && p3 > 0) {
             const rawRet = (p3 / p0) - 1;
             const dirMult = signal.direction === 'down' ? -1 : 1;
-            const ret = clamp(rawRet, -MAX_RETURN_WINSORIZE, MAX_RETURN_WINSORIZE) * dirMult;
+            const clampedRet = clamp(rawRet, -MAX_RETURN_WINSORIZE, MAX_RETURN_WINSORIZE);
+            const ret = clampedRet * dirMult;
             returns3d.push(ret);
           }
         }
@@ -233,15 +262,23 @@ Deno.serve(async (req) => {
         // 7-day forward return
         if (futureDates.length >= 5) {
           const targetIdx = Math.min(6, futureDates.length - 1);
-          const p7 = tickerPrices.get(futureDates[targetIdx]);
+          const p7 = assetPrices.get(futureDates[targetIdx]);
           if (p7 && Number.isFinite(p7) && p7 > 0) {
             const rawRet = (p7 / p0) - 1;
             const dirMult = signal.direction === 'down' ? -1 : 1;
-            const ret = clamp(rawRet, -MAX_RETURN_WINSORIZE, MAX_RETURN_WINSORIZE) * dirMult;
+            const clampedRet = clamp(rawRet, -MAX_RETURN_WINSORIZE, MAX_RETURN_WINSORIZE);
+            const ret = clampedRet * dirMult;
             returns7d.push(ret);
           }
         }
       }
+
+      diagnostics.push({ 
+        type: canonicalType, 
+        signals: allSignals.length, 
+        priceMatches: priceMatchCount, 
+        returns: returns1d.length 
+      });
 
       // ====================================================================
       // Calculate stats with SHRINKAGE toward zero for small samples
@@ -265,6 +302,8 @@ Deno.serve(async (req) => {
           sample_size: n,
           std_forward_return: sd,
         });
+      } else if (returns1d.length > 0) {
+        skippedLowSamples++;
       }
 
       if (returns3d.length >= MIN_SAMPLES_TO_STORE) {
@@ -310,6 +349,14 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Computed alpha for ${alphas.length} signal_type/horizon combinations`);
+    console.log(`Skipped: ${skippedNoPrice} types with no price data, ${skippedLowSamples} types with low samples`);
+
+    // Log top 10 diagnostics by signal count
+    diagnostics.sort((a, b) => b.signals - a.signals);
+    console.log('Top 10 signal types by volume:');
+    for (const d of diagnostics.slice(0, 10)) {
+      console.log(`  ${d.type}: ${d.signals} signals, ${d.priceMatches} price matches, ${d.returns} returns`);
+    }
 
     // Upsert all alphas
     if (alphas.length > 0) {
@@ -331,6 +378,29 @@ Deno.serve(async (req) => {
       if (upsertError) throw upsertError;
     }
 
+    // ========================================================================
+    // CRITICAL FIX: Delete stale alpha rows that were NOT updated in this run
+    // This removes polluted values like cot_positioning that can't be recomputed
+    // ========================================================================
+    const horizons = ['1d', '3d', '7d'];
+    let totalDeleted = 0;
+    
+    for (const horizon of horizons) {
+      const { data: deleted, error: deleteError } = await supabase
+        .from('signal_type_alpha')
+        .delete()
+        .eq('horizon', horizon)
+        .lt('updated_at', runStartedAt)
+        .select('signal_type');
+      
+      if (deleteError) {
+        console.warn(`Failed to delete stale alphas for ${horizon}:`, deleteError);
+      } else if (deleted && deleted.length > 0) {
+        console.log(`Deleted ${deleted.length} stale alpha rows for horizon ${horizon}:`, deleted.map(d => d.signal_type).join(', '));
+        totalDeleted += deleted.length;
+      }
+    }
+
     const duration = Date.now() - startTime;
 
     // Log function status
@@ -342,6 +412,9 @@ Deno.serve(async (req) => {
       metadata: {
         signal_types_processed: processedTypes,
         total_alpha_records: alphas.length,
+        stale_deleted: totalDeleted,
+        skipped_no_price: skippedNoPrice,
+        skipped_low_samples: skippedLowSamples,
         horizons: ['1d', '3d', '7d'],
         quality_filters: {
           min_price_usd: MIN_PRICE_USD,
@@ -349,16 +422,20 @@ Deno.serve(async (req) => {
           min_samples: MIN_SAMPLES_TO_STORE,
           shrinkage_k: SHRINKAGE_K,
         },
+        run_started_at: runStartedAt,
       },
     });
 
-    console.log(`compute-signal-alpha completed in ${duration}ms, updated ${alphas.length} records`);
+    console.log(`compute-signal-alpha completed in ${duration}ms, updated ${alphas.length} records, deleted ${totalDeleted} stale`);
 
     return new Response(
       JSON.stringify({
         ok: true,
         updated: alphas.length,
+        stale_deleted: totalDeleted,
         signal_types_processed: processedTypes,
+        skipped_no_price: skippedNoPrice,
+        skipped_low_samples: skippedLowSamples,
         duration_ms: duration,
         quality_filters: {
           min_price_usd: MIN_PRICE_USD,

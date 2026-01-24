@@ -15,6 +15,11 @@ const BATCH_SIZE = 100; // Smaller batches to avoid URL length limits
 const MIN_PRICE_USD = 1.00; // Exclude penny stocks
 const MAX_RETURN_WINSORIZE = 0.20; // Cap returns at +-20% for calibration
 const MAX_VOLATILITY_PENALTY = 0.05; // Max penalty from volatility
+
+// ============================================================================
+// SAMPLE SIZE TRUST GATING - Downweight alphas with insufficient data
+// ============================================================================
+const MIN_ALPHA_SAMPLE_SIZE = 50; // Trust factor = n / (n + MIN_ALPHA_SAMPLE_SIZE)
 const VOLATILITY_THRESHOLD = 0.03; // 3% daily vol threshold
 
 // ============================================================================
@@ -247,8 +252,9 @@ function confidenceLabel(cs: number): string {
 
 function scoreFromExpected(expectedReturn: number, confScore: number): number {
   const base = 50;
-  const profitability = Math.max(-0.03, Math.min(0.03, expectedReturn));
-  const profitPoints = (profitability / 0.03) * 20;
+  // WIDENED: Allow ±8% expected return for better differentiation
+  const profitability = Math.max(-0.08, Math.min(0.08, expectedReturn));
+  const profitPoints = (profitability / 0.08) * 25; // Scale to ±25 points
   const confPoints = Math.max(-10, Math.min(10, confScore * 5));
   const raw = base + profitPoints + confPoints;
   return Math.max(15, Math.min(85, raw));
@@ -548,8 +554,19 @@ Deno.serve(async (req) => {
             const decay = expDecay(ageDays, halfLifeDays);
 
             // CRITICAL FIX: Use canonical signal type for alpha lookup
-            const alphaRec = alphaMap.get(signalType);
-            const alpha = alphaRec ? alphaRec.alpha : 0;
+            // Try raw type first, then canonical fallback for _limited_data variants
+            let alphaRec = alphaMap.get(rawSignalType);
+            if (!alphaRec) {
+              alphaRec = alphaMap.get(signalType);
+            }
+            
+            // CRITICAL FIX: Apply sample-size trust gating
+            // Smooth trust factor: n/(n+50), downweights low-sample alphas
+            let alpha = 0;
+            if (alphaRec) {
+              const trustFactor = alphaRec.n / (alphaRec.n + MIN_ALPHA_SAMPLE_SIZE);
+              alpha = alphaRec.alpha * trustFactor;
+            }
             
             // CRITICAL FIX: DO NOT apply direction multiplier here!
             // Alpha already includes direction adjustment from compute-signal-alpha
