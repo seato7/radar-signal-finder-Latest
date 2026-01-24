@@ -3,9 +3,12 @@ Twelve Data Price ETL - SIMPLIFIED serial batch processing
 
 No complex rate limiting - just simple sequential batches.
 The scheduler controls the rate (40 symbols/min).
+
+Now includes per-ticker ingestion logging to price_ingestion_log table.
 """
 import asyncio
 import hashlib
+import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple, Set
 import httpx
@@ -126,9 +129,10 @@ UNSUPPORTED_COMMODITIES: Set[str] = {
 class TwelveDataPriceFetcher:
     """Simple price fetcher - no rate limiting logic, just fetch"""
     
-    def __init__(self):
+    def __init__(self, run_id: Optional[str] = None):
         self.session: Optional[httpx.AsyncClient] = None
         self.api_key = settings.TWELVEDATA_API_KEY
+        self.run_id = run_id or str(uuid.uuid4())  # Unique ID for this batch run
         self.stats = {
             "fetched": 0,
             "failed": 0,
@@ -141,6 +145,8 @@ class TwelveDataPriceFetcher:
             "failed_tickers": [],      # Detailed list of failed tickers
             "skipped_tickers": [],     # Tickers skipped as unsupported
         }
+        # Per-ticker ingestion logs for price_ingestion_log table
+        self.ingestion_logs: List[Dict] = []
     
     async def __aenter__(self):
         if not self.api_key:
@@ -242,6 +248,7 @@ class TwelveDataPriceFetcher:
         }
         
         results = {}
+        response_code = None
         
         for attempt in range(MAX_RETRIES):
             try:
@@ -249,6 +256,7 @@ class TwelveDataPriceFetcher:
                     f"{TWELVEDATA_BASE_URL}/price",
                     params=params
                 )
+                response_code = response.status_code
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -259,11 +267,18 @@ class TwelveDataPriceFetcher:
                             if price > 0:
                                 results[symbols[0]] = price
                                 self.stats["fetched"] += 1
+                                self._record_ingestion_log(
+                                    symbols[0], ticker_map, response_code,
+                                    vendor_status="ok", rows_inserted=1,
+                                    newest_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                                    raw_excerpt={"price": price}
+                                )
                             else:
-                                self._record_failure(symbols[0], ticker_map, "zero price")
+                                self._record_failure(symbols[0], ticker_map, "zero price", response_code)
                         else:
                             error_msg = data.get("message", "unknown error")
-                            self._record_failure(symbols[0], ticker_map, error_msg)
+                            vendor_status = "invalid_symbol" if "not found" in error_msg.lower() or "symbol" in error_msg.lower() else "no_data"
+                            self._record_failure(symbols[0], ticker_map, error_msg, response_code, vendor_status)
                     else:
                         for symbol, price_data in data.items():
                             if isinstance(price_data, dict):
@@ -272,12 +287,20 @@ class TwelveDataPriceFetcher:
                                     if price > 0:
                                         results[symbol] = price
                                         self.stats["fetched"] += 1
+                                        self._record_ingestion_log(
+                                            symbol, ticker_map, response_code,
+                                            vendor_status="ok", rows_inserted=1,
+                                            newest_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                                            raw_excerpt={"price": price}
+                                        )
                                     else:
-                                        self._record_failure(symbol, ticker_map, "zero price")
+                                        self._record_failure(symbol, ticker_map, "zero price", response_code)
                                 elif "message" in price_data:
-                                    self._record_failure(symbol, ticker_map, price_data["message"])
+                                    error_msg = price_data["message"]
+                                    vendor_status = "invalid_symbol" if "not found" in error_msg.lower() or "symbol" in error_msg.lower() else "no_data"
+                                    self._record_failure(symbol, ticker_map, error_msg, response_code, vendor_status)
                                 else:
-                                    self._record_failure(symbol, ticker_map, "no price data")
+                                    self._record_failure(symbol, ticker_map, "no price data", response_code, "no_data")
                     
                     self.stats["batches_processed"] += 1
                     break
@@ -286,28 +309,68 @@ class TwelveDataPriceFetcher:
                     self.stats["retries"] += 1
                     wait = RETRY_DELAY * (2 ** attempt) + 5
                     logger.warning(f"⚠️ Rate limited! Waiting {wait}s (attempt {attempt + 1})")
+                    # Log rate limit for all symbols in batch
+                    for sym in symbols:
+                        self._record_failure(sym, ticker_map, "rate limited", response_code, "rate_limited")
                     await asyncio.sleep(wait)
                     continue
                 
                 else:
                     logger.error(f"API error: {response.status_code} - {response.text[:200]}")
                     for sym in symbols:
-                        self._record_failure(sym, ticker_map, f"HTTP {response.status_code}")
+                        self._record_failure(sym, ticker_map, f"HTTP {response.status_code}", response_code, "error")
                     break
                     
             except httpx.TimeoutException:
                 self.stats["retries"] += 1
                 logger.warning(f"Timeout (attempt {attempt + 1})")
+                for sym in symbols:
+                    self._record_failure(sym, ticker_map, "timeout", None, "error")
                 await asyncio.sleep(RETRY_DELAY)
             except Exception as e:
                 logger.error(f"Error: {str(e)}")
                 for sym in symbols:
-                    self._record_failure(sym, ticker_map, str(e))
+                    self._record_failure(sym, ticker_map, str(e), None, "error")
                 break
         
         return results
     
-    def _record_failure(self, td_symbol: str, ticker_map: Dict, error_msg: str):
+    def _record_ingestion_log(
+        self,
+        td_symbol: str,
+        ticker_map: Dict,
+        response_code: Optional[int],
+        vendor_status: str,
+        rows_inserted: int = 0,
+        newest_date: Optional[str] = None,
+        error_message: str = "",
+        raw_excerpt: Optional[Dict] = None
+    ):
+        """Record a per-ticker ingestion log entry"""
+        asset = ticker_map.get(td_symbol, {})
+        original_ticker = asset.get("ticker", td_symbol) if asset else td_symbol
+        
+        self.ingestion_logs.append({
+            "run_id": self.run_id,
+            "vendor": "twelvedata",
+            "ticker": original_ticker,
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+            "response_code": response_code,
+            "vendor_status": vendor_status,
+            "rows_inserted": rows_inserted,
+            "newest_date_returned": newest_date,
+            "error_message": error_message[:500] if error_message else "",
+            "raw": raw_excerpt or {}
+        })
+    
+    def _record_failure(
+        self,
+        td_symbol: str,
+        ticker_map: Dict,
+        error_msg: str,
+        response_code: Optional[int] = None,
+        vendor_status: str = "error"
+    ):
         """Record a failed ticker with details"""
         self.stats["failed"] += 1
         
@@ -324,6 +387,15 @@ class TwelveDataPriceFetcher:
         
         if len(self.stats["errors"]) < 20:
             self.stats["errors"].append(f"{td_symbol}: {error_msg}")
+        
+        # Record to ingestion log
+        self._record_ingestion_log(
+            td_symbol, ticker_map, response_code,
+            vendor_status=vendor_status,
+            rows_inserted=0,
+            error_message=error_msg,
+            raw_excerpt={"error": error_msg[:100]}
+        )
     
     async def fetch_prices_batch(
         self,

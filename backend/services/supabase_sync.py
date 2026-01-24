@@ -103,6 +103,52 @@ class SupabaseSync:
         
         return inserted, failed, errors
     
+    async def upsert_ingestion_logs(self, logs: List[Dict]) -> Tuple[int, int, List[str]]:
+        """
+        Insert per-ticker ingestion logs to price_ingestion_log table.
+        
+        Returns:
+            Tuple of (inserted_count, failed_count, errors)
+        """
+        if not self.is_configured:
+            return 0, len(logs), ["Supabase not configured"]
+        
+        if not logs:
+            return 0, 0, []
+        
+        inserted = 0
+        failed = 0
+        errors = []
+        
+        # Process in batches
+        for i in range(0, len(logs), BATCH_SIZE):
+            batch = logs[i:i + BATCH_SIZE]
+            
+            try:
+                response = await self.session.post(
+                    f"{self.url}/rest/v1/price_ingestion_log",
+                    json=batch,
+                    headers={"Prefer": "return=minimal"}
+                )
+                
+                if response.status_code in (200, 201, 204):
+                    inserted += len(batch)
+                else:
+                    failed += len(batch)
+                    error_msg = f"Supabase error {response.status_code}: {response.text[:200]}"
+                    errors.append(error_msg)
+                    logger.warning(f"Ingestion log insert error: {error_msg}")
+                    
+            except Exception as e:
+                failed += len(batch)
+                errors.append(str(e))
+                logger.error(f"Failed to insert ingestion logs: {str(e)}")
+        
+        if inserted > 0:
+            logger.info(f"📊 Inserted {inserted} ingestion log entries")
+        
+        return inserted, failed, errors
+    
     async def log_ingestion(
         self,
         etl_name: str,
