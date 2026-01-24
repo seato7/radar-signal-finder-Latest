@@ -1088,25 +1088,41 @@ Deno.serve(async (req) => {
         processedCount++;
       }
 
-      // Batch update scores (bulk upsert for performance)
+      // Batch update scores using UPDATE instead of UPSERT
+      // UPSERT sets missing columns to NULL which violates NOT NULL constraints
       const now = new Date().toISOString();
-      const upsertRows = updates.map((update) => ({
-        id: update.id,
-        computed_score: update.score,
-        score_computed_at: now,
-        metadata: { score_breakdown: update.breakdown },
-      }));
+      const CHUNK_SIZE = 50;
+      let successCount = 0;
+      let errorCount = 0;
 
-      const { error: upsertError } = await supabase
-        .from('assets')
-        .upsert(upsertRows, { onConflict: 'id' });
-
-      if (upsertError) {
-        console.error('Error bulk-updating asset scores:', upsertError);
-        break;
+      for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+        const chunk = updates.slice(i, i + CHUNK_SIZE);
+        
+        // Update each asset in the chunk concurrently
+        const updatePromises = chunk.map(update =>
+          supabase
+            .from('assets')
+            .update({
+              computed_score: update.score,
+              score_computed_at: now,
+              metadata: { score_breakdown: update.breakdown },
+            })
+            .eq('id', update.id)
+        );
+        
+        const results = await Promise.all(updatePromises);
+        
+        for (const result of results) {
+          if (result.error) {
+            errorCount++;
+            console.error('Update error:', result.error.message);
+          } else {
+            successCount++;
+          }
+        }
       }
 
-      console.log(`Updated ${updates.length} asset scores`);
+      console.log(`Updated ${successCount} asset scores, ${errorCount} errors`);
       offset += batchSize;
     }
 
