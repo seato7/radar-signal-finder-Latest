@@ -5,6 +5,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Track predictions for these N values separately
+const TOP_N_VALUES = [20, 50, 100];
+const MAX_PREDICTIONS = 500; // Maximum total predictions to store
+
+// Universe filters
+const MIN_PRICE_USD = 1.00;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -41,17 +48,43 @@ Deno.serve(async (req) => {
       );
     }
 
-    const TOP_N = 500; // Top 500 assets by expected return
+    // Get tickers to filter with current prices
+    const tickersWithPrices = new Map<string, number>();
+    
+    // Fetch recent prices to filter by MIN_PRICE_USD
+    const { data: recentPrices, error: priceError } = await supabase
+      .from('prices')
+      .select('ticker, close')
+      .gte('date', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+      .order('date', { ascending: false });
+
+    if (!priceError && recentPrices) {
+      for (const p of recentPrices) {
+        if (!tickersWithPrices.has(p.ticker)) {
+          tickersWithPrices.set(p.ticker, Number(p.close));
+        }
+      }
+    }
+
+    console.log(`Found ${tickersWithPrices.size} tickers with recent prices`);
 
     // Fetch top assets by expected_return (positive expected returns)
+    // Apply universe filter: price >= $1.00
     const { data: topAssets, error: topError } = await supabase
       .from('assets')
       .select('id, ticker, expected_return, confidence_score, confidence_label, model_version, score_explanation')
       .gt('expected_return', 0)
       .order('expected_return', { ascending: false })
-      .limit(TOP_N);
+      .limit(MAX_PREDICTIONS);
 
     if (topError) throw topError;
+
+    // Filter by price threshold
+    const filteredTopAssets = (topAssets || []).filter(a => {
+      const price = tickersWithPrices.get(a.ticker);
+      if (price === undefined) return true; // Allow if no price data (don't want to exclude all crypto etc)
+      return price >= MIN_PRICE_USD;
+    });
 
     // Also fetch bottom assets (negative expected returns) for completeness
     const { data: bottomAssets, error: bottomError } = await supabase
@@ -63,25 +96,88 @@ Deno.serve(async (req) => {
 
     if (bottomError) throw bottomError;
 
-    const allAssets = [...(topAssets || []), ...(bottomAssets || [])];
+    // Filter bottom assets by price
+    const filteredBottomAssets = (bottomAssets || []).filter(a => {
+      const price = tickersWithPrices.get(a.ticker);
+      if (price === undefined) return true;
+      return price >= MIN_PRICE_USD;
+    });
 
-    console.log(`Found ${allAssets.length} assets to snapshot (${topAssets?.length || 0} bullish, ${bottomAssets?.length || 0} bearish)`);
+    const allAssets = [...filteredTopAssets, ...filteredBottomAssets];
 
-    const rows = allAssets.map((a, idx) => ({
-      snapshot_date: snapshotDate,
-      asset_id: a.id,
-      ticker: a.ticker,
-      expected_return: Number(a.expected_return ?? 0),
-      confidence_score: Number(a.confidence_score ?? 0),
-      confidence_label: String(a.confidence_label ?? 'moderate'),
-      rank: idx + 1,
-      model_version: String(a.model_version ?? 'v1_alpha'),
-      feature_snapshot: {
+    console.log(`Found ${allAssets.length} assets to snapshot after filtering (${filteredTopAssets.length} bullish, ${filteredBottomAssets.length} bearish)`);
+
+    // Create rows with top_n tracking
+    // For each asset, determine which top_n buckets it belongs to
+    const rows: {
+      snapshot_date: string;
+      asset_id: string;
+      ticker: string;
+      expected_return: number;
+      confidence_score: number;
+      confidence_label: string;
+      rank: number;
+      model_version: string;
+      feature_snapshot: object;
+      top_n: number;
+    }[] = [];
+
+    // For bullish assets, determine top_n buckets
+    for (let i = 0; i < filteredTopAssets.length; i++) {
+      const a = filteredTopAssets[i];
+      const rank = i + 1;
+      
+      // Determine largest applicable top_n
+      let topN = MAX_PREDICTIONS;
+      for (const n of TOP_N_VALUES) {
+        if (rank <= n) {
+          topN = n;
+          break;
+        }
+      }
+
+      rows.push({
+        snapshot_date: snapshotDate,
+        asset_id: a.id,
+        ticker: a.ticker,
         expected_return: Number(a.expected_return ?? 0),
         confidence_score: Number(a.confidence_score ?? 0),
-        score_explanation: a.score_explanation || [],
-      },
-    }));
+        confidence_label: String(a.confidence_label ?? 'moderate'),
+        rank,
+        model_version: String(a.model_version ?? 'v1_alpha'),
+        feature_snapshot: {
+          expected_return: Number(a.expected_return ?? 0),
+          confidence_score: Number(a.confidence_score ?? 0),
+          score_explanation: a.score_explanation || [],
+          price_at_prediction: tickersWithPrices.get(a.ticker) || null,
+        },
+        top_n: topN,
+      });
+    }
+
+    // Add bearish assets with high rank (indicating bearish position)
+    for (let i = 0; i < filteredBottomAssets.length; i++) {
+      const a = filteredBottomAssets[i];
+      const rank = filteredTopAssets.length + i + 1;
+
+      rows.push({
+        snapshot_date: snapshotDate,
+        asset_id: a.id,
+        ticker: a.ticker,
+        expected_return: Number(a.expected_return ?? 0),
+        confidence_score: Number(a.confidence_score ?? 0),
+        confidence_label: String(a.confidence_label ?? 'moderate'),
+        rank,
+        model_version: String(a.model_version ?? 'v1_alpha'),
+        feature_snapshot: {
+          expected_return: Number(a.expected_return ?? 0),
+          confidence_score: Number(a.confidence_score ?? 0),
+          score_explanation: a.score_explanation || [],
+          price_at_prediction: tickersWithPrices.get(a.ticker) || null,
+        },
+        top_n: MAX_PREDICTIONS, // Bearish predictions stored with max top_n
+      });
+    }
 
     let inserted = 0;
     if (rows.length > 0) {
@@ -97,6 +193,11 @@ Deno.serve(async (req) => {
 
     const duration = Date.now() - startTime;
 
+    // Calculate metrics for summary
+    const top20Count = rows.filter(r => r.rank <= 20 && r.expected_return > 0).length;
+    const top50Count = rows.filter(r => r.rank <= 50 && r.expected_return > 0).length;
+    const top100Count = rows.filter(r => r.rank <= 100 && r.expected_return > 0).length;
+
     // Log function status
     await supabase.from('function_status').insert({
       function_name: 'daily-prediction-snapshot',
@@ -105,8 +206,13 @@ Deno.serve(async (req) => {
       duration_ms: duration,
       metadata: {
         snapshot_date: snapshotDate,
-        bullish_count: topAssets?.length || 0,
-        bearish_count: bottomAssets?.length || 0,
+        bullish_count: filteredTopAssets.length,
+        bearish_count: filteredBottomAssets.length,
+        top_20: top20Count,
+        top_50: top50Count,
+        top_100: top100Count,
+        price_filter_applied: MIN_PRICE_USD,
+        tickers_with_price_data: tickersWithPrices.size,
       },
     });
 
@@ -117,8 +223,11 @@ Deno.serve(async (req) => {
         ok: true,
         inserted,
         snapshot_date: snapshotDate,
-        bullish_count: topAssets?.length || 0,
-        bearish_count: bottomAssets?.length || 0,
+        bullish_count: filteredTopAssets.length,
+        bearish_count: filteredBottomAssets.length,
+        top_20: top20Count,
+        top_50: top50Count,
+        top_100: top100Count,
         duration_ms: duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

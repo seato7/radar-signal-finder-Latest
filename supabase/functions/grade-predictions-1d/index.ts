@@ -5,6 +5,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Winsorize returns to avoid extreme outliers skewing results
+const MAX_RETURN_WINSORIZE = 0.20; // Cap at +-20%
+
+function winsorize(value: number, max: number): number {
+  return Math.max(-max, Math.min(max, value));
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -51,6 +58,8 @@ Deno.serve(async (req) => {
         snapshot_date,
         ticker,
         expected_return,
+        rank,
+        top_n,
         asset_prediction_results!left(id, horizon)
       `)
       .eq('snapshot_date', targetDateStr);
@@ -126,14 +135,25 @@ Deno.serve(async (req) => {
 
     let hits = 0;
     let totalReturns = 0;
+    let skippedNoPrices = 0;
+
+    // Track by top_n buckets
+    const bucketStats = new Map<number, { hits: number; total: number; returns: number[] }>();
 
     for (const pred of ungraded) {
       const c0 = priceT0Map.get(pred.ticker);
       const c1 = priceT1Map.get(pred.ticker);
 
-      if (!c0 || !c1 || c0 === 0) continue;
+      if (!c0 || !c1 || c0 === 0) {
+        skippedNoPrices++;
+        continue;
+      }
 
-      const realizedReturn = (c1 / c0) - 1;
+      // Calculate raw return
+      let realizedReturn = (c1 / c0) - 1;
+      
+      // Winsorize to avoid extreme outliers
+      realizedReturn = winsorize(realizedReturn, MAX_RETURN_WINSORIZE);
       
       // A "hit" is when the prediction direction was correct:
       // - If expected_return > 0 (bullish), hit if realized_return > 0
@@ -151,9 +171,19 @@ Deno.serve(async (req) => {
         realized_return: realizedReturn,
         hit,
       });
+
+      // Track bucket stats
+      const topN = pred.top_n || 100;
+      if (!bucketStats.has(topN)) {
+        bucketStats.set(topN, { hits: 0, total: 0, returns: [] });
+      }
+      const bucket = bucketStats.get(topN)!;
+      bucket.total++;
+      if (hit) bucket.hits++;
+      bucket.returns.push(realizedReturn);
     }
 
-    console.log(`Calculated ${results.length} results, ${hits} hits (${(hits/results.length*100).toFixed(1)}% accuracy)`);
+    console.log(`Calculated ${results.length} results, ${hits} hits (${(hits/results.length*100).toFixed(1)}% accuracy), ${skippedNoPrices} skipped (no prices)`);
 
     // Insert results in batches
     if (results.length > 0) {
@@ -169,6 +199,16 @@ Deno.serve(async (req) => {
     const hitRate = results.length > 0 ? hits / results.length : 0;
     const avgReturn = results.length > 0 ? totalReturns / results.length : 0;
 
+    // Prepare bucket breakdown for metadata
+    const bucketBreakdown: Record<string, { hit_rate: number; count: number; avg_return: number }> = {};
+    for (const [topN, stats] of bucketStats) {
+      bucketBreakdown[`top_${topN}`] = {
+        hit_rate: stats.total > 0 ? stats.hits / stats.total : 0,
+        count: stats.total,
+        avg_return: stats.returns.length > 0 ? stats.returns.reduce((a, b) => a + b, 0) / stats.returns.length : 0,
+      };
+    }
+
     // Log function status
     await supabase.from('function_status').insert({
       function_name: 'grade-predictions-1d',
@@ -177,12 +217,16 @@ Deno.serve(async (req) => {
       duration_ms: duration,
       metadata: {
         target_date: targetDateStr,
+        future_date: futureDateStr,
         horizon,
         predictions_graded: results.length,
         hit_rate: hitRate,
         avg_realized_return: avgReturn,
         hits,
         misses: results.length - hits,
+        skipped_no_prices: skippedNoPrices,
+        bucket_breakdown: bucketBreakdown,
+        winsorize_threshold: MAX_RETURN_WINSORIZE,
       },
     });
 
@@ -193,11 +237,14 @@ Deno.serve(async (req) => {
         ok: true,
         graded: results.length,
         target_date: targetDateStr,
+        future_date: futureDateStr,
         horizon,
         hit_rate: hitRate,
         hits,
         misses: results.length - hits,
         avg_realized_return: avgReturn,
+        skipped_no_prices: skippedNoPrices,
+        bucket_breakdown: bucketBreakdown,
         duration_ms: duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
