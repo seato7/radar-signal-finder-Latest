@@ -505,14 +505,19 @@ export type Database = {
           confidence_score: number | null
           contract_size: number | null
           created_at: string | null
+          days_stale: number | null
           exchange: string
           expected_return: number | null
           id: string
+          last_price_date: string | null
           metadata: Json | null
           model_version: string | null
           name: string
           pip_value: number | null
+          price_points_30d: number | null
+          price_status: string | null
           quote_currency: string | null
+          rank_status: string | null
           score_computed_at: string | null
           score_explanation: Json | null
           spread_typical: number | null
@@ -526,14 +531,19 @@ export type Database = {
           confidence_score?: number | null
           contract_size?: number | null
           created_at?: string | null
+          days_stale?: number | null
           exchange: string
           expected_return?: number | null
           id?: string
+          last_price_date?: string | null
           metadata?: Json | null
           model_version?: string | null
           name: string
           pip_value?: number | null
+          price_points_30d?: number | null
+          price_status?: string | null
           quote_currency?: string | null
+          rank_status?: string | null
           score_computed_at?: string | null
           score_explanation?: Json | null
           spread_typical?: number | null
@@ -547,14 +557,19 @@ export type Database = {
           confidence_score?: number | null
           contract_size?: number | null
           created_at?: string | null
+          days_stale?: number | null
           exchange?: string
           expected_return?: number | null
           id?: string
+          last_price_date?: string | null
           metadata?: Json | null
           model_version?: string | null
           name?: string
           pip_value?: number | null
+          price_points_30d?: number | null
+          price_status?: string | null
           quote_currency?: string | null
+          rank_status?: string | null
           score_computed_at?: string | null
           score_explanation?: Json | null
           spread_typical?: number | null
@@ -2352,6 +2367,93 @@ export type Database = {
         }
         Relationships: []
       }
+      price_coverage_daily: {
+        Row: {
+          asset_class: string | null
+          asset_id: string | null
+          created_at: string | null
+          days_stale: number
+          last_price_date: string | null
+          points_30d: number
+          points_90d: number
+          reason: string
+          snapshot_date: string
+          status: string
+          ticker: string
+          vendor: string
+        }
+        Insert: {
+          asset_class?: string | null
+          asset_id?: string | null
+          created_at?: string | null
+          days_stale?: number
+          last_price_date?: string | null
+          points_30d?: number
+          points_90d?: number
+          reason?: string
+          snapshot_date: string
+          status: string
+          ticker: string
+          vendor?: string
+        }
+        Update: {
+          asset_class?: string | null
+          asset_id?: string | null
+          created_at?: string | null
+          days_stale?: number
+          last_price_date?: string | null
+          points_30d?: number
+          points_90d?: number
+          reason?: string
+          snapshot_date?: string
+          status?: string
+          ticker?: string
+          vendor?: string
+        }
+        Relationships: []
+      }
+      price_ingestion_log: {
+        Row: {
+          error_message: string
+          id: string
+          newest_date_returned: string | null
+          raw: Json
+          requested_at: string
+          response_code: number | null
+          rows_inserted: number
+          run_id: string
+          ticker: string
+          vendor: string
+          vendor_status: string
+        }
+        Insert: {
+          error_message?: string
+          id?: string
+          newest_date_returned?: string | null
+          raw?: Json
+          requested_at?: string
+          response_code?: number | null
+          rows_inserted?: number
+          run_id: string
+          ticker: string
+          vendor?: string
+          vendor_status: string
+        }
+        Update: {
+          error_message?: string
+          id?: string
+          newest_date_returned?: string | null
+          raw?: Json
+          requested_at?: string
+          response_code?: number | null
+          rows_inserted?: number
+          run_id?: string
+          ticker?: string
+          vendor?: string
+          vendor_status?: string
+        }
+        Relationships: []
+      }
       prices: {
         Row: {
           asset_id: string | null
@@ -2538,6 +2640,36 @@ export type Database = {
           report_date?: string
           short_volume?: number | null
           ticker?: string
+        }
+        Relationships: []
+      }
+      signal_generation_diagnostics: {
+        Row: {
+          count: number
+          created_at: string | null
+          excluded_reason: string
+          generator: string
+          id: string
+          sample_tickers: string[]
+          snapshot_date: string
+        }
+        Insert: {
+          count?: number
+          created_at?: string | null
+          excluded_reason: string
+          generator: string
+          id?: string
+          sample_tickers?: string[]
+          snapshot_date: string
+        }
+        Update: {
+          count?: number
+          created_at?: string | null
+          excluded_reason?: string
+          generator?: string
+          id?: string
+          sample_tickers?: string[]
+          snapshot_date?: string
         }
         Relationships: []
       }

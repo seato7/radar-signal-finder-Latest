@@ -10,12 +10,17 @@ const corsHeaders = {
 const CHUNK_SIZE = 1000; // Assets per chunk
 const TICKER_BATCH_SIZE = 50; // Tickers per price query
 
+// Coverage requirements
+const MIN_POINTS_30D = 2; // Minimum data points in 30 days to generate momentum
+const LIMITED_DATA_THRESHOLD = 6; // Below this = limited_data suffix
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   const startTime = Date.now();
+  const today = new Date().toISOString().split('T')[0];
 
   try {
     const supabaseClient = createClient(
@@ -34,6 +39,57 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-MOMENTUM] Starting chunk at offset ${offset}...`);
 
+    // ========================================================================
+    // FETCH PRICE COVERAGE DATA FOR TODAY
+    // ========================================================================
+    const coverageMap = new Map<string, {
+      status: string;
+      points_30d: number;
+      points_90d: number;
+      last_price_date: string | null;
+      days_stale: number;
+    }>();
+
+    let coverageOffset = 0;
+    while (true) {
+      const { data: coveragePage, error: coverageError } = await supabaseClient
+        .from('price_coverage_daily')
+        .select('ticker, status, points_30d, points_90d, last_price_date, days_stale')
+        .eq('snapshot_date', today)
+        .eq('vendor', 'twelvedata')
+        .range(coverageOffset, coverageOffset + 999);
+
+      if (coverageError) {
+        console.warn(`[SIGNAL-GEN-MOMENTUM] Coverage query error: ${coverageError.message}`);
+        break;
+      }
+      if (!coveragePage || coveragePage.length === 0) break;
+
+      for (const c of coveragePage) {
+        coverageMap.set(c.ticker, {
+          status: c.status,
+          points_30d: c.points_30d,
+          points_90d: c.points_90d,
+          last_price_date: c.last_price_date,
+          days_stale: c.days_stale,
+        });
+      }
+
+      if (coveragePage.length < 1000) break;
+      coverageOffset += 1000;
+    }
+
+    console.log(`[SIGNAL-GEN-MOMENTUM] Loaded ${coverageMap.size} coverage records for ${today}`);
+
+    // ========================================================================
+    // EXCLUSION TRACKING
+    // ========================================================================
+    const exclusions: Record<string, string[]> = {
+      no_coverage_record: [],
+      status_not_fresh: [],
+      insufficient_points_30d: [],
+    };
+
     // Get total asset count first
     const { count: totalAssets } = await supabaseClient
       .from('assets')
@@ -50,6 +106,9 @@ serve(async (req) => {
     console.log(`[SIGNAL-GEN-MOMENTUM] Processing ${assetBatch?.length || 0} assets (offset ${offset}, total ${totalAssets})`);
 
     if (!assetBatch || assetBatch.length === 0) {
+      // Log diagnostics before returning
+      await logDiagnostics(supabaseClient, today, exclusions);
+
       const duration = Date.now() - startTime;
       await logHeartbeat(supabaseClient, {
         function_name: 'generate-signals-from-momentum',
@@ -76,7 +135,32 @@ serve(async (req) => {
       tickerToAssetId.set(asset.ticker, asset.id);
     }
 
-    const uniqueTickers = assetBatch.map(a => a.ticker);
+    // Filter assets based on coverage
+    const eligibleAssets: { id: string; ticker: string; coverage: typeof coverageMap extends Map<string, infer V> ? V : never }[] = [];
+    
+    for (const asset of assetBatch) {
+      const cov = coverageMap.get(asset.ticker);
+      
+      if (!cov) {
+        exclusions.no_coverage_record.push(asset.ticker);
+        continue;
+      }
+      
+      if (cov.status !== 'fresh') {
+        exclusions.status_not_fresh.push(asset.ticker);
+        continue;
+      }
+      
+      if (cov.points_30d < MIN_POINTS_30D) {
+        exclusions.insufficient_points_30d.push(asset.ticker);
+        continue;
+      }
+      
+      eligibleAssets.push({ id: asset.id, ticker: asset.ticker, coverage: cov });
+    }
+
+    console.log(`[SIGNAL-GEN-MOMENTUM] Eligible: ${eligibleAssets.length}, Excluded: no_coverage=${exclusions.no_coverage_record.length}, not_fresh=${exclusions.status_not_fresh.length}, insufficient_points=${exclusions.insufficient_points_30d.length}`);
+
     const signals: Array<{
       asset_id: string;
       signal_type: string;
@@ -89,9 +173,11 @@ serve(async (req) => {
       raw: object;
     }> = [];
 
-    // Process in ticker batches
-    for (let i = 0; i < uniqueTickers.length; i += TICKER_BATCH_SIZE) {
-      const tickerBatch = uniqueTickers.slice(i, i + TICKER_BATCH_SIZE);
+    // Process in ticker batches (only eligible)
+    const eligibleTickers = eligibleAssets.map(a => a.ticker);
+
+    for (let i = 0; i < eligibleTickers.length; i += TICKER_BATCH_SIZE) {
+      const tickerBatch = eligibleTickers.slice(i, i + TICKER_BATCH_SIZE);
       
       // Fetch prices for this batch
       const { data: prices, error: pricesError } = await supabaseClient
@@ -100,7 +186,7 @@ serve(async (req) => {
         .in('ticker', tickerBatch)
         .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
         .order('date', { ascending: false })
-        .limit(tickerBatch.length * 30); // ~30 days per ticker
+        .limit(tickerBatch.length * 30);
 
       if (pricesError) {
         console.error(`[SIGNAL-GEN-MOMENTUM] Error fetching batch ${i}: ${pricesError.message}`);
@@ -124,7 +210,7 @@ serve(async (req) => {
       for (const [ticker, tickerPrices] of pricesByTicker) {
         tickerPrices.sort((a, b) => b.date.localeCompare(a.date));
 
-        // Allow momentum calculation with at least 2 prices (lowered from 6)
+        // Already filtered by coverage, but double-check minimum prices
         if (tickerPrices.length < 2) continue;
 
         const assetId = tickerPrices[0].asset_id || tickerToAssetId.get(ticker);
@@ -132,20 +218,28 @@ serve(async (req) => {
 
         const latestPrice = tickerPrices[0].close;
         const latestDate = tickerPrices[0].date;
+        
+        // Get coverage data for raw fields
+        const cov = coverageMap.get(ticker);
+        const rawCoverageFields = {
+          snapshot_date: today,
+          last_price_date: cov?.last_price_date,
+          days_stale: cov?.days_stale,
+          points_30d: cov?.points_30d,
+          points_90d: cov?.points_90d,
+          price_status: cov?.status,
+        };
 
-        // Calculate 5-day momentum - use available data if less than 6 prices
+        // Calculate 5-day momentum
         const lookbackIndex5d = Math.min(5, tickerPrices.length - 1);
         const price5d = tickerPrices[lookbackIndex5d]?.close;
-        const hasLimitedData5d = tickerPrices.length < 6;
+        const hasLimitedData5d = tickerPrices.length < LIMITED_DATA_THRESHOLD;
         
         if (price5d && price5d > 0) {
           const momentum5d = ((latestPrice - price5d) / price5d) * 100;
-
-          // Always create a signal - magnitude indicates strength
           const direction = momentum5d > 0 ? 'up' : (momentum5d < 0 ? 'down' : 'neutral');
-          const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum5d) / 20)); // Scale: 20% = max magnitude
+          const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum5d) / 20));
 
-          // Different signal types based on strength, with limited_data suffix if sparse
           const dataQuality = hasLimitedData5d ? '_limited_data' : '';
           let signalType: string;
           if (Math.abs(momentum5d) > 5) {
@@ -165,11 +259,18 @@ serve(async (req) => {
             value_text: `5-day momentum: ${momentum5d > 0 ? '+' : ''}${momentum5d.toFixed(1)}%${hasLimitedData5d ? ' (limited data)' : ''}`,
             checksum: JSON.stringify({ ticker, signal_type: signalType, date: latestDate, momentum: momentum5d.toFixed(1) }),
             citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
-            raw: { ticker, latest_price: latestPrice, price_5d_ago: price5d, momentum_pct: momentum5d, days_available: tickerPrices.length }
+            raw: { 
+              ticker, 
+              latest_price: latestPrice, 
+              price_5d_ago: price5d, 
+              momentum_pct: momentum5d, 
+              days_available: tickerPrices.length,
+              ...rawCoverageFields,
+            }
           });
         }
 
-        // Calculate 20-day momentum - use available data if between 6-20 prices
+        // Calculate 20-day momentum (requires more data)
         if (tickerPrices.length >= 6) {
           const lookbackIndex20d = Math.min(20, tickerPrices.length - 1);
           const price20d = tickerPrices[lookbackIndex20d]?.close;
@@ -177,12 +278,9 @@ serve(async (req) => {
           
           if (price20d && price20d > 0) {
             const momentum20d = ((latestPrice - price20d) / price20d) * 100;
-
-            // Always create a signal - magnitude indicates strength
             const direction = momentum20d > 0 ? 'up' : (momentum20d < 0 ? 'down' : 'neutral');
-            const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum20d) / 30)); // Scale: 30% = max magnitude
+            const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum20d) / 30));
 
-            // Different signal types based on strength, with limited_data suffix if sparse
             const dataQuality = hasLimitedData20d ? '_limited_data' : '';
             let signalType: string;
             if (Math.abs(momentum20d) > 10) {
@@ -202,7 +300,14 @@ serve(async (req) => {
               value_text: `20-day momentum: ${momentum20d > 0 ? '+' : ''}${momentum20d.toFixed(1)}%${hasLimitedData20d ? ' (limited data)' : ''}`,
               checksum: JSON.stringify({ ticker, signal_type: signalType, date: latestDate, momentum: momentum20d.toFixed(1) }),
               citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
-              raw: { ticker, latest_price: latestPrice, price_20d_ago: price20d, momentum_pct: momentum20d, days_available: tickerPrices.length }
+              raw: { 
+                ticker, 
+                latest_price: latestPrice, 
+                price_20d_ago: price20d, 
+                momentum_pct: momentum20d, 
+                days_available: tickerPrices.length,
+                ...rawCoverageFields,
+              }
             });
           }
         }
@@ -223,6 +328,9 @@ serve(async (req) => {
       else console.error(`[SIGNAL-GEN-MOMENTUM] Batch insert error: ${insertError.message}`);
     }
 
+    // Log diagnostics
+    await logDiagnostics(supabaseClient, today, exclusions);
+
     // Calculate next offset
     const nextOffset = offset + CHUNK_SIZE;
     const hasMore = nextOffset < (totalAssets || 0);
@@ -242,7 +350,11 @@ serve(async (req) => {
         chunk_size: assetBatch.length,
         total_assets: totalAssets,
         next_offset: hasMore ? nextOffset : null,
-        signals_generated: signals.length
+        signals_generated: signals.length,
+        eligible_assets: eligibleAssets.length,
+        excluded_no_coverage: exclusions.no_coverage_record.length,
+        excluded_not_fresh: exclusions.status_not_fresh.length,
+        excluded_insufficient_points: exclusions.insufficient_points_30d.length,
       }
     });
 
@@ -250,11 +362,17 @@ serve(async (req) => {
       success: true,
       offset,
       tickers_processed: assetBatch.length,
+      eligible_assets: eligibleAssets.length,
       signals_created: insertedCount,
       duplicates_skipped: signals.length - insertedCount,
       next_offset: hasMore ? nextOffset : null,
       complete: !hasMore,
-      total_assets: totalAssets
+      total_assets: totalAssets,
+      exclusions: {
+        no_coverage_record: exclusions.no_coverage_record.length,
+        status_not_fresh: exclusions.status_not_fresh.length,
+        insufficient_points_30d: exclusions.insufficient_points_30d.length,
+      }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -278,3 +396,32 @@ serve(async (req) => {
     });
   }
 });
+
+async function logDiagnostics(
+  supabase: any,
+  snapshotDate: string,
+  exclusions: Record<string, string[]>
+) {
+  const diagnosticRows = Object.entries(exclusions)
+    .filter(([_, tickers]) => tickers.length > 0)
+    .map(([reason, tickers]) => ({
+      snapshot_date: snapshotDate,
+      generator: 'momentum',
+      excluded_reason: reason,
+      count: tickers.length,
+      sample_tickers: tickers.slice(0, 10),
+    }));
+
+  if (diagnosticRows.length > 0) {
+    // Upsert to avoid duplicates if run multiple times
+    const { error } = await supabase
+      .from('signal_generation_diagnostics')
+      .upsert(diagnosticRows, { onConflict: 'snapshot_date,generator,excluded_reason', ignoreDuplicates: false });
+
+    if (error) {
+      console.error(`[SIGNAL-GEN-MOMENTUM] Diagnostics insert error: ${error.message}`);
+    } else {
+      console.log(`[SIGNAL-GEN-MOMENTUM] Logged ${diagnosticRows.length} diagnostic entries`);
+    }
+  }
+}
