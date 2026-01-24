@@ -22,6 +22,9 @@ const MAX_RETURN_WINSORIZE = 0.20;    // Cap returns at +-20%
 const MIN_SAMPLES_TO_STORE = 10;      // Minimum samples to store alpha
 const SHRINKAGE_K = 100;              // Shrinkage factor for small samples
 
+// Backfill-friendly lookback (can be overridden via request body)
+const DEFAULT_LOOKBACK_DAYS = 180;
+
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
@@ -54,6 +57,17 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   // CRITICAL: Track run start time for stale cleanup
   const runStartedAt = new Date().toISOString();
+
+  // Optional runtime tuning
+  let body: { lookback_days?: number } = {};
+  try {
+    body = await req.json();
+  } catch {
+    // no body
+  }
+
+  const lookbackDays = Math.min(365, Math.max(30, body.lookback_days ?? DEFAULT_LOOKBACK_DAYS));
+  const lookbackStartIso = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
   
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -62,6 +76,7 @@ Deno.serve(async (req) => {
 
     console.log('Starting signal alpha computation with asset_id-based price lookup...');
     console.log(`Run started at: ${runStartedAt}`);
+    console.log(`Lookback window: ${lookbackDays} days (since ${lookbackStartIso})`);
 
     // ========================================================================
     // Step 1: Get ALL distinct signal types from actual signals table
@@ -69,7 +84,7 @@ Deno.serve(async (req) => {
     const { data: rawSignalTypes, error: stError } = await supabase
       .from('signals')
       .select('signal_type')
-      .gte('observed_at', new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString())
+      .gte('observed_at', lookbackStartIso)
       .not('asset_id', 'is', null);
 
     if (stError) throw stError;
@@ -114,7 +129,7 @@ Deno.serve(async (req) => {
           .from('signals')
           .select('asset_id, observed_at, magnitude, direction, signal_type')
           .or(signalFilter)
-          .gte('observed_at', new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString())
+          .gte('observed_at', lookbackStartIso)
           .not('asset_id', 'is', null)
           .order('observed_at', { ascending: true })
           .range(signalOffset, signalOffset + SIGNAL_PAGE_SIZE - 1);
@@ -135,6 +150,25 @@ Deno.serve(async (req) => {
 
       // Get unique asset_ids
       const assetIds = [...new Set(allSignals.map(s => s.asset_id))];
+
+      // ======================================================================
+      // HARD FAILURE GUARD: Exclude orphaned asset_ids (signals.asset_id not in assets)
+      // This prevents junk signals from contaminating alpha coverage.
+      // ======================================================================
+      const existingAssetIds = new Set<string>();
+      const ASSET_ID_BATCH_SIZE = 200;
+      for (let i = 0; i < assetIds.length; i += ASSET_ID_BATCH_SIZE) {
+        const batch = assetIds.slice(i, i + ASSET_ID_BATCH_SIZE);
+        const { data: assetRows, error: assetErr } = await supabase
+          .from('assets')
+          .select('id')
+          .in('id', batch);
+        if (assetErr) {
+          console.warn(`[ALPHA] Failed to validate assets for ${canonicalType}: ${assetErr.message}`);
+          break;
+        }
+        for (const a of assetRows || []) existingAssetIds.add(a.id);
+      }
       
       // Build signals grouped by asset_id and date
       const signalsByAssetDate = new Map<string, { 
@@ -143,8 +177,14 @@ Deno.serve(async (req) => {
         magnitude: number; 
         direction: string;
       }>();
+
+      let orphanSignals = 0;
       
       for (const s of allSignals) {
+        if (!existingAssetIds.has(s.asset_id)) {
+          orphanSignals++;
+          continue;
+        }
         const dateStr = new Date(s.observed_at).toISOString().split('T')[0];
         const key = `${s.asset_id}_${dateStr}`;
         
@@ -173,8 +213,10 @@ Deno.serve(async (req) => {
       const PRICE_BATCH_SIZE = 50; // Small batches to avoid URL length issues
       
       let priceFetchFailed = false;
-      for (let i = 0; i < assetIds.length && i < 500; i += PRICE_BATCH_SIZE) {
-        const assetIdBatch = assetIds.slice(i, i + PRICE_BATCH_SIZE);
+      const assetIdsFiltered = [...new Set([...signalsByAssetDate.values()].map(s => s.assetId))];
+
+      for (let i = 0; i < assetIdsFiltered.length; i += PRICE_BATCH_SIZE) {
+        const assetIdBatch = assetIdsFiltered.slice(i, i + PRICE_BATCH_SIZE);
         
         const { data: prices, error: priceError } = await supabase
           .from('prices')
@@ -209,6 +251,12 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // Precompute sorted price dates per asset once (performance + consistency)
+      const sortedDatesByAsset = new Map<string, string[]>();
+      for (const [assetId, m] of priceLookup) {
+        sortedDatesByAsset.set(assetId, [...m.keys()].sort());
+      }
+
       // Calculate forward returns for each horizon
       const returns1d: number[] = [];
       const returns3d: number[] = [];
@@ -226,7 +274,7 @@ Deno.serve(async (req) => {
         // ====================================================================
         
         // Get all dates for this asset sorted chronologically
-        const sortedDates = [...assetPrices.keys()].sort();
+        const sortedDates = sortedDatesByAsset.get(signal.assetId) || [];
         if (sortedDates.length === 0) continue;
         
         // Find p0: first price row with date >= signal.date
@@ -293,6 +341,10 @@ Deno.serve(async (req) => {
         priceMatches: priceMatchCount, 
         returns: returns1d.length 
       });
+
+      if (orphanSignals > 0) {
+        console.log(`[ALPHA][${canonicalType}] Skipped ${orphanSignals} orphan signals (asset_id not found in assets)`);
+      }
 
       // ====================================================================
       // Calculate stats with SHRINKAGE toward zero for small samples
@@ -370,6 +422,19 @@ Deno.serve(async (req) => {
     console.log('Top 10 signal types by volume:');
     for (const d of diagnostics.slice(0, 10)) {
       console.log(`  ${d.type}: ${d.signals} signals, ${d.priceMatches} price matches, ${d.returns} returns`);
+    }
+
+    // Highlight types with price matches but 0 returns (usually p1 selection/range issues)
+    const zeroReturnTypes = diagnostics
+      .filter(d => d.priceMatches > 0 && d.returns === 0)
+      .sort((a, b) => b.priceMatches - a.priceMatches)
+      .slice(0, 20);
+
+    if (zeroReturnTypes.length > 0) {
+      console.warn('[ALPHA] Types with priceMatches>0 but returns=0 (top 20):');
+      for (const d of zeroReturnTypes) {
+        console.warn(`  ${d.type}: priceMatches=${d.priceMatches}, signals=${d.signals}`);
+      }
     }
 
     // Upsert all alphas
