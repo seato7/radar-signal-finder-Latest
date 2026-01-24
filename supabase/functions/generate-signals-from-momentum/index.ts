@@ -4,7 +4,7 @@ import { logHeartbeat } from "../_shared/heartbeat.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
 };
 
 const CHUNK_SIZE = 1000; // Assets per chunk
@@ -17,6 +17,21 @@ const LIMITED_DATA_THRESHOLD = 6; // Below this = limited_data suffix
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // ========================================================================
+  // CRON SECRET ENFORCEMENT
+  // If CRON_SHARED_SECRET is set, require x-cron-secret header to match
+  // ========================================================================
+  const expectedSecret = Deno.env.get('CRON_SHARED_SECRET');
+  const providedSecret = req.headers.get('x-cron-secret');
+  
+  if (expectedSecret && providedSecret !== expectedSecret) {
+    console.warn('[SIGNAL-GEN-MOMENTUM] Unauthorized: missing or invalid x-cron-secret');
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   const startTime = Date.now();
