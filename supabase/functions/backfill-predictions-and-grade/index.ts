@@ -11,6 +11,8 @@ const corsHeaders = {
 const TOP_N_VALUES = [20, 50, 100];
 const MIN_PRICE_USD = 1.00;
 const MAX_RETURN_WINSORIZE = 0.20;
+const NEUTRAL_ALPHA_FALLBACK = 0.002; // 0.2% for uncalibrated signals
+const HALF_LIFE_DEFAULT = 14;
 
 // Half-life by signal category (same as production scoring)
 const HALF_LIFE_BY_CATEGORY: Record<string, number> = {
@@ -26,33 +28,74 @@ const HALF_LIFE_BY_CATEGORY: Record<string, number> = {
   RiskFlags: 7,
 };
 
-// Signal type to component mapping (subset for key signals)
+// Signal type to component mapping
 const SIGNAL_TYPE_TO_COMPONENT: Record<string, string> = {
   'filing_13f_new': 'BigMoneyConfirm',
   'filing_13f_increase': 'BigMoneyConfirm',
+  'filing_13f_decrease': 'BigMoneyConfirm',
   '13f_new_position': 'BigMoneyConfirm',
+  '13f_increase': 'BigMoneyConfirm',
+  '13f_decrease': 'BigMoneyConfirm',
   'smart_money': 'BigMoneyConfirm',
+  'smart_money_flow': 'BigMoneyConfirm',
   'institutional_buying': 'BigMoneyConfirm',
+  'institutional_selling': 'BigMoneyConfirm',
   'dark_pool_activity': 'FlowPressure',
+  'darkpool_block': 'FlowPressure',
   'flow_pressure_etf': 'FlowPressure',
+  'flow_pressure': 'FlowPressure',
   'etf_inflow': 'FlowPressure',
+  'etf_outflow': 'FlowPressure',
   'insider_buy': 'InsiderPoliticianConfirm',
   'insider_sell': 'InsiderPoliticianConfirm',
   'form4_buy': 'InsiderPoliticianConfirm',
+  'form4_sell': 'InsiderPoliticianConfirm',
   'politician_buy': 'InsiderPoliticianConfirm',
+  'politician_sell': 'InsiderPoliticianConfirm',
   'technical_breakout': 'TechEdge',
+  'technical_breakdown': 'TechEdge',
   'pattern_detected': 'TechEdge',
   'momentum_5d_bullish': 'TechEdge',
   'momentum_5d_bearish': 'TechEdge',
   'momentum_5d_strong_bullish': 'TechEdge',
+  'momentum_5d_strong_bearish': 'TechEdge',
   'momentum_20d_bullish': 'TechEdge',
+  'momentum_20d_bearish': 'TechEdge',
   'unusual_options': 'TechEdge',
+  'options_sweep': 'TechEdge',
   'news_mention': 'Attention',
   'news_sentiment': 'Attention',
   'sentiment_bullish': 'Attention',
+  'sentiment_bearish': 'Attention',
+  'breaking_news': 'Attention',
   'cot_positioning': 'MacroEconomic',
+  'cot_bullish': 'MacroEconomic',
+  'cot_bearish': 'MacroEconomic',
+  'economic_indicator': 'MacroEconomic',
   'short_interest': 'RiskFlags',
   'short_interest_high': 'RiskFlags',
+  'short_squeeze': 'RiskFlags',
+  'earnings_surprise': 'EarningsMomentum',
+  'earnings_beat': 'EarningsMomentum',
+  'earnings_miss': 'EarningsMomentum',
+  'capex_hiring': 'CapexMomentum',
+  'patent_filed': 'CapexMomentum',
+  'policy_keyword': 'PolicyMomentum',
+  'policy_mention': 'PolicyMomentum',
+};
+
+// V0 legacy weights for baseline comparison
+const V0_WEIGHTS: Record<string, number> = {
+  BigMoneyConfirm: 1.5,
+  FlowPressure: 1.4,
+  InsiderPoliticianConfirm: 1.2,
+  CapexMomentum: 1.0,
+  PolicyMomentum: 0.8,
+  TechEdge: 0.7,
+  Attention: 0.6,
+  MacroEconomic: 0.5,
+  EarningsMomentum: 0.6,
+  RiskFlags: -2.0,
 };
 
 // ============================================================================
@@ -127,6 +170,126 @@ function computeObjectiveScore(hitRate: number, meanReturn: number, p5: number, 
   return 0.65 * hitRate + 0.35 * meanReturn * 100 - 0.50 * tailPenalty - 0.25 * volPenalty;
 }
 
+// Seeded pseudo-random for deterministic random baseline
+function seededRandom(seed: number): () => number {
+  return function() {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+}
+
+// ============================================================================
+// SCORING FUNCTIONS
+// ============================================================================
+
+interface SignalData {
+  asset_id: string;
+  signal_type: string;
+  magnitude: number | null;
+  direction: string | null;
+  observed_at: string;
+}
+
+interface AlphaRecord {
+  alpha: number;
+  sd: number;
+}
+
+// V1_ALPHA: profitability-calibrated scoring
+function computeV1AlphaScore(
+  signals: SignalData[],
+  asOfDate: Date,
+  alphaMap: Map<string, AlphaRecord>
+): { expected_return: number; confidence_score: number } {
+  let expectedReturn = 0;
+  let alphaStdPenalty = 0;
+  let pos = 0;
+  let neg = 0;
+
+  for (const s of signals) {
+    const signalType = String(s.signal_type);
+    const mag = Math.min(Number(s.magnitude ?? 1), 5);
+    const observedAt = new Date(s.observed_at);
+    const ageDays = (asOfDate.getTime() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
+
+    const component = SIGNAL_TYPE_TO_COMPONENT[signalType];
+    const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || HALF_LIFE_DEFAULT) : HALF_LIFE_DEFAULT;
+    const decay = expDecay(ageDays, halfLifeDays);
+
+    // Use calibrated alpha or neutral fallback
+    const alphaRec = alphaMap.get(signalType);
+    const alpha = alphaRec ? alphaRec.alpha : NEUTRAL_ALPHA_FALLBACK;
+    const dirMult = s.direction === 'up' ? 1 : (s.direction === 'down' ? -1 : 1);
+
+    const contrib = decay * mag * alpha * dirMult;
+    expectedReturn += contrib;
+
+    if (alphaRec && alphaRec.sd > 0) {
+      alphaStdPenalty += decay * Math.min(0.02, alphaRec.sd);
+    }
+
+    if (contrib > 0) pos += contrib;
+    if (contrib < 0) neg += Math.abs(contrib);
+  }
+
+  let disagreementPenalty = 0;
+  if (pos > 0 && neg > 0) {
+    const ratio = Math.min(pos, neg) / Math.max(pos, neg);
+    disagreementPenalty = ratio * 0.02;
+  }
+
+  const uncertainty = Math.max(0.005, alphaStdPenalty + disagreementPenalty);
+  const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
+
+  return { expected_return: expectedReturn, confidence_score: confScore };
+}
+
+// V0_WEIGHTS: legacy static weight scoring
+function computeV0WeightsScore(
+  signals: SignalData[],
+  asOfDate: Date
+): { expected_return: number; confidence_score: number } {
+  const componentScores: Record<string, number> = {};
+  for (const key of Object.keys(V0_WEIGHTS)) {
+    componentScores[key] = 0;
+  }
+
+  for (const s of signals) {
+    const signalType = String(s.signal_type);
+    const mag = Number(s.magnitude ?? 1);
+    const observedAt = new Date(s.observed_at);
+    const ageDays = (asOfDate.getTime() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
+    const decay = expDecay(ageDays, HALF_LIFE_DEFAULT);
+
+    const component = SIGNAL_TYPE_TO_COMPONENT[signalType];
+    if (component && componentScores[component] !== undefined) {
+      const dirMult = s.direction === 'up' ? 1 : (s.direction === 'down' ? -1 : 1);
+      componentScores[component] += mag * decay * dirMult;
+    }
+  }
+
+  // Compute weighted sum
+  let rawScore = 0;
+  let activeWeight = 0;
+  for (const [comp, val] of Object.entries(componentScores)) {
+    const weight = V0_WEIGHTS[comp] || 0;
+    // Normalize using log scale
+    const normalized = val > 0 ? Math.log10(1 + val) * 30 : (val < 0 ? -Math.log10(1 + Math.abs(val)) * 30 : 0);
+    const capped = Math.max(-100, Math.min(100, normalized));
+    rawScore += weight * capped;
+    if (Math.abs(capped) > 0.1 && weight > 0) {
+      activeWeight += weight * 100;
+    }
+  }
+
+  // Convert to pseudo expected_return (-0.03 to +0.03)
+  const normalizedScore = activeWeight > 0 ? rawScore / activeWeight : 0;
+  const expectedReturn = (normalizedScore / 100) * 0.03;
+  const confScore = Math.abs(normalizedScore) / 50;
+
+  return { expected_return: expectedReturn, confidence_score: confScore };
+}
+
 // ============================================================================
 // MAIN HANDLER
 // ============================================================================
@@ -148,7 +311,7 @@ Deno.serve(async (req) => {
       start_date?: string; 
       end_date?: string; 
       top_n_list?: number[];
-      model_version?: string;
+      model_versions?: string[];
       batch_size?: number;
     } = {};
     
@@ -158,19 +321,19 @@ Deno.serve(async (req) => {
       // No body provided
     }
 
-    const modelVersion = body.model_version || 'v1_alpha';
+    const modelVersions = body.model_versions || ['v1_alpha', 'v0_weights', 'random'];
     const topNList = body.top_n_list || TOP_N_VALUES;
-    const batchSize = body.batch_size || 5; // Days per batch to avoid timeout
+    const batchSize = body.batch_size || 3; // Days per batch
 
-    // Default: last 30 days (adjustable)
+    // Default: last 30 days (but end_date must be <= yesterday so we have D+1 for grading)
     const today = new Date();
-    const defaultEnd = new Date(today.getTime() - 24 * 60 * 60 * 1000); // Yesterday
-    const defaultStart = new Date(defaultEnd.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const defaultStart = new Date(yesterday.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const startDate = body.start_date || defaultStart.toISOString().slice(0, 10);
-    const endDate = body.end_date || defaultEnd.toISOString().slice(0, 10);
+    const endDate = body.end_date || yesterday.toISOString().slice(0, 10);
 
-    console.log(`Backfilling predictions from ${startDate} to ${endDate} for model ${modelVersion}...`);
+    console.log(`Backfilling predictions from ${startDate} to ${endDate} for models: ${modelVersions.join(', ')}...`);
 
     // Generate date range
     const dates: string[] = [];
@@ -184,30 +347,13 @@ Deno.serve(async (req) => {
 
     console.log(`Processing ${dates.length} dates in batches of ${batchSize}...`);
 
-    // Check which dates already have predictions
-    const { data: existingDates } = await supabase
-      .from('asset_predictions')
-      .select('snapshot_date')
-      .eq('model_version', modelVersion)
-      .in('snapshot_date', dates);
-
-    const existingSet = new Set((existingDates || []).map(d => d.snapshot_date));
-    const datesToProcess = dates.filter(d => !existingSet.has(d));
-
-    console.log(`${datesToProcess.length} dates need processing (${existingSet.size} already exist)`);
-
-    if (datesToProcess.length === 0) {
-      // Just run grading for existing predictions
-      console.log('All dates exist, running grading only...');
-    }
-
-    // Fetch signal_type_alpha for scoring
+    // Fetch signal_type_alpha for v1_alpha scoring
     const { data: alphaRows } = await supabase
       .from('signal_type_alpha')
-      .select('signal_type, avg_forward_return, std_forward_return, sample_size')
+      .select('signal_type, avg_forward_return, std_forward_return')
       .eq('horizon', '1d');
 
-    const alphaMap = new Map<string, { alpha: number; sd: number }>();
+    const alphaMap = new Map<string, AlphaRecord>();
     for (const r of alphaRows || []) {
       alphaMap.set(r.signal_type, {
         alpha: Number(r.avg_forward_return ?? 0),
@@ -235,321 +381,324 @@ Deno.serve(async (req) => {
     let totalGraded = 0;
     let daysProcessed = 0;
     const errors: string[] = [];
+    const diagnosticsToInsert: { snapshot_date: string; excluded_reason: string; count: number; sample_tickers: string[] }[] = [];
 
-    // Process in batches
-    const batches: string[][] = [];
-    for (let i = 0; i < datesToProcess.length; i += batchSize) {
-      batches.push(datesToProcess.slice(i, i + batchSize));
-    }
+    // Process each date
+    for (const dateStr of dates) {
+      try {
+        const targetDate = new Date(dateStr);
+        const nextDateStr = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    for (const batch of batches) {
-      console.log(`Processing batch: ${batch[0]} to ${batch[batch.length - 1]}`);
+        // ======================================================================
+        // STEP 1: BUILD ELIGIBLE UNIVERSE FOR DATE D
+        // Requirements:
+        // - Has price close on D
+        // - Has price close on D+1 (for grading)
+        // - Price >= MIN_PRICE_USD
+        // ======================================================================
+        
+        // Fetch prices for D and D+1
+        const { data: pricesD } = await supabase
+          .from('prices')
+          .select('ticker, close')
+          .eq('date', dateStr);
 
-      for (const dateStr of batch) {
-        try {
-          // Get signals observed on or before this date (within 30-day lookback)
-          const lookbackStart = new Date(new Date(dateStr).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-          const dateEnd = `${dateStr}T23:59:59Z`;
+        const { data: pricesD1 } = await supabase
+          .from('prices')
+          .select('ticker, close')
+          .eq('date', nextDateStr);
 
-          const { data: signals } = await supabase
-            .from('signals')
-            .select('asset_id, signal_type, magnitude, direction, observed_at')
-            .gte('observed_at', lookbackStart)
-            .lte('observed_at', dateEnd)
-            .not('asset_id', 'is', null);
+        const priceMapD = new Map<string, number>();
+        const priceMapD1 = new Map<string, number>();
+        
+        for (const p of pricesD || []) priceMapD.set(p.ticker, Number(p.close));
+        for (const p of pricesD1 || []) priceMapD1.set(p.ticker, Number(p.close));
 
-          if (!signals || signals.length === 0) {
-            console.log(`No signals for ${dateStr}, skipping...`);
+        // Determine eligible assets
+        const eligibleAssets: { id: string; ticker: string; priceD: number; priceD1: number }[] = [];
+        const excluded = {
+          no_price_d: { count: 0, samples: [] as string[] },
+          no_price_d1: { count: 0, samples: [] as string[] },
+          price_too_low: { count: 0, samples: [] as string[] },
+        };
+
+        for (const [id, asset] of assetMap) {
+          const priceD = priceMapD.get(asset.ticker);
+          const priceD1 = priceMapD1.get(asset.ticker);
+
+          if (priceD === undefined) {
+            excluded.no_price_d.count++;
+            if (excluded.no_price_d.samples.length < 10) excluded.no_price_d.samples.push(asset.ticker);
             continue;
           }
 
-          // Get prices around this date for filtering and grading
-          // Look for prices within +-3 days to handle weekends/holidays
-          const dateRangeStart = new Date(new Date(dateStr).getTime() - 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-          const dateRangeEnd = new Date(new Date(dateStr).getTime() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-          
-          const { data: prices } = await supabase
-            .from('prices')
-            .select('ticker, close, date')
-            .gte('date', dateRangeStart)
-            .lte('date', dateRangeEnd);
-
-          // Build price map with most recent price on or before target date
-          const priceMap = new Map<string, number>();
-          const sortedPrices = (prices || []).sort((a, b) => 
-            new Date(b.date).getTime() - new Date(a.date).getTime()
-          );
-          
-          for (const p of sortedPrices) {
-            if (new Date(p.date) <= new Date(dateStr) && !priceMap.has(p.ticker)) {
-              priceMap.set(p.ticker, Number(p.close));
-            }
+          if (priceD1 === undefined) {
+            excluded.no_price_d1.count++;
+            if (excluded.no_price_d1.samples.length < 10) excluded.no_price_d1.samples.push(asset.ticker);
+            continue;
           }
 
-          // Group signals by asset
-          const signalsByAsset = new Map<string, any[]>();
-          for (const s of signals) {
-            if (!signalsByAsset.has(s.asset_id)) signalsByAsset.set(s.asset_id, []);
-            signalsByAsset.get(s.asset_id)!.push(s);
+          if (priceD < MIN_PRICE_USD) {
+            excluded.price_too_low.count++;
+            if (excluded.price_too_low.samples.length < 10) excluded.price_too_low.samples.push(asset.ticker);
+            continue;
           }
 
-          // Score each asset as-of this date
+          eligibleAssets.push({ id, ticker: asset.ticker, priceD, priceD1 });
+        }
+
+        // Log diagnostics
+        for (const [reason, data] of Object.entries(excluded)) {
+          if (data.count > 0) {
+            diagnosticsToInsert.push({
+              snapshot_date: dateStr,
+              excluded_reason: reason,
+              count: data.count,
+              sample_tickers: data.samples,
+            });
+          }
+        }
+
+        if (eligibleAssets.length === 0) {
+          console.log(`No eligible assets for ${dateStr}, skipping...`);
+          continue;
+        }
+
+        console.log(`Date ${dateStr}: ${eligibleAssets.length} eligible assets`);
+
+        // ======================================================================
+        // STEP 2: FETCH SIGNALS OBSERVED <= D (30-day window)
+        // ======================================================================
+        const lookbackStart = new Date(targetDate.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const dateEnd = `${dateStr}T23:59:59.999Z`;
+
+        const eligibleAssetIds = eligibleAssets.map(a => a.id);
+        
+        // Fetch signals in chunks to avoid URL length limits
+        const allSignals: SignalData[] = [];
+        const chunkSize = 200;
+        
+        for (let i = 0; i < eligibleAssetIds.length; i += chunkSize) {
+          const chunk = eligibleAssetIds.slice(i, i + chunkSize);
+          const { data: signals } = await supabase
+            .from('signals')
+            .select('asset_id, signal_type, magnitude, direction, observed_at')
+            .in('asset_id', chunk)
+            .gte('observed_at', lookbackStart)
+            .lte('observed_at', dateEnd);
+          
+          if (signals) allSignals.push(...signals);
+        }
+
+        // Group signals by asset_id
+        const signalsByAsset = new Map<string, SignalData[]>();
+        for (const s of allSignals) {
+          if (!signalsByAsset.has(s.asset_id)) signalsByAsset.set(s.asset_id, []);
+          signalsByAsset.get(s.asset_id)!.push(s);
+        }
+
+        // ======================================================================
+        // STEP 3: COMPUTE SCORES FOR EACH MODEL VERSION
+        // ======================================================================
+        for (const modelVersion of modelVersions) {
+          // Check if predictions already exist for this date/model
+          const { data: existing } = await supabase
+            .from('asset_predictions')
+            .select('id')
+            .eq('snapshot_date', dateStr)
+            .eq('model_version', modelVersion)
+            .limit(1);
+
+          if (existing && existing.length > 0) {
+            console.log(`Skipping ${dateStr}/${modelVersion} - already exists`);
+            continue;
+          }
+
+          // Score each eligible asset
           const assetScores: {
             asset_id: string;
             ticker: string;
             expected_return: number;
             confidence_score: number;
-            confidence_label: string;
+            priceD: number;
+            priceD1: number;
           }[] = [];
 
-          const targetDate = new Date(dateStr);
-
-          for (const [assetId, assetSignals] of signalsByAsset) {
-            const asset = assetMap.get(assetId);
-            if (!asset) continue;
-
-            // Apply price filter
-            const price = priceMap.get(asset.ticker);
-            if (price !== undefined && price < MIN_PRICE_USD) continue;
-
-            let expectedReturn = 0;
-            let alphaStdPenalty = 0;
-            let pos = 0;
-            let neg = 0;
-
-            for (const s of assetSignals) {
-              const signalType = String(s.signal_type);
-              const mag = Math.min(Number(s.magnitude ?? 1), 5);
-              const observedAt = new Date(s.observed_at);
-              const ageDays = (targetDate.getTime() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
-
-              const component = SIGNAL_TYPE_TO_COMPONENT[signalType];
-              const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || 14) : 14;
-              const decay = expDecay(ageDays, halfLifeDays);
-
-              const alphaRec = alphaMap.get(signalType);
-              const alpha = alphaRec ? alphaRec.alpha : 0;
-              const dirMult = s.direction === 'up' ? 1 : (s.direction === 'down' ? -1 : 1);
-
-              const contrib = decay * mag * alpha * dirMult;
-              expectedReturn += contrib;
-
-              if (alphaRec && alphaRec.sd > 0) {
-                alphaStdPenalty += decay * Math.min(0.02, alphaRec.sd);
+          if (modelVersion === 'random') {
+            // Random baseline: seeded by date for determinism
+            const dateSeed = parseInt(dateStr.replace(/-/g, ''), 10);
+            const rng = seededRandom(dateSeed);
+            
+            for (const asset of eligibleAssets) {
+              assetScores.push({
+                asset_id: asset.id,
+                ticker: asset.ticker,
+                expected_return: rng() - 0.5, // Random -0.5 to +0.5
+                confidence_score: rng(),
+                priceD: asset.priceD,
+                priceD1: asset.priceD1,
+              });
+            }
+          } else {
+            // v1_alpha or v0_weights
+            for (const asset of eligibleAssets) {
+              const signals = signalsByAsset.get(asset.id) || [];
+              
+              let score: { expected_return: number; confidence_score: number };
+              
+              if (modelVersion === 'v1_alpha') {
+                score = computeV1AlphaScore(signals, targetDate, alphaMap);
+              } else {
+                score = computeV0WeightsScore(signals, targetDate);
               }
 
-              if (contrib > 0) pos += contrib;
-              if (contrib < 0) neg += Math.abs(contrib);
+              assetScores.push({
+                asset_id: asset.id,
+                ticker: asset.ticker,
+                expected_return: score.expected_return,
+                confidence_score: score.confidence_score,
+                priceD: asset.priceD,
+                priceD1: asset.priceD1,
+              });
             }
-
-            // Calculate disagreement penalty
-            let disagreementPenalty = 0;
-            if (pos > 0 && neg > 0) {
-              const ratio = Math.min(pos, neg) / Math.max(pos, neg);
-              disagreementPenalty = ratio * 0.02;
-            }
-
-            const uncertainty = Math.max(0.005, alphaStdPenalty + disagreementPenalty);
-            const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
-
-            assetScores.push({
-              asset_id: assetId,
-              ticker: asset.ticker,
-              expected_return: expectedReturn,
-              confidence_score: confScore,
-              confidence_label: confidenceLabel(confScore),
-            });
           }
 
-          // Sort by expected_return descending
-          assetScores.sort((a, b) => b.expected_return - a.expected_return);
-
-          // Create predictions for each top_n
-          const predictions: {
-            snapshot_date: string;
-            asset_id: string;
-            ticker: string;
-            expected_return: number;
-            confidence_score: number;
-            confidence_label: string;
-            rank: number;
-            model_version: string;
-            feature_snapshot: object;
-            top_n: number;
-          }[] = [];
+          // ======================================================================
+          // STEP 4: RANK AND SELECT TOP N (DO NOT FILTER BY expected_return > 0)
+          // ======================================================================
+          // Sort by expected_return DESC, then confidence_score DESC
+          assetScores.sort((a, b) => {
+            if (b.expected_return !== a.expected_return) {
+              return b.expected_return - a.expected_return;
+            }
+            return b.confidence_score - a.confidence_score;
+          });
 
           const maxN = Math.max(...topNList);
-          const topAssets = assetScores.filter(a => a.expected_return > 0).slice(0, maxN);
+          const universeSize = assetScores.length;
 
-          for (let i = 0; i < topAssets.length; i++) {
-            const a = topAssets[i];
-            const rank = i + 1;
+          // For each top_n, insert exactly N predictions (or all if universe < N)
+          const predictions: any[] = [];
+          const gradingResults: any[] = [];
+
+          for (const topN of topNList) {
+            const actualN = Math.min(topN, universeSize);
             
-            // Determine which top_n bucket this belongs to
-            let topN = maxN;
-            for (const n of topNList.sort((a, b) => a - b)) {
-              if (rank <= n) {
-                topN = n;
-                break;
-              }
-            }
+            for (let i = 0; i < actualN; i++) {
+              const a = assetScores[i];
+              const rank = i + 1;
 
-            predictions.push({
-              snapshot_date: dateStr,
-              asset_id: a.asset_id,
-              ticker: a.ticker,
-              expected_return: a.expected_return,
-              confidence_score: a.confidence_score,
-              confidence_label: a.confidence_label,
-              rank,
-              model_version: modelVersion,
-              feature_snapshot: {
+              const predId = crypto.randomUUID();
+              
+              predictions.push({
+                id: predId,
+                snapshot_date: dateStr,
+                asset_id: a.asset_id,
+                ticker: a.ticker,
                 expected_return: a.expected_return,
                 confidence_score: a.confidence_score,
-                signal_count: signalsByAsset.get(a.asset_id)?.length || 0,
-              },
-              top_n: topN,
-            });
+                confidence_label: confidenceLabel(a.confidence_score),
+                rank,
+                model_version: modelVersion,
+                top_n: topN,
+                feature_snapshot: {
+                  expected_return: a.expected_return,
+                  confidence_score: a.confidence_score,
+                  signal_count: signalsByAsset.get(a.asset_id)?.length || 0,
+                  universe_size: universeSize,
+                },
+              });
+
+              // Grade immediately using D and D+1 prices
+              const realizedReturn = winsorize((a.priceD1 / a.priceD) - 1, MAX_RETURN_WINSORIZE);
+              const expectedDir = a.expected_return > 0 ? 1 : (a.expected_return < 0 ? -1 : 0);
+              const realizedDir = realizedReturn > 0 ? 1 : (realizedReturn < 0 ? -1 : 0);
+              const hit = expectedDir !== 0 && expectedDir === realizedDir;
+
+              gradingResults.push({
+                prediction_id: predId,
+                horizon: '1d',
+                realized_return: realizedReturn,
+                hit,
+              });
+            }
           }
 
           // Insert predictions
           if (predictions.length > 0) {
-            const { error: insErr } = await supabase.from('asset_predictions').insert(predictions);
-            if (insErr) {
-              console.error(`Error inserting predictions for ${dateStr}:`, insErr.message);
-              errors.push(`${dateStr}: ${insErr.message}`);
-            } else {
-              totalPredictions += predictions.length;
+            // Insert in chunks
+            for (let i = 0; i < predictions.length; i += 500) {
+              const chunk = predictions.slice(i, i + 500);
+              const { error: insErr } = await supabase.from('asset_predictions').insert(chunk);
+              if (insErr) {
+                console.error(`Error inserting predictions for ${dateStr}/${modelVersion}:`, insErr.message);
+                errors.push(`${dateStr}/${modelVersion}: ${insErr.message}`);
+              } else {
+                totalPredictions += chunk.length;
+              }
+            }
+
+            // Insert grading results
+            for (let i = 0; i < gradingResults.length; i += 500) {
+              const chunk = gradingResults.slice(i, i + 500);
+              const { error: gradeErr } = await supabase.from('asset_prediction_results').insert(chunk);
+              if (gradeErr) {
+                console.error(`Error grading ${dateStr}/${modelVersion}:`, gradeErr.message);
+              } else {
+                totalGraded += chunk.length;
+              }
             }
           }
-
-          daysProcessed++;
-        } catch (e) {
-          console.error(`Error processing ${dateStr}:`, e);
-          errors.push(`${dateStr}: ${String(e)}`);
         }
+
+        daysProcessed++;
+      } catch (e) {
+        console.error(`Error processing ${dateStr}:`, e);
+        errors.push(`${dateStr}: ${String(e)}`);
       }
     }
 
-    console.log(`Prediction backfill complete. Now grading...`);
-
-    // Grade all predictions that don't have results
-    const { data: ungradedPreds } = await supabase
-      .from('asset_predictions')
-      .select(`
-        id,
-        snapshot_date,
-        ticker,
-        expected_return,
-        rank,
-        top_n,
-        asset_prediction_results!left(id)
-      `)
-      .eq('model_version', modelVersion)
-      .is('asset_prediction_results.id', null);
-
-    console.log(`Found ${ungradedPreds?.length || 0} ungraded predictions to grade`);
-
-    if (ungradedPreds && ungradedPreds.length > 0) {
-      // Group by snapshot_date
-      const predsByDate = new Map<string, any[]>();
-      for (const p of ungradedPreds) {
-        if (!predsByDate.has(p.snapshot_date)) predsByDate.set(p.snapshot_date, []);
-        predsByDate.get(p.snapshot_date)!.push(p);
-      }
-
-      for (const [snapDate, preds] of predsByDate) {
-        // Get next day date
-        const nextDate = new Date(new Date(snapDate).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        
-        // Get tickers
-        const tickers = [...new Set(preds.map(p => p.ticker))];
-
-        // Fetch prices for snapshot date and next day
-        const { data: pricesT0 } = await supabase
-          .from('prices')
-          .select('ticker, close')
-          .in('ticker', tickers)
-          .eq('date', snapDate);
-
-        const { data: pricesT1 } = await supabase
-          .from('prices')
-          .select('ticker, close')
-          .in('ticker', tickers)
-          .eq('date', nextDate);
-
-        const priceT0Map = new Map<string, number>();
-        const priceT1Map = new Map<string, number>();
-        for (const p of pricesT0 || []) priceT0Map.set(p.ticker, p.close);
-        for (const p of pricesT1 || []) priceT1Map.set(p.ticker, p.close);
-
-        const results: {
-          prediction_id: string;
-          horizon: string;
-          realized_return: number;
-          hit: boolean;
-        }[] = [];
-
-        for (const pred of preds) {
-          const c0 = priceT0Map.get(pred.ticker);
-          const c1 = priceT1Map.get(pred.ticker);
-
-          if (!c0 || !c1 || c0 === 0) continue;
-
-          let realizedReturn = (c1 / c0) - 1;
-          realizedReturn = winsorize(realizedReturn, MAX_RETURN_WINSORIZE);
-
-          const expectedDir = pred.expected_return > 0 ? 1 : -1;
-          const realizedDir = realizedReturn > 0 ? 1 : -1;
-          const hit = expectedDir === realizedDir;
-
-          results.push({
-            prediction_id: pred.id,
-            horizon: '1d',
-            realized_return: realizedReturn,
-            hit,
-          });
-        }
-
-        if (results.length > 0) {
-          const { error: gradeErr } = await supabase.from('asset_prediction_results').insert(results);
-          if (gradeErr) {
-            console.error(`Error grading ${snapDate}:`, gradeErr.message);
-          } else {
-            totalGraded += results.length;
-          }
-        }
+    // Insert diagnostics
+    if (diagnosticsToInsert.length > 0) {
+      for (const diag of diagnosticsToInsert) {
+        await supabase.from('backtest_diagnostics').upsert(diag, {
+          onConflict: 'snapshot_date,excluded_reason',
+        });
       }
     }
 
-    console.log(`Grading complete. Computing daily metrics...`);
+    console.log(`Prediction backfill complete. Computing daily metrics...`);
 
-    // Compute model_daily_metrics
-    const { data: allResults } = await supabase
-      .from('asset_prediction_results')
-      .select(`
-        id,
-        realized_return,
-        hit,
-        asset_predictions!inner(
-          snapshot_date,
-          rank,
-          model_version,
-          top_n
-        )
-      `)
-      .eq('horizon', '1d')
-      .eq('asset_predictions.model_version', modelVersion);
+    // ======================================================================
+    // STEP 5: COMPUTE MODEL_DAILY_METRICS FOR EACH MODEL/DATE/TOP_N
+    // ======================================================================
+    for (const modelVersion of modelVersions) {
+      const { data: allResults } = await supabase
+        .from('asset_prediction_results')
+        .select(`
+          id,
+          realized_return,
+          hit,
+          asset_predictions!inner(
+            snapshot_date,
+            rank,
+            model_version,
+            top_n
+          )
+        `)
+        .eq('horizon', '1d')
+        .eq('asset_predictions.model_version', modelVersion);
 
-    // Group by date and top_n
-    const metricGroups = new Map<string, { returns: number[]; hits: number; total: number }>();
+      // Group by date and top_n
+      const metricGroups = new Map<string, { returns: number[]; hits: number; total: number }>();
 
-    for (const r of allResults || []) {
-      const pred = r.asset_predictions as any;
-      const dateStr = pred.snapshot_date;
-      const rank = pred.rank || 1;
+      for (const r of allResults || []) {
+        const pred = r.asset_predictions as any;
+        const dateStr = pred.snapshot_date;
+        const rank = pred.rank || 1;
+        const topN = pred.top_n || 100;
 
-      for (const topN of topNList) {
+        // Only include if rank <= top_n
         if (rank <= topN) {
           const key = `${dateStr}|${topN}`;
           if (!metricGroups.has(key)) {
@@ -561,46 +710,42 @@ Deno.serve(async (req) => {
           group.total++;
         }
       }
-    }
 
-    console.log(`Computing metrics for ${metricGroups.size} date/topN combinations...`);
+      // Upsert metrics
+      for (const [key, group] of metricGroups) {
+        const [dateStr, topNStr] = key.split('|');
+        const topN = parseInt(topNStr);
+        const { returns, hits, total } = group;
 
-    let metricsInserted = 0;
-    for (const [key, group] of metricGroups) {
-      const [dateStr, topNStr] = key.split('|');
-      const topN = parseInt(topNStr);
-      const { returns, hits, total } = group;
+        if (returns.length === 0) continue;
 
-      if (returns.length === 0) continue;
+        const hitRate = total > 0 ? hits / total : 0;
+        const meanRet = mean(returns);
+        const medianRet = median(returns);
+        const vol = std(returns);
+        const p5 = percentile(returns, 5);
+        const maxDD = computeMaxDrawdown(returns);
+        const cumRet = returns.reduce((acc, r) => acc * (1 + r), 1) - 1;
+        const objScore = computeObjectiveScore(hitRate, meanRet, p5, vol);
 
-      const hitRate = total > 0 ? hits / total : 0;
-      const meanRet = mean(returns);
-      const medianRet = median(returns);
-      const vol = std(returns);
-      const p5 = percentile(returns, 5);
-      const maxDD = computeMaxDrawdown(returns);
-      const cumRet = returns.reduce((acc, r) => acc * (1 + r), 1) - 1;
-      const objScore = computeObjectiveScore(hitRate, meanRet, p5, vol);
-
-      const { error: metricErr } = await supabase
-        .from('model_daily_metrics')
-        .upsert({
-          model_version: modelVersion,
-          snapshot_date: dateStr,
-          top_n: topN,
-          hit_rate: hitRate,
-          mean_return: meanRet,
-          median_return: medianRet,
-          volatility: vol,
-          p5_return: p5,
-          max_drawdown: maxDD,
-          cumulative_return: cumRet,
-          objective_score: objScore,
-          predictions_count: total,
-          graded_count: returns.length,
-        }, { onConflict: 'model_version,snapshot_date,top_n' });
-
-      if (!metricErr) metricsInserted++;
+        await supabase
+          .from('model_daily_metrics')
+          .upsert({
+            model_version: modelVersion,
+            snapshot_date: dateStr,
+            top_n: topN,
+            hit_rate: hitRate,
+            mean_return: meanRet,
+            median_return: medianRet,
+            volatility: vol,
+            p5_return: p5,
+            max_drawdown: maxDD,
+            cumulative_return: cumRet,
+            objective_score: objScore,
+            predictions_count: total,
+            graded_count: returns.length,
+          }, { onConflict: 'model_version,snapshot_date,top_n' });
+      }
     }
 
     const duration = Date.now() - startTime;
@@ -609,16 +754,15 @@ Deno.serve(async (req) => {
     await supabase.from('function_status').insert({
       function_name: 'backfill-predictions-and-grade',
       status: 'success',
-      rows_inserted: totalPredictions + totalGraded + metricsInserted,
+      rows_inserted: totalPredictions + totalGraded,
       duration_ms: duration,
       metadata: {
         start_date: startDate,
         end_date: endDate,
-        model_version: modelVersion,
+        model_versions: modelVersions,
         days_processed: daysProcessed,
         predictions_created: totalPredictions,
         predictions_graded: totalGraded,
-        metrics_computed: metricsInserted,
         errors: errors.slice(0, 10),
       },
     });
@@ -630,11 +774,10 @@ Deno.serve(async (req) => {
         ok: true,
         start_date: startDate,
         end_date: endDate,
-        model_version: modelVersion,
+        model_versions: modelVersions,
         days_processed: daysProcessed,
         predictions_created: totalPredictions,
         predictions_graded: totalGraded,
-        metrics_computed: metricsInserted,
         duration_ms: duration,
         errors: errors.slice(0, 10),
       }),

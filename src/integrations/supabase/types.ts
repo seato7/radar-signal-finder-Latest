@@ -562,6 +562,27 @@ export type Database = {
         }
         Relationships: []
       }
+      backtest_diagnostics: {
+        Row: {
+          count: number
+          excluded_reason: string
+          sample_tickers: string[]
+          snapshot_date: string
+        }
+        Insert: {
+          count: number
+          excluded_reason: string
+          sample_tickers?: string[]
+          snapshot_date: string
+        }
+        Update: {
+          count?: number
+          excluded_reason?: string
+          sample_tickers?: string[]
+          snapshot_date?: string
+        }
+        Relationships: []
+      }
       bot_logs: {
         Row: {
           bot_id: string
