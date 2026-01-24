@@ -254,6 +254,14 @@ function scoreFromExpected(expectedReturn: number, confScore: number): number {
   return Math.max(15, Math.min(85, raw));
 }
 
+/**
+ * CRITICAL FIX: Canonicalize signal type by removing _limited_data suffix
+ * This collapses fragmented variants into their parent type for alpha lookup
+ */
+function canonicalSignalType(t: string): string {
+  return t.replace(/_limited_data$/, '');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -526,24 +534,33 @@ Deno.serve(async (req) => {
           let neg = 0;
           const scoreExplanation: any[] = [];
 
-          for (const s of assetSignals) {
-            const signalType = String(s.signal_type);
+        for (const s of assetSignals) {
+            const rawSignalType = String(s.signal_type);
+            // CRITICAL FIX: Canonicalize signal type for alpha lookup
+            const signalType = canonicalSignalType(rawSignalType);
             const mag = Number(s.magnitude ?? 1);
             const observedAt = new Date(s.observed_at);
             const ageDays = (Date.now() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
 
-            const component = SIGNAL_TYPE_TO_COMPONENT[signalType];
+            // Use raw type for component mapping, canonical for alpha lookup
+            const component = SIGNAL_TYPE_TO_COMPONENT[rawSignalType] || SIGNAL_TYPE_TO_COMPONENT[signalType];
             const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || 14) : 14;
             const decay = expDecay(ageDays, halfLifeDays);
 
+            // CRITICAL FIX: Use canonical signal type for alpha lookup
             const alphaRec = alphaMap.get(signalType);
             const alpha = alphaRec ? alphaRec.alpha : 0;
-            const dirMult = s.direction === 'up' ? 1 : (s.direction === 'down' ? -1 : 1);
-            const contrib = decay * Math.min(mag, 5) * alpha * dirMult;
+            
+            // CRITICAL FIX: DO NOT apply direction multiplier here!
+            // Alpha already includes direction adjustment from compute-signal-alpha
+            // Applying direction twice would flip bearish signals incorrectly
+            const contrib = decay * Math.min(mag, 5) * alpha;
             expectedReturn += contrib;
 
             if (alphaRec && alphaRec.sd > 0) {
-              alphaStdPenalty += decay * Math.min(0.02, alphaRec.sd);
+              // IMPROVED: Use variance aggregation instead of simple sum
+              const contribSd = decay * Math.min(mag, 5) * alphaRec.sd;
+              alphaStdPenalty += contribSd * contribSd; // Sum of variances
             }
 
             if (contrib > 0) pos += contrib;
@@ -567,7 +584,9 @@ Deno.serve(async (req) => {
             disagreementPenalty = ratio * 0.02;
           }
 
-          const uncertainty = Math.max(0.005, alphaStdPenalty + disagreementPenalty);
+          // IMPROVED: alphaStdPenalty is now sum of variances, so take sqrt for std dev
+          const aggregatedStd = Math.sqrt(alphaStdPenalty);
+          const uncertainty = Math.max(0.005, aggregatedStd + disagreementPenalty);
           const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
           const label = confidenceLabel(confScore);
           const finalScore = scoreFromExpected(expectedReturn, confScore);
