@@ -135,6 +135,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "advanced_technicals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       ai_research_reports: {
@@ -226,6 +233,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_research_reports_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -462,6 +476,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_predictions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -1066,6 +1087,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cot_reports_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       crypto_onchain_metrics: {
@@ -1174,6 +1202,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "crypto_onchain_metrics_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       cusip_mappings: {
@@ -1271,6 +1306,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dark_pool_activity_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -1411,6 +1453,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "etf_flows_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       forex_sentiment: {
@@ -1478,6 +1527,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "forex_sentiment_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -1570,6 +1626,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "forex_technicals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       form4_insider_trades: {
@@ -1643,6 +1706,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form4_insider_trades_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -2146,6 +2216,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "news_sentiment_aggregate_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       options_flow: {
@@ -2309,6 +2386,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pattern_recognition_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -2501,6 +2585,13 @@ export type Database = {
             columns: ["asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prices_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
             referencedColumns: ["id"]
           },
         ]
@@ -2915,6 +3006,13 @@ export type Database = {
             referencedRelation: "assets"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "smart_money_flow_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       social_signals: {
@@ -3228,6 +3326,30 @@ export type Database = {
           sentiment_signals: number | null
           technical_signals: number | null
           ticker: string | null
+        }
+        Relationships: []
+      }
+      assets_ticker_commas: {
+        Row: {
+          asset_class: string | null
+          created_at: string | null
+          id: string | null
+          name: string | null
+          ticker: string | null
+        }
+        Insert: {
+          asset_class?: string | null
+          created_at?: string | null
+          id?: string | null
+          name?: string | null
+          ticker?: string | null
+        }
+        Update: {
+          asset_class?: string | null
+          created_at?: string | null
+          id?: string | null
+          name?: string | null
+          ticker?: string | null
         }
         Relationships: []
       }
