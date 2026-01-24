@@ -53,18 +53,33 @@ serve(async (req) => {
     const firstDate = dates[0];
     const lastDate = dates[dates.length - 1];
 
-    // Get prices for first and last date, plus all dates for chart
-    const { data: prices, error: pricesError } = await supabase
+    // CRITICAL: Query SPY separately to avoid 1000-row limit cutting it off
+    // Portfolio tickers are queried first, SPY last alphabetically, so it gets excluded
+    const { data: portfolioPrices, error: portfolioError } = await supabase
       .from('prices')
       .select('ticker, date, close')
-      .in('ticker', [...tickers, 'SPY'])
+      .in('ticker', tickers)
+      .in('date', dates)
+      .limit(2000);
+
+    if (portfolioError) throw portfolioError;
+
+    // Fetch SPY prices separately - guaranteed to get them
+    const { data: spyPrices, error: spyError } = await supabase
+      .from('prices')
+      .select('ticker, date, close')
+      .eq('ticker', 'SPY')
       .in('date', dates);
 
-    if (pricesError) throw pricesError;
+    if (spyError) throw spyError;
+
+    // Merge both price sets
+    const allPrices = [...(portfolioPrices || []), ...(spyPrices || [])];
+    console.log(`Fetched ${portfolioPrices?.length || 0} portfolio prices, ${spyPrices?.length || 0} SPY prices`);
 
     // Build price lookup
     const priceLookup: Record<string, Record<string, number>> = {};
-    for (const p of (prices || [])) {
+    for (const p of allPrices) {
       if (!priceLookup[p.ticker]) priceLookup[p.ticker] = {};
       priceLookup[p.ticker][p.date] = p.close;
     }
