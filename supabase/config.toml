@@ -141,6 +141,9 @@ verify_jwt = false
 [functions.compute-model-daily-metrics]
 verify_jwt = false
 
+[functions.backfill-predictions-and-grade]
+verify_jwt = false
+
 [functions.map-signal-to-theme]
 verify_jwt = false
 
