@@ -220,18 +220,12 @@ const SIGNAL_TYPE_TO_COMPONENT: Record<string, string> = {
 // ============================================================================
 // CONFIDENCE LABEL THRESHOLDS (based on empirical accuracy bands)
 // ============================================================================
-// These thresholds correspond to historical accuracy:
-// very_confident: typically 65%+ hit rate historically
-// confident: 55-65% hit rate
-// moderate: 45-55% hit rate
-// speculative: 40-45% hit rate
-// risky: <40% hit rate
 const CONFIDENCE_THRESHOLDS = {
-  very_confident: 2.0,  // confScore >= 2.0
-  confident: 1.5,       // confScore >= 1.5
-  moderate: 1.0,        // confScore >= 1.0
-  speculative: 0.5,     // confScore >= 0.5
-  risky: 0,             // confScore < 0.5
+  very_confident: 2.0,
+  confident: 1.5,
+  moderate: 1.0,
+  speculative: 0.5,
+  risky: 0,
 };
 
 // ============================================================================
@@ -243,10 +237,6 @@ function expDecay(ageDays: number, halfLifeDays: number): number {
   return Math.exp(-Math.log(2) * ageDays / halfLifeDays);
 }
 
-function winsorize(value: number, max: number): number {
-  return Math.max(-max, Math.min(max, value));
-}
-
 function confidenceLabel(cs: number): string {
   if (cs >= CONFIDENCE_THRESHOLDS.very_confident) return 'very_confident';
   if (cs >= CONFIDENCE_THRESHOLDS.confident) return 'confident';
@@ -255,33 +245,13 @@ function confidenceLabel(cs: number): string {
   return 'risky';
 }
 
-// Map expected profitability into 15-85 UI score
 function scoreFromExpected(expectedReturn: number, confScore: number): number {
   const base = 50;
-  // expectedReturn is daily expected return, e.g. 0.01 = 1%
-  const profitability = Math.max(-0.03, Math.min(0.03, expectedReturn)); // clamp to +-3%
-  const profitPoints = (profitability / 0.03) * 20; // +-20 points
-  const confPoints = Math.max(-10, Math.min(10, confScore * 5)); // +-10 points
+  const profitability = Math.max(-0.03, Math.min(0.03, expectedReturn));
+  const profitPoints = (profitability / 0.03) * 20;
+  const confPoints = Math.max(-10, Math.min(10, confScore * 5));
   const raw = base + profitPoints + confPoints;
   return Math.max(15, Math.min(85, raw));
-}
-
-// Calculate rolling 20-day volatility from price history
-function calculateVolatility(prices: { close: number }[]): number {
-  if (prices.length < 3) return 0;
-  
-  const returns: number[] = [];
-  for (let i = 1; i < prices.length; i++) {
-    if (prices[i - 1].close > 0) {
-      returns.push((prices[i].close / prices[i - 1].close) - 1);
-    }
-  }
-  
-  if (returns.length < 2) return 0;
-  
-  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / (returns.length - 1);
-  return Math.sqrt(variance);
 }
 
 Deno.serve(async (req) => {
@@ -290,6 +260,7 @@ Deno.serve(async (req) => {
   }
 
   const startTime = Date.now();
+  const today = new Date().toISOString().split('T')[0];
   
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -337,6 +308,46 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================================
+    // FETCH PRICE COVERAGE DATA FOR TODAY
+    // ========================================================================
+    const coverageMap = new Map<string, {
+      status: string;
+      points_30d: number;
+      last_price_date: string | null;
+      days_stale: number;
+    }>();
+
+    let coverageOffset = 0;
+    while (true) {
+      const { data: coveragePage, error: coverageError } = await supabase
+        .from('price_coverage_daily')
+        .select('ticker, status, points_30d, last_price_date, days_stale')
+        .eq('snapshot_date', today)
+        .eq('vendor', 'twelvedata')
+        .range(coverageOffset, coverageOffset + 999);
+
+      if (coverageError) {
+        console.warn(`Coverage query error: ${coverageError.message}`);
+        break;
+      }
+      if (!coveragePage || coveragePage.length === 0) break;
+
+      for (const c of coveragePage) {
+        coverageMap.set(c.ticker, {
+          status: c.status,
+          points_30d: c.points_30d,
+          last_price_date: c.last_price_date,
+          days_stale: c.days_stale,
+        });
+      }
+
+      if (coveragePage.length < 1000) break;
+      coverageOffset += 1000;
+    }
+
+    console.log(`Loaded ${coverageMap.size} coverage records for ${today}`);
+
+    // ========================================================================
     // FETCH ALPHA TABLE (signal_type_alpha)
     // ========================================================================
     const { data: alphaRows, error: alphaErr } = await supabase
@@ -359,8 +370,18 @@ Deno.serve(async (req) => {
     console.log(`Loaded ${alphaMap.size} signal type alphas`);
 
     let processedCount = 0;
+    let excludedCount = 0;
+    let rankedCount = 0;
     let offset = startOffset;
     const endOffset = Math.min(startOffset + ASSETS_PER_INVOCATION, totalAssets || 0);
+
+    // Exclusion tracking
+    const exclusionReasons: Record<string, number> = {
+      no_coverage_record: 0,
+      status_stale: 0,
+      status_missing: 0,
+      status_unsupported: 0,
+    };
 
     // Process in batches
     while (offset < endOffset) {
@@ -383,176 +404,214 @@ Deno.serve(async (req) => {
         break;
       }
 
-      const assetIds = assets.map(a => a.id);
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-      // Fetch signals for these assets
-      const { data: signals, error: sigError } = await supabase
-        .from('signals')
-        .select('asset_id, signal_type, magnitude, direction, observed_at')
-        .in('asset_id', assetIds)
-        .gte('observed_at', thirtyDaysAgo);
-
-      if (sigError) {
-        console.error('Error fetching signals:', sigError);
-        break;
-      }
-
-      // Build signals map by asset_id
-      const signalsMap = new Map<string, any[]>();
-      for (const s of signals || []) {
-        if (!signalsMap.has(s.asset_id)) signalsMap.set(s.asset_id, []);
-        signalsMap.get(s.asset_id)!.push(s);
-      }
-
-      // ========================================================================
-      // COMPUTE ALPHA-BASED SCORES FOR EACH ASSET
-      // ========================================================================
-      const updates: {
-        id: string;
-        score: number;
-        expected_return: number;
-        confidence_score: number;
-        confidence_label: string;
-        score_explanation: any[];
-      }[] = [];
+      // Separate assets into rankable and excluded based on coverage
+      const rankableAssets: typeof assets = [];
+      const excludedAssets: { asset: typeof assets[0]; reason: string; cov: typeof coverageMap extends Map<string, infer V> ? V | null : never }[] = [];
 
       for (const asset of assets) {
-        const assetSignals = signalsMap.get(asset.id) || [];
+        const cov = coverageMap.get(asset.ticker);
         
-        let expectedReturn = 0;
-        let alphaStdPenalty = 0;
-        let pos = 0;
-        let neg = 0;
-        const scoreExplanation: any[] = [];
-
-        for (const s of assetSignals) {
-          const signalType = String(s.signal_type);
-          const mag = Number(s.magnitude ?? 1);
-          const observedAt = new Date(s.observed_at);
-          const ageDays = (Date.now() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
-
-          // Get half-life based on signal component
-          const component = SIGNAL_TYPE_TO_COMPONENT[signalType];
-          const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || 14) : 14;
-
-          const decay = expDecay(ageDays, halfLifeDays);
-
-          // Get alpha from calibration table
-          const alphaRec = alphaMap.get(signalType);
-          const alpha = alphaRec ? alphaRec.alpha : 0;
-
-          // Direction multiplier
-          const dirMult = s.direction === 'up' ? 1 : (s.direction === 'down' ? -1 : 1);
-
-          // Contribution = decay * magnitude * alpha * direction
-          const contrib = decay * Math.min(mag, 5) * alpha * dirMult;
-          expectedReturn += contrib;
-
-          // Penalize unstable signals (high std relative to alpha)
-          if (alphaRec && alphaRec.sd > 0) {
-            alphaStdPenalty += decay * Math.min(0.02, alphaRec.sd);
-          }
-
-          // Track positive/negative contributions for disagreement
-          if (contrib > 0) pos += contrib;
-          if (contrib < 0) neg += Math.abs(contrib);
-
-          // Add to explanation (top contributors)
-          if (Math.abs(contrib) > 0.001) {
-            scoreExplanation.push({
-              signal_type: signalType,
-              component: component || 'unknown',
-              contrib: Math.round(contrib * 10000) / 10000,
-              alpha: Math.round(alpha * 10000) / 10000,
-              decay: Math.round(decay * 100) / 100,
-              age_days: Math.round(ageDays * 10) / 10,
-            });
-          }
+        if (!cov) {
+          excludedAssets.push({ asset, reason: 'no_coverage_record', cov: null });
+          exclusionReasons.no_coverage_record++;
+          continue;
         }
-
-        // Calculate disagreement penalty
-        let disagreementPenalty = 0;
-        if (pos > 0 && neg > 0) {
-          const ratio = Math.min(pos, neg) / Math.max(pos, neg);
-          disagreementPenalty = ratio * 0.02; // up to 2% uncertainty
+        
+        if (cov.status !== 'fresh') {
+          const reason = `status_${cov.status}`;
+          excludedAssets.push({ asset, reason, cov });
+          exclusionReasons[reason] = (exclusionReasons[reason] || 0) + 1;
+          continue;
         }
-
-        // Calculate uncertainty floor
-        const uncertainty = Math.max(
-          0.005, // floor 0.5%
-          alphaStdPenalty + disagreementPenalty
-        );
-
-        // Compute confidence score
-        const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
-        const label = confidenceLabel(confScore);
-        const finalScore = scoreFromExpected(expectedReturn, confScore);
-
-        // Sort explanation by contribution magnitude
-        scoreExplanation.sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib));
         
-        // Keep top 10 contributors
-        const topExplanation = scoreExplanation.slice(0, 10);
-
-        updates.push({
-          id: asset.id,
-          score: Math.round(finalScore * 10) / 10,
-          expected_return: Math.round(expectedReturn * 100000) / 100000,
-          confidence_score: Math.round(confScore * 1000) / 1000,
-          confidence_label: label,
-          score_explanation: [
-            { k: 'expected_return', v: Math.round(expectedReturn * 100000) / 100000 },
-            { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
-            { k: 'disagreement_penalty', v: Math.round(disagreementPenalty * 100000) / 100000 },
-            { k: 'alpha_std_penalty', v: Math.round(alphaStdPenalty * 100000) / 100000 },
-            { k: 'signal_count', v: assetSignals.length },
-            { k: 'top_signals', v: topExplanation },
-          ],
-        });
-        
-        processedCount++;
+        rankableAssets.push(asset);
       }
 
-      // Batch update assets
-      const now = new Date().toISOString();
-      const CHUNK_SIZE = 50;
-      let successCount = 0;
-      let errorCount = 0;
+      console.log(`Batch: ${rankableAssets.length} rankable, ${excludedAssets.length} excluded`);
 
-      for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
-        const chunk = updates.slice(i, i + CHUNK_SIZE);
-        
-        const updatePromises = chunk.map(update =>
+      // ========================================================================
+      // HANDLE EXCLUDED ASSETS - Mark as unscorable
+      // ========================================================================
+      const now = new Date().toISOString();
+      
+      for (let i = 0; i < excludedAssets.length; i += 50) {
+        const chunk = excludedAssets.slice(i, i + 50);
+        const updatePromises = chunk.map(({ asset, reason, cov }) =>
           supabase
             .from('assets')
             .update({
-              computed_score: update.score,
-              expected_return: update.expected_return,
-              confidence_score: update.confidence_score,
-              confidence_label: update.confidence_label,
+              computed_score: null,
+              expected_return: null,
+              confidence_score: null,
+              confidence_label: 'unscorable',
               model_version: 'v1_alpha',
-              score_explanation: update.score_explanation,
+              score_explanation: [
+                { k: 'excluded', v: true },
+                { k: 'reason', v: reason },
+                { k: 'price_status', v: cov?.status || 'unknown' },
+                { k: 'days_stale', v: cov?.days_stale || 9999 },
+              ],
               score_computed_at: now,
+              price_status: cov?.status || 'unknown',
+              last_price_date: cov?.last_price_date || null,
+              days_stale: cov?.days_stale || 9999,
+              price_points_30d: cov?.points_30d || 0,
+              rank_status: reason === 'no_coverage_record' ? 'no_coverage' : cov?.status || 'unknown',
             })
-            .eq('id', update.id)
+            .eq('id', asset.id)
         );
         
-        const results = await Promise.all(updatePromises);
-        
-        for (const result of results) {
-          if (result.error) {
-            errorCount++;
-            if (errorCount <= 3) {
-              console.error('Update error:', result.error.message);
+        await Promise.all(updatePromises);
+        excludedCount += chunk.length;
+      }
+
+      // ========================================================================
+      // COMPUTE ALPHA-BASED SCORES FOR RANKABLE ASSETS
+      // ========================================================================
+      if (rankableAssets.length > 0) {
+        const assetIds = rankableAssets.map(a => a.id);
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        // Fetch signals for these assets
+        const { data: signals, error: sigError } = await supabase
+          .from('signals')
+          .select('asset_id, signal_type, magnitude, direction, observed_at')
+          .in('asset_id', assetIds)
+          .gte('observed_at', thirtyDaysAgo);
+
+        if (sigError) {
+          console.error('Error fetching signals:', sigError);
+          offset += batchSize;
+          continue;
+        }
+
+        // Build signals map by asset_id
+        const signalsMap = new Map<string, any[]>();
+        for (const s of signals || []) {
+          if (!signalsMap.has(s.asset_id)) signalsMap.set(s.asset_id, []);
+          signalsMap.get(s.asset_id)!.push(s);
+        }
+
+        const updates: {
+          id: string;
+          ticker: string;
+          score: number;
+          expected_return: number;
+          confidence_score: number;
+          confidence_label: string;
+          score_explanation: any[];
+        }[] = [];
+
+        for (const asset of rankableAssets) {
+          const assetSignals = signalsMap.get(asset.id) || [];
+          
+          let expectedReturn = 0;
+          let alphaStdPenalty = 0;
+          let pos = 0;
+          let neg = 0;
+          const scoreExplanation: any[] = [];
+
+          for (const s of assetSignals) {
+            const signalType = String(s.signal_type);
+            const mag = Number(s.magnitude ?? 1);
+            const observedAt = new Date(s.observed_at);
+            const ageDays = (Date.now() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
+
+            const component = SIGNAL_TYPE_TO_COMPONENT[signalType];
+            const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || 14) : 14;
+            const decay = expDecay(ageDays, halfLifeDays);
+
+            const alphaRec = alphaMap.get(signalType);
+            const alpha = alphaRec ? alphaRec.alpha : 0;
+            const dirMult = s.direction === 'up' ? 1 : (s.direction === 'down' ? -1 : 1);
+            const contrib = decay * Math.min(mag, 5) * alpha * dirMult;
+            expectedReturn += contrib;
+
+            if (alphaRec && alphaRec.sd > 0) {
+              alphaStdPenalty += decay * Math.min(0.02, alphaRec.sd);
             }
-          } else {
-            successCount++;
+
+            if (contrib > 0) pos += contrib;
+            if (contrib < 0) neg += Math.abs(contrib);
+
+            if (Math.abs(contrib) > 0.001) {
+              scoreExplanation.push({
+                signal_type: signalType,
+                component: component || 'unknown',
+                contrib: Math.round(contrib * 10000) / 10000,
+                alpha: Math.round(alpha * 10000) / 10000,
+                decay: Math.round(decay * 100) / 100,
+                age_days: Math.round(ageDays * 10) / 10,
+              });
+            }
           }
+
+          let disagreementPenalty = 0;
+          if (pos > 0 && neg > 0) {
+            const ratio = Math.min(pos, neg) / Math.max(pos, neg);
+            disagreementPenalty = ratio * 0.02;
+          }
+
+          const uncertainty = Math.max(0.005, alphaStdPenalty + disagreementPenalty);
+          const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
+          const label = confidenceLabel(confScore);
+          const finalScore = scoreFromExpected(expectedReturn, confScore);
+
+          scoreExplanation.sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib));
+          const topExplanation = scoreExplanation.slice(0, 10);
+
+          updates.push({
+            id: asset.id,
+            ticker: asset.ticker,
+            score: Math.round(finalScore * 10) / 10,
+            expected_return: Math.round(expectedReturn * 100000) / 100000,
+            confidence_score: Math.round(confScore * 1000) / 1000,
+            confidence_label: label,
+            score_explanation: [
+              { k: 'expected_return', v: Math.round(expectedReturn * 100000) / 100000 },
+              { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
+              { k: 'disagreement_penalty', v: Math.round(disagreementPenalty * 100000) / 100000 },
+              { k: 'alpha_std_penalty', v: Math.round(alphaStdPenalty * 100000) / 100000 },
+              { k: 'signal_count', v: assetSignals.length },
+              { k: 'top_signals', v: topExplanation },
+            ],
+          });
+          
+          processedCount++;
+        }
+
+        // Batch update ranked assets
+        const CHUNK_SIZE = 50;
+
+        for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+          const chunk = updates.slice(i, i + CHUNK_SIZE);
+          
+          const updatePromises = chunk.map(update => {
+            const cov = coverageMap.get(update.ticker);
+            return supabase
+              .from('assets')
+              .update({
+                computed_score: update.score,
+                expected_return: update.expected_return,
+                confidence_score: update.confidence_score,
+                confidence_label: update.confidence_label,
+                model_version: 'v1_alpha',
+                score_explanation: update.score_explanation,
+                score_computed_at: now,
+                price_status: cov?.status || 'fresh',
+                last_price_date: cov?.last_price_date || null,
+                days_stale: cov?.days_stale || 0,
+                price_points_30d: cov?.points_30d || 0,
+                rank_status: 'rankable',
+              })
+              .eq('id', update.id);
+          });
+          
+          const results = await Promise.all(updatePromises);
+          rankedCount += results.filter(r => !r.error).length;
         }
       }
 
-      console.log(`Updated ${successCount} asset scores, ${errorCount} errors`);
       offset += batchSize;
     }
 
@@ -560,46 +619,8 @@ Deno.serve(async (req) => {
     const nextOffset = offset >= (totalAssets || 0) ? 0 : offset;
     const isComplete = offset >= (totalAssets || 0);
 
-    // SWEEP: If complete, handle assets with no signals
-    let sweepCount = 0;
-    if (isComplete) {
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const { data: missedAssets, error: missedError } = await supabase
-        .from('assets')
-        .select('id, ticker')
-        .or(`score_computed_at.is.null,score_computed_at.lt.${oneHourAgo}`)
-        .limit(500);
-
-      if (!missedError && missedAssets && missedAssets.length > 0) {
-        console.log(`SWEEP: Found ${missedAssets.length} missed assets`);
-        
-        const now = new Date().toISOString();
-        for (let i = 0; i < missedAssets.length; i += 50) {
-          const chunk = missedAssets.slice(i, i + 50);
-          const sweepPromises = chunk.map(asset =>
-            supabase
-              .from('assets')
-              .update({
-                computed_score: 50,
-                expected_return: 0,
-                confidence_score: 0,
-                confidence_label: 'risky',
-                model_version: 'v1_alpha',
-                score_explanation: [{ k: 'sweep_applied', v: true }, { k: 'reason', v: 'No signals available' }],
-                score_computed_at: now,
-              })
-              .eq('id', asset.id)
-          );
-          
-          const results = await Promise.all(sweepPromises);
-          sweepCount += results.filter(r => !r.error).length;
-        }
-        console.log(`SWEEP: Updated ${sweepCount} missed assets`);
-      }
-    }
-
     const duration = Date.now() - startTime;
-    console.log(`Alpha-based score computation complete. Processed ${processedCount} + ${sweepCount} swept in ${duration}ms`);
+    console.log(`Score computation complete. Ranked: ${rankedCount}, Excluded: ${excludedCount}, Duration: ${duration}ms`);
 
     // Log to function_status
     await supabase.from('function_status').insert({
@@ -607,15 +628,18 @@ Deno.serve(async (req) => {
       status: 'success',
       executed_at: new Date().toISOString(),
       duration_ms: duration,
-      rows_inserted: processedCount + sweepCount,
+      rows_inserted: rankedCount,
       metadata: { 
         start_offset: startOffset,
         end_offset: offset,
         next_offset: nextOffset,
         total_assets: totalAssets,
         alpha_count: alphaMap.size,
+        coverage_count: coverageMap.size,
         model_version: 'v1_alpha',
-        sweep_count: sweepCount,
+        ranked_count: rankedCount,
+        excluded_count: excludedCount,
+        exclusion_reasons: exclusionReasons,
         is_complete: isComplete,
       },
     });
@@ -624,10 +648,14 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         processed: processedCount, 
+        ranked: rankedCount,
+        excluded: excludedCount,
+        exclusion_reasons: exclusionReasons,
         duration_ms: duration,
         next_offset: nextOffset,
         total_assets: totalAssets,
         alpha_count: alphaMap.size,
+        coverage_count: coverageMap.size,
         model_version: 'v1_alpha',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
