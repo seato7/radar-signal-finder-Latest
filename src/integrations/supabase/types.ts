@@ -371,6 +371,98 @@ export type Database = {
         }
         Relationships: []
       }
+      asset_prediction_results: {
+        Row: {
+          computed_at: string
+          hit: boolean
+          horizon: string
+          id: string
+          prediction_id: string
+          realized_return: number
+        }
+        Insert: {
+          computed_at?: string
+          hit?: boolean
+          horizon?: string
+          id?: string
+          prediction_id: string
+          realized_return?: number
+        }
+        Update: {
+          computed_at?: string
+          hit?: boolean
+          horizon?: string
+          id?: string
+          prediction_id?: string
+          realized_return?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_prediction_results_prediction_id_fkey"
+            columns: ["prediction_id"]
+            isOneToOne: false
+            referencedRelation: "asset_predictions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_predictions: {
+        Row: {
+          asset_id: string
+          computed_at: string
+          confidence_label: string
+          confidence_score: number
+          expected_return: number
+          feature_snapshot: Json
+          id: string
+          model_version: string
+          rank: number
+          snapshot_date: string
+          ticker: string
+        }
+        Insert: {
+          asset_id: string
+          computed_at?: string
+          confidence_label: string
+          confidence_score: number
+          expected_return: number
+          feature_snapshot?: Json
+          id?: string
+          model_version: string
+          rank: number
+          snapshot_date: string
+          ticker: string
+        }
+        Update: {
+          asset_id?: string
+          computed_at?: string
+          confidence_label?: string
+          confidence_score?: number
+          expected_return?: number
+          feature_snapshot?: Json
+          id?: string
+          model_version?: string
+          rank?: number
+          snapshot_date?: string
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_predictions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "asset_predictions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_score_snapshots: {
         Row: {
           asset_name: string | null
@@ -406,15 +498,20 @@ export type Database = {
           asset_class: string | null
           base_currency: string | null
           computed_score: number | null
+          confidence_label: string | null
+          confidence_score: number | null
           contract_size: number | null
           created_at: string | null
           exchange: string
+          expected_return: number | null
           id: string
           metadata: Json | null
+          model_version: string | null
           name: string
           pip_value: number | null
           quote_currency: string | null
           score_computed_at: string | null
+          score_explanation: Json | null
           spread_typical: number | null
           ticker: string
         }
@@ -422,15 +519,20 @@ export type Database = {
           asset_class?: string | null
           base_currency?: string | null
           computed_score?: number | null
+          confidence_label?: string | null
+          confidence_score?: number | null
           contract_size?: number | null
           created_at?: string | null
           exchange: string
+          expected_return?: number | null
           id?: string
           metadata?: Json | null
+          model_version?: string | null
           name: string
           pip_value?: number | null
           quote_currency?: string | null
           score_computed_at?: string | null
+          score_explanation?: Json | null
           spread_typical?: number | null
           ticker: string
         }
@@ -438,15 +540,20 @@ export type Database = {
           asset_class?: string | null
           base_currency?: string | null
           computed_score?: number | null
+          confidence_label?: string | null
+          confidence_score?: number | null
           contract_size?: number | null
           created_at?: string | null
           exchange?: string
+          expected_return?: number | null
           id?: string
           metadata?: Json | null
+          model_version?: string | null
           name?: string
           pip_value?: number | null
           quote_currency?: string | null
           score_computed_at?: string | null
+          score_explanation?: Json | null
           spread_typical?: number | null
           ticker?: string
         }
@@ -2398,6 +2505,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      signal_type_alpha: {
+        Row: {
+          avg_forward_return: number
+          hit_rate: number
+          horizon: string
+          id: string
+          sample_size: number
+          signal_type: string
+          std_forward_return: number
+          updated_at: string
+        }
+        Insert: {
+          avg_forward_return?: number
+          hit_rate?: number
+          horizon?: string
+          id?: string
+          sample_size?: number
+          signal_type: string
+          std_forward_return?: number
+          updated_at?: string
+        }
+        Update: {
+          avg_forward_return?: number
+          hit_rate?: number
+          horizon?: string
+          id?: string
+          sample_size?: number
+          signal_type?: string
+          std_forward_return?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       signals: {
         Row: {

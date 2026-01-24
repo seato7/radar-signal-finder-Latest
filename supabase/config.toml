@@ -129,6 +129,15 @@ verify_jwt = false
 [functions.compute-asset-scores]
 verify_jwt = false
 
+[functions.compute-signal-alpha]
+verify_jwt = false
+
+[functions.daily-prediction-snapshot]
+verify_jwt = false
+
+[functions.grade-predictions-1d]
+verify_jwt = false
+
 [functions.map-signal-to-theme]
 verify_jwt = false
 
