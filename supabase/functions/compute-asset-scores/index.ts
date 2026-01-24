@@ -237,10 +237,21 @@ const SIGNAL_TYPE_TO_COMPONENT: Record<string, { component: string; multiplier: 
   'onchain_greed': { component: 'Attention', multiplier: -1.5 }, // Contrarian sell
   
   // From generate-signals-from-momentum (prices 549K rows)
+  // Strong momentum (>5% for 5d, >10% for 20d)
+  'momentum_5d_strong_bullish': { component: 'TechEdge', multiplier: 4.0 },
+  'momentum_5d_strong_bearish': { component: 'TechEdge', multiplier: -3.5 },
+  'momentum_20d_strong_bullish': { component: 'TechEdge', multiplier: 3.5 },
+  'momentum_20d_strong_bearish': { component: 'TechEdge', multiplier: -3.0 },
+  // Normal momentum (2-5% for 5d, 3-10% for 20d)
   'momentum_5d_bullish': { component: 'TechEdge', multiplier: 3.0 },
   'momentum_5d_bearish': { component: 'TechEdge', multiplier: -2.5 },
   'momentum_20d_bullish': { component: 'TechEdge', multiplier: 2.5 },
   'momentum_20d_bearish': { component: 'TechEdge', multiplier: -2.0 },
+  // Weak momentum (<2% for 5d, <3% for 20d) - still contribute but less weight
+  'momentum_5d_weak_bullish': { component: 'TechEdge', multiplier: 0.5 },
+  'momentum_5d_weak_bearish': { component: 'TechEdge', multiplier: -0.4 },
+  'momentum_20d_weak_bullish': { component: 'TechEdge', multiplier: 0.3 },
+  'momentum_20d_weak_bearish': { component: 'TechEdge', multiplier: -0.25 },
   
   // From generate-signals-from-ai-research (ai_research_reports 431 rows)
   'ai_research_buy': { component: 'BigMoneyConfirm', multiplier: 3.5 },
@@ -1128,9 +1139,44 @@ Deno.serve(async (req) => {
 
     // Calculate next offset for continuation
     const nextOffset = offset >= (totalAssets || 0) ? 0 : offset;
+    const isComplete = offset >= (totalAssets || 0);
+
+    // SWEEP CHECK: If we've processed all assets, check for any that were missed
+    let sweepCount = 0;
+    if (isComplete) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: missedAssets, error: missedError } = await supabase
+        .from('assets')
+        .select('id, ticker, asset_class')
+        .or(`score_computed_at.is.null,score_computed_at.lt.${oneHourAgo}`)
+        .limit(500);
+
+      if (!missedError && missedAssets && missedAssets.length > 0) {
+        console.log(`SWEEP: Found ${missedAssets.length} missed assets, processing...`);
+        
+        const now = new Date().toISOString();
+        for (let i = 0; i < missedAssets.length; i += 50) {
+          const chunk = missedAssets.slice(i, i + 50);
+          const sweepPromises = chunk.map(asset =>
+            supabase
+              .from('assets')
+              .update({
+                computed_score: 50, // Default neutral score for assets with no data
+                score_computed_at: now,
+                metadata: { score_breakdown: { sweep_applied: true, reason: 'No signals available' } },
+              })
+              .eq('id', asset.id)
+          );
+          
+          const results = await Promise.all(sweepPromises);
+          sweepCount += results.filter(r => !r.error).length;
+        }
+        console.log(`SWEEP: Updated ${sweepCount} missed assets with neutral scores`);
+      }
+    }
 
     const duration = Date.now() - startTime;
-    console.log(`Score computation complete. Processed ${processedCount} assets in ${duration}ms. Next offset: ${nextOffset}`);
+    console.log(`Score computation complete. Processed ${processedCount} assets + ${sweepCount} swept in ${duration}ms. Next offset: ${nextOffset}`);
 
     // Log to function_status
     await supabase.from('function_status').insert({
@@ -1138,7 +1184,7 @@ Deno.serve(async (req) => {
       status: 'success',
       executed_at: new Date().toISOString(),
       duration_ms: duration,
-      rows_inserted: processedCount,
+      rows_inserted: processedCount + sweepCount,
       metadata: { 
         start_offset: startOffset,
         end_offset: offset,
@@ -1146,6 +1192,8 @@ Deno.serve(async (req) => {
         total_assets: totalAssets,
         data_sources_queried: 23,
         signal_types_mapped: Object.keys(SIGNAL_TYPE_TO_COMPONENT).length,
+        sweep_count: sweepCount,
+        is_complete: isComplete,
       },
     });
 
