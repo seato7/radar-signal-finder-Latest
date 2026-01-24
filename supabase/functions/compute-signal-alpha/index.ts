@@ -53,20 +53,28 @@ Deno.serve(async (req) => {
     const uniqueTypes = [...new Set((signalTypes || []).map(s => s.signal_type))];
     console.log(`Found ${uniqueTypes.length} unique signal types to process`);
 
+    // Build asset_id -> ticker lookup map
+    const { data: allAssets, error: assetsError } = await supabase
+      .from('assets')
+      .select('id, ticker');
+    
+    if (assetsError) throw assetsError;
+    
+    const assetIdToTicker = new Map<string, string>();
+    for (const a of allAssets || []) {
+      assetIdToTicker.set(a.id, a.ticker);
+    }
+    console.log(`Built lookup map for ${assetIdToTicker.size} assets`);
+
     const alphas: AlphaRow[] = [];
     let processedTypes = 0;
 
     // Process each signal type
     for (const signalType of uniqueTypes) {
-      // Get signals of this type with their tickers
+      // Get signals of this type
       const { data: signals, error: sigError } = await supabase
         .from('signals')
-        .select(`
-          observed_at,
-          magnitude,
-          direction,
-          assets!inner(ticker)
-        `)
+        .select('asset_id, observed_at, magnitude, direction')
         .eq('signal_type', signalType)
         .gte('observed_at', new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString())
         .not('asset_id', 'is', null)
@@ -79,11 +87,11 @@ Deno.serve(async (req) => {
 
       if (!signals || signals.length === 0) continue;
 
-      // Group signals by ticker and date
+      // Group signals by ticker and date using our lookup map
       const signalsByTickerDate = new Map<string, { date: string; ticker: string; magnitude: number; direction: string }>();
       
       for (const s of signals) {
-        const ticker = (s.assets as any)?.ticker;
+        const ticker = assetIdToTicker.get(s.asset_id);
         if (!ticker) continue;
         
         const dateStr = new Date(s.observed_at).toISOString().split('T')[0];
@@ -184,7 +192,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Calculate stats for each horizon
+      // Calculate stats for each horizon (require at least 10 samples)
       if (returns1d.length >= 10) {
         const m = mean(returns1d);
         const sd = std(returns1d);
