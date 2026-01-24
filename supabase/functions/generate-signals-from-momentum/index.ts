@@ -124,7 +124,8 @@ serve(async (req) => {
       for (const [ticker, tickerPrices] of pricesByTicker) {
         tickerPrices.sort((a, b) => b.date.localeCompare(a.date));
 
-        if (tickerPrices.length < 6) continue;
+        // Allow momentum calculation with at least 2 prices (lowered from 6)
+        if (tickerPrices.length < 2) continue;
 
         const assetId = tickerPrices[0].asset_id || tickerToAssetId.get(ticker);
         if (!assetId) continue;
@@ -132,8 +133,11 @@ serve(async (req) => {
         const latestPrice = tickerPrices[0].close;
         const latestDate = tickerPrices[0].date;
 
-        // Calculate 5-day momentum - ALWAYS generate a signal for every asset with price data
-        const price5d = tickerPrices[5]?.close;
+        // Calculate 5-day momentum - use available data if less than 6 prices
+        const lookbackIndex5d = Math.min(5, tickerPrices.length - 1);
+        const price5d = tickerPrices[lookbackIndex5d]?.close;
+        const hasLimitedData5d = tickerPrices.length < 6;
+        
         if (price5d && price5d > 0) {
           const momentum5d = ((latestPrice - price5d) / price5d) * 100;
 
@@ -141,14 +145,15 @@ serve(async (req) => {
           const direction = momentum5d > 0 ? 'up' : (momentum5d < 0 ? 'down' : 'neutral');
           const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum5d) / 20)); // Scale: 20% = max magnitude
 
-          // Different signal types based on strength
+          // Different signal types based on strength, with limited_data suffix if sparse
+          const dataQuality = hasLimitedData5d ? '_limited_data' : '';
           let signalType: string;
           if (Math.abs(momentum5d) > 5) {
-            signalType = momentum5d > 0 ? 'momentum_5d_strong_bullish' : 'momentum_5d_strong_bearish';
+            signalType = momentum5d > 0 ? `momentum_5d_strong_bullish${dataQuality}` : `momentum_5d_strong_bearish${dataQuality}`;
           } else if (Math.abs(momentum5d) > 2) {
-            signalType = momentum5d > 0 ? 'momentum_5d_bullish' : 'momentum_5d_bearish';
+            signalType = momentum5d > 0 ? `momentum_5d_bullish${dataQuality}` : `momentum_5d_bearish${dataQuality}`;
           } else {
-            signalType = momentum5d > 0 ? 'momentum_5d_weak_bullish' : 'momentum_5d_weak_bearish';
+            signalType = momentum5d > 0 ? `momentum_5d_weak_bullish${dataQuality}` : `momentum_5d_weak_bearish${dataQuality}`;
           }
 
           signals.push({
@@ -157,16 +162,19 @@ serve(async (req) => {
             direction,
             magnitude,
             observed_at: latestDate,
-            value_text: `5-day momentum: ${momentum5d > 0 ? '+' : ''}${momentum5d.toFixed(1)}%`,
+            value_text: `5-day momentum: ${momentum5d > 0 ? '+' : ''}${momentum5d.toFixed(1)}%${hasLimitedData5d ? ' (limited data)' : ''}`,
             checksum: JSON.stringify({ ticker, signal_type: signalType, date: latestDate, momentum: momentum5d.toFixed(1) }),
             citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
-            raw: { ticker, latest_price: latestPrice, price_5d_ago: price5d, momentum_pct: momentum5d }
+            raw: { ticker, latest_price: latestPrice, price_5d_ago: price5d, momentum_pct: momentum5d, days_available: tickerPrices.length }
           });
         }
 
-        // Calculate 20-day momentum - ALWAYS generate a signal for every asset with price data
-        if (tickerPrices.length >= 21) {
-          const price20d = tickerPrices[20]?.close;
+        // Calculate 20-day momentum - use available data if between 6-20 prices
+        if (tickerPrices.length >= 6) {
+          const lookbackIndex20d = Math.min(20, tickerPrices.length - 1);
+          const price20d = tickerPrices[lookbackIndex20d]?.close;
+          const hasLimitedData20d = tickerPrices.length < 21;
+          
           if (price20d && price20d > 0) {
             const momentum20d = ((latestPrice - price20d) / price20d) * 100;
 
@@ -174,14 +182,15 @@ serve(async (req) => {
             const direction = momentum20d > 0 ? 'up' : (momentum20d < 0 ? 'down' : 'neutral');
             const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum20d) / 30)); // Scale: 30% = max magnitude
 
-            // Different signal types based on strength
+            // Different signal types based on strength, with limited_data suffix if sparse
+            const dataQuality = hasLimitedData20d ? '_limited_data' : '';
             let signalType: string;
             if (Math.abs(momentum20d) > 10) {
-              signalType = momentum20d > 0 ? 'momentum_20d_strong_bullish' : 'momentum_20d_strong_bearish';
+              signalType = momentum20d > 0 ? `momentum_20d_strong_bullish${dataQuality}` : `momentum_20d_strong_bearish${dataQuality}`;
             } else if (Math.abs(momentum20d) > 3) {
-              signalType = momentum20d > 0 ? 'momentum_20d_bullish' : 'momentum_20d_bearish';
+              signalType = momentum20d > 0 ? `momentum_20d_bullish${dataQuality}` : `momentum_20d_bearish${dataQuality}`;
             } else {
-              signalType = momentum20d > 0 ? 'momentum_20d_weak_bullish' : 'momentum_20d_weak_bearish';
+              signalType = momentum20d > 0 ? `momentum_20d_weak_bullish${dataQuality}` : `momentum_20d_weak_bearish${dataQuality}`;
             }
 
             signals.push({
@@ -190,10 +199,10 @@ serve(async (req) => {
               direction,
               magnitude,
               observed_at: latestDate,
-              value_text: `20-day momentum: ${momentum20d > 0 ? '+' : ''}${momentum20d.toFixed(1)}%`,
+              value_text: `20-day momentum: ${momentum20d > 0 ? '+' : ''}${momentum20d.toFixed(1)}%${hasLimitedData20d ? ' (limited data)' : ''}`,
               checksum: JSON.stringify({ ticker, signal_type: signalType, date: latestDate, momentum: momentum20d.toFixed(1) }),
               citation: { source: 'Price Momentum', timestamp: new Date().toISOString() },
-              raw: { ticker, latest_price: latestPrice, price_20d_ago: price20d, momentum_pct: momentum20d }
+              raw: { ticker, latest_price: latestPrice, price_20d_ago: price20d, momentum_pct: momentum20d, days_available: tickerPrices.length }
             });
           }
         }
