@@ -263,15 +263,27 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Get prices on this date for filtering
+          // Get prices around this date for filtering and grading
+          // Look for prices within +-3 days to handle weekends/holidays
+          const dateRangeStart = new Date(new Date(dateStr).getTime() - 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          const dateRangeEnd = new Date(new Date(dateStr).getTime() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          
           const { data: prices } = await supabase
             .from('prices')
-            .select('ticker, close')
-            .eq('date', dateStr);
+            .select('ticker, close, date')
+            .gte('date', dateRangeStart)
+            .lte('date', dateRangeEnd);
 
+          // Build price map with most recent price on or before target date
           const priceMap = new Map<string, number>();
-          for (const p of prices || []) {
-            priceMap.set(p.ticker, Number(p.close));
+          const sortedPrices = (prices || []).sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          
+          for (const p of sortedPrices) {
+            if (new Date(p.date) <= new Date(dateStr) && !priceMap.has(p.ticker)) {
+              priceMap.set(p.ticker, Number(p.close));
+            }
           }
 
           // Group signals by asset
