@@ -16,4 +16,9 @@ The `compute-asset-scores` function implements global two-pass recentering with 
 
 5. **Horizon Fallback**: 1d → 3d (scaled /3) → 7d (scaled /7) for immature signal types.
 
-Validation confirms: global mean ≈ 0, P5-P95 score spread 22-63 (previously 45-51), bias corrected (1152 pos vs 248 neg).
+6. **Global Sweep Check**: When scoring cycle completes (`isComplete = true`), the system calls:
+   - `get_scoring_global_mean()` RPC to compute true universe mean
+   - `apply_scoring_recenter(correction)` RPC to apply universal correction
+   This ensures mean(expected_return) ≈ 0 across the entire 26k+ asset universe.
+
+Validation confirms: global mean ≈ 0, P5-P95 score spread 45-53 (narrow due to 88% assets lacking signal mass), tails 22-64 (working), 2,281 assets disagree-gated.
