@@ -6,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Activity } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 
@@ -24,6 +26,7 @@ interface AssetRow {
   asset_class: string | null;
   computed_score: number | null;
   score_computed_at: string | null;
+  score_explanation: unknown;
 }
 
 interface AssetWithScore {
@@ -36,6 +39,8 @@ interface AssetWithScore {
   sentiment: string;
   lastUpdated: string | null;
   priceChange: number | null;
+  signalStrength: "high" | "medium" | "low" | "none";
+  signalMass: number;
 }
 
 // Helper to format strings: replace underscores with spaces and title case
@@ -66,11 +71,30 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
   return { label: "Strong Bearish", variant: "destructive" };
 };
 
+// Signal strength based on mass thresholds
+const getSignalStrength = (mass: number): { level: "high" | "medium" | "low" | "none"; label: string; className: string } => {
+  if (mass >= 0.01) return { level: "high", label: "High", className: "bg-success/20 text-success border-success/30" };
+  if (mass >= 0.005) return { level: "medium", label: "Med", className: "bg-primary/20 text-primary border-primary/30" };
+  if (mass >= 0.001) return { level: "low", label: "Low", className: "bg-muted text-muted-foreground border-border" };
+  return { level: "none", label: "None", className: "bg-muted/50 text-muted-foreground/50 border-border/50" };
+};
+
+// Extract signal mass from score_explanation jsonb array
+const extractSignalMass = (scoreExplanation: unknown): number => {
+  if (!scoreExplanation || !Array.isArray(scoreExplanation)) return 0;
+  const massEntry = scoreExplanation.find((e: any) => e.k === 'signal_mass');
+  if (!massEntry) return 0;
+  return typeof massEntry.v === 'number' ? massEntry.v : parseFloat(String(massEntry.v)) || 0;
+};
+
 const PAGE_SIZE = 50;
 const REFRESH_INTERVAL = 30000; // 30 seconds auto-refresh
 
 // Full Standard tier cycle is 24 hours, add buffer for safety
 const FULL_CYCLE_HOURS = 26;
+
+// Mass threshold for "scored" assets
+const SIGNAL_MASS_THRESHOLD = 0.001;
 
 const ASSET_CLASS_TABS: { value: AssetClassTab; label: string; icon: React.ReactNode; filter: string | null }[] = [
   { value: "all", label: "All Assets", icon: <Filter className="h-4 w-4" />, filter: null },
@@ -99,10 +123,11 @@ const AssetRadar = () => {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [scoredOnly, setScoredOnly] = useState(true); // Default to scored assets only
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab, currentSortBy: SortOption = sortBy) => {
+  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab, currentSortBy: SortOption = sortBy, filterScored: boolean = scoredOnly) => {
     setLoading(true);
     
     try {
@@ -120,7 +145,7 @@ const AssetRadar = () => {
         // Fetch assets ordered by pre-computed score from database
         let assetQuery = supabase
           .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score, score_computed_at', { count: 'exact' });
+          .select('id, ticker, name, exchange, asset_class, computed_score, score_computed_at, score_explanation', { count: 'exact' });
 
         if (tabConfig?.filter) {
           assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
@@ -131,22 +156,33 @@ const AssetRadar = () => {
         
         const { data: sortedAssets, count, error: assetError } = await assetQuery
           .order('computed_score', { ...sortOrder, nullsFirst: false })
-          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+          .range(pageNum * PAGE_SIZE * 2, (pageNum + 1) * PAGE_SIZE * 2 - 1); // Fetch extra for filtering
 
         if (assetError) throw assetError;
 
-        const assets = (sortedAssets || []) as AssetRow[];
-        totalCount = count || 0;
+        let assets = (sortedAssets || []) as AssetRow[];
+        
+        // Filter by signal mass if scoredOnly is enabled
+        if (filterScored) {
+          assets = assets.filter(a => {
+            const mass = extractSignalMass(a.score_explanation);
+            return mass >= SIGNAL_MASS_THRESHOLD;
+          });
+        }
 
-        if (assets.length === 0) {
+        // Paginate the filtered results
+        const paginatedAssets = assets.slice(0, PAGE_SIZE);
+        totalCount = filterScored ? assets.length : (count || 0);
+
+        if (paginatedAssets.length === 0) {
           setAssets([]);
-          setTotal(0);
+          setTotal(filterScored ? 0 : (count || 0));
           setLoading(false);
           return;
         }
 
         // Fetch price data for these assets
-        const tickers = assets.map(a => a.ticker);
+        const tickers = paginatedAssets.map(a => a.ticker);
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
@@ -185,10 +221,12 @@ const AssetRadar = () => {
         });
 
         // Build enhanced assets using pre-computed scores
-        const enhancedAssets: AssetWithScore[] = assets.map((asset) => {
+        const enhancedAssets: AssetWithScore[] = paginatedAssets.map((asset) => {
           const score = asset.computed_score ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
+          const signalMass = extractSignalMass(asset.score_explanation);
+          const signalStrengthInfo = getSignalStrength(signalMass);
 
           return {
             id: asset.id,
@@ -199,7 +237,9 @@ const AssetRadar = () => {
             score,
             sentiment: sentiment.label,
             lastUpdated: priceInfo?.lastUpdated || null,
-            priceChange: priceChangeMap.get(asset.ticker) ?? null
+            priceChange: priceChangeMap.get(asset.ticker) ?? null,
+            signalStrength: signalStrengthInfo.level,
+            signalMass
           };
         });
 
@@ -235,7 +275,7 @@ const AssetRadar = () => {
 
         let assetQuery = supabase
           .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score')
+          .select('id, ticker, name, exchange, asset_class, computed_score, score_explanation')
           .in('ticker', recentTickers);
 
         if (tabConfig?.filter) {
@@ -253,9 +293,19 @@ const AssetRadar = () => {
         });
 
         const tickerOrder = new Map(recentTickers.map((t, i) => [t, i]));
-        assetsData = (matchingAssets || [])
+        let sortedAssets = (matchingAssets || [])
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
+
+        // Filter by signal mass if scoredOnly is enabled
+        if (filterScored) {
+          sortedAssets = sortedAssets.filter(a => {
+            const mass = extractSignalMass(a.score_explanation);
+            return mass >= SIGNAL_MASS_THRESHOLD;
+          });
+        }
+
+        assetsData = sortedAssets;
 
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
@@ -283,6 +333,8 @@ const AssetRadar = () => {
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
           const previousPrice = previousPriceMap.get(asset.ticker);
+          const signalMass = extractSignalMass(asset.score_explanation);
+          const signalStrengthInfo = getSignalStrength(signalMass);
           
           let priceChange: number | null = null;
           if (priceInfo && previousPrice && previousPrice !== 0) {
@@ -298,12 +350,14 @@ const AssetRadar = () => {
             score,
             sentiment: sentiment.label,
             lastUpdated: priceInfo?.lastUpdated || null,
-            priceChange
+            priceChange,
+            signalStrength: signalStrengthInfo.level,
+            signalMass
           };
         });
 
         setAssets(enhancedAssets);
-        setTotal(priceCount || 0);
+        setTotal(filterScored ? assetsData.length : (priceCount || 0));
         setLoading(false);
         return;
       }
@@ -313,7 +367,7 @@ const AssetRadar = () => {
       // ═══════════════════════════════════════════════════════════════════
       let query = supabase
         .from('assets')
-        .select('id, ticker, name, exchange, asset_class, computed_score', { count: 'exact' });
+        .select('id, ticker, name, exchange, asset_class, computed_score, score_explanation', { count: 'exact' });
 
       if (tabConfig?.filter) {
         query = query.eq('asset_class', tabConfig.filter);
@@ -325,12 +379,22 @@ const AssetRadar = () => {
 
       const { data, error, count } = await query
         .order('ticker')
-        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+        .range(pageNum * PAGE_SIZE * 2, (pageNum + 1) * PAGE_SIZE * 2 - 1); // Fetch extra for filtering
 
       if (error) throw error;
 
-      assetsData = data || [];
-      totalCount = count || 0;
+      let fetchedAssets = (data || []) as AssetRow[];
+
+      // Filter by signal mass if scoredOnly is enabled
+      if (filterScored) {
+        fetchedAssets = fetchedAssets.filter(a => {
+          const mass = extractSignalMass(a.score_explanation);
+          return mass >= SIGNAL_MASS_THRESHOLD;
+        });
+      }
+
+      assetsData = fetchedAssets.slice(0, PAGE_SIZE);
+      totalCount = filterScored ? fetchedAssets.length : (count || 0);
 
       const tickers = assetsData.map(a => a.ticker);
       const threeDaysAgo = new Date();
@@ -374,6 +438,8 @@ const AssetRadar = () => {
         const score = asset.computed_score ?? 50;
         const sentiment = getSentiment(score);
         const priceInfo = priceMap.get(asset.ticker);
+        const signalMass = extractSignalMass(asset.score_explanation);
+        const signalStrengthInfo = getSignalStrength(signalMass);
         
         return {
           id: asset.id,
@@ -384,7 +450,9 @@ const AssetRadar = () => {
           score,
           sentiment: sentiment.label,
           lastUpdated: priceInfo?.lastUpdated || null,
-          priceChange: priceChangeMap.get(asset.ticker) ?? null
+          priceChange: priceChangeMap.get(asset.ticker) ?? null,
+          signalStrength: signalStrengthInfo.level,
+          signalMass
         };
       });
 
@@ -438,18 +506,18 @@ const AssetRadar = () => {
 
   useEffect(() => {
     setPage(0);
-    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
+    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy, scoredOnly), 300);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy]);
+  }, [searchTerm, activeTab, sortBy, scoredOnly]);
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchAssets(page, activeTab, sortBy);
+      fetchAssets(page, activeTab, sortBy, scoredOnly);
     }, REFRESH_INTERVAL);
     
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy]);
+  }, [page, activeTab, sortBy, scoredOnly]);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as AssetClassTab);
@@ -460,7 +528,7 @@ const AssetRadar = () => {
   const goToPage = (newPage: number) => {
     if (newPage >= 0 && newPage < totalPages) {
       setPage(newPage);
-      fetchAssets(newPage, activeTab, sortBy);
+      fetchAssets(newPage, activeTab, sortBy, scoredOnly);
     }
   };
 
@@ -482,7 +550,8 @@ const AssetRadar = () => {
 
   const getTabDescription = () => {
     const tabLabel = ASSET_CLASS_TABS.find(t => t.value === activeTab)?.label || "assets";
-    return `Browse ${total.toLocaleString()} ${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
+    const scoredLabel = scoredOnly ? "scored " : "";
+    return `Browse ${total.toLocaleString()} ${scoredLabel}${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
   };
 
   return (
@@ -504,29 +573,49 @@ const AssetRadar = () => {
 
         <Card className="shadow-data">
           <CardHeader>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by ticker, name, or exchange..."
-                  className="pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by ticker, name, or exchange..."
+                    className="pl-10"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <ArrowUpDown className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Sort by..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SORT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Signal strength filter toggle */}
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  <Label htmlFor="scored-only" className="text-sm font-medium cursor-pointer">
+                    Scored assets only
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    (assets with signal data)
+                  </span>
+                </div>
+                <Switch
+                  id="scored-only"
+                  checked={scoredOnly}
+                  onCheckedChange={setScoredOnly}
                 />
               </div>
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Sort by..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {SORT_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </CardHeader>
         <CardContent>
@@ -542,13 +631,16 @@ const AssetRadar = () => {
             </div>
           ) : assets.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              {searchTerm ? `No assets found matching "${searchTerm}"` : "No assets available"}
+              {searchTerm ? `No assets found matching "${searchTerm}"` : 
+               scoredOnly ? "No scored assets available. Try disabling the 'Scored assets only' filter." : 
+               "No assets available"}
             </div>
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {sortedAssets.map((asset, index) => {
                   const sentiment = getSentiment(asset.score);
+                  const signalStrengthInfo = getSignalStrength(asset.signalMass);
                   const displayRank = index + 1;
                   return (
                     <Link
@@ -561,6 +653,17 @@ const AssetRadar = () => {
                         <div className="flex items-start justify-between mb-1">
                           <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
                           <div className="flex items-center gap-2">
+                            {/* Signal strength badge */}
+                            {asset.signalStrength !== "none" && (
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[10px] px-1.5 py-0 ${signalStrengthInfo.className}`}
+                                title={`Signal strength: ${signalStrengthInfo.label}`}
+                              >
+                                <Zap className="h-2.5 w-2.5 mr-0.5" />
+                                {signalStrengthInfo.label}
+                              </Badge>
+                            )}
                             <Badge variant={sentiment.variant} className="text-xs">
                               {asset.score}
                             </Badge>
