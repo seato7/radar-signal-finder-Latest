@@ -48,6 +48,19 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get price coverage status - only include assets with 'fresh' price data
+    const { data: freshCoverage, error: coverageError } = await supabase
+      .from('price_coverage_daily')
+      .select('ticker')
+      .eq('status', 'fresh');
+
+    if (coverageError) {
+      console.warn('Could not fetch price coverage, proceeding without filter:', coverageError.message);
+    }
+
+    const freshTickers = new Set((freshCoverage || []).map(c => c.ticker));
+    console.log(`Found ${freshTickers.size} tickers with fresh price coverage`);
+
     // Get tickers to filter with current prices
     const tickersWithPrices = new Map<string, number>();
     
@@ -79,10 +92,15 @@ Deno.serve(async (req) => {
 
     if (topError) throw topError;
 
-    // Filter by price threshold
+    // Filter by price threshold AND fresh price coverage
     const filteredTopAssets = (topAssets || []).filter(a => {
+      // Must have fresh price coverage for tracking
+      if (freshTickers.size > 0 && !freshTickers.has(a.ticker)) {
+        return false;
+      }
+      
       const price = tickersWithPrices.get(a.ticker);
-      if (price === undefined) return true; // Allow if no price data (don't want to exclude all crypto etc)
+      if (price === undefined) return false; // Require price data for tracking
       return price >= MIN_PRICE_USD;
     });
 
@@ -96,16 +114,21 @@ Deno.serve(async (req) => {
 
     if (bottomError) throw bottomError;
 
-    // Filter bottom assets by price
+    // Filter bottom assets by price AND fresh coverage
     const filteredBottomAssets = (bottomAssets || []).filter(a => {
+      if (freshTickers.size > 0 && !freshTickers.has(a.ticker)) {
+        return false;
+      }
+      
       const price = tickersWithPrices.get(a.ticker);
-      if (price === undefined) return true;
+      if (price === undefined) return false;
       return price >= MIN_PRICE_USD;
     });
 
     const allAssets = [...filteredTopAssets, ...filteredBottomAssets];
 
     console.log(`Found ${allAssets.length} assets to snapshot after filtering (${filteredTopAssets.length} bullish, ${filteredBottomAssets.length} bearish)`);
+    console.log(`Excluded ${(topAssets?.length || 0) - filteredTopAssets.length} bullish assets due to missing price data or coverage`);
 
     // Create rows with top_n tracking
     // For each asset, determine which top_n buckets it belongs to
@@ -213,6 +236,8 @@ Deno.serve(async (req) => {
         top_100: top100Count,
         price_filter_applied: MIN_PRICE_USD,
         tickers_with_price_data: tickersWithPrices.size,
+        fresh_coverage_count: freshTickers.size,
+        excluded_no_coverage: (topAssets?.length || 0) - filteredTopAssets.length,
       },
     });
 
@@ -228,6 +253,7 @@ Deno.serve(async (req) => {
         top_20: top20Count,
         top_50: top50Count,
         top_100: top100Count,
+        fresh_coverage_count: freshTickers.size,
         duration_ms: duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

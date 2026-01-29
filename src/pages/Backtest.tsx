@@ -6,12 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, AlertCircle, BarChart3, ArrowUp, ArrowDown } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, AlertCircle, BarChart3, ArrowUp, ArrowDown, AlertTriangle } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
-type Period = '1W' | '1M' | 'ALL';
+type Period = '1W' | '30D' | 'ALL';
+
+interface DataQuality {
+  assets_with_prices: number;
+  total_assets: number;
+  coverage_pct: number;
+}
 
 interface PerformanceData {
   portfolio_value: number;
@@ -33,6 +39,7 @@ interface PerformanceData {
     has_data?: boolean;
   }>;
   starting_investment: number;
+  data_quality?: DataQuality;
   last_updated_at?: string | null;
 }
 
@@ -45,6 +52,7 @@ interface DailyHistoryData {
     spy_daily_return_pct: number;
     spy_cumulative_value: number;
     is_negative_day?: boolean;
+    assets_with_data?: number;
   }>;
   start_date: string;
   starting_investment: number;
@@ -106,6 +114,14 @@ const Performance = () => {
     });
   };
 
+  const getPeriodLabel = (p: Period) => {
+    switch (p) {
+      case '1W': return 'Last 7 Days';
+      case '30D': return 'Last 30 Days';
+      case 'ALL': return 'All Time';
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -115,14 +131,14 @@ const Performance = () => {
 
       {/* Period Selector */}
       <div className="flex gap-2">
-        {(['1W', '1M', 'ALL'] as Period[]).map((p) => (
+        {(['1W', '30D', 'ALL'] as Period[]).map((p) => (
           <Button
             key={p}
             variant={period === p ? 'default' : 'outline'}
             size="sm"
             onClick={() => setPeriod(p)}
           >
-            {p === 'ALL' ? 'All Time' : p === '1W' ? '1 Week' : '1 Month'}
+            {getPeriodLabel(p)}
           </Button>
         ))}
       </div>
@@ -177,6 +193,23 @@ const Performance = () => {
                   {Math.abs(performanceData.outperformance).toFixed(2)}%
                 </p>
               )}
+              
+              {/* Data Quality Indicator */}
+              {performanceData.data_quality && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  {performanceData.data_quality.coverage_pct < 80 ? (
+                    <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600 border-yellow-500/30">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      {performanceData.data_quality.assets_with_prices} of {performanceData.data_quality.total_assets} assets have price data
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+                      {performanceData.data_quality.assets_with_prices} of {performanceData.data_quality.total_assets} assets tracked
+                    </Badge>
+                  )}
+                </div>
+              )}
+              
               <p className="text-xs text-muted-foreground mt-4">
                 {performanceData.period_days} days tracked ({formatDate(performanceData.start_date)} - {formatDate(performanceData.end_date)})
               </p>
@@ -274,12 +307,19 @@ const Performance = () => {
               {performanceData.asset_breakdown.map((asset, index) => (
                 <div
                   key={asset.ticker}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-lg transition-colors",
+                    asset.has_data === false 
+                      ? "bg-muted/30 opacity-60" 
+                      : "bg-muted/50 hover:bg-muted"
+                  )}
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-muted-foreground text-sm w-6">#{index + 1}</span>
                     <div className="flex items-center gap-2">
-                      {asset.return_pct >= 0 ? (
+                      {asset.has_data === false ? (
+                        <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                      ) : asset.return_pct >= 0 ? (
                         <ArrowUp className="h-4 w-4 text-green-500" />
                       ) : (
                         <ArrowDown className="h-4 w-4 text-red-500" />
@@ -296,12 +336,18 @@ const Performance = () => {
                     <Badge variant="outline" className="text-xs">
                       Score: {Math.round(asset.score)}
                     </Badge>
-                    <div className={cn(
-                      "text-right font-medium min-w-[80px]",
-                      asset.return_pct >= 0 ? "text-green-500" : "text-red-500"
-                    )}>
-                      {asset.return_pct >= 0 ? '+' : ''}{asset.return_pct.toFixed(2)}%
-                    </div>
+                    {asset.has_data === false ? (
+                      <div className="text-right text-muted-foreground text-sm min-w-[80px]">
+                        No data
+                      </div>
+                    ) : (
+                      <div className={cn(
+                        "text-right font-medium min-w-[80px]",
+                        asset.return_pct >= 0 ? "text-green-500" : "text-red-500"
+                      )}>
+                        {asset.return_pct >= 0 ? '+' : ''}{asset.return_pct.toFixed(2)}%
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -429,11 +475,16 @@ const Performance = () => {
       </Card>
 
       {/* Disclaimer */}
-      <div className="text-center text-xs text-muted-foreground px-4">
-        <AlertCircle className="h-4 w-4 inline mr-1" />
-        Historical performance based on equal-weighted investment in top 10 rated assets using real market data from TwelveData.
-        Past performance does not guarantee future results.
-      </div>
+      <Card className="bg-muted/30 border-muted">
+        <CardContent className="py-4">
+          <p className="text-xs text-muted-foreground text-center">
+            <strong>Disclaimer:</strong> Past performance does not guarantee future results. 
+            This tracker shows hypothetical returns based on our rating system and real historical price data. 
+            No actual trades are executed. Returns shown are before any fees, taxes, or slippage. 
+            This is for informational purposes only and not investment advice.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 };
