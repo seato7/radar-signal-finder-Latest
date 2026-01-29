@@ -126,34 +126,32 @@ const THEME_PATTERNS: Record<string, {
 };
 
 // Comprehensive SECTOR → THEME mapping (covers all 26k+ enriched assets)
+// NOTE: Keys MUST be lowercase for matching
 const SECTOR_TO_THEME: Record<string, { themes: string[]; weights: number[] }> = {
+  // Core sectors from actual data
+  "industrial manufacturing": { themes: ["Industrial & Infrastructure"], weights: [1.0] },
   "financial services": { themes: ["Banks & Financials"], weights: [1.0] },
   "technology": { themes: ["Big Tech & Consumer", "Cloud & Cybersecurity", "AI & Semiconductors"], weights: [0.4, 0.35, 0.25] },
+  "mining & metals": { themes: ["Commodities & Mining"], weights: [1.0] },
   "cryptocurrency": { themes: ["Fintech & Crypto"], weights: [1.0] },
   "biotechnology": { themes: ["Biotech & Healthcare"], weights: [1.0] },
-  "mining & metals": { themes: ["Commodities & Mining"], weights: [1.0] },
   "currency": { themes: ["Fintech & Crypto", "International & Emerging"], weights: [0.6, 0.4] },
-  "oil & gas": { themes: ["Energy & Oil"], weights: [1.0] },
-  "semiconductors": { themes: ["AI & Semiconductors"], weights: [1.0] },
-  "healthcare": { themes: ["Biotech & Healthcare"], weights: [1.0] },
   "banks": { themes: ["Banks & Financials"], weights: [1.0] },
+  "healthcare": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "media & entertainment": { themes: ["Media & Entertainment"], weights: [1.0] },
+  "oil & gas": { themes: ["Energy & Oil"], weights: [1.0] },
+  "clean energy": { themes: ["Clean Energy & EVs"], weights: [1.0] },
+  "insurance": { themes: ["Banks & Financials"], weights: [1.0] },
   "real estate": { themes: ["Real Estate & REITs"], weights: [1.0] },
   "food & beverage": { themes: ["Food & Agriculture"], weights: [1.0] },
-  "media & entertainment": { themes: ["Media & Entertainment"], weights: [1.0] },
-  "transportation": { themes: ["Travel & Leisure", "Industrial & Infrastructure"], weights: [0.7, 0.3] },
-  "clean energy": { themes: ["Clean Energy & EVs"], weights: [1.0] },
-  "consumer goods": { themes: ["Retail & E-commerce"], weights: [1.0] },
-  "etf": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
-  "telecom": { themes: ["Big Tech & Consumer", "Cloud & Cybersecurity"], weights: [0.6, 0.4] },
   "utilities": { themes: ["Industrial & Infrastructure", "Clean Energy & EVs"], weights: [0.6, 0.4] },
   "ai & machine learning": { themes: ["AI & Semiconductors", "Cloud & Cybersecurity"], weights: [0.7, 0.3] },
-  "aerospace & defense": { themes: ["Defense & Aerospace"], weights: [1.0] },
-  "insurance": { themes: ["Banks & Financials"], weights: [1.0] },
-  "industrial manufacturing": { themes: ["Industrial & Infrastructure"], weights: [1.0] },
-  "retail": { themes: ["Retail & E-commerce"], weights: [1.0] },
+  "telecom": { themes: ["Big Tech & Consumer", "Cloud & Cybersecurity"], weights: [0.6, 0.4] },
+  "semiconductors": { themes: ["AI & Semiconductors"], weights: [1.0] },
   "construction": { themes: ["Industrial & Infrastructure", "Real Estate & REITs"], weights: [0.6, 0.4] },
+  "aerospace & defense": { themes: ["Defense & Aerospace"], weights: [1.0] },
+  // Additional common sectors
   "energy": { themes: ["Energy & Oil"], weights: [1.0] },
-  "medical devices": { themes: ["Biotech & Healthcare"], weights: [1.0] },
   "materials": { themes: ["Commodities & Mining", "Industrial & Infrastructure"], weights: [0.6, 0.4] },
   "fintech": { themes: ["Fintech & Crypto", "Banks & Financials"], weights: [0.7, 0.3] },
   "agriculture": { themes: ["Food & Agriculture"], weights: [1.0] },
@@ -188,6 +186,11 @@ const SECTOR_TO_THEME: Record<string, { themes: string[]; weights: number[] }> =
   "pharma": { themes: ["Biotech & Healthcare"], weights: [1.0] },
   "pharmaceutical": { themes: ["Biotech & Healthcare"], weights: [1.0] },
   "reit": { themes: ["Real Estate & REITs"], weights: [1.0] },
+  "medical devices": { themes: ["Biotech & Healthcare"], weights: [1.0] },
+  "retail": { themes: ["Retail & E-commerce"], weights: [1.0] },
+  "consumer goods": { themes: ["Retail & E-commerce"], weights: [1.0] },
+  "etf": { themes: ["Big Tech & Consumer", "Banks & Financials"], weights: [0.5, 0.5] },
+  "transportation": { themes: ["Travel & Leisure", "Industrial & Infrastructure"], weights: [0.7, 0.3] },
 };
 
 // Default mapping for unmapped assets
