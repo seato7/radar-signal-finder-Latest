@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { BarChart3, ArrowUpRight, ArrowDownRight, ChevronRight } from "lucide-react";
+import { BarChart3, ArrowUpRight, ArrowDownRight, ChevronRight, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,67 +9,70 @@ import { useNavigate } from "react-router-dom";
 interface TopAsset {
   ticker: string;
   name: string;
-  trend: string;
-  change: number;
-  signalCount: number;
+  score: number;
+  expectedReturn: number;
+  signalStrength: "high" | "medium" | "low";
 }
+
+// Signal strength based on mass thresholds
+const getSignalStrength = (mass: number): { level: "high" | "medium" | "low"; label: string; className: string } => {
+  if (mass >= 0.01) return { level: "high", label: "High", className: "bg-success/20 text-success border-success/30" };
+  if (mass >= 0.005) return { level: "medium", label: "Med", className: "bg-primary/20 text-primary border-primary/30" };
+  return { level: "low", label: "Low", className: "bg-muted text-muted-foreground border-border" };
+};
+
+// Extract value from score_explanation jsonb array
+const extractFromExplanation = (scoreExplanation: any, key: string): number => {
+  if (!scoreExplanation || !Array.isArray(scoreExplanation)) return 0;
+  const entry = scoreExplanation.find((e: any) => e.k === key);
+  if (!entry) return 0;
+  return typeof entry.v === 'number' ? entry.v : parseFloat(String(entry.v)) || 0;
+};
 
 const TopAssetsCard = () => {
   const navigate = useNavigate();
   
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: ['top-assets-dashboard'],
+    queryKey: ['top-assets-dashboard-scored'],
     queryFn: async (): Promise<TopAsset[]> => {
-      // Get top bullish assets with strong uptrends, sorted by performance
-      const { data: technicals, error } = await supabase
-        .from('advanced_technicals')
-        .select('ticker, trend_strength, price_vs_vwap_pct, breakout_signal')
-        .eq('trend_strength', 'strong_uptrend')
-        .order('price_vs_vwap_pct', { ascending: false })
-        .order('timestamp', { ascending: false })
-        .limit(20);
+      // Get top SCORED assets (with signal mass >= 0.001), sorted by score descending
+      const { data: scoredAssets, error } = await supabase
+        .from('assets')
+        .select('ticker, name, computed_score, expected_return, score_explanation')
+        .not('computed_score', 'is', null)
+        .order('computed_score', { ascending: false })
+        .limit(100); // Fetch more to filter by mass
       
       if (error) throw error;
-      if (!technicals || technicals.length === 0) {
-        // Fallback: get any uptrend assets
-        const { data: fallback } = await supabase
-          .from('advanced_technicals')
-          .select('ticker, trend_strength, price_vs_vwap_pct')
-          .eq('trend_strength', 'strong_uptrend')
-          .order('price_vs_vwap_pct', { ascending: false })
-          .limit(6);
-        
-        return (fallback || []).slice(0, 3).map(t => ({
-          ticker: t.ticker,
-          name: t.ticker,
-          trend: t.trend_strength || 'strong_uptrend',
-          change: t.price_vs_vwap_pct || 0,
-          signalCount: Math.floor(Math.random() * 5) + 2
-        }));
+      if (!scoredAssets || scoredAssets.length === 0) {
+        return [];
       }
       
-      // Get unique tickers
-      const uniqueAssets = new Map<string, typeof technicals[0]>();
-      for (const t of technicals) {
-        if (!uniqueAssets.has(t.ticker)) {
-          uniqueAssets.set(t.ticker, t);
-        }
-      }
+      // Filter to only assets with meaningful signal mass
+      const massyAssets = scoredAssets.filter(a => {
+        const mass = extractFromExplanation(a.score_explanation, 'signal_mass');
+        return mass >= 0.001;
+      });
       
-      return Array.from(uniqueAssets.values()).slice(0, 3).map(t => ({
-        ticker: t.ticker,
-        name: t.ticker,
-        trend: t.trend_strength,
-        change: t.price_vs_vwap_pct || 0,
-        signalCount: Math.floor(Math.random() * 5) + 2
-      }));
+      // Take top 3 by score
+      return massyAssets.slice(0, 3).map(a => {
+        const mass = extractFromExplanation(a.score_explanation, 'signal_mass');
+        const strengthInfo = getSignalStrength(mass);
+        return {
+          ticker: a.ticker,
+          name: a.name || a.ticker,
+          score: a.computed_score ?? 50,
+          expectedReturn: a.expected_return ?? 0,
+          signalStrength: strengthInfo.level
+        };
+      });
     },
     staleTime: 5 * 60 * 1000,
   });
 
-  // Mini sparkline component (visual representation)
-  const MiniSparkline = ({ trend }: { trend: string }) => {
-    const isUp = trend === 'strong_uptrend';
+  // Mini sparkline component (visual representation based on expected return)
+  const MiniSparkline = ({ expectedReturn }: { expectedReturn: number }) => {
+    const isUp = expectedReturn > 0;
     return (
       <div className="flex items-end gap-0.5 h-6 w-16">
         {[0.3, 0.5, 0.4, 0.6, 0.55, 0.7, 0.65, 0.8, 0.75, 0.9].map((h, i) => {
@@ -92,7 +95,7 @@ const TopAssetsCard = () => {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-lg">
             <BarChart3 className="h-5 w-5 text-primary" />
-            Top Assets Right Now
+            Top Scored Assets
           </div>
           <Button 
             variant="ghost" 
@@ -119,11 +122,15 @@ const TopAssetsCard = () => {
           </div>
         ) : assets.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm">No bullish opportunities detected right now</p>
+            <p className="text-sm">No scored assets available yet</p>
           </div>
         ) : (
           assets.map((asset, index) => {
-            const isUp = asset.trend === 'strong_uptrend';
+            const isUp = asset.expectedReturn > 0;
+            const strengthInfo = getSignalStrength(
+              asset.signalStrength === "high" ? 0.015 : 
+              asset.signalStrength === "medium" ? 0.007 : 0.002
+            );
             return (
               <div
                 key={asset.ticker}
@@ -139,6 +146,13 @@ const TopAssetsCard = () => {
                       </span>
                       <Badge 
                         variant="outline" 
+                        className={`text-[10px] px-1.5 py-0 ${strengthInfo.className}`}
+                      >
+                        <Zap className="h-2.5 w-2.5 mr-0.5" />
+                        {strengthInfo.label}
+                      </Badge>
+                      <Badge 
+                        variant="outline" 
                         className={`text-xs ${isUp ? 'border-success/30 text-success' : 'border-destructive/30 text-destructive'}`}
                       >
                         {isUp ? (
@@ -146,14 +160,16 @@ const TopAssetsCard = () => {
                         ) : (
                           <ArrowDownRight className="h-3 w-3 mr-1" />
                         )}
-                        {Math.abs(asset.change).toFixed(1)}%
+                        {asset.score}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{asset.signalCount} converging signals</span>
+                      <span>
+                        Expected: {isUp ? '+' : ''}{(asset.expectedReturn * 100).toFixed(2)}%
+                      </span>
                     </div>
                   </div>
-                  <MiniSparkline trend={asset.trend} />
+                  <MiniSparkline expectedReturn={asset.expectedReturn} />
                 </div>
               </div>
             );
