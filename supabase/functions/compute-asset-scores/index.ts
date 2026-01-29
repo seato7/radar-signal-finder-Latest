@@ -17,14 +17,17 @@ const MAX_RETURN_WINSORIZE = 0.20; // Cap returns at +-20% for calibration
 const MAX_VOLATILITY_PENALTY = 0.05; // Max penalty from volatility
 
 // ============================================================================
-// SAMPLE SIZE TRUST GATING - Downweight alphas with insufficient data
+// SAMPLE SIZE TRUST GATING - Softened to avoid double-regularization
+// Using sqrt formula since compute-signal-alpha already applies shrinkage
 // ============================================================================
-const MIN_ALPHA_SAMPLE_SIZE = 50; // Trust factor = n / (n + MIN_ALPHA_SAMPLE_SIZE)
+const MIN_ALPHA_SAMPLE_SIZE = 50; // Reference point for trust factor
 
 // ============================================================================
-// COMPONENT BASELINE ALPHA - Fallback when no alpha data exists
-// Keep intentionally small; tune once coverage improves
+// COMPONENT BASELINE ALPHA - Evidence-gated fallback
+// Only used when component has sufficient aggregate evidence
 // ============================================================================
+const MIN_COMPONENT_TOTAL_N = 500; // Minimum aggregate samples across all types in component
+
 const COMPONENT_BASELINE_ALPHA: Record<string, number> = {
   InsiderPoliticianConfirm: 0.0015,
   BigMoneyConfirm: 0.0012,
@@ -286,32 +289,89 @@ function canonicalSignalType(t: string): string {
 }
 
 /**
- * Family key mapping - collapses signal variants into families for alpha lookup
- * Used when exact/canonical alpha not found
+ * POLARITY-AWARE Family key mapping
+ * Separates bullish/bearish families to prevent sign cancellation in averaging
  */
 function familyKey(signalType: string): string | null {
   const s = signalType;
   
-  // Momentum families
-  if (s.startsWith('momentum_5d_')) return 'momentum_5d';
-  if (s.startsWith('momentum_20d_')) return 'momentum_20d';
+  // Momentum families - SPLIT BY POLARITY
+  if (s.startsWith('momentum_5d_')) {
+    if (s.includes('bearish')) return 'momentum_5d_bearish';
+    if (s.includes('bullish')) return 'momentum_5d_bullish';
+    return 'momentum_5d_neutral';
+  }
+  if (s.startsWith('momentum_20d_')) {
+    if (s.includes('bearish')) return 'momentum_20d_bearish';
+    if (s.includes('bullish')) return 'momentum_20d_bullish';
+    return 'momentum_20d_neutral';
+  }
   
-  // Insider / politician
-  if (s.startsWith('insider_')) return 'insider';
-  if (s.startsWith('politician_')) return 'politician';
-  if (s.startsWith('congressional_')) return 'congressional';
-  if (s.startsWith('form4_')) return 'form4';
+  // Insider / politician - SPLIT BY POLARITY
+  if (s.startsWith('insider_')) {
+    if (s.includes('sell')) return 'insider_sell';
+    if (s.includes('buy')) return 'insider_buy';
+    return 'insider';
+  }
+  if (s.startsWith('politician_')) {
+    if (s.includes('sell')) return 'politician_sell';
+    if (s.includes('buy')) return 'politician_buy';
+    return 'politician';
+  }
+  if (s.startsWith('congressional_')) {
+    if (s.includes('sell')) return 'congressional_sell';
+    if (s.includes('buy')) return 'congressional_buy';
+    return 'congressional';
+  }
+  if (s.startsWith('form4_')) {
+    if (s.includes('sell')) return 'form4_sell';
+    if (s.includes('buy')) return 'form4_buy';
+    return 'form4';
+  }
   
-  // Other common buckets
+  // Sentiment families - SPLIT BY POLARITY
+  if (s.startsWith('sentiment_')) {
+    if (s.includes('bearish')) return 'sentiment_bearish';
+    if (s.includes('bullish')) return 'sentiment_bullish';
+    return 'sentiment';
+  }
+  if (s.startsWith('social_')) {
+    if (s.includes('bearish')) return 'social_bearish';
+    if (s.includes('bullish')) return 'social_bullish';
+    return 'social';
+  }
+  if (s.startsWith('news_')) {
+    if (s.includes('bearish')) return 'news_bearish';
+    if (s.includes('bullish')) return 'news_bullish';
+    return 'news';
+  }
+  
+  // COT families - SPLIT BY POLARITY
+  if (s.startsWith('cot_')) {
+    if (s.includes('bearish')) return 'cot_bearish';
+    if (s.includes('bullish')) return 'cot_bullish';
+    return 'cot';
+  }
+  
+  // Forex families - SPLIT BY POLARITY
+  if (s.startsWith('forex_')) {
+    if (s.includes('bearish') || s.includes('short')) return 'forex_bearish';
+    if (s.includes('bullish') || s.includes('long')) return 'forex_bullish';
+    return 'forex';
+  }
+  
+  // Technical families - SPLIT BY POLARITY
+  if (s.startsWith('technical_')) {
+    if (s.includes('breakdown') || s.includes('resistance')) return 'technical_bearish';
+    if (s.includes('breakout') || s.includes('support')) return 'technical_bullish';
+    return 'technical';
+  }
+  
+  // Other common buckets (polarity-neutral)
   if (s.startsWith('policy_')) return 'policy';
   if (s.startsWith('economic_')) return 'economic';
   if (s.startsWith('supply_chain_')) return 'supply_chain';
-  if (s.startsWith('forex_')) return 'forex';
-  if (s.startsWith('technical_')) return 'technical';
-  if (s.startsWith('cot_')) return 'cot';
   if (s.startsWith('onchain_')) return 'onchain';
-  if (s.startsWith('social_')) return 'social';
-  if (s.startsWith('news_')) return 'news';
   if (s.startsWith('earnings_')) return 'earnings';
   if (s.startsWith('ai_research_')) return 'ai_research';
   if (s.startsWith('smart_money_')) return 'smart_money';
@@ -324,11 +384,13 @@ function familyKey(signalType: string): string | null {
 }
 
 /**
- * Trust gating - downweights alphas with insufficient sample sizes
+ * SOFTENED Trust gating - uses sqrt formula to reduce double-regularization
+ * Since compute-signal-alpha already applies shrinkage, we use a gentler formula here
  */
 function applyTrustGating(alpha: number, n: number): number {
   if (!n || n <= 0) return 0;
-  const trust = n / (n + MIN_ALPHA_SAMPLE_SIZE);
+  // SOFTENED: sqrt formula instead of linear to avoid over-penalizing
+  const trust = Math.sqrt(n / (n + MIN_ALPHA_SAMPLE_SIZE));
   return alpha * trust;
 }
 
@@ -471,7 +533,8 @@ Deno.serve(async (req) => {
     console.log(`Loaded ${alphaMap.size} signal type alphas`);
 
     // ========================================================================
-    // BUILD FAMILY ALPHA MAP - aggregate child alphas weighted by sample size
+    // BUILD POLARITY-AWARE FAMILY ALPHA MAP
+    // Aggregate child alphas weighted by sample size, respecting polarity
     // ========================================================================
     const familyAlphaMap = new Map<string, AlphaRec>();
 
@@ -496,7 +559,40 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`Built ${familyAlphaMap.size} family alphas`);
+    console.log(`Built ${familyAlphaMap.size} polarity-aware family alphas`);
+
+    // ========================================================================
+    // BUILD EVIDENCE-GATED COMPONENT ALPHA MAP
+    // Only allow component fallback if component has MIN_COMPONENT_TOTAL_N samples
+    // ========================================================================
+    const componentAlphaMap = new Map<string, AlphaRec>();
+
+    for (const [stype, rec] of alphaMap.entries()) {
+      const component = SIGNAL_TYPE_TO_COMPONENT[stype] || SIGNAL_TYPE_TO_COMPONENT[canonicalSignalType(stype)];
+      if (!component) continue;
+
+      const cur = componentAlphaMap.get(component);
+      if (!cur) {
+        componentAlphaMap.set(component, { alpha: rec.alpha, sd: rec.sd, n: rec.n, hitRate: rec.hitRate });
+      } else {
+        const n1 = Math.max(1, cur.n);
+        const n2 = Math.max(1, rec.n);
+        const nTot = n1 + n2;
+
+        const alphaW = (cur.alpha * n1 + rec.alpha * n2) / nTot;
+        const sdW = (cur.sd * n1 + rec.sd * n2) / nTot;
+        const hitW = (cur.hitRate * n1 + rec.hitRate * n2) / nTot;
+
+        componentAlphaMap.set(component, { alpha: alphaW, sd: sdW, n: nTot, hitRate: hitW });
+      }
+    }
+
+    // Log component evidence levels
+    const componentEvidence: Record<string, number> = {};
+    for (const [comp, rec] of componentAlphaMap.entries()) {
+      componentEvidence[comp] = rec.n;
+    }
+    console.log(`Component evidence levels:`, componentEvidence);
 
     let processedCount = 0;
     let excludedCount = 0;
@@ -520,6 +616,18 @@ Deno.serve(async (req) => {
       component: 0,
       none: 0,
     };
+
+    // ========================================================================
+    // RUN-LEVEL INVARIANTS for debugging
+    // ========================================================================
+    let runMaxExpectedReturn = -Infinity;
+    let runMinExpectedReturn = Infinity;
+    let runMaxSingleContrib = 0;
+    let assetsAtFloor = 0;
+    let assetsAtCeiling = 0;
+    let totalPosContrib = 0;
+    let totalNegContrib = 0;
+    let assetsWithConflict = 0; // pos > 0 && neg > 0
 
     // Process in batches
     while (offset < endOffset) {
@@ -647,6 +755,7 @@ Deno.serve(async (req) => {
           let alphaStdPenalty = 0;
           let pos = 0;
           let neg = 0;
+          let maxContribThisAsset = 0;
           const scoreExplanation: any[] = [];
 
           // ================================================================
@@ -675,7 +784,7 @@ Deno.serve(async (req) => {
             const decay = expDecay(ageDays, halfLifeDays);
 
             // ================================================================
-            // HIERARCHICAL ALPHA LOOKUP: exact -> canonical -> family -> component -> 0
+            // HIERARCHICAL ALPHA LOOKUP: exact -> canonical -> family -> component (evidence-gated) -> 0
             // ================================================================
             let rec: AlphaRec | undefined = alphaMap.get(rawType);
             let fallbackLevel: 'exact' | 'canonical' | 'family' | 'component' | 'none' = 'none';
@@ -688,7 +797,7 @@ Deno.serve(async (req) => {
               if (rec) {
                 fallbackLevel = 'canonical';
               } else {
-                // 3) family match
+                // 3) family match (polarity-aware)
                 const fam = familyKey(canonType) || familyKey(rawType);
                 if (fam) {
                   const famRec = familyAlphaMap.get(fam);
@@ -698,10 +807,18 @@ Deno.serve(async (req) => {
                   }
                 }
 
-                // 4) component baseline
-                if (!rec && component && COMPONENT_BASELINE_ALPHA[component] !== undefined) {
-                  rec = { alpha: COMPONENT_BASELINE_ALPHA[component], sd: 0.02, n: 0, hitRate: 0.5 };
-                  fallbackLevel = 'component';
+                // 4) component fallback - EVIDENCE-GATED
+                // Only use if component has MIN_COMPONENT_TOTAL_N aggregate samples
+                if (!rec && component) {
+                  const compRec = componentAlphaMap.get(component);
+                  if (compRec && compRec.n >= MIN_COMPONENT_TOTAL_N) {
+                    rec = compRec;
+                    fallbackLevel = 'component';
+                  } else if (compRec) {
+                    // Log insufficient evidence but don't use
+                    // This prevents making up alphas with insufficient data
+                  }
+                  // NO BASELINE FALLBACK - if no evidence, alpha = 0
                 }
               }
             }
@@ -717,9 +834,8 @@ Deno.serve(async (req) => {
               sd = Number(rec.sd ?? 0);
             }
 
-            // Apply trust gating only for data-backed alphas (exact/canonical/family)
-            // For component baseline, keep as-is (it's already conservative)
-            if (fallbackLevel === 'exact' || fallbackLevel === 'canonical' || fallbackLevel === 'family') {
+            // Apply SOFTENED trust gating for data-backed alphas
+            if (fallbackLevel === 'exact' || fallbackLevel === 'canonical' || fallbackLevel === 'family' || fallbackLevel === 'component') {
               alpha = applyTrustGating(alpha, n);
             }
 
@@ -727,6 +843,11 @@ Deno.serve(async (req) => {
             // Do NOT apply direction multiplier again
             const contrib = decay * Math.min(mag, 5) * alpha;
             expectedReturn += contrib;
+
+            // Track max single contribution for this asset
+            if (Math.abs(contrib) > maxContribThisAsset) {
+              maxContribThisAsset = Math.abs(contrib);
+            }
 
             // Coverage counters
             if (fallbackLevel === 'exact') usedExact += 1;
@@ -769,6 +890,14 @@ Deno.serve(async (req) => {
           globalFallbackStats.component += usedComponent;
           globalFallbackStats.none += signalsWithoutAlpha;
 
+          // Track run-level stats
+          if (expectedReturn > runMaxExpectedReturn) runMaxExpectedReturn = expectedReturn;
+          if (expectedReturn < runMinExpectedReturn) runMinExpectedReturn = expectedReturn;
+          if (maxContribThisAsset > runMaxSingleContrib) runMaxSingleContrib = maxContribThisAsset;
+          totalPosContrib += pos;
+          totalNegContrib += neg;
+          if (pos > 0 && neg > 0) assetsWithConflict += 1;
+
           let disagreementPenalty = 0;
           if (pos > 0 && neg > 0) {
             const ratio = Math.min(pos, neg) / Math.max(pos, neg);
@@ -780,6 +909,10 @@ Deno.serve(async (req) => {
           const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
           const label = confidenceLabel(confScore);
           const finalScore = scoreFromExpected(expectedReturn, confScore);
+
+          // Track floor/ceiling hits
+          if (finalScore <= 15) assetsAtFloor += 1;
+          if (finalScore >= 85) assetsAtCeiling += 1;
 
           scoreExplanation.sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib));
           const topExplanation = scoreExplanation.slice(0, 10);
@@ -803,6 +936,9 @@ Deno.serve(async (req) => {
               { k: 'alpha_fallback_canonical', v: usedCanonical },
               { k: 'alpha_fallback_family', v: usedFamily },
               { k: 'alpha_fallback_component', v: usedComponent },
+              { k: 'sum_pos_contrib', v: Math.round(pos * 100000) / 100000 },
+              { k: 'sum_neg_contrib', v: Math.round(neg * 100000) / 100000 },
+              { k: 'pos_neg_ratio', v: pos > 0 && neg > 0 ? Math.round((Math.min(pos, neg) / Math.max(pos, neg)) * 100) / 100 : 0 },
               { k: 'top_signals', v: topExplanation },
             ],
           });
@@ -852,6 +988,22 @@ Deno.serve(async (req) => {
     const duration = Date.now() - startTime;
     console.log(`Score computation complete. Ranked: ${rankedCount}, Excluded: ${excludedCount}, Duration: ${duration}ms`);
 
+    // ========================================================================
+    // RUN-LEVEL INVARIANTS OUTPUT
+    // ========================================================================
+    const runInvariants = {
+      max_expected_return: runMaxExpectedReturn === -Infinity ? 0 : Math.round(runMaxExpectedReturn * 100000) / 100000,
+      min_expected_return: runMinExpectedReturn === Infinity ? 0 : Math.round(runMinExpectedReturn * 100000) / 100000,
+      max_single_contrib: Math.round(runMaxSingleContrib * 100000) / 100000,
+      assets_at_floor: assetsAtFloor,
+      assets_at_ceiling: assetsAtCeiling,
+      total_pos_contrib: Math.round(totalPosContrib * 100000) / 100000,
+      total_neg_contrib: Math.round(totalNegContrib * 100000) / 100000,
+      assets_with_conflict: assetsWithConflict,
+    };
+
+    console.log(`Run invariants:`, runInvariants);
+
     // Log to function_status
     await supabase.from('function_status').insert({
       function_name: 'compute-asset-scores',
@@ -866,12 +1018,15 @@ Deno.serve(async (req) => {
         total_assets: totalAssets,
         alpha_count: alphaMap.size,
         family_alpha_count: familyAlphaMap.size,
+        component_alpha_count: componentAlphaMap.size,
+        component_evidence: componentEvidence,
         coverage_count: coverageMap.size,
         model_version: 'v1_alpha',
         ranked_count: rankedCount,
         excluded_count: excludedCount,
         exclusion_reasons: exclusionReasons,
         fallback_stats: globalFallbackStats,
+        run_invariants: runInvariants,
         is_complete: isComplete,
       },
     });
@@ -884,11 +1039,14 @@ Deno.serve(async (req) => {
         excluded: excludedCount,
         exclusion_reasons: exclusionReasons,
         fallback_stats: globalFallbackStats,
+        run_invariants: runInvariants,
         duration_ms: duration,
         next_offset: nextOffset,
         total_assets: totalAssets,
         alpha_count: alphaMap.size,
         family_alpha_count: familyAlphaMap.size,
+        component_alpha_count: componentAlphaMap.size,
+        component_evidence: componentEvidence,
         coverage_count: coverageMap.size,
         model_version: 'v1_alpha',
       }),
