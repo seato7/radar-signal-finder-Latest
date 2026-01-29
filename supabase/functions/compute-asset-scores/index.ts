@@ -270,11 +270,18 @@ function confidenceLabel(cs: number): string {
   return 'risky';
 }
 
-function scoreFromExpected(expectedReturn: number, confScore: number): number {
+/**
+ * DYNAMIC SCORE MAPPING - uses empirical P95 scale
+ * @param expectedReturnCentered - mean-subtracted expected return
+ * @param confScore - confidence score
+ * @param p95Scale - P95 of |expected_return| from this run (min 0.005)
+ */
+function scoreFromExpected(expectedReturnCentered: number, confScore: number, p95Scale: number = 0.01): number {
   const base = 50;
-  // WIDENED: Allow ±8% expected return for better differentiation
-  const profitability = Math.max(-0.08, Math.min(0.08, expectedReturn));
-  const profitPoints = (profitability / 0.08) * 25; // Scale to ±25 points
+  // Dynamic clamp: 2x the P95 magnitude
+  const clamp = Math.max(0.005, 2 * p95Scale);
+  const profitability = Math.max(-clamp, Math.min(clamp, expectedReturnCentered));
+  const profitPoints = (profitability / clamp) * 25; // Scale to ±25 points
   const confPoints = Math.max(-10, Math.min(10, confScore * 5));
   const raw = base + profitPoints + confPoints;
   return Math.max(15, Math.min(85, raw));
@@ -511,24 +518,34 @@ Deno.serve(async (req) => {
     console.log(`Loaded ${coverageMap.size} coverage records for ${today}`);
 
     // ========================================================================
-    // FETCH ALPHA TABLE (signal_type_alpha)
+    // FETCH ALPHA TABLE (signal_type_alpha) - ALL HORIZONS for fallback
     // ========================================================================
     const { data: alphaRows, error: alphaErr } = await supabase
       .from('signal_type_alpha')
-      .select('signal_type, avg_forward_return, std_forward_return, sample_size, hit_rate')
-      .eq('horizon', '1d');
+      .select('signal_type, horizon, avg_forward_return, std_forward_return, sample_size, hit_rate');
 
     if (alphaErr) throw alphaErr;
 
-    const alphaMap = new Map<string, { alpha: number; sd: number; n: number; hitRate: number }>();
+    // Build alpha maps by horizon
+    const alphaMap1d = new Map<string, AlphaRec>();
+    const alphaMap3d = new Map<string, AlphaRec>();
+    const alphaMap7d = new Map<string, AlphaRec>();
+    
     for (const r of alphaRows || []) {
-      alphaMap.set(r.signal_type, {
+      const rec: AlphaRec = {
         alpha: Number(r.avg_forward_return ?? 0),
         sd: Number(r.std_forward_return ?? 0),
         n: Number(r.sample_size ?? 0),
         hitRate: Number(r.hit_rate ?? 0.5),
-      });
+      };
+      
+      if (r.horizon === '1d') alphaMap1d.set(r.signal_type, rec);
+      else if (r.horizon === '3d') alphaMap3d.set(r.signal_type, rec);
+      else if (r.horizon === '7d') alphaMap7d.set(r.signal_type, rec);
     }
+    
+    // Primary alphaMap uses 1d
+    const alphaMap = alphaMap1d;
 
     console.log(`Loaded ${alphaMap.size} signal type alphas`);
 
@@ -614,6 +631,8 @@ Deno.serve(async (req) => {
       canonical: 0,
       family: 0,
       component: 0,
+      horizon_3d: 0,
+      horizon_7d: 0,
       none: 0,
     };
 
@@ -628,6 +647,11 @@ Deno.serve(async (req) => {
     let totalPosContrib = 0;
     let totalNegContrib = 0;
     let assetsWithConflict = 0; // pos > 0 && neg > 0
+    
+    // Calibration metrics (tracked across batches)
+    let allExpectedReturns: number[] = [];
+    let lastMeanExpectedReturn = 0;
+    let lastP95Scale = 0.01;
 
     // Process in batches
     while (offset < endOffset) {
@@ -738,15 +762,30 @@ Deno.serve(async (req) => {
           signalsMap.get(s.asset_id)!.push(s);
         }
 
-        const updates: {
+        // ========================================================================
+        // PASS 1: Compute raw expected_return for all assets (for recentering)
+        // ========================================================================
+        interface RawAssetData {
           id: string;
           ticker: string;
-          score: number;
-          expected_return: number;
-          confidence_score: number;
-          confidence_label: string;
-          score_explanation: any[];
-        }[] = [];
+          expectedReturn: number;
+          alphaStdPenalty: number;
+          pos: number;
+          neg: number;
+          maxContribThisAsset: number;
+          scoreExplanation: any[];
+          signalsTotal: number;
+          signalsWithAlpha: number;
+          signalsWithoutAlpha: number;
+          usedExact: number;
+          usedCanonical: number;
+          usedFamily: number;
+          usedHorizon3d: number;
+          usedHorizon7d: number;
+          usedComponent: number;
+        }
+
+        const rawAssetData: RawAssetData[] = [];
 
         for (const asset of rankableAssets) {
           const assetSignals = signalsMap.get(asset.id) || [];
@@ -767,6 +806,8 @@ Deno.serve(async (req) => {
           let usedExact = 0;
           let usedCanonical = 0;
           let usedFamily = 0;
+          let usedHorizon3d = 0;
+          let usedHorizon7d = 0;
           let usedComponent = 0;
 
           for (const s of assetSignals) {
@@ -784,10 +825,10 @@ Deno.serve(async (req) => {
             const decay = expDecay(ageDays, halfLifeDays);
 
             // ================================================================
-            // HIERARCHICAL ALPHA LOOKUP: exact -> canonical -> family -> component (evidence-gated) -> 0
+            // HIERARCHICAL ALPHA LOOKUP: exact -> canonical -> family -> horizon (3d/7d) -> component (evidence-gated) -> 0
             // ================================================================
             let rec: AlphaRec | undefined = alphaMap.get(rawType);
-            let fallbackLevel: 'exact' | 'canonical' | 'family' | 'component' | 'none' = 'none';
+            let fallbackLevel: 'exact' | 'canonical' | 'family' | 'horizon_3d' | 'horizon_7d' | 'component' | 'none' = 'none';
 
             if (rec) {
               fallbackLevel = 'exact';
@@ -807,16 +848,28 @@ Deno.serve(async (req) => {
                   }
                 }
 
-                // 4) component fallback - EVIDENCE-GATED
+                // 4) HORIZON FALLBACK: Try 3d alpha (scaled /3), then 7d alpha (scaled /7)
+                if (!rec) {
+                  const rec3d = alphaMap3d.get(rawType) || alphaMap3d.get(canonType);
+                  if (rec3d && rec3d.n >= 10) {
+                    rec = { ...rec3d, alpha: rec3d.alpha / 3 }; // Scale to 1d equivalent
+                    fallbackLevel = 'horizon_3d';
+                  } else {
+                    const rec7d = alphaMap7d.get(rawType) || alphaMap7d.get(canonType);
+                    if (rec7d && rec7d.n >= 10) {
+                      rec = { ...rec7d, alpha: rec7d.alpha / 7 }; // Scale to 1d equivalent
+                      fallbackLevel = 'horizon_7d';
+                    }
+                  }
+                }
+
+                // 5) component fallback - EVIDENCE-GATED
                 // Only use if component has MIN_COMPONENT_TOTAL_N aggregate samples
                 if (!rec && component) {
                   const compRec = componentAlphaMap.get(component);
                   if (compRec && compRec.n >= MIN_COMPONENT_TOTAL_N) {
                     rec = compRec;
                     fallbackLevel = 'component';
-                  } else if (compRec) {
-                    // Log insufficient evidence but don't use
-                    // This prevents making up alphas with insufficient data
                   }
                   // NO BASELINE FALLBACK - if no evidence, alpha = 0
                 }
@@ -835,7 +888,7 @@ Deno.serve(async (req) => {
             }
 
             // Apply SOFTENED trust gating for data-backed alphas
-            if (fallbackLevel === 'exact' || fallbackLevel === 'canonical' || fallbackLevel === 'family' || fallbackLevel === 'component') {
+            if (fallbackLevel === 'exact' || fallbackLevel === 'canonical' || fallbackLevel === 'family' || fallbackLevel === 'component' || fallbackLevel === 'horizon_3d' || fallbackLevel === 'horizon_7d') {
               alpha = applyTrustGating(alpha, n);
             }
 
@@ -853,6 +906,8 @@ Deno.serve(async (req) => {
             if (fallbackLevel === 'exact') usedExact += 1;
             else if (fallbackLevel === 'canonical') usedCanonical += 1;
             else if (fallbackLevel === 'family') usedFamily += 1;
+            else if (fallbackLevel === 'horizon_3d') usedHorizon3d += 1;
+            else if (fallbackLevel === 'horizon_7d') usedHorizon7d += 1;
             else if (fallbackLevel === 'component') usedComponent += 1;
 
             if (fallbackLevel === 'none') {
@@ -888,6 +943,8 @@ Deno.serve(async (req) => {
           globalFallbackStats.canonical += usedCanonical;
           globalFallbackStats.family += usedFamily;
           globalFallbackStats.component += usedComponent;
+          globalFallbackStats.horizon_3d += usedHorizon3d;
+          globalFallbackStats.horizon_7d += usedHorizon7d;
           globalFallbackStats.none += signalsWithoutAlpha;
 
           // Track run-level stats
@@ -898,36 +955,116 @@ Deno.serve(async (req) => {
           totalNegContrib += neg;
           if (pos > 0 && neg > 0) assetsWithConflict += 1;
 
+          rawAssetData.push({
+            id: asset.id,
+            ticker: asset.ticker,
+            expectedReturn,
+            alphaStdPenalty,
+            pos,
+            neg,
+            maxContribThisAsset,
+            scoreExplanation,
+            signalsTotal,
+            signalsWithAlpha,
+            signalsWithoutAlpha,
+            usedExact,
+            usedCanonical,
+            usedFamily,
+            usedHorizon3d,
+            usedHorizon7d,
+            usedComponent,
+          });
+          
+          processedCount++;
+        }
+
+        // ========================================================================
+        // COMPUTE RECENTERING MEAN AND P95 SCALE
+        // ========================================================================
+        const expectedReturns = rawAssetData.map(d => d.expectedReturn);
+        const meanExpectedReturn = expectedReturns.length > 0 
+          ? expectedReturns.reduce((a, b) => a + b, 0) / expectedReturns.length 
+          : 0;
+
+        // Compute P95 of |expected_return - mean| for dynamic scaling
+        const absDeviations = expectedReturns.map(er => Math.abs(er - meanExpectedReturn)).sort((a, b) => a - b);
+        const p95Index = Math.floor(absDeviations.length * 0.95);
+        const p95AbsDeviation = absDeviations.length > 0 ? absDeviations[Math.min(p95Index, absDeviations.length - 1)] : 0.01;
+        const p95Scale = Math.max(0.005, p95AbsDeviation); // Minimum 0.5% scale
+        
+        // Track for run-level reporting
+        allExpectedReturns.push(...expectedReturns);
+        lastMeanExpectedReturn = meanExpectedReturn;
+        lastP95Scale = p95Scale;
+
+        // ========================================================================
+        // PASS 2: Apply recentering, disagreement penalty, and final scoring
+        // ========================================================================
+        const DISAGREE_MIN_TOTAL = 0.01; // Only penalize meaningful conflicts
+        const DISAGREE_MAX = 0.02;
+
+        const updates: {
+          id: string;
+          ticker: string;
+          score: number;
+          expected_return: number;
+          expected_return_raw: number;
+          expected_return_centered: number;
+          confidence_score: number;
+          confidence_label: string;
+          score_explanation: any[];
+        }[] = [];
+
+        for (const data of rawAssetData) {
+          const { 
+            id, ticker, expectedReturn, alphaStdPenalty, pos, neg, 
+            scoreExplanation, signalsTotal, signalsWithAlpha, signalsWithoutAlpha,
+            usedExact, usedCanonical, usedFamily, usedHorizon3d, usedHorizon7d, usedComponent
+          } = data;
+
+          // RECENTER: subtract global mean to remove bearish bias
+          const expectedReturnCentered = expectedReturn - meanExpectedReturn;
+
+          // GATED DISAGREEMENT PENALTY: only apply when total contributions are meaningful
+          const total = pos + neg;
+          const balance = (pos > 0 && neg > 0) ? (Math.min(pos, neg) / Math.max(pos, neg)) : 0;
           let disagreementPenalty = 0;
-          if (pos > 0 && neg > 0) {
-            const ratio = Math.min(pos, neg) / Math.max(pos, neg);
-            disagreementPenalty = ratio * 0.02;
+          if (total >= DISAGREE_MIN_TOTAL && pos > 0 && neg > 0) {
+            disagreementPenalty = Math.min(DISAGREE_MAX, balance * 0.02);
           }
 
           const aggregatedStd = Math.sqrt(alphaStdPenalty);
           const uncertainty = Math.max(0.005, aggregatedStd + disagreementPenalty);
-          const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
+          const confScore = expectedReturnCentered !== 0 ? expectedReturnCentered / uncertainty : 0;
           const label = confidenceLabel(confScore);
-          const finalScore = scoreFromExpected(expectedReturn, confScore);
+          
+          // DYNAMIC SCORE MAPPING using empirical P95 scale
+          const finalScore = scoreFromExpected(expectedReturnCentered, confScore, p95Scale);
 
           // Track floor/ceiling hits
           if (finalScore <= 15) assetsAtFloor += 1;
           if (finalScore >= 85) assetsAtCeiling += 1;
 
-          scoreExplanation.sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib));
+          scoreExplanation.sort((a: any, b: any) => Math.abs(b.contrib) - Math.abs(a.contrib));
           const topExplanation = scoreExplanation.slice(0, 10);
 
           updates.push({
-            id: asset.id,
-            ticker: asset.ticker,
+            id,
+            ticker,
             score: Math.round(finalScore * 10) / 10,
-            expected_return: Math.round(expectedReturn * 100000) / 100000,
+            expected_return: Math.round(expectedReturnCentered * 100000) / 100000, // Store centered value
+            expected_return_raw: Math.round(expectedReturn * 100000) / 100000,
+            expected_return_centered: Math.round(expectedReturnCentered * 100000) / 100000,
             confidence_score: Math.round(confScore * 1000) / 1000,
             confidence_label: label,
             score_explanation: [
-              { k: 'expected_return', v: Math.round(expectedReturn * 100000) / 100000 },
+              { k: 'expected_return_raw', v: Math.round(expectedReturn * 100000) / 100000 },
+              { k: 'expected_return_centered', v: Math.round(expectedReturnCentered * 100000) / 100000 },
+              { k: 'global_mean_expected_return', v: Math.round(meanExpectedReturn * 100000) / 100000 },
+              { k: 'p95_scale', v: Math.round(p95Scale * 100000) / 100000 },
               { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
               { k: 'disagreement_penalty', v: Math.round(disagreementPenalty * 100000) / 100000 },
+              { k: 'disagree_gated', v: total >= DISAGREE_MIN_TOTAL },
               { k: 'alpha_std_penalty', v: Math.round(alphaStdPenalty * 100000) / 100000 },
               { k: 'signals_total', v: signalsTotal },
               { k: 'signals_with_alpha', v: signalsWithAlpha },
@@ -935,6 +1072,8 @@ Deno.serve(async (req) => {
               { k: 'alpha_fallback_exact', v: usedExact },
               { k: 'alpha_fallback_canonical', v: usedCanonical },
               { k: 'alpha_fallback_family', v: usedFamily },
+              { k: 'alpha_fallback_horizon_3d', v: usedHorizon3d },
+              { k: 'alpha_fallback_horizon_7d', v: usedHorizon7d },
               { k: 'alpha_fallback_component', v: usedComponent },
               { k: 'sum_pos_contrib', v: Math.round(pos * 100000) / 100000 },
               { k: 'sum_neg_contrib', v: Math.round(neg * 100000) / 100000 },
@@ -942,8 +1081,6 @@ Deno.serve(async (req) => {
               { k: 'top_signals', v: topExplanation },
             ],
           });
-          
-          processedCount++;
         }
 
         // Batch update ranked assets
@@ -1000,6 +1137,10 @@ Deno.serve(async (req) => {
       total_pos_contrib: Math.round(totalPosContrib * 100000) / 100000,
       total_neg_contrib: Math.round(totalNegContrib * 100000) / 100000,
       assets_with_conflict: assetsWithConflict,
+      // Calibration metrics
+      mean_expected_return: Math.round(lastMeanExpectedReturn * 100000) / 100000,
+      p95_scale: Math.round(lastP95Scale * 100000) / 100000,
+      total_expected_returns_sampled: allExpectedReturns.length,
     };
 
     console.log(`Run invariants:`, runInvariants);
