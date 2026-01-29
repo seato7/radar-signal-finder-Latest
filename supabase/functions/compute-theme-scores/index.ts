@@ -272,16 +272,54 @@ function assignAssetToThemes(
 }
 
 /**
- * DYNAMIC SCORE MAPPING - uses empirical P95 scale (same as asset scoring)
+ * THEME SCORE CALCULATION
+ * Unlike assets (which use expected return directly), themes aggregate multiple assets.
+ * We use a momentum-weighted approach: sum of (expected_return * signal_mass) for all assets,
+ * then scale to 15-85 range using the global P95 scale.
+ * 
+ * This preserves signal direction and magnitude without averaging away to zero.
  */
-function scoreFromExpected(expectedReturnCentered: number, confidenceScore: number, p95Scale: number = 0.01): number {
-  const base = 50;
-  const clamp = Math.max(0.005, 2 * p95Scale);
-  const profitability = Math.max(-clamp, Math.min(clamp, expectedReturnCentered));
-  const profitPoints = (profitability / clamp) * 25;
-  const confPoints = Math.max(-10, Math.min(10, confidenceScore * 5));
-  const raw = base + profitPoints + confPoints;
-  return Math.max(15, Math.min(85, raw));
+function calculateThemeScore(
+  assets: Array<{ expected_return: number; signal_mass: number; weight: number }>,
+  globalP95Scale: number
+): { score: number; netMomentum: number; bullishMass: number; bearishMass: number } {
+  if (assets.length === 0) {
+    return { score: 50, netMomentum: 0, bullishMass: 0, bearishMass: 0 };
+  }
+
+  // Calculate net momentum: sum of (expected_return * signal_mass * weight)
+  // This preserves the direction and magnitude of signals
+  let netMomentum = 0;
+  let bullishMass = 0;
+  let bearishMass = 0;
+
+  for (const asset of assets) {
+    const contribution = asset.expected_return * asset.signal_mass * asset.weight;
+    netMomentum += contribution;
+    
+    if (asset.expected_return > 0) {
+      bullishMass += asset.signal_mass * asset.weight;
+    } else {
+      bearishMass += asset.signal_mass * asset.weight;
+    }
+  }
+
+  // Scale netMomentum to score range
+  // Use a fixed clamp based on P95 scale - don't scale by asset count
+  // This ensures themes with more assets can reach extremes
+  const clamp = globalP95Scale * 0.1; // Much smaller clamp for better spread
+  
+  const normalizedMomentum = Math.max(-1, Math.min(1, netMomentum / Math.max(0.00001, clamp)));
+  
+  // Map to 15-85 range
+  const score = 50 + normalizedMomentum * 35;
+  
+  return {
+    score: Math.max(15, Math.min(85, Math.round(score * 100) / 100)),
+    netMomentum: Math.round(netMomentum * 10000) / 10000,
+    bullishMass,
+    bearishMass
+  };
 }
 
 const startTime = Date.now();
@@ -349,12 +387,19 @@ serve(async (req) => {
       weight: number;
     }>> = new Map();
 
-    // Initialize all themes
+    // Initialize all themes from database
+    const dbThemeNames = new Set<string>();
     for (const theme of themes) {
       themeAssets.set(theme.name, []);
+      dbThemeNames.add(theme.name);
     }
+    console.log(`[THEME-SCORING-V3] DB theme names: ${Array.from(dbThemeNames).slice(0, 10).join(', ')}...`);
 
     // Map each asset to themes
+    let mappedCount = 0;
+    let unmappedCount = 0;
+    const unmappedSectors = new Set<string>();
+
     for (const asset of scoredAssets) {
       const sector = asset.metadata?.sector || null;
       const mapping = assignAssetToThemes(
@@ -366,6 +411,7 @@ serve(async (req) => {
 
       const signalMass = extractSignalMass(asset.score_explanation);
 
+      let wasMapped = false;
       for (let i = 0; i < mapping.themes.length; i++) {
         const themeName = mapping.themes[i];
         const weight = mapping.weights[i];
@@ -378,11 +424,41 @@ serve(async (req) => {
             signal_mass: signalMass,
             weight: weight,
           });
+          wasMapped = true;
         }
+      }
+
+      if (wasMapped) {
+        mappedCount++;
+      } else {
+        unmappedCount++;
+        if (sector) unmappedSectors.add(sector);
       }
     }
 
-    // Calculate theme scores by aggregating asset expected returns
+    console.log(`[THEME-SCORING-V3] Mapping: ${mappedCount} assets mapped, ${unmappedCount} unmapped`);
+    if (unmappedSectors.size > 0) {
+      console.log(`[THEME-SCORING-V3] Unmapped sectors: ${Array.from(unmappedSectors).slice(0, 10).join(', ')}`);
+    }
+
+    // Log theme asset counts
+    for (const [themeName, assets] of themeAssets.entries()) {
+      if (assets.length > 0) {
+        console.log(`[THEME-SCORING-V3] Theme "${themeName}": ${assets.length} assets`);
+      }
+    }
+
+    // Calculate GLOBAL P95 scale from all scored assets (same as asset scoring)
+    const allAbsReturns = scoredAssets
+      .map(a => Math.abs(a.expected_return || 0))
+      .filter(r => r > 0)
+      .sort((a, b) => a - b);
+    const globalP95Index = Math.floor(allAbsReturns.length * 0.95);
+    const globalP95Scale = allAbsReturns[globalP95Index] || 0.01;
+
+    console.log(`[THEME-SCORING-V3] Global P95 scale: ${(globalP95Scale * 100).toFixed(4)}%`);
+
+    // Calculate theme scores using momentum-based approach
     const results: Array<{
       theme_id: string;
       theme_name: string;
@@ -391,6 +467,9 @@ serve(async (req) => {
       confidence_score: number;
       asset_count: number;
       total_signal_mass: number;
+      net_momentum: number;
+      bullish_mass: number;
+      bearish_mass: number;
       top_assets: string[];
       computed_at: string;
     }> = [];
@@ -399,6 +478,7 @@ serve(async (req) => {
 
     for (const theme of themes) {
       const assets = themeAssets.get(theme.name) || [];
+      
       
       if (assets.length === 0) {
         // Theme has no mapped assets with signal mass - give neutral score
@@ -410,52 +490,49 @@ serve(async (req) => {
           confidence_score: 0,
           asset_count: 0,
           total_signal_mass: 0,
+          net_momentum: 0,
+          bullish_mass: 0,
+          bearish_mass: 0,
           top_assets: [],
           computed_at: now.toISOString(),
         });
         continue;
       }
 
-      // Calculate weighted average expected return
-      // Weight by signal_mass * mapping_weight for each asset
-      let totalWeight = 0;
-      let weightedExpectedReturn = 0;
-      let weightedConfidence = 0;
+      // Calculate theme score using momentum-based approach
+      const { score, netMomentum, bullishMass, bearishMass } = calculateThemeScore(assets, globalP95Scale);
+
+      // Calculate total signal mass for display
       let totalSignalMass = 0;
+      let weightedConfidence = 0;
+      let totalWeight = 0;
 
       for (const asset of assets) {
+        totalSignalMass += asset.signal_mass;
         const w = asset.signal_mass * asset.weight;
         totalWeight += w;
-        weightedExpectedReturn += asset.expected_return * w;
         weightedConfidence += asset.confidence_score * w;
-        totalSignalMass += asset.signal_mass;
       }
 
-      const avgExpectedReturn = totalWeight > 0 ? weightedExpectedReturn / totalWeight : 0;
       const avgConfidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
 
-      // Compute P95 scale from the theme's assets
-      const absReturns = assets.map(a => Math.abs(a.expected_return)).sort((a, b) => a - b);
-      const p95Index = Math.floor(absReturns.length * 0.95);
-      const p95Scale = absReturns[p95Index] || 0.01;
-
-      // Calculate final score using same formula as assets
-      const score = scoreFromExpected(avgExpectedReturn, avgConfidence, p95Scale);
-
-      // Get top 5 contributing assets by signal mass
-      const topAssets = assets
-        .sort((a, b) => b.signal_mass - a.signal_mass)
+      // Get top 5 contributing assets by absolute momentum contribution
+      const topAssets = [...assets]
+        .sort((a, b) => Math.abs(b.expected_return * b.signal_mass) - Math.abs(a.expected_return * a.signal_mass))
         .slice(0, 5)
         .map(a => a.ticker);
 
       results.push({
         theme_id: theme.id,
         theme_name: theme.name,
-        score: Math.round(score * 100) / 100,
-        expected_return: Math.round(avgExpectedReturn * 10000) / 10000,
+        score,
+        expected_return: netMomentum, // Store net momentum as "expected_return" for theme
         confidence_score: Math.round(avgConfidence * 100) / 100,
         asset_count: assets.length,
         total_signal_mass: Math.round(totalSignalMass * 1000) / 1000,
+        net_momentum: netMomentum,
+        bullish_mass: Math.round(bullishMass * 1000) / 1000,
+        bearish_mass: Math.round(bearishMass * 1000) / 1000,
         top_assets: topAssets,
         computed_at: now.toISOString(),
       });
@@ -464,10 +541,10 @@ serve(async (req) => {
     // Sort by score descending
     results.sort((a, b) => b.score - a.score);
 
-    // Log theme distribution
-    console.log("[THEME-SCORING-V3] Theme scores (alpha-calibrated):");
-    for (const r of results) {
-      console.log(`  ${r.theme_name}: score=${r.score.toFixed(1)}, E[R]=${(r.expected_return * 100).toFixed(2)}%, assets=${r.asset_count}, mass=${r.total_signal_mass.toFixed(3)}`);
+    // Log theme distribution with momentum data
+    console.log("[THEME-SCORING-V3] Theme scores (momentum-based):");
+    for (const r of results.slice(0, 20)) {
+      console.log(`  ${r.theme_name}: score=${r.score.toFixed(1)}, momentum=${r.net_momentum.toFixed(6)}, bull=${r.bullish_mass.toFixed(3)}, bear=${r.bearish_mass.toFixed(3)}, assets=${r.asset_count}`);
     }
 
     // Update database
@@ -481,11 +558,14 @@ serve(async (req) => {
           signal_count: result.asset_count,
           component_scores: {
             expected_return: result.expected_return,
+            net_momentum: result.net_momentum,
+            bullish_mass: result.bullish_mass,
+            bearish_mass: result.bearish_mass,
             confidence_score: result.confidence_score,
             asset_count: result.asset_count,
             total_signal_mass: result.total_signal_mass,
             top_assets: result.top_assets,
-            model_version: 'v3_alpha',
+            model_version: 'v3_momentum',
           },
           positive_components: result.top_assets,
           computed_at: result.computed_at,
@@ -496,15 +576,17 @@ serve(async (req) => {
         .from('themes')
         .update({ 
           score: result.score,
-          alpha: result.expected_return,
+          alpha: result.net_momentum,
           updated_at: now.toISOString(),
           metadata: {
-            expected_return: result.expected_return,
+            net_momentum: result.net_momentum,
+            bullish_mass: result.bullish_mass,
+            bearish_mass: result.bearish_mass,
             confidence_score: result.confidence_score,
             asset_count: result.asset_count,
             total_signal_mass: result.total_signal_mass,
             top_assets: result.top_assets,
-            model_version: 'v3_alpha',
+            model_version: 'v3_momentum',
           }
         })
         .eq('id', result.theme_id);
