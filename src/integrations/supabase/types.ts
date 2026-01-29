@@ -3484,6 +3484,7 @@ export type Database = {
           wait_seconds: number
         }[]
       }
+      apply_scoring_recenter: { Args: { correction: number }; Returns: number }
       check_ai_fallback_usage: {
         Args: never
         Returns: {
@@ -3536,6 +3537,7 @@ export type Database = {
           stale_count: number
         }[]
       }
+      execute_sql: { Args: { sql: string }; Returns: Json }
       get_api_usage_summary: {
         Args: { hours_back?: number }
         Returns: {
@@ -3571,6 +3573,13 @@ export type Database = {
           reason: string
           status: string
           ticker: string
+        }[]
+      }
+      get_scoring_global_mean: {
+        Args: never
+        Returns: {
+          cnt: number
+          global_mean: number
         }[]
       }
       get_stale_functions: {

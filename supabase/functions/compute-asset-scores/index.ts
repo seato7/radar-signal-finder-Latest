@@ -1198,16 +1198,13 @@ Deno.serve(async (req) => {
     if (isComplete) {
       console.log('Cycle complete - running global sweep check...');
       
-      // Query global mean across ALL rankable assets
+      // Query global mean across ALL rankable assets using dedicated RPC
       const { data: globalMeanData, error: globalMeanErr } = await supabase
-        .rpc('execute_sql', {
-          sql: `SELECT AVG(expected_return) as global_mean, COUNT(*) as cnt 
-                FROM assets 
-                WHERE expected_return IS NOT NULL 
-                  AND rank_status = 'rankable'`
-        });
+        .rpc('get_scoring_global_mean');
       
-      if (!globalMeanErr && globalMeanData?.[0]) {
+      if (globalMeanErr) {
+        console.error('Failed to get global mean:', globalMeanErr);
+      } else if (globalMeanData?.[0]) {
         const trueGlobalMean = Number(globalMeanData[0].global_mean || 0);
         const assetCount = Number(globalMeanData[0].cnt || 0);
         
@@ -1217,26 +1214,22 @@ Deno.serve(async (req) => {
         if (Math.abs(trueGlobalMean) > 0.00001 && assetCount > 0) {
           console.log(`Applying global sweep correction: subtracting ${(trueGlobalMean * 100).toFixed(6)}% from all assets`);
           
-          // Update all assets: expected_return = expected_return - trueGlobalMean
-          const { error: sweepErr } = await supabase
-            .rpc('execute_sql', {
-              sql: `UPDATE assets 
-                    SET expected_return = expected_return - ${trueGlobalMean},
-                        score_computed_at = NOW()
-                    WHERE expected_return IS NOT NULL 
-                      AND rank_status = 'rankable'`
-            });
+          // Apply the correction using dedicated RPC
+          const { data: affectedRows, error: sweepErr } = await supabase
+            .rpc('apply_scoring_recenter', { correction: trueGlobalMean });
           
           if (!sweepErr) {
             sweepApplied = true;
             sweepCorrectionApplied = trueGlobalMean;
-            console.log('Global sweep correction applied successfully');
+            console.log(`Global sweep correction applied successfully to ${affectedRows} assets`);
           } else {
             console.error('Sweep correction failed:', sweepErr);
           }
         } else {
           console.log('Global mean already near zero, no sweep needed');
         }
+      } else {
+        console.log('No global mean data returned');
       }
     }
 
