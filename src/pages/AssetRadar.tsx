@@ -71,11 +71,12 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
   return { label: "Strong Bearish", variant: "destructive" };
 };
 
-// Signal strength based on mass thresholds
+// Signal strength based on mass thresholds (calibrated from actual distribution)
+// M50=0.0032, M75=0.0067, M90=0.017, M95=0.020 for massy assets
 const getSignalStrength = (mass: number): { level: "high" | "medium" | "low" | "none"; label: string; className: string } => {
-  if (mass >= 0.01) return { level: "high", label: "High", className: "bg-success/20 text-success border-success/30" };
-  if (mass >= 0.005) return { level: "medium", label: "Med", className: "bg-primary/20 text-primary border-primary/30" };
-  if (mass >= 0.001) return { level: "low", label: "Low", className: "bg-muted text-muted-foreground border-border" };
+  if (mass >= 0.017) return { level: "high", label: "High", className: "bg-success/20 text-success border-success/30" }; // Top 10%
+  if (mass >= 0.0067) return { level: "medium", label: "Med", className: "bg-primary/20 text-primary border-primary/30" }; // Top 25%
+  if (mass >= 0.001) return { level: "low", label: "Low", className: "bg-muted text-muted-foreground border-border" }; // Scored
   return { level: "none", label: "None", className: "bg-muted/50 text-muted-foreground/50 border-border/50" };
 };
 
