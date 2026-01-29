@@ -20,6 +20,23 @@ const MAX_VOLATILITY_PENALTY = 0.05; // Max penalty from volatility
 // SAMPLE SIZE TRUST GATING - Downweight alphas with insufficient data
 // ============================================================================
 const MIN_ALPHA_SAMPLE_SIZE = 50; // Trust factor = n / (n + MIN_ALPHA_SAMPLE_SIZE)
+
+// ============================================================================
+// COMPONENT BASELINE ALPHA - Fallback when no alpha data exists
+// Keep intentionally small; tune once coverage improves
+// ============================================================================
+const COMPONENT_BASELINE_ALPHA: Record<string, number> = {
+  InsiderPoliticianConfirm: 0.0015,
+  BigMoneyConfirm: 0.0012,
+  FlowPressure: 0.0010,
+  CapexMomentum: 0.0009,
+  TechEdge: 0.0008,
+  PolicyMomentum: 0.0008,
+  MacroEconomic: 0.0007,
+  Attention: 0.0006,
+  EarningsMomentum: 0.0007,
+  RiskFlags: -0.0010,
+};
 const VOLATILITY_THRESHOLD = 0.03; // 3% daily vol threshold
 
 // ============================================================================
@@ -268,6 +285,61 @@ function canonicalSignalType(t: string): string {
   return t.replace(/_limited_data$/, '');
 }
 
+/**
+ * Family key mapping - collapses signal variants into families for alpha lookup
+ * Used when exact/canonical alpha not found
+ */
+function familyKey(signalType: string): string | null {
+  const s = signalType;
+  
+  // Momentum families
+  if (s.startsWith('momentum_5d_')) return 'momentum_5d';
+  if (s.startsWith('momentum_20d_')) return 'momentum_20d';
+  
+  // Insider / politician
+  if (s.startsWith('insider_')) return 'insider';
+  if (s.startsWith('politician_')) return 'politician';
+  if (s.startsWith('congressional_')) return 'congressional';
+  if (s.startsWith('form4_')) return 'form4';
+  
+  // Other common buckets
+  if (s.startsWith('policy_')) return 'policy';
+  if (s.startsWith('economic_')) return 'economic';
+  if (s.startsWith('supply_chain_')) return 'supply_chain';
+  if (s.startsWith('forex_')) return 'forex';
+  if (s.startsWith('technical_')) return 'technical';
+  if (s.startsWith('cot_')) return 'cot';
+  if (s.startsWith('onchain_')) return 'onchain';
+  if (s.startsWith('social_')) return 'social';
+  if (s.startsWith('news_')) return 'news';
+  if (s.startsWith('earnings_')) return 'earnings';
+  if (s.startsWith('ai_research_')) return 'ai_research';
+  if (s.startsWith('smart_money_')) return 'smart_money';
+  if (s.startsWith('crypto_')) return 'crypto';
+  if (s.startsWith('darkpool_')) return 'darkpool';
+  if (s.startsWith('etf_')) return 'etf';
+  if (s.startsWith('whale_')) return 'whale';
+  
+  return null;
+}
+
+/**
+ * Trust gating - downweights alphas with insufficient sample sizes
+ */
+function applyTrustGating(alpha: number, n: number): number {
+  if (!n || n <= 0) return 0;
+  const trust = n / (n + MIN_ALPHA_SAMPLE_SIZE);
+  return alpha * trust;
+}
+
+// Alpha record type for clarity
+type AlphaRec = {
+  alpha: number;
+  sd: number;
+  n: number;
+  hitRate: number;
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -398,6 +470,34 @@ Deno.serve(async (req) => {
 
     console.log(`Loaded ${alphaMap.size} signal type alphas`);
 
+    // ========================================================================
+    // BUILD FAMILY ALPHA MAP - aggregate child alphas weighted by sample size
+    // ========================================================================
+    const familyAlphaMap = new Map<string, AlphaRec>();
+
+    for (const [stype, rec] of alphaMap.entries()) {
+      const fam = familyKey(stype);
+      if (!fam) continue;
+
+      const cur = familyAlphaMap.get(fam);
+      if (!cur) {
+        familyAlphaMap.set(fam, { alpha: rec.alpha, sd: rec.sd, n: rec.n, hitRate: rec.hitRate });
+      } else {
+        // Weighted average by n for alpha
+        const n1 = Math.max(1, cur.n);
+        const n2 = Math.max(1, rec.n);
+        const nTot = n1 + n2;
+
+        const alphaW = (cur.alpha * n1 + rec.alpha * n2) / nTot;
+        const sdW = (cur.sd * n1 + rec.sd * n2) / nTot;
+        const hitW = (cur.hitRate * n1 + rec.hitRate * n2) / nTot;
+
+        familyAlphaMap.set(fam, { alpha: alphaW, sd: sdW, n: nTot, hitRate: hitW });
+      }
+    }
+
+    console.log(`Built ${familyAlphaMap.size} family alphas`);
+
     let processedCount = 0;
     let excludedCount = 0;
     let rankedCount = 0;
@@ -410,6 +510,15 @@ Deno.serve(async (req) => {
       status_stale: 0,
       status_missing: 0,
       status_unsupported: 0,
+    };
+
+    // Global alpha fallback tracking
+    const globalFallbackStats = {
+      exact: 0,
+      canonical: 0,
+      family: 0,
+      component: 0,
+      none: 0,
     };
 
     // Process in batches
@@ -540,44 +649,101 @@ Deno.serve(async (req) => {
           let neg = 0;
           const scoreExplanation: any[] = [];
 
-        for (const s of assetSignals) {
-            const rawSignalType = String(s.signal_type);
-            // CRITICAL FIX: Canonicalize signal type for alpha lookup
-            const signalType = canonicalSignalType(rawSignalType);
+          // ================================================================
+          // COVERAGE COUNTERS for this asset
+          // ================================================================
+          let signalsTotal = 0;
+          let signalsWithAlpha = 0;
+          let signalsWithoutAlpha = 0;
+          let usedExact = 0;
+          let usedCanonical = 0;
+          let usedFamily = 0;
+          let usedComponent = 0;
+
+          for (const s of assetSignals) {
+            signalsTotal += 1;
+
+            const rawType = String(s.signal_type);
+            const canonType = canonicalSignalType(rawType);
+
             const mag = Number(s.magnitude ?? 1);
             const observedAt = new Date(s.observed_at);
             const ageDays = (Date.now() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
 
-            // Use raw type for component mapping, canonical for alpha lookup
-            const component = SIGNAL_TYPE_TO_COMPONENT[rawSignalType] || SIGNAL_TYPE_TO_COMPONENT[signalType];
+            const component = SIGNAL_TYPE_TO_COMPONENT[rawType] || SIGNAL_TYPE_TO_COMPONENT[canonType];
             const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || 14) : 14;
             const decay = expDecay(ageDays, halfLifeDays);
 
-            // CRITICAL FIX: Use canonical signal type for alpha lookup
-            // Try raw type first, then canonical fallback for _limited_data variants
-            let alphaRec = alphaMap.get(rawSignalType);
-            if (!alphaRec) {
-              alphaRec = alphaMap.get(signalType);
+            // ================================================================
+            // HIERARCHICAL ALPHA LOOKUP: exact -> canonical -> family -> component -> 0
+            // ================================================================
+            let rec: AlphaRec | undefined = alphaMap.get(rawType);
+            let fallbackLevel: 'exact' | 'canonical' | 'family' | 'component' | 'none' = 'none';
+
+            if (rec) {
+              fallbackLevel = 'exact';
+            } else {
+              // 2) canonical match
+              rec = alphaMap.get(canonType);
+              if (rec) {
+                fallbackLevel = 'canonical';
+              } else {
+                // 3) family match
+                const fam = familyKey(canonType) || familyKey(rawType);
+                if (fam) {
+                  const famRec = familyAlphaMap.get(fam);
+                  if (famRec) {
+                    rec = famRec;
+                    fallbackLevel = 'family';
+                  }
+                }
+
+                // 4) component baseline
+                if (!rec && component && COMPONENT_BASELINE_ALPHA[component] !== undefined) {
+                  rec = { alpha: COMPONENT_BASELINE_ALPHA[component], sd: 0.02, n: 0, hitRate: 0.5 };
+                  fallbackLevel = 'component';
+                }
+              }
             }
-            
-            // CRITICAL FIX: Apply sample-size trust gating
-            // Smooth trust factor: n/(n+50), downweights low-sample alphas
+
+            // Determine effective alpha and uncertainty contribution
             let alpha = 0;
-            if (alphaRec) {
-              const trustFactor = alphaRec.n / (alphaRec.n + MIN_ALPHA_SAMPLE_SIZE);
-              alpha = alphaRec.alpha * trustFactor;
+            let sd = 0;
+            let n = 0;
+
+            if (rec) {
+              n = Number(rec.n ?? 0);
+              alpha = Number(rec.alpha ?? 0);
+              sd = Number(rec.sd ?? 0);
             }
-            
-            // CRITICAL FIX: DO NOT apply direction multiplier here!
-            // Alpha already includes direction adjustment from compute-signal-alpha
-            // Applying direction twice would flip bearish signals incorrectly
+
+            // Apply trust gating only for data-backed alphas (exact/canonical/family)
+            // For component baseline, keep as-is (it's already conservative)
+            if (fallbackLevel === 'exact' || fallbackLevel === 'canonical' || fallbackLevel === 'family') {
+              alpha = applyTrustGating(alpha, n);
+            }
+
+            // CRITICAL: Direction already baked into alpha by compute-signal-alpha
+            // Do NOT apply direction multiplier again
             const contrib = decay * Math.min(mag, 5) * alpha;
             expectedReturn += contrib;
 
-            if (alphaRec && alphaRec.sd > 0) {
-              // IMPROVED: Use variance aggregation instead of simple sum
-              const contribSd = decay * Math.min(mag, 5) * alphaRec.sd;
-              alphaStdPenalty += contribSd * contribSd; // Sum of variances
+            // Coverage counters
+            if (fallbackLevel === 'exact') usedExact += 1;
+            else if (fallbackLevel === 'canonical') usedCanonical += 1;
+            else if (fallbackLevel === 'family') usedFamily += 1;
+            else if (fallbackLevel === 'component') usedComponent += 1;
+
+            if (fallbackLevel === 'none') {
+              signalsWithoutAlpha += 1;
+            } else {
+              signalsWithAlpha += 1;
+            }
+
+            // Uncertainty aggregation (variance space)
+            if (sd > 0) {
+              const contribSd = decay * Math.min(mag, 5) * sd;
+              alphaStdPenalty += contribSd * contribSd;
             }
 
             if (contrib > 0) pos += contrib;
@@ -585,15 +751,23 @@ Deno.serve(async (req) => {
 
             if (Math.abs(contrib) > 0.001) {
               scoreExplanation.push({
-                signal_type: signalType,
+                signal_type: canonType,
                 component: component || 'unknown',
                 contrib: Math.round(contrib * 10000) / 10000,
                 alpha: Math.round(alpha * 10000) / 10000,
                 decay: Math.round(decay * 100) / 100,
                 age_days: Math.round(ageDays * 10) / 10,
+                fallback: fallbackLevel,
               });
             }
           }
+
+          // Accumulate global fallback stats
+          globalFallbackStats.exact += usedExact;
+          globalFallbackStats.canonical += usedCanonical;
+          globalFallbackStats.family += usedFamily;
+          globalFallbackStats.component += usedComponent;
+          globalFallbackStats.none += signalsWithoutAlpha;
 
           let disagreementPenalty = 0;
           if (pos > 0 && neg > 0) {
@@ -601,7 +775,6 @@ Deno.serve(async (req) => {
             disagreementPenalty = ratio * 0.02;
           }
 
-          // IMPROVED: alphaStdPenalty is now sum of variances, so take sqrt for std dev
           const aggregatedStd = Math.sqrt(alphaStdPenalty);
           const uncertainty = Math.max(0.005, aggregatedStd + disagreementPenalty);
           const confScore = expectedReturn !== 0 ? expectedReturn / uncertainty : 0;
@@ -623,7 +796,13 @@ Deno.serve(async (req) => {
               { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
               { k: 'disagreement_penalty', v: Math.round(disagreementPenalty * 100000) / 100000 },
               { k: 'alpha_std_penalty', v: Math.round(alphaStdPenalty * 100000) / 100000 },
-              { k: 'signal_count', v: assetSignals.length },
+              { k: 'signals_total', v: signalsTotal },
+              { k: 'signals_with_alpha', v: signalsWithAlpha },
+              { k: 'signals_without_alpha', v: signalsWithoutAlpha },
+              { k: 'alpha_fallback_exact', v: usedExact },
+              { k: 'alpha_fallback_canonical', v: usedCanonical },
+              { k: 'alpha_fallback_family', v: usedFamily },
+              { k: 'alpha_fallback_component', v: usedComponent },
               { k: 'top_signals', v: topExplanation },
             ],
           });
@@ -686,11 +865,13 @@ Deno.serve(async (req) => {
         next_offset: nextOffset,
         total_assets: totalAssets,
         alpha_count: alphaMap.size,
+        family_alpha_count: familyAlphaMap.size,
         coverage_count: coverageMap.size,
         model_version: 'v1_alpha',
         ranked_count: rankedCount,
         excluded_count: excludedCount,
         exclusion_reasons: exclusionReasons,
+        fallback_stats: globalFallbackStats,
         is_complete: isComplete,
       },
     });
@@ -702,10 +883,12 @@ Deno.serve(async (req) => {
         ranked: rankedCount,
         excluded: excludedCount,
         exclusion_reasons: exclusionReasons,
+        fallback_stats: globalFallbackStats,
         duration_ms: duration,
         next_offset: nextOffset,
         total_assets: totalAssets,
         alpha_count: alphaMap.size,
+        family_alpha_count: familyAlphaMap.size,
         coverage_count: coverageMap.size,
         model_version: 'v1_alpha',
       }),
