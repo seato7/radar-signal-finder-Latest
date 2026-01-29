@@ -6,9 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Activity } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -124,11 +123,11 @@ const AssetRadar = () => {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [scoredOnly, setScoredOnly] = useState(true); // Default to scored assets only
+  
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab, currentSortBy: SortOption = sortBy, filterScored: boolean = scoredOnly) => {
+  const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab, currentSortBy: SortOption = sortBy) => {
     setLoading(true);
     
     try {
@@ -157,33 +156,22 @@ const AssetRadar = () => {
         
         const { data: sortedAssets, count, error: assetError } = await assetQuery
           .order('computed_score', { ...sortOrder, nullsFirst: false })
-          .range(pageNum * PAGE_SIZE * 2, (pageNum + 1) * PAGE_SIZE * 2 - 1); // Fetch extra for filtering
+          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
         if (assetError) throw assetError;
 
-        let assets = (sortedAssets || []) as AssetRow[];
-        
-        // Filter by signal mass if scoredOnly is enabled
-        if (filterScored) {
-          assets = assets.filter(a => {
-            const mass = extractSignalMass(a.score_explanation);
-            return mass >= SIGNAL_MASS_THRESHOLD;
-          });
-        }
+        const assets = (sortedAssets || []) as AssetRow[];
+        totalCount = count || 0;
 
-        // Paginate the filtered results
-        const paginatedAssets = assets.slice(0, PAGE_SIZE);
-        totalCount = filterScored ? assets.length : (count || 0);
-
-        if (paginatedAssets.length === 0) {
+        if (assets.length === 0) {
           setAssets([]);
-          setTotal(filterScored ? 0 : (count || 0));
+          setTotal(count || 0);
           setLoading(false);
           return;
         }
 
         // Fetch price data for these assets
-        const tickers = paginatedAssets.map(a => a.ticker);
+        const tickers = assets.map(a => a.ticker);
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
@@ -222,7 +210,7 @@ const AssetRadar = () => {
         });
 
         // Build enhanced assets using pre-computed scores
-        const enhancedAssets: AssetWithScore[] = paginatedAssets.map((asset) => {
+        const enhancedAssets: AssetWithScore[] = assets.map((asset) => {
           const score = asset.computed_score ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
@@ -294,19 +282,11 @@ const AssetRadar = () => {
         });
 
         const tickerOrder = new Map(recentTickers.map((t, i) => [t, i]));
-        let sortedAssets = (matchingAssets || [])
+        const sortedAssetsList = (matchingAssets || [])
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
 
-        // Filter by signal mass if scoredOnly is enabled
-        if (filterScored) {
-          sortedAssets = sortedAssets.filter(a => {
-            const mass = extractSignalMass(a.score_explanation);
-            return mass >= SIGNAL_MASS_THRESHOLD;
-          });
-        }
-
-        assetsData = sortedAssets;
+        assetsData = sortedAssetsList;
 
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
@@ -358,7 +338,7 @@ const AssetRadar = () => {
         });
 
         setAssets(enhancedAssets);
-        setTotal(filterScored ? assetsData.length : (priceCount || 0));
+        setTotal(priceCount || 0);
         setLoading(false);
         return;
       }
@@ -380,22 +360,14 @@ const AssetRadar = () => {
 
       const { data, error, count } = await query
         .order('ticker')
-        .range(pageNum * PAGE_SIZE * 2, (pageNum + 1) * PAGE_SIZE * 2 - 1); // Fetch extra for filtering
+        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
       if (error) throw error;
 
-      let fetchedAssets = (data || []) as AssetRow[];
+      const fetchedAssets = (data || []) as AssetRow[];
 
-      // Filter by signal mass if scoredOnly is enabled
-      if (filterScored) {
-        fetchedAssets = fetchedAssets.filter(a => {
-          const mass = extractSignalMass(a.score_explanation);
-          return mass >= SIGNAL_MASS_THRESHOLD;
-        });
-      }
-
-      assetsData = fetchedAssets.slice(0, PAGE_SIZE);
-      totalCount = filterScored ? fetchedAssets.length : (count || 0);
+      assetsData = fetchedAssets;
+      totalCount = count || 0;
 
       const tickers = assetsData.map(a => a.ticker);
       const threeDaysAgo = new Date();
@@ -507,18 +479,18 @@ const AssetRadar = () => {
 
   useEffect(() => {
     setPage(0);
-    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy, scoredOnly), 300);
+    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy, scoredOnly]);
+  }, [searchTerm, activeTab, sortBy]);
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchAssets(page, activeTab, sortBy, scoredOnly);
+      fetchAssets(page, activeTab, sortBy);
     }, REFRESH_INTERVAL);
     
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy, scoredOnly]);
+  }, [page, activeTab, sortBy]);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as AssetClassTab);
@@ -529,7 +501,7 @@ const AssetRadar = () => {
   const goToPage = (newPage: number) => {
     if (newPage >= 0 && newPage < totalPages) {
       setPage(newPage);
-      fetchAssets(newPage, activeTab, sortBy, scoredOnly);
+      fetchAssets(newPage, activeTab, sortBy);
     }
   };
 
@@ -551,8 +523,7 @@ const AssetRadar = () => {
 
   const getTabDescription = () => {
     const tabLabel = ASSET_CLASS_TABS.find(t => t.value === activeTab)?.label || "assets";
-    const scoredLabel = scoredOnly ? "scored " : "";
-    return `Browse ${total.toLocaleString()} ${scoredLabel}${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
+    return `Browse ${total.toLocaleString()} ${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
   };
 
   return (
@@ -599,24 +570,6 @@ const AssetRadar = () => {
                   </SelectContent>
                 </Select>
               </div>
-              
-              {/* Signal strength filter toggle */}
-              <div className="flex items-center justify-between border-t border-border pt-3">
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-primary" />
-                  <Label htmlFor="scored-only" className="text-sm font-medium cursor-pointer">
-                    Scored assets only
-                  </Label>
-                  <span className="text-xs text-muted-foreground">
-                    (assets with signal data)
-                  </span>
-                </div>
-                <Switch
-                  id="scored-only"
-                  checked={scoredOnly}
-                  onCheckedChange={setScoredOnly}
-                />
-              </div>
             </div>
           </CardHeader>
         <CardContent>
@@ -632,9 +585,7 @@ const AssetRadar = () => {
             </div>
           ) : assets.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              {searchTerm ? `No assets found matching "${searchTerm}"` : 
-               scoredOnly ? "No scored assets available. Try disabling the 'Scored assets only' filter." : 
-               "No assets available"}
+              {searchTerm ? `No assets found matching "${searchTerm}"` : "No assets available"}
             </div>
           ) : (
             <>
