@@ -639,19 +639,43 @@ Deno.serve(async (req) => {
     // ========================================================================
     // RUN-LEVEL INVARIANTS for debugging
     // ========================================================================
-    let runMaxExpectedReturn = -Infinity;
-    let runMinExpectedReturn = Infinity;
+    let runMaxExpectedReturnRaw = -Infinity;
+    let runMinExpectedReturnRaw = Infinity;
     let runMaxSingleContrib = 0;
     let assetsAtFloor = 0;
     let assetsAtCeiling = 0;
-    let totalPosContrib = 0;
-    let totalNegContrib = 0;
+    let totalPosMass = 0;
+    let totalNegMass = 0;
     let assetsWithConflict = 0; // pos > 0 && neg > 0
     
-    // Calibration metrics (tracked across batches)
-    let allExpectedReturns: number[] = [];
-    let lastMeanExpectedReturn = 0;
-    let lastP95Scale = 0.01;
+    // ========================================================================
+    // GLOBAL TWO-PASS RECENTERING
+    // Pass 1: Collect ALL raw expected returns across ALL batches
+    // Pass 2: Apply global mean to recenter and score
+    // ========================================================================
+    interface RawAssetData {
+      id: string;
+      ticker: string;
+      expectedReturnRaw: number;
+      alphaStdPenalty: number;
+      posMass: number;
+      negMass: number;
+      maxContribThisAsset: number;
+      scoreExplanation: any[];
+      signalsTotal: number;
+      signalsWithAlpha: number;
+      signalsWithoutAlpha: number;
+      usedExact: number;
+      usedCanonical: number;
+      usedFamily: number;
+      usedHorizon3d: number;
+      usedHorizon7d: number;
+      usedComponent: number;
+      cov: { status: string; points_30d: number; last_price_date: string | null; days_stale: number } | undefined;
+    }
+
+    // Collect all raw data across all batches first (PASS 1)
+    const allRawAssetData: RawAssetData[] = [];
 
     // Process in batches
     while (offset < endOffset) {
@@ -763,37 +787,16 @@ Deno.serve(async (req) => {
         }
 
         // ========================================================================
-        // PASS 1: Compute raw expected_return for all assets (for recentering)
+        // PASS 1: Compute raw expected_return for all assets (collect for global recentering)
         // ========================================================================
-        interface RawAssetData {
-          id: string;
-          ticker: string;
-          expectedReturn: number;
-          alphaStdPenalty: number;
-          pos: number;
-          neg: number;
-          maxContribThisAsset: number;
-          scoreExplanation: any[];
-          signalsTotal: number;
-          signalsWithAlpha: number;
-          signalsWithoutAlpha: number;
-          usedExact: number;
-          usedCanonical: number;
-          usedFamily: number;
-          usedHorizon3d: number;
-          usedHorizon7d: number;
-          usedComponent: number;
-        }
-
-        const rawAssetData: RawAssetData[] = [];
-
         for (const asset of rankableAssets) {
           const assetSignals = signalsMap.get(asset.id) || [];
+          const cov = coverageMap.get(asset.ticker);
           
-          let expectedReturn = 0;
+          let expectedReturnRaw = 0;
           let alphaStdPenalty = 0;
-          let pos = 0;
-          let neg = 0;
+          let posMass = 0;
+          let negMass = 0;
           let maxContribThisAsset = 0;
           const scoreExplanation: any[] = [];
 
@@ -895,7 +898,7 @@ Deno.serve(async (req) => {
             // CRITICAL: Direction already baked into alpha by compute-signal-alpha
             // Do NOT apply direction multiplier again
             const contrib = decay * Math.min(mag, 5) * alpha;
-            expectedReturn += contrib;
+            expectedReturnRaw += contrib;
 
             // Track max single contribution for this asset
             if (Math.abs(contrib) > maxContribThisAsset) {
@@ -922,8 +925,9 @@ Deno.serve(async (req) => {
               alphaStdPenalty += contribSd * contribSd;
             }
 
-            if (contrib > 0) pos += contrib;
-            if (contrib < 0) neg += Math.abs(contrib);
+            // MASS-BASED tracking: absolute values for disagreement gating
+            if (contrib > 0) posMass += contrib;
+            if (contrib < 0) negMass += Math.abs(contrib);
 
             if (Math.abs(contrib) > 0.001) {
               scoreExplanation.push({
@@ -947,21 +951,22 @@ Deno.serve(async (req) => {
           globalFallbackStats.horizon_7d += usedHorizon7d;
           globalFallbackStats.none += signalsWithoutAlpha;
 
-          // Track run-level stats
-          if (expectedReturn > runMaxExpectedReturn) runMaxExpectedReturn = expectedReturn;
-          if (expectedReturn < runMinExpectedReturn) runMinExpectedReturn = expectedReturn;
+          // Track run-level stats on RAW expected return
+          if (expectedReturnRaw > runMaxExpectedReturnRaw) runMaxExpectedReturnRaw = expectedReturnRaw;
+          if (expectedReturnRaw < runMinExpectedReturnRaw) runMinExpectedReturnRaw = expectedReturnRaw;
           if (maxContribThisAsset > runMaxSingleContrib) runMaxSingleContrib = maxContribThisAsset;
-          totalPosContrib += pos;
-          totalNegContrib += neg;
-          if (pos > 0 && neg > 0) assetsWithConflict += 1;
+          totalPosMass += posMass;
+          totalNegMass += negMass;
+          if (posMass > 0 && negMass > 0) assetsWithConflict += 1;
 
-          rawAssetData.push({
+          // Collect for global two-pass recentering
+          allRawAssetData.push({
             id: asset.id,
             ticker: asset.ticker,
-            expectedReturn,
+            expectedReturnRaw,
             alphaStdPenalty,
-            pos,
-            neg,
+            posMass,
+            negMass,
             maxContribThisAsset,
             scoreExplanation,
             signalsTotal,
@@ -973,149 +978,172 @@ Deno.serve(async (req) => {
             usedHorizon3d,
             usedHorizon7d,
             usedComponent,
+            cov,
           });
           
           processedCount++;
         }
-
-        // ========================================================================
-        // COMPUTE RECENTERING MEAN AND P95 SCALE
-        // ========================================================================
-        const expectedReturns = rawAssetData.map(d => d.expectedReturn);
-        const meanExpectedReturn = expectedReturns.length > 0 
-          ? expectedReturns.reduce((a, b) => a + b, 0) / expectedReturns.length 
-          : 0;
-
-        // Compute P95 of |expected_return - mean| for dynamic scaling
-        const absDeviations = expectedReturns.map(er => Math.abs(er - meanExpectedReturn)).sort((a, b) => a - b);
-        const p95Index = Math.floor(absDeviations.length * 0.95);
-        const p95AbsDeviation = absDeviations.length > 0 ? absDeviations[Math.min(p95Index, absDeviations.length - 1)] : 0.01;
-        const p95Scale = Math.max(0.005, p95AbsDeviation); // Minimum 0.5% scale
-        
-        // Track for run-level reporting
-        allExpectedReturns.push(...expectedReturns);
-        lastMeanExpectedReturn = meanExpectedReturn;
-        lastP95Scale = p95Scale;
-
-        // ========================================================================
-        // PASS 2: Apply recentering, disagreement penalty, and final scoring
-        // ========================================================================
-        const DISAGREE_MIN_TOTAL = 0.01; // Only penalize meaningful conflicts
-        const DISAGREE_MAX = 0.02;
-
-        const updates: {
-          id: string;
-          ticker: string;
-          score: number;
-          expected_return: number;
-          expected_return_raw: number;
-          expected_return_centered: number;
-          confidence_score: number;
-          confidence_label: string;
-          score_explanation: any[];
-        }[] = [];
-
-        for (const data of rawAssetData) {
-          const { 
-            id, ticker, expectedReturn, alphaStdPenalty, pos, neg, 
-            scoreExplanation, signalsTotal, signalsWithAlpha, signalsWithoutAlpha,
-            usedExact, usedCanonical, usedFamily, usedHorizon3d, usedHorizon7d, usedComponent
-          } = data;
-
-          // RECENTER: subtract global mean to remove bearish bias
-          const expectedReturnCentered = expectedReturn - meanExpectedReturn;
-
-          // GATED DISAGREEMENT PENALTY: only apply when total contributions are meaningful
-          const total = pos + neg;
-          const balance = (pos > 0 && neg > 0) ? (Math.min(pos, neg) / Math.max(pos, neg)) : 0;
-          let disagreementPenalty = 0;
-          if (total >= DISAGREE_MIN_TOTAL && pos > 0 && neg > 0) {
-            disagreementPenalty = Math.min(DISAGREE_MAX, balance * 0.02);
-          }
-
-          const aggregatedStd = Math.sqrt(alphaStdPenalty);
-          const uncertainty = Math.max(0.005, aggregatedStd + disagreementPenalty);
-          const confScore = expectedReturnCentered !== 0 ? expectedReturnCentered / uncertainty : 0;
-          const label = confidenceLabel(confScore);
-          
-          // DYNAMIC SCORE MAPPING using empirical P95 scale
-          const finalScore = scoreFromExpected(expectedReturnCentered, confScore, p95Scale);
-
-          // Track floor/ceiling hits
-          if (finalScore <= 15) assetsAtFloor += 1;
-          if (finalScore >= 85) assetsAtCeiling += 1;
-
-          scoreExplanation.sort((a: any, b: any) => Math.abs(b.contrib) - Math.abs(a.contrib));
-          const topExplanation = scoreExplanation.slice(0, 10);
-
-          updates.push({
-            id,
-            ticker,
-            score: Math.round(finalScore * 10) / 10,
-            expected_return: Math.round(expectedReturnCentered * 100000) / 100000, // Store centered value
-            expected_return_raw: Math.round(expectedReturn * 100000) / 100000,
-            expected_return_centered: Math.round(expectedReturnCentered * 100000) / 100000,
-            confidence_score: Math.round(confScore * 1000) / 1000,
-            confidence_label: label,
-            score_explanation: [
-              { k: 'expected_return_raw', v: Math.round(expectedReturn * 100000) / 100000 },
-              { k: 'expected_return_centered', v: Math.round(expectedReturnCentered * 100000) / 100000 },
-              { k: 'global_mean_expected_return', v: Math.round(meanExpectedReturn * 100000) / 100000 },
-              { k: 'p95_scale', v: Math.round(p95Scale * 100000) / 100000 },
-              { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
-              { k: 'disagreement_penalty', v: Math.round(disagreementPenalty * 100000) / 100000 },
-              { k: 'disagree_gated', v: total >= DISAGREE_MIN_TOTAL },
-              { k: 'alpha_std_penalty', v: Math.round(alphaStdPenalty * 100000) / 100000 },
-              { k: 'signals_total', v: signalsTotal },
-              { k: 'signals_with_alpha', v: signalsWithAlpha },
-              { k: 'signals_without_alpha', v: signalsWithoutAlpha },
-              { k: 'alpha_fallback_exact', v: usedExact },
-              { k: 'alpha_fallback_canonical', v: usedCanonical },
-              { k: 'alpha_fallback_family', v: usedFamily },
-              { k: 'alpha_fallback_horizon_3d', v: usedHorizon3d },
-              { k: 'alpha_fallback_horizon_7d', v: usedHorizon7d },
-              { k: 'alpha_fallback_component', v: usedComponent },
-              { k: 'sum_pos_contrib', v: Math.round(pos * 100000) / 100000 },
-              { k: 'sum_neg_contrib', v: Math.round(neg * 100000) / 100000 },
-              { k: 'pos_neg_ratio', v: pos > 0 && neg > 0 ? Math.round((Math.min(pos, neg) / Math.max(pos, neg)) * 100) / 100 : 0 },
-              { k: 'top_signals', v: topExplanation },
-            ],
-          });
-        }
-
-        // Batch update ranked assets
-        const CHUNK_SIZE = 50;
-
-        for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
-          const chunk = updates.slice(i, i + CHUNK_SIZE);
-          
-          const updatePromises = chunk.map(update => {
-            const cov = coverageMap.get(update.ticker);
-            return supabase
-              .from('assets')
-              .update({
-                computed_score: update.score,
-                expected_return: update.expected_return,
-                confidence_score: update.confidence_score,
-                confidence_label: update.confidence_label,
-                model_version: 'v1_alpha',
-                score_explanation: update.score_explanation,
-                score_computed_at: now,
-                price_status: cov?.status || 'fresh',
-                last_price_date: cov?.last_price_date || null,
-                days_stale: cov?.days_stale || 0,
-                price_points_30d: cov?.points_30d || 0,
-                rank_status: 'rankable',
-              })
-              .eq('id', update.id);
-          });
-          
-          const results = await Promise.all(updatePromises);
-          rankedCount += results.filter(r => !r.error).length;
-        }
       }
 
       offset += batchSize;
+    }
+
+    // ========================================================================
+    // PASS 2: GLOBAL RECENTERING AND FINAL SCORING
+    // Now we have ALL raw data, compute global mean and P95 scale
+    // ========================================================================
+    console.log(`Pass 1 complete. Collected ${allRawAssetData.length} assets for global recentering.`);
+
+    // Compute GLOBAL mean expected return
+    const allExpectedReturnsRaw = allRawAssetData.map(d => d.expectedReturnRaw);
+    const globalMeanExpectedReturn = allExpectedReturnsRaw.length > 0
+      ? allExpectedReturnsRaw.reduce((a, b) => a + b, 0) / allExpectedReturnsRaw.length
+      : 0;
+
+    // ========================================================================
+    // FILTERED P95 SCALE: Compute on assets with meaningful signal mass
+    // This prevents the "mostly neutral" population from forcing everyone into a narrow band
+    // ========================================================================
+    const MASS_MIN_FOR_SCALE = 0.001; // 0.1% minimum mass to contribute to scale
+    const assetsWithMass = allRawAssetData.filter(d => (d.posMass + d.negMass) >= MASS_MIN_FOR_SCALE);
+    
+    let p95Scale = 0.01; // Default
+    if (assetsWithMass.length > 10) {
+      const filteredERs = assetsWithMass.map(d => d.expectedReturnRaw);
+      const filteredMean = filteredERs.reduce((a, b) => a + b, 0) / filteredERs.length;
+      const absDeviations = filteredERs.map(er => Math.abs(er - filteredMean)).sort((a, b) => a - b);
+      const p95Index = Math.floor(absDeviations.length * 0.95);
+      const p95AbsDeviation = absDeviations[Math.min(p95Index, absDeviations.length - 1)] || 0.01;
+      p95Scale = Math.max(0.005, p95AbsDeviation);
+    } else if (allExpectedReturnsRaw.length > 0) {
+      // Fallback to all assets if not enough with mass
+      const absDeviations = allExpectedReturnsRaw.map(er => Math.abs(er - globalMeanExpectedReturn)).sort((a, b) => a - b);
+      const p95Index = Math.floor(absDeviations.length * 0.95);
+      const p95AbsDeviation = absDeviations[Math.min(p95Index, absDeviations.length - 1)] || 0.01;
+      p95Scale = Math.max(0.005, p95AbsDeviation);
+    }
+
+    console.log(`Global calibration: mean=${(globalMeanExpectedReturn * 100).toFixed(4)}%, p95Scale=${(p95Scale * 100).toFixed(4)}%, assetsWithMass=${assetsWithMass.length}`);
+
+    // ========================================================================
+    // APPLY GLOBAL RECENTERING, MASS-BASED DISAGREEMENT, AND FINAL SCORING
+    // ========================================================================
+    const DISAGREE_MASS_MIN = 0.002; // Only penalize when total signal mass >= 0.2%
+    const DISAGREE_MAX = 0.02;
+    const now = new Date().toISOString();
+
+    const updates: {
+      id: string;
+      ticker: string;
+      score: number;
+      expected_return: number;
+      expected_return_raw: number;
+      expected_return_centered: number;
+      confidence_score: number;
+      confidence_label: string;
+      score_explanation: any[];
+      cov: typeof allRawAssetData[0]['cov'];
+    }[] = [];
+
+    for (const data of allRawAssetData) {
+      const {
+        id, ticker, expectedReturnRaw, alphaStdPenalty, posMass, negMass,
+        scoreExplanation, signalsTotal, signalsWithAlpha, signalsWithoutAlpha,
+        usedExact, usedCanonical, usedFamily, usedHorizon3d, usedHorizon7d, usedComponent,
+        cov
+      } = data;
+
+      // GLOBAL RECENTER: subtract global mean to remove bearish bias
+      const expectedReturnCentered = expectedReturnRaw - globalMeanExpectedReturn;
+
+      // MASS-BASED DISAGREEMENT PENALTY: gate by total signal mass, not net
+      const mass = posMass + negMass;
+      const balance = (posMass > 0 && negMass > 0) ? (Math.min(posMass, negMass) / Math.max(posMass, negMass)) : 0;
+      let disagreementPenalty = 0;
+      if (mass >= DISAGREE_MASS_MIN && posMass > 0 && negMass > 0) {
+        disagreementPenalty = Math.min(DISAGREE_MAX, balance * 0.02);
+      }
+
+      const aggregatedStd = Math.sqrt(alphaStdPenalty);
+      const uncertainty = Math.max(0.005, aggregatedStd + disagreementPenalty);
+      const confScore = expectedReturnCentered !== 0 ? expectedReturnCentered / uncertainty : 0;
+      const label = confidenceLabel(confScore);
+
+      // DYNAMIC SCORE MAPPING using empirical P95 scale
+      const finalScore = scoreFromExpected(expectedReturnCentered, confScore, p95Scale);
+
+      // Track floor/ceiling hits
+      if (finalScore <= 15) assetsAtFloor += 1;
+      if (finalScore >= 85) assetsAtCeiling += 1;
+
+      scoreExplanation.sort((a: any, b: any) => Math.abs(b.contrib) - Math.abs(a.contrib));
+      const topExplanation = scoreExplanation.slice(0, 10);
+
+      updates.push({
+        id,
+        ticker,
+        score: Math.round(finalScore * 10) / 10,
+        expected_return: Math.round(expectedReturnCentered * 100000) / 100000, // Store CENTERED value
+        expected_return_raw: Math.round(expectedReturnRaw * 100000) / 100000,
+        expected_return_centered: Math.round(expectedReturnCentered * 100000) / 100000,
+        confidence_score: Math.round(confScore * 1000) / 1000,
+        confidence_label: label,
+        score_explanation: [
+          { k: 'expected_return_raw', v: Math.round(expectedReturnRaw * 100000) / 100000 },
+          { k: 'expected_return_centered', v: Math.round(expectedReturnCentered * 100000) / 100000 },
+          { k: 'global_mean_expected_return', v: Math.round(globalMeanExpectedReturn * 100000) / 100000 },
+          { k: 'p95_scale', v: Math.round(p95Scale * 100000) / 100000 },
+          { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
+          { k: 'disagreement_penalty', v: Math.round(disagreementPenalty * 100000) / 100000 },
+          { k: 'disagree_mass_gated', v: mass >= DISAGREE_MASS_MIN },
+          { k: 'signal_mass', v: Math.round(mass * 100000) / 100000 },
+          { k: 'alpha_std_penalty', v: Math.round(alphaStdPenalty * 100000) / 100000 },
+          { k: 'signals_total', v: signalsTotal },
+          { k: 'signals_with_alpha', v: signalsWithAlpha },
+          { k: 'signals_without_alpha', v: signalsWithoutAlpha },
+          { k: 'alpha_fallback_exact', v: usedExact },
+          { k: 'alpha_fallback_canonical', v: usedCanonical },
+          { k: 'alpha_fallback_family', v: usedFamily },
+          { k: 'alpha_fallback_horizon_3d', v: usedHorizon3d },
+          { k: 'alpha_fallback_horizon_7d', v: usedHorizon7d },
+          { k: 'alpha_fallback_component', v: usedComponent },
+          { k: 'sum_pos_mass', v: Math.round(posMass * 100000) / 100000 },
+          { k: 'sum_neg_mass', v: Math.round(negMass * 100000) / 100000 },
+          { k: 'pos_neg_ratio', v: posMass > 0 && negMass > 0 ? Math.round((Math.min(posMass, negMass) / Math.max(posMass, negMass)) * 100) / 100 : 0 },
+          { k: 'top_signals', v: topExplanation },
+        ],
+        cov,
+      });
+    }
+
+    // Batch update ranked assets
+    const CHUNK_SIZE = 50;
+
+    for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+      const chunk = updates.slice(i, i + CHUNK_SIZE);
+
+      const updatePromises = chunk.map(update => {
+        return supabase
+          .from('assets')
+          .update({
+            computed_score: update.score,
+            expected_return: update.expected_return,
+            confidence_score: update.confidence_score,
+            confidence_label: update.confidence_label,
+            model_version: 'v1_alpha',
+            score_explanation: update.score_explanation,
+            score_computed_at: now,
+            price_status: update.cov?.status || 'fresh',
+            last_price_date: update.cov?.last_price_date || null,
+            days_stale: update.cov?.days_stale || 0,
+            price_points_30d: update.cov?.points_30d || 0,
+            rank_status: 'rankable',
+          })
+          .eq('id', update.id);
+      });
+
+      const results = await Promise.all(updatePromises);
+      rankedCount += results.filter(r => !r.error).length;
     }
 
     // Calculate next offset for continuation
@@ -1129,18 +1157,19 @@ Deno.serve(async (req) => {
     // RUN-LEVEL INVARIANTS OUTPUT
     // ========================================================================
     const runInvariants = {
-      max_expected_return: runMaxExpectedReturn === -Infinity ? 0 : Math.round(runMaxExpectedReturn * 100000) / 100000,
-      min_expected_return: runMinExpectedReturn === Infinity ? 0 : Math.round(runMinExpectedReturn * 100000) / 100000,
+      max_expected_return_raw: runMaxExpectedReturnRaw === -Infinity ? 0 : Math.round(runMaxExpectedReturnRaw * 100000) / 100000,
+      min_expected_return_raw: runMinExpectedReturnRaw === Infinity ? 0 : Math.round(runMinExpectedReturnRaw * 100000) / 100000,
       max_single_contrib: Math.round(runMaxSingleContrib * 100000) / 100000,
       assets_at_floor: assetsAtFloor,
       assets_at_ceiling: assetsAtCeiling,
-      total_pos_contrib: Math.round(totalPosContrib * 100000) / 100000,
-      total_neg_contrib: Math.round(totalNegContrib * 100000) / 100000,
+      total_pos_mass: Math.round(totalPosMass * 100000) / 100000,
+      total_neg_mass: Math.round(totalNegMass * 100000) / 100000,
       assets_with_conflict: assetsWithConflict,
-      // Calibration metrics
-      mean_expected_return: Math.round(lastMeanExpectedReturn * 100000) / 100000,
-      p95_scale: Math.round(lastP95Scale * 100000) / 100000,
-      total_expected_returns_sampled: allExpectedReturns.length,
+      // Global calibration metrics
+      global_mean_expected_return: Math.round(globalMeanExpectedReturn * 100000) / 100000,
+      p95_scale: Math.round(p95Scale * 100000) / 100000,
+      total_assets_scored: allExpectedReturnsRaw.length,
+      assets_with_mass: assetsWithMass.length,
     };
 
     console.log(`Run invariants:`, runInvariants);
