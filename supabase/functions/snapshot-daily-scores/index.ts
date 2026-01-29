@@ -10,6 +10,17 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+// Signal mass threshold - must match Asset Radar's "Scored Only" filter
+const SIGNAL_MASS_THRESHOLD = 0.001;
+
+// Extract signal mass from score_explanation jsonb array
+const extractSignalMass = (scoreExplanation: unknown): number => {
+  if (!scoreExplanation || !Array.isArray(scoreExplanation)) return 0;
+  const massEntry = scoreExplanation.find((e: any) => e.k === 'signal_mass');
+  if (!massEntry) return 0;
+  return typeof massEntry.v === 'number' ? massEntry.v : parseFloat(String(massEntry.v)) || 0;
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -36,19 +47,36 @@ serve(async (req) => {
       );
     }
     
-    // Get top 50 assets by computed_score
-    const { data: topAssets, error: assetsError } = await supabase
+    // Get top assets by computed_score (fetch extra to filter by signal_mass)
+    const { data: allAssets, error: assetsError } = await supabase
       .from('assets')
-      .select('ticker, name, computed_score')
+      .select('ticker, name, computed_score, score_explanation')
       .not('computed_score', 'is', null)
       .order('computed_score', { ascending: false })
-      .limit(50);
+      .limit(500); // Fetch extra to filter
     
     if (assetsError) throw assetsError;
     
-    if (!topAssets || topAssets.length === 0) {
+    if (!allAssets || allAssets.length === 0) {
       return new Response(
         JSON.stringify({ error: 'No scored assets found' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Filter to only include assets with meaningful signal mass (matches Asset Radar "Scored Only")
+    const scoredAssets = allAssets.filter(asset => {
+      const signalMass = extractSignalMass(asset.score_explanation);
+      return signalMass >= SIGNAL_MASS_THRESHOLD;
+    });
+    
+    // Take top 50 from filtered set
+    const topAssets = scoredAssets.slice(0, 50);
+    
+    if (topAssets.length === 0) {
+      console.log('No assets with sufficient signal mass found');
+      return new Response(
+        JSON.stringify({ error: 'No assets with sufficient signal mass found' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -69,13 +97,16 @@ serve(async (req) => {
     
     if (insertError) throw insertError;
     
-    console.log(`Created ${snapshots.length} score snapshots for ${today}`);
+    console.log(`Created ${snapshots.length} score snapshots for ${today} (filtered from ${allAssets.length} total, ${scoredAssets.length} with signal mass >= ${SIGNAL_MASS_THRESHOLD})`);
     
     return new Response(
       JSON.stringify({
         message: `Created ${snapshots.length} score snapshots for ${today}`,
         date: today,
         count: snapshots.length,
+        total_assets: allAssets.length,
+        scored_assets: scoredAssets.length,
+        signal_mass_threshold: SIGNAL_MASS_THRESHOLD,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
