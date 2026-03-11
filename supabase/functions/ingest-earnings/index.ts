@@ -7,11 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 
 // BATCH CONFIGURATION
-const BATCH_SIZE = 4; // Process 4 tickers per invocation (fits in ~60s with 12.5s delays)
-const AV_DELAY_MS = 12500; // 12.5 seconds between Alpha Vantage calls
+const BATCH_SIZE = 2; // Process 2 tickers per invocation (4 at 12.5s = 6.4/min, exceeds 5/min limit)
+const AV_DELAY_MS = 15000; // 15 seconds between Alpha Vantage calls (2 calls = 4/min, safely under 5/min)
 const CACHE_HOURS = 8; // Don't re-process tickers within 8 hours
 
 interface EarningsData {
