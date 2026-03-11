@@ -7,7 +7,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v5 - REAL DATA ONLY - NO ESTIMATIONS - Only process assets with real price data
+// v6 - REAL DATA ONLY. No synthetic/estimated fallback.
+// Fixes from v5:
+// 1. Fixed price query: date filter (last 60 days) + proper row limit so Supabase
+//    returns sufficient history per ticker instead of ~2 rows/ticker
+// 2. Switched insert → upsert on (ticker, pattern_type, timeframe)
+//    (requires unique constraint from migration)
+
+const PRICE_CHUNK_SIZE = 500;  // tickers per price fetch query
+const PRICE_DAYS_LOOKBACK = 60; // days of price history to fetch
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -21,59 +29,61 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v4] Pattern recognition ingestion started with full pagination...');
+    console.log('[v6] Pattern recognition ingestion started (real data only)...');
 
     // Fetch ALL assets with pagination
     const batchSize = 1000;
     let allAssets: any[] = [];
     let offset = 0;
-    
+
     while (true) {
       const { data: batch, error } = await supabase
         .from('assets')
-        .select('*')
+        .select('id, ticker, asset_class')
         .range(offset, offset + batchSize - 1);
-      
+
       if (error) throw error;
       if (!batch || batch.length === 0) break;
-      
+
       allAssets = allAssets.concat(batch);
       console.log(`Fetched assets batch: ${offset} to ${offset + batch.length}`);
-      
+
       if (batch.length < batchSize) break;
       offset += batchSize;
     }
 
     console.log(`Total assets to process: ${allAssets.length}`);
 
-    // Get all tickers for bulk price fetch
+    // Fetch prices with a date cutoff so Supabase returns meaningful history per ticker.
+    // Without this, the default 1000-row cap across 500 tickers yields ~2 rows/ticker.
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - PRICE_DAYS_LOOKBACK);
+    const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
     const allTickers = allAssets.map(a => a.ticker);
-    
-    // Fetch prices in bulk
     const priceMap = new Map<string, any[]>();
-    const priceChunkSize = 500;
-    
-    for (let i = 0; i < allTickers.length; i += priceChunkSize) {
-      const tickerChunk = allTickers.slice(i, i + priceChunkSize);
+
+    for (let i = 0; i < allTickers.length; i += PRICE_CHUNK_SIZE) {
+      const tickerChunk = allTickers.slice(i, i + PRICE_CHUNK_SIZE);
+
       const { data: prices } = await supabase
         .from('prices')
         .select('ticker, close, date')
         .in('ticker', tickerChunk)
-        .order('date', { ascending: false });
-      
+        .gte('date', cutoffStr)
+        .order('date', { ascending: false })
+        .limit(PRICE_CHUNK_SIZE * PRICE_DAYS_LOOKBACK); // max rows = 500 tickers × 60 days
+
       if (prices) {
         for (const price of prices) {
           if (!priceMap.has(price.ticker)) {
             priceMap.set(price.ticker, []);
           }
-          const arr = priceMap.get(price.ticker)!;
-          if (arr.length < 100) {
-            arr.push(price);
-          }
+          priceMap.get(price.ticker)!.push(price);
         }
       }
     }
-    
+
     console.log(`Loaded prices for ${priceMap.size} tickers`);
 
     let successCount = 0;
@@ -84,7 +94,7 @@ serve(async (req) => {
       try {
         const prices = priceMap.get(asset.ticker) || [];
 
-        // v5 - NO ESTIMATION: Skip assets without sufficient price data
+        // Real data only: skip assets without sufficient price data
         if (prices.length < 10) {
           skipCount++;
           continue;
@@ -99,49 +109,57 @@ serve(async (req) => {
           skipCount++;
         }
 
-      } catch (error) {
+      } catch {
         skipCount++;
       }
     }
 
-    // Bulk insert patterns
+    // Upsert patterns - idempotent on (ticker, pattern_type, timeframe)
+    let insertErrors = 0;
     if (allPatterns.length > 0) {
       const insertBatchSize = 500;
       for (let i = 0; i < allPatterns.length; i += insertBatchSize) {
         const batch = allPatterns.slice(i, i + insertBatchSize);
         const { error } = await supabase
           .from('pattern_recognition')
-          .insert(batch);
-        
+          .upsert(batch, { onConflict: 'ticker,pattern_type,timeframe' });
+
         if (error) {
-          console.error(`Insert error at batch ${i}:`, error.message);
+          console.error(`Upsert error at batch ${i}:`, error.message);
+          insertErrors++;
         }
       }
     }
 
-    console.log(`✅ Pattern recognition complete: ${successCount} assets with patterns, ${allPatterns.length} total patterns`);
+    const duration = Date.now() - startTime;
+    console.log(`✅ Pattern recognition complete: ${successCount} assets with patterns, ${allPatterns.length} total patterns, ${skipCount} skipped, ${insertErrors} batch errors`);
 
-    // Log heartbeat
     await supabase.from('function_status').insert({
       function_name: 'ingest-pattern-recognition',
       executed_at: new Date().toISOString(),
       status: 'success',
-      rows_inserted: successCount,
+      rows_inserted: allPatterns.length,
       rows_skipped: skipCount,
       fallback_used: null,
-      duration_ms: Date.now() - startTime,
+      duration_ms: duration,
       source_used: 'Pattern Recognition Engine',
       error_message: null,
-      metadata: { assets_processed: allAssets.length, patterns_found: allPatterns.length, version: 'v5_no_estimation' }
+      metadata: {
+        assets_processed: allAssets.length,
+        assets_with_patterns: successCount,
+        patterns_found: allPatterns.length,
+        price_tickers_loaded: priceMap.size,
+        version: 'v6_real_data_only',
+      },
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-pattern-recognition',
       status: 'success',
-      duration: Date.now() - startTime,
-      rowsInserted: successCount,
+      duration,
+      rowsInserted: allPatterns.length,
       rowsSkipped: skipCount,
-      metadata: { assets_processed: allAssets.length }
+      metadata: { assetsProcessed: successCount, totalAssets: allAssets.length },
     });
 
     return new Response(
@@ -150,13 +168,15 @@ serve(async (req) => {
         processed: allAssets.length,
         patterns_detected: allPatterns.length,
         assets_with_patterns: successCount,
+        skipped: skipCount,
+        version: 'v6_real_data_only',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error('Fatal error:', error);
-    
+
     await supabase.from('function_status').insert({
       function_name: 'ingest-pattern-recognition',
       executed_at: new Date().toISOString(),
@@ -167,23 +187,21 @@ serve(async (req) => {
       duration_ms: Date.now() - startTime,
       source_used: 'Pattern Recognition Engine',
       error_message: (error as Error).message,
-      metadata: {}
+      metadata: { version: 'v6_real_data_only' },
     });
-    
+
     await slackAlerter.sendCriticalAlert({
       type: 'auth_error',
       etlName: 'ingest-pattern-recognition',
-      message: `Pattern recognition failed: ${(error as Error).message}`
+      message: `Pattern recognition failed: ${(error as Error).message}`,
     });
-    
+
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
-
-// v5 - REMOVED: generateEstimatedPatterns function deleted - we only use real price-based patterns now
 
 function detectPatterns(prices: any[], asset: any) {
   const patterns = [];
@@ -240,7 +258,7 @@ function detectPatterns(prices: any[], asset: any) {
   if (closes.length >= 20) {
     const recentRange = Math.max(...closes.slice(-20)) - Math.min(...closes.slice(-20));
     const veryRecentRange = Math.max(...closes.slice(-5)) - Math.min(...closes.slice(-5));
-    
+
     if (recentRange > 0 && veryRecentRange / recentRange < 0.4) {
       patterns.push({
         ticker: asset.ticker.substring(0, 50),

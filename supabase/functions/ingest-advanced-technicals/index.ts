@@ -7,7 +7,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// v4 - Full pagination for all 8201 assets with bulk price fetching
+// v5 - REAL DATA ONLY. No synthetic/estimated fallback.
+// Fixes from v4:
+// 1. Removed generateEstimatedTechnicals - assets without ≥20 price points are skipped
+// 2. Fixed price query: date filter (last 60 days) + proper row limit so Supabase
+//    returns sufficient history per ticker instead of ~2 rows/ticker
+// 3. Switched insert → upsert on ticker (requires unique constraint from migration)
+
+const PRICE_CHUNK_SIZE = 500;  // tickers per price fetch query
+const PRICE_DAYS_LOOKBACK = 60; // days of price history to fetch
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -21,79 +29,79 @@ serve(async (req) => {
   const slackAlerter = new SlackAlerter();
 
   try {
-    console.log('[v4] Advanced technicals ingestion started with full pagination...');
-    
+    console.log('[v5] Advanced technicals ingestion started (real data only)...');
+
     // Fetch ALL assets with pagination
     const batchSize = 1000;
     let allAssets: any[] = [];
     let offset = 0;
-    
+
     while (true) {
       const { data: batch, error } = await supabaseClient
         .from('assets')
-        .select('*')
+        .select('id, ticker, asset_class')
         .range(offset, offset + batchSize - 1);
-      
+
       if (error) throw error;
       if (!batch || batch.length === 0) break;
-      
+
       allAssets = allAssets.concat(batch);
       console.log(`Fetched assets batch: ${offset} to ${offset + batch.length}`);
-      
+
       if (batch.length < batchSize) break;
       offset += batchSize;
     }
-    
+
     console.log(`Total assets to process: ${allAssets.length}`);
 
-    // Get all tickers for bulk price fetch
+    // Fetch prices with a date cutoff so Supabase returns meaningful history per ticker.
+    // Without this, the default 1000-row cap across 500 tickers yields ~2 rows/ticker.
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - PRICE_DAYS_LOOKBACK);
+    const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
     const allTickers = allAssets.map(a => a.ticker);
-    
-    // Fetch prices in bulk (last 200 days for all tickers)
     const priceMap = new Map<string, any[]>();
-    const priceChunkSize = 500;
-    
-    for (let i = 0; i < allTickers.length; i += priceChunkSize) {
-      const tickerChunk = allTickers.slice(i, i + priceChunkSize);
+
+    for (let i = 0; i < allTickers.length; i += PRICE_CHUNK_SIZE) {
+      const tickerChunk = allTickers.slice(i, i + PRICE_CHUNK_SIZE);
+
       const { data: prices } = await supabaseClient
         .from('prices')
         .select('ticker, close, date')
         .in('ticker', tickerChunk)
-        .order('date', { ascending: false });
-      
+        .gte('date', cutoffStr)
+        .order('date', { ascending: false })
+        .limit(PRICE_CHUNK_SIZE * PRICE_DAYS_LOOKBACK); // max rows = 500 tickers × 60 days
+
       if (prices) {
         for (const price of prices) {
           if (!priceMap.has(price.ticker)) {
             priceMap.set(price.ticker, []);
           }
-          const arr = priceMap.get(price.ticker)!;
-          if (arr.length < 200) {
-            arr.push(price);
-          }
+          priceMap.get(price.ticker)!.push(price);
         }
       }
     }
-    
+
     console.log(`Loaded prices for ${priceMap.size} tickers`);
 
     let successCount = 0;
-    let errorCount = 0;
+    let skipCount = 0;
     const technicals: any[] = [];
 
     for (const asset of allAssets) {
       try {
         const priceHistory = priceMap.get(asset.ticker) || [];
 
+        // Real data only: skip assets without sufficient price history
         if (priceHistory.length < 20) {
-          // Generate estimated technicals for assets without enough price data
-          const basePrice = 100 + Math.random() * 400;
-          technicals.push(generateEstimatedTechnicals(asset, basePrice));
-          successCount++;
+          skipCount++;
           continue;
         }
 
         const indicators = calculateAdvancedIndicators(priceHistory);
-        
+
         if (indicators) {
           technicals.push({
             ticker: asset.ticker.substring(0, 50),
@@ -102,50 +110,58 @@ serve(async (req) => {
             ...indicators,
           });
           successCount++;
+        } else {
+          skipCount++;
         }
 
-      } catch (error) {
-        errorCount++;
+      } catch {
+        skipCount++;
       }
     }
 
-    // Bulk insert in batches
+    // Upsert in batches - idempotent on ticker (unique constraint required)
     const insertBatchSize = 500;
+    let insertErrors = 0;
     for (let i = 0; i < technicals.length; i += insertBatchSize) {
       const batch = technicals.slice(i, i + insertBatchSize);
-      const { error: insertError } = await supabaseClient
+      const { error: upsertError } = await supabaseClient
         .from('advanced_technicals')
-        .insert(batch);
-      
-      if (insertError) {
-        console.error(`Insert error at batch ${i}:`, insertError.message);
+        .upsert(batch, { onConflict: 'ticker' });
+
+      if (upsertError) {
+        console.error(`Upsert error at batch ${i}:`, upsertError.message);
+        insertErrors++;
       }
     }
 
-    console.log(`✅ Advanced technicals complete: ${successCount} processed, ${errorCount} errors`);
+    const duration = Date.now() - startTime;
+    console.log(`✅ Advanced technicals complete: ${successCount} upserted, ${skipCount} skipped (insufficient price data), ${insertErrors} batch errors`);
 
-    // Log heartbeat
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-advanced-technicals',
       executed_at: new Date().toISOString(),
       status: 'success',
       rows_inserted: successCount,
-      rows_skipped: errorCount,
+      rows_skipped: skipCount,
       fallback_used: null,
-      duration_ms: Date.now() - startTime,
+      duration_ms: duration,
       source_used: 'Internal Price Database (TwelveData)',
       error_message: null,
-      metadata: { assets_processed: allAssets.length, version: 'v4' }
+      metadata: {
+        assets_processed: allAssets.length,
+        price_tickers_loaded: priceMap.size,
+        version: 'v5_real_data_only',
+      },
     });
 
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-advanced-technicals',
       status: 'success',
-      duration: Date.now() - startTime,
+      duration,
       rowsInserted: successCount,
-      rowsSkipped: errorCount,
+      rowsSkipped: skipCount,
       sourceUsed: 'Internal Price Database (TwelveData)',
-      metadata: { assets_processed: allAssets.length }
+      metadata: { assetsProcessed: successCount, totalAssets: allAssets.length },
     });
 
     return new Response(
@@ -153,14 +169,15 @@ serve(async (req) => {
         success: true,
         processed: allAssets.length,
         successful: successCount,
-        errors: errorCount,
+        skipped: skipCount,
+        version: 'v5_real_data_only',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error('Fatal error:', error);
-    
+
     await supabaseClient.from('function_status').insert({
       function_name: 'ingest-advanced-technicals',
       executed_at: new Date().toISOString(),
@@ -171,15 +188,15 @@ serve(async (req) => {
       duration_ms: Date.now() - startTime,
       source_used: 'Internal Price Database (TwelveData)',
       error_message: (error as Error).message,
-      metadata: {}
+      metadata: { version: 'v5_real_data_only' },
     });
-    
+
     await slackAlerter.sendCriticalAlert({
       type: 'auth_error',
       etlName: 'ingest-advanced-technicals',
-      message: `Advanced technicals failed: ${(error as Error).message}`
+      message: `Advanced technicals failed: ${(error as Error).message}`,
     });
-    
+
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -187,52 +204,13 @@ serve(async (req) => {
   }
 });
 
-function generateEstimatedTechnicals(asset: any, basePrice: number) {
-  const volatility = 0.02 + Math.random() * 0.08;
-  const trend = (Math.random() - 0.5) * 0.1;
-  
-  const vwap = basePrice * (1 + (Math.random() - 0.5) * 0.02);
-  const currentPrice = basePrice * (1 + trend);
-  
-  return {
-    ticker: asset.ticker.substring(0, 50),
-    asset_id: asset.id,
-    asset_class: asset.asset_class || 'stock',
-    vwap,
-    obv: Math.floor(Math.random() * 50000000),
-    volume_24h: Math.floor(Math.random() * 10000000),
-    volume_change_pct: (Math.random() - 0.5) * 40,
-    fib_0: basePrice * 0.9,
-    fib_236: basePrice * 0.924,
-    fib_382: basePrice * 0.938,
-    fib_500: basePrice * 0.95,
-    fib_618: basePrice * 0.962,
-    fib_786: basePrice * 0.979,
-    fib_1000: basePrice * 1.1,
-    support_1: basePrice * 0.95,
-    support_2: basePrice * 0.92,
-    support_3: basePrice * 0.88,
-    resistance_1: basePrice * 1.05,
-    resistance_2: basePrice * 1.08,
-    resistance_3: basePrice * 1.12,
-    current_price: currentPrice,
-    price_vs_vwap_pct: ((currentPrice - vwap) / vwap) * 100,
-    breakout_signal: Math.random() > 0.8 ? (Math.random() > 0.5 ? 'resistance_break' : 'support_break') : 'range_bound',
-    adx: Math.random() * 50,
-    trend_strength: ['sideways', 'weak_uptrend', 'weak_downtrend', 'strong_uptrend', 'strong_downtrend'][Math.floor(Math.random() * 5)],
-    stochastic_k: Math.random() * 100,
-    stochastic_d: Math.random() * 100,
-    stochastic_signal: Math.random() > 0.7 ? (Math.random() > 0.5 ? 'overbought' : 'oversold') : 'neutral',
-  };
-}
-
 function calculateAdvancedIndicators(prices: any[]) {
   if (prices.length < 20) return null;
 
   const closes = prices.map(p => p.close);
   const currentPrice = closes[0];
 
-  const vwap = closes.slice(0, 20).reduce((a, b) => a + b, 0) / 20;
+  const vwap = closes.slice(0, 20).reduce((a: number, b: number) => a + b, 0) / 20;
   const priceVsVwapPct = ((currentPrice - vwap) / vwap) * 100;
 
   let obv = 0;
@@ -265,9 +243,9 @@ function calculateAdvancedIndicators(prices: any[]) {
   if (currentPrice > resistance_1 * 1.02) breakout_signal = 'resistance_break';
   if (currentPrice < support_1 * 0.98) breakout_signal = 'support_break';
 
-  const sma_20 = closes.slice(0, 20).reduce((a, b) => a + b, 0) / 20;
-  const sma_50 = closes.slice(0, Math.min(50, closes.length)).reduce((a, b) => a + b, 0) / Math.min(50, closes.length);
-  
+  const sma_20 = closes.slice(0, 20).reduce((a: number, b: number) => a + b, 0) / 20;
+  const sma_50 = closes.slice(0, Math.min(50, closes.length)).reduce((a: number, b: number) => a + b, 0) / Math.min(50, closes.length);
+
   let trend_strength = 'sideways';
   const trendDiff = ((sma_20 - sma_50) / sma_50) * 100;
   if (trendDiff > 2) trend_strength = 'strong_uptrend';
@@ -289,8 +267,8 @@ function calculateAdvancedIndicators(prices: any[]) {
   return {
     vwap,
     obv,
-    volume_24h: 10000000,
-    volume_change_pct: Math.random() * 20 - 10,
+    volume_24h: null, // not available from daily price data
+    volume_change_pct: null, // not available from daily price data
     fib_0,
     fib_236,
     fib_382,
