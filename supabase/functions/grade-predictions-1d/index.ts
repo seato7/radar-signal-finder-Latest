@@ -8,8 +8,76 @@ const corsHeaders = {
 // Winsorize returns to avoid extreme outliers skewing results
 const MAX_RETURN_WINSORIZE = 0.20; // Cap at +-20%
 
+// Ticker batch size for price queries (avoids URL length limits)
+const TICKER_CHUNK_SIZE = 200;
+
+// How many calendar days to search when looking for the nearest trading day
+const TRADING_DAY_WINDOW = 7;
+
 function winsorize(value: number, max: number): number {
   return Math.max(-max, Math.min(max, value));
+}
+
+/**
+ * Fetch the nearest available price for each ticker relative to targetDate.
+ * direction='before': most recent trading day on or before targetDate (T0).
+ * direction='after':  first trading day on or after targetDate (T1).
+ * Queries are chunked to avoid URL length limits.
+ */
+async function fetchNearestPrices(
+  supabase: any,
+  tickers: string[],
+  targetDate: string,
+  direction: 'before' | 'after',
+): Promise<Map<string, number>> {
+  const priceMap = new Map<string, number>();
+  const target = new Date(targetDate);
+
+  for (let i = 0; i < tickers.length; i += TICKER_CHUNK_SIZE) {
+    const chunk = tickers.slice(i, i + TICKER_CHUNK_SIZE);
+
+    if (direction === 'before') {
+      // Find the most recent price on or before targetDate within the window
+      const windowStart = new Date(target.getTime() - TRADING_DAY_WINDOW * 24 * 60 * 60 * 1000);
+      const windowStartStr = windowStart.toISOString().slice(0, 10);
+
+      const { data } = await supabase
+        .from('prices')
+        .select('ticker, date, close')
+        .in('ticker', chunk)
+        .lte('date', targetDate)
+        .gte('date', windowStartStr)
+        .order('date', { ascending: false });
+
+      // Rows are ordered newest-first; first occurrence per ticker = nearest date <= targetDate
+      for (const row of data || []) {
+        if (!priceMap.has(row.ticker)) {
+          priceMap.set(row.ticker, row.close);
+        }
+      }
+    } else {
+      // Find the first price on or after targetDate within the window
+      const windowEnd = new Date(target.getTime() + TRADING_DAY_WINDOW * 24 * 60 * 60 * 1000);
+      const windowEndStr = windowEnd.toISOString().slice(0, 10);
+
+      const { data } = await supabase
+        .from('prices')
+        .select('ticker, date, close')
+        .in('ticker', chunk)
+        .gte('date', targetDate)
+        .lte('date', windowEndStr)
+        .order('date', { ascending: true });
+
+      // Rows are ordered oldest-first; first occurrence per ticker = nearest date >= targetDate
+      for (const row of data || []) {
+        if (!priceMap.has(row.ticker)) {
+          priceMap.set(row.ticker, row.close);
+        }
+      }
+    }
+  }
+
+  return priceMap;
 }
 
 Deno.serve(async (req) => {
@@ -33,18 +101,18 @@ Deno.serve(async (req) => {
     }
 
     const horizon = body.horizon || '1d';
-    
+
     // Grade yesterday's predictions by default, or specified date
     const now = new Date();
     let targetDate: Date;
-    
+
     if (body.date) {
       targetDate = new Date(body.date);
     } else {
       // Yesterday
       targetDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     }
-    
+
     const targetDateStr = targetDate.toISOString().slice(0, 10);
 
     console.log(`Grading predictions for ${targetDateStr} with ${horizon} horizon...`);
@@ -95,33 +163,13 @@ Deno.serve(async (req) => {
     // Get unique tickers
     const tickers = [...new Set(ungraded.map(p => p.ticker))];
 
-    // Fetch prices for the prediction date and future date
-    const { data: pricesT0, error: p0Error } = await supabase
-      .from('prices')
-      .select('ticker, date, close')
-      .in('ticker', tickers)
-      .eq('date', targetDateStr);
+    console.log(`Fetching nearest trading day prices for ${tickers.length} tickers (T0 <= ${targetDateStr}, T1 >= ${futureDateStr})...`);
 
-    if (p0Error) throw p0Error;
-
-    const { data: pricesT1, error: p1Error } = await supabase
-      .from('prices')
-      .select('ticker, date, close')
-      .in('ticker', tickers)
-      .eq('date', futureDateStr);
-
-    if (p1Error) throw p1Error;
-
-    // Build price lookups
-    const priceT0Map = new Map<string, number>();
-    const priceT1Map = new Map<string, number>();
-
-    for (const p of pricesT0 || []) {
-      priceT0Map.set(p.ticker, p.close);
-    }
-    for (const p of pricesT1 || []) {
-      priceT1Map.set(p.ticker, p.close);
-    }
+    // Fetch prices using nearest-trading-day lookup, chunked to avoid URL limits
+    const [priceT0Map, priceT1Map] = await Promise.all([
+      fetchNearestPrices(supabase, tickers, targetDateStr, 'before'),
+      fetchNearestPrices(supabase, tickers, futureDateStr, 'after'),
+    ]);
 
     console.log(`Found prices for ${priceT0Map.size} tickers at T0, ${priceT1Map.size} at T1`);
 
@@ -151,10 +199,10 @@ Deno.serve(async (req) => {
 
       // Calculate raw return
       let realizedReturn = (c1 / c0) - 1;
-      
+
       // Winsorize to avoid extreme outliers
       realizedReturn = winsorize(realizedReturn, MAX_RETURN_WINSORIZE);
-      
+
       // A "hit" is when the prediction direction was correct:
       // - If expected_return > 0 (bullish), hit if realized_return > 0
       // - If expected_return < 0 (bearish), hit if realized_return < 0
@@ -183,7 +231,9 @@ Deno.serve(async (req) => {
       bucket.returns.push(realizedReturn);
     }
 
-    console.log(`Calculated ${results.length} results, ${hits} hits (${(hits/results.length*100).toFixed(1)}% accuracy), ${skippedNoPrices} skipped (no prices)`);
+    const gradedCount = results.length;
+    const hitRateStr = gradedCount > 0 ? (hits / gradedCount * 100).toFixed(1) : '0.0';
+    console.log(`Calculated ${gradedCount} results, ${hits} hits (${hitRateStr}% accuracy), ${skippedNoPrices} skipped (no prices)`);
 
     // Insert results in batches
     if (results.length > 0) {
@@ -196,8 +246,8 @@ Deno.serve(async (req) => {
     }
 
     const duration = Date.now() - startTime;
-    const hitRate = results.length > 0 ? hits / results.length : 0;
-    const avgReturn = results.length > 0 ? totalReturns / results.length : 0;
+    const hitRate = gradedCount > 0 ? hits / gradedCount : 0;
+    const avgReturn = gradedCount > 0 ? totalReturns / gradedCount : 0;
 
     // Prepare bucket breakdown for metadata
     const bucketBreakdown: Record<string, { hit_rate: number; count: number; avg_return: number }> = {};

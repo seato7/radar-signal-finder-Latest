@@ -29,25 +29,6 @@ Deno.serve(async (req) => {
 
     console.log(`Creating daily prediction snapshot for ${snapshotDate}...`);
 
-    // Check if we already have a snapshot for today
-    const { count: existingCount } = await supabase
-      .from('asset_predictions')
-      .select('*', { count: 'exact', head: true })
-      .eq('snapshot_date', snapshotDate);
-
-    if (existingCount && existingCount > 0) {
-      console.log(`Snapshot for ${snapshotDate} already exists with ${existingCount} records`);
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          inserted: 0,
-          message: `Snapshot already exists for ${snapshotDate}`,
-          existing_count: existingCount,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Fetch top BULLISH assets by expected_return
     // Using assets table directly with price_status filter (no external joins needed)
     // The compute-asset-scores function already sets price_status = 'fresh' for valid assets
@@ -171,12 +152,15 @@ Deno.serve(async (req) => {
 
     let inserted = 0;
     if (rows.length > 0) {
-      // Insert in batches of 100
+      // Upsert in batches of 100 — idempotent on (snapshot_date, asset_id)
+      // Safe to re-run if a previous invocation crashed mid-batch
       const BATCH_SIZE = 100;
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE);
-        const { error: insErr } = await supabase.from('asset_predictions').insert(batch);
-        if (insErr) throw insErr;
+        const { error: upsertErr } = await supabase
+          .from('asset_predictions')
+          .upsert(batch, { onConflict: 'snapshot_date,asset_id' });
+        if (upsertErr) throw upsertErr;
         inserted += batch.length;
       }
     }
