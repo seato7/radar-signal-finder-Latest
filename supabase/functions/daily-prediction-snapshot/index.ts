@@ -6,8 +6,8 @@ const corsHeaders = {
 };
 
 // Track predictions for these N values separately
-const TOP_N_VALUES = [20, 50, 100];
-const MAX_PREDICTIONS = 500; // Maximum total predictions to store
+const TOP_N_VALUES = [50, 100, 250, 500];
+const MAX_PREDICTIONS = 2000; // Maximum total predictions to store
 
 // Universe filters
 const MIN_PRICE_USD = 1.00;
