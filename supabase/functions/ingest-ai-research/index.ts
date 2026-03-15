@@ -89,8 +89,12 @@ Be factual and cite specific data points.`
     let confidenceScore = 60;
     let timeHorizon = 'short_term';
 
-    if (reportText.toLowerCase().includes('buy')) recommendation = 'BUY';
-    else if (reportText.toLowerCase().includes('sell')) recommendation = 'SELL';
+    const buyMatch = reportText.match(/\b(STRONG BUY|BUY)\b/);
+    const sellMatch = reportText.match(/\b(STRONG SELL|SELL)\b/);
+    const holdMatch = reportText.match(/\bHOLD\b/);
+    if (buyMatch) recommendation = buyMatch[1];
+    else if (sellMatch) recommendation = sellMatch[1];
+    else if (holdMatch) recommendation = 'HOLD';
 
     const confMatch = reportText.match(/confidence[:\s]*(\d+)/i);
     if (confMatch) confidenceScore = Math.min(100, Math.max(0, parseInt(confMatch[1])));
@@ -146,16 +150,17 @@ async function processAIBatch(
   for (let i = 0; i < contexts.length; i += AI_CONCURRENCY) {
     const batch = contexts.slice(i, i + AI_CONCURRENCY);
     
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       batch.map(ctx => generateAIReport(ctx, apiKey))
     );
 
     for (const result of results) {
-      if (result.success && result.report) {
-        reports.push(result.report);
+      if (result.status === 'fulfilled' && result.value.success && result.value.report) {
+        reports.push(result.value.report);
       } else {
         errors++;
-        console.log(`⚠️ AI error: ${result.error}`);
+        const reason = result.status === 'rejected' ? result.reason : result.value?.error;
+        console.log(`⚠️ AI error: ${reason}`);
       }
     }
 
@@ -204,8 +209,9 @@ Deno.serve(async (req) => {
     // Get all assets with any signal activity
     const { data: allAssets, error: assetsError } = await supabaseClient
       .from('asset_signal_summary')
-      .select('*')
-      .or('flow_signals.gt.0,institutional_signals.gt.0,insider_signals.gt.0,technical_signals.gt.0,sentiment_signals.gt.0');
+      .select('asset_id,ticker,name,asset_class,current_price,trend,flow_signals,institutional_signals,insider_signals,technical_signals,sentiment_signals')
+      .or('flow_signals.gt.0,institutional_signals.gt.0,insider_signals.gt.0,technical_signals.gt.0,sentiment_signals.gt.0')
+      .limit(500);
 
     if (assetsError) {
       throw new Error(`Failed to fetch assets: ${assetsError.message}`);
