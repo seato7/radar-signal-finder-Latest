@@ -21,121 +21,125 @@ Deno.serve(async (req) => {
 
   try {
     console.log('Starting FRED economic indicators ingestion...');
-    
+
     const fredApiKey = Deno.env.get('FRED_API_KEY');
     if (!fredApiKey) {
       throw new Error('FRED_API_KEY not configured');
     }
-    
+
     const indicators = [
-      { series: 'GDP', name: 'US GDP', country: 'US', type: 'gdp', impact: 'high' },
-      { series: 'UNRATE', name: 'Unemployment Rate', country: 'US', type: 'unemployment', impact: 'high' },
-      { series: 'CPIAUCSL', name: 'Consumer Price Index', country: 'US', type: 'inflation', impact: 'high' },
-      { series: 'FEDFUNDS', name: 'Federal Funds Rate', country: 'US', type: 'interest_rate', impact: 'high' },
-      { series: 'DFF', name: 'Effective Federal Funds Rate', country: 'US', type: 'interest_rate', impact: 'high' },
-      { series: 'T10Y2Y', name: 'Treasury Yield Spread', country: 'US', type: 'yield_curve', impact: 'medium' },
-      { series: 'PAYEMS', name: 'Nonfarm Payrolls', country: 'US', type: 'employment', impact: 'high' },
-      { series: 'PCEPI', name: 'PCE Price Index', country: 'US', type: 'inflation', impact: 'high' },
-      { series: 'RSXFS', name: 'Retail Sales', country: 'US', type: 'retail', impact: 'medium' },
-      { series: 'INDPRO', name: 'Industrial Production', country: 'US', type: 'production', impact: 'medium' }
+      { series: 'GDP',      name: 'US GDP',                       country: 'US', type: 'gdp',           impact: 'high'   },
+      { series: 'UNRATE',   name: 'Unemployment Rate',            country: 'US', type: 'unemployment',  impact: 'high'   },
+      { series: 'CPIAUCSL', name: 'Consumer Price Index',         country: 'US', type: 'inflation',     impact: 'high'   },
+      { series: 'FEDFUNDS', name: 'Federal Funds Rate',           country: 'US', type: 'interest_rate', impact: 'high'   },
+      { series: 'DFF',      name: 'Effective Federal Funds Rate', country: 'US', type: 'interest_rate', impact: 'high'   },
+      { series: 'T10Y2Y',   name: 'Treasury Yield Spread',        country: 'US', type: 'yield_curve',   impact: 'medium' },
+      { series: 'PAYEMS',   name: 'Nonfarm Payrolls',             country: 'US', type: 'employment',    impact: 'high'   },
+      { series: 'PCEPI',    name: 'PCE Price Index',              country: 'US', type: 'inflation',     impact: 'high'   },
+      { series: 'RSXFS',    name: 'Retail Sales',                 country: 'US', type: 'retail',        impact: 'medium' },
+      { series: 'INDPRO',   name: 'Industrial Production',        country: 'US', type: 'production',    impact: 'medium' },
     ];
-    
-    let inserted = 0;
-    let skipped = 0;
-    
+
+    let attempted = 0;
+    let upserted = 0;
+    let failed = 0;
+
     for (const indicator of indicators) {
       try {
-        // FRED JSON endpoint with API key
         const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${indicator.series}&api_key=${fredApiKey}&file_type=json&limit=12&sort_order=desc`;
-        
+        const redactedUrl = fredUrl.replace(fredApiKey, '[REDACTED]');
+
+        console.log(`Fetching ${indicator.series}: ${redactedUrl}`);
+
         const response = await fetch(fredUrl);
-        
+
         if (!response.ok) {
           console.log(`FRED API returned ${response.status} for ${indicator.series}`);
-          skipped++;
+          failed++;
           continue;
         }
-        
+
         const data = await response.json();
         const observations = data.observations || [];
-        
+
+        // Build all records for this series, skipping missing values
+        const records = [];
         for (const obs of observations) {
-          if (obs.value === '.') continue; // Skip missing values
-          
-          const value = parseFloat(obs.value);
-          const release_date = new Date(obs.date).toISOString();
-          
-          const indicatorRecord = {
+          if (obs.value === '.') continue; // FRED uses '.' for missing data points
+
+          attempted++;
+          records.push({
+            series_id: indicator.series,
             indicator_type: indicator.type,
             country: indicator.country,
-            value,
-            release_date,
+            value: parseFloat(obs.value),
+            release_date: new Date(obs.date).toISOString(),
             impact: indicator.impact,
             source: 'FRED',
             metadata: {
-              series_id: indicator.series,
               series_name: indicator.name,
               realtime_start: obs.realtime_start,
-              realtime_end: obs.realtime_end
-            }
-          };
-          
-          const upsertRes = await fetch(`${supabaseUrl}/rest/v1/economic_indicators`, {
-            method: 'POST',
-            headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'resolution=merge-duplicates'
+              realtime_end: obs.realtime_end,
             },
-            body: JSON.stringify(indicatorRecord)
           });
-          
-          if (upsertRes.ok) {
-            inserted++;
+        }
+
+        if (records.length > 0) {
+          const { error } = await supabase
+            .from('economic_indicators')
+            .upsert(records, { onConflict: 'series_id,release_date' });
+
+          if (error) {
+            console.error(`Upsert error for ${indicator.series}:`, error.message);
+            failed += records.length;
           } else {
-            skipped++;
+            upserted += records.length;
+            console.log(`✓ ${indicator.series}: upserted ${records.length} observations`);
           }
         }
-        
-        // Rate limiting
+
+        // Rate limiting — FRED allows 120 req/min; 500ms keeps us well under
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
       } catch (err) {
         console.error(`Error processing ${indicator.series}:`, err);
-        skipped++;
+        failed++;
       }
     }
-    
+
     await logHeartbeat(supabase, {
       function_name: 'ingest-fred-economics',
       status: 'success',
-      rows_inserted: inserted,
-      rows_skipped: skipped,
+      rows_inserted: upserted,
+      rows_skipped: failed,
       duration_ms: Date.now() - startTime,
       source_used: 'FRED',
+      metadata: { attempted, upserted, failed },
     });
 
-    await slackAlerter.sendLiveAlert({
-      etlName: 'ingest-fred-economics',
-      status: 'success',
-      rowsInserted: inserted,
-      rowsSkipped: skipped,
-      sourceUsed: 'FRED',
-      duration: Date.now() - startTime,
-    });
+    // Only alert Slack when something actually failed
+    if (failed > 0) {
+      await slackAlerter.sendLiveAlert({
+        etlName: 'ingest-fred-economics',
+        status: 'partial',
+        rowsInserted: upserted,
+        rowsSkipped: failed,
+        sourceUsed: 'FRED',
+        duration: Date.now() - startTime,
+      });
+    }
 
     return new Response(JSON.stringify({
       success: true,
       source: 'FRED (St. Louis Fed)',
       indicators: indicators.length,
-      inserted,
-      skipped,
-      note: 'Register at fred.stlouisfed.org for API key to increase rate limits'
+      attempted,
+      upserted,
+      failed,
     }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-    
+
   } catch (error) {
     console.error('Fatal error:', error);
     await logHeartbeat(supabase, {
@@ -147,19 +151,19 @@ Deno.serve(async (req) => {
       source_used: 'FRED',
       error_message: error instanceof Error ? error.message : String(error),
     });
-    
+
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'ingest-fred-economics',
       message: `FRED economics ingestion failed: ${error instanceof Error ? error.message : String(error)}`,
     });
-    
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+
+    return new Response(JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
     }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
