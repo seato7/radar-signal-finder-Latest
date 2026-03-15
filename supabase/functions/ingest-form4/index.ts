@@ -225,6 +225,12 @@ serve(async (req) => {
     for (const entryMatch of entries) {
       const entryContent = entryMatch[1];
       
+      // Extract filing date from Atom entry — prefer <updated>, fall back to <published>
+      const updatedMatch = entryContent.match(/<updated>([^<]+)<\/updated>/i);
+      const publishedMatch = entryContent.match(/<published>([^<]+)<\/published>/i);
+      const filingDateRaw = updatedMatch?.[1] || publishedMatch?.[1];
+      const filingDate = filingDateRaw ? new Date(filingDateRaw).toISOString() : new Date().toISOString();
+
       // Extract filing URL from Atom feed
       let linkMatch = entryContent.match(/<link[^>]*href=["']([^"']+)["'][^>]*>/i);
       if (!linkMatch) {
@@ -352,42 +358,14 @@ serve(async (req) => {
         if (parsed.transactions.length === 0) {
           continue;
         }
-        
-        // Process first transaction
-        const tx = parsed.transactions[0];
-        
-        // Determine signal type: A = Acquired (buy), D = Disposed (sell)
-        let signalType = 'insider_buy';
-        let direction = 'up';
-        
-        if (tx.acquiredDisposed === 'D') {
-          signalType = 'insider_sell';
-          direction = 'down';
-        }
-        
-        // Generate checksum for idempotency
-        const checksumData = JSON.stringify({
-          filing_url: filingUrl,
-          ticker,
-          tx_code: tx.code,
-          shares: tx.shares,
-          acq_disp: tx.acquiredDisposed
-        });
-        
-        const encoder = new TextEncoder();
-        const data = encoder.encode(checksumData);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        
-        // Find or create asset
+
+        // Find or create asset once per filing (not once per transaction)
         let { data: asset } = await supabaseClient
           .from('assets')
           .select('id')
           .eq('ticker', ticker)
-          .eq('exchange', 'US')
           .maybeSingle();
-        
+
         if (!asset) {
           const { data: newAsset } = await supabaseClient
             .from('assets')
@@ -399,52 +377,77 @@ serve(async (req) => {
             })
             .select()
             .single();
-          
+
           asset = newAsset;
         }
-        
-        // Insert signal using existing insider_buy/insider_sell signal types
-        const { error: insertError } = await supabaseClient
-          .from('signals')
-          .insert({
-            signal_type: signalType,
-            asset_id: asset?.id,
-            value_text: `${parsed.ownerName || 'Insider'}: ${tx.acquiredDisposed === 'A' ? 'Acquired' : 'Disposed'} ${tx.shares.toLocaleString()} shares`,
-            direction,
-            magnitude: Math.min(Math.max(tx.shares / 10000, 0), 1), // Cap between 0-1 for check constraint
-            observed_at: new Date().toISOString(),
-            raw: {
-              ticker,
-              issuer_name: issuerName,
-              owner_name: parsed.ownerName,
-              transaction_code: tx.code,
-              shares: tx.shares,
-              price_per_share: tx.pricePerShare,
-              acquired_disposed: tx.acquiredDisposed,
-              filing_url: filingUrl,
-              xml_url: successfulXmlUrl
-            },
-            citation: {
-              source: 'SEC Form 4',
-              url: filingUrl,
-              timestamp: new Date().toISOString()
-            },
-            checksum
+
+        // Process ALL transactions in this filing
+        for (let txIndex = 0; txIndex < parsed.transactions.length; txIndex++) {
+          const tx = parsed.transactions[txIndex];
+
+          // Determine signal type: A = Acquired (buy), D = Disposed (sell)
+          const signalType = tx.acquiredDisposed === 'D' ? 'insider_sell' : 'insider_buy';
+          const direction  = tx.acquiredDisposed === 'D' ? 'down' : 'up';
+
+          // Checksum includes txIndex so tx[0] and tx[1] from the same filing are distinct
+          const checksumData = JSON.stringify({
+            filing_url: filingUrl,
+            ticker,
+            tx_index: txIndex,
+            tx_code: tx.code,
+            shares: tx.shares,
+            acq_disp: tx.acquiredDisposed
           });
-        
-        if (insertError) {
-          if (insertError.code === '23505') {
-            signalsSkipped++;
+
+          const encoder = new TextEncoder();
+          const data = encoder.encode(checksumData);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+          const { error: insertError } = await supabaseClient
+            .from('signals')
+            .insert({
+              signal_type: signalType,
+              asset_id: asset?.id,
+              value_text: `${parsed.ownerName || 'Insider'}: ${tx.acquiredDisposed === 'A' ? 'Acquired' : 'Disposed'} ${tx.shares.toLocaleString()} shares`,
+              direction,
+              magnitude: Math.min(Math.max((tx.shares * (tx.pricePerShare ?? 1)) / 1_000_000, 0), 1),
+              observed_at: filingDate,
+              raw: {
+                ticker,
+                issuer_name: issuerName,
+                owner_name: parsed.ownerName,
+                transaction_code: tx.code,
+                transaction_index: txIndex,
+                shares: tx.shares,
+                price_per_share: tx.pricePerShare,
+                acquired_disposed: tx.acquiredDisposed,
+                filing_url: filingUrl,
+                xml_url: successfulXmlUrl
+              },
+              citation: {
+                source: 'SEC Form 4',
+                url: filingUrl,
+                timestamp: filingDate
+              },
+              checksum
+            });
+
+          if (insertError) {
+            if (insertError.code === '23505') {
+              signalsSkipped++;
+            } else {
+              console.error('Insert error:', insertError);
+              throw insertError;
+            }
           } else {
-            console.error('Insert error:', insertError);
-            throw insertError;
+            signalsCreated++;
+            console.log(`✅ ${signalType} [tx${txIndex}]: ${ticker} ${tx.shares} shares by ${parsed.ownerName || 'Insider'}`);
           }
-        } else {
-          signalsCreated++;
-          console.log(`✅ ${signalType}: ${ticker} ${tx.shares} shares by ${parsed.ownerName || 'Insider'}`);
         }
-        
-        // Rate limit SEC requests
+
+        // Rate limit SEC requests (once per filing, not per transaction)
         await new Promise(r => setTimeout(r, 200));
         
       } catch (filingError) {
