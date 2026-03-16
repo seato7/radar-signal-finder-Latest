@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     // Calculate metrics
     const totalStale = staleTickers?.length || 0;
     const slaViolations = (staleTickers || []).filter((t: any) => t.seconds_stale > 5).length;
-    const maxStaleness = staleTickers?.[0]?.seconds_stale || 0;
+    const maxStaleness = staleTickers?.length ? Math.max(...staleTickers.map((t: any) => t.seconds_stale || 0)) : 0;
 
     const summary = {
       timestamp: new Date().toISOString(),

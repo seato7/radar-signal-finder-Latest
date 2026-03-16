@@ -209,6 +209,7 @@ serve(async (req) => {
     let mappedCount = 0;
     let skippedCount = 0;
     const updates: { id: string; theme_id: string; raw: any }[] = [];
+    const strategyCounts = { ticker: 0, signal_type: 0, keyword: 0, fallback: 0, none: 0 };
 
     for (const signal of unmappedSignals) {
       let matchedThemeId: string | null = null;
@@ -279,8 +280,10 @@ serve(async (req) => {
           raw: { mapper: mapperRoute, mapper_score: mapperScore }
         });
         mappedCount++;
+        strategyCounts[mapperRoute as keyof typeof strategyCounts] = (strategyCounts[mapperRoute as keyof typeof strategyCounts] || 0) + 1;
       } else {
         skippedCount++;
+        strategyCounts.none++;
       }
     }
 
@@ -316,7 +319,7 @@ serve(async (req) => {
       duration_ms: duration,
       metadata: {
         total_processed: unmappedSignals.length,
-        strategies_used: { ticker: 0, signal_type: 0, keyword: 0, fallback: 0 }
+        strategies_used: strategyCounts
       }
     });
 

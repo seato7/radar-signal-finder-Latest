@@ -209,7 +209,7 @@ serve(async (req) => {
       actual: hasEnoughData ? 
         `Correlation: ${correlation.toFixed(4)}, D1: ${lowestReturn.toFixed(2)}%, D10: ${highestReturn.toFixed(2)}% (n=${scoreWithReturns.length})` : 
         `Insufficient data (n=${scoreWithReturns.length})`,
-      expected: 'Correlation >= -0.1 or insufficient data',
+      expected: 'Correlation >= 0.05 or insufficient data',
       critical: false,
       message: !hasEnoughData ? 'Not enough price data for correlation check' : 
                correlation >= 0 ? `Positive correlation: ${correlation.toFixed(4)} ✅` : 

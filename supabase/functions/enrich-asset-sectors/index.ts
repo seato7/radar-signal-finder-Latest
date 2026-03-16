@@ -641,7 +641,7 @@ function classifyStockByName(name: string): { sector: string; industry: string }
   for (const [sector, config] of Object.entries(SECTOR_PATTERNS)) {
     for (const keyword of config.keywords) {
       // Skip very short keywords that cause false matches
-      if (keyword.length < 4) continue;
+      if (keyword.length < 3) continue; // allow 3-char words: oil, gas, etc.
       
       // Require the keyword to be a distinct word or phrase
       const keywordLower = keyword.toLowerCase().trim();
@@ -743,10 +743,10 @@ function classifyAsset(ticker: string, name: string, assetClass: string): { sect
     return { sector: 'Financial Services', industry: 'Investment Funds' };
   }
   
-  // 10. ULTIMATE FALLBACK - Classify by ticker length/format heuristics
-  // 1-4 letter tickers are usually US stocks
+  // 10. ULTIMATE FALLBACK - use 'Unknown' not 'Technology' — short tickers span all sectors
+  // AAPL=Tech but BAC=Finance, JNJ=Healthcare, F=Consumer, GE=Industrials — can't assume Tech
   if (ticker.length <= 4 && /^[A-Z]+$/.test(ticker)) {
-    return { sector: 'Technology', industry: 'Diversified' };
+    return { sector: 'Unknown', industry: 'Diversified' };
   }
   
   // Longer tickers might be international or crypto

@@ -45,7 +45,7 @@ serve(async (req) => {
         const cached = await redisCache.get(ticker);
         
         if (cached.hit) {
-          const age = cached.age_seconds || 0;
+          const age = cached.age_seconds ?? 0; // use ?? not || so age of 0 seconds is valid
           const passed = age <= 5;
           
           testResults.push({

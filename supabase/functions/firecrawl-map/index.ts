@@ -44,25 +44,34 @@ serve(async (req) => {
     const limit = options?.limit || 100;
     console.log(`[firecrawl-map] Mapping website: ${normalizedUrl} (limit: ${limit})`);
 
-    const response = await fetch('https://api.firecrawl.dev/v1/map', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: normalizedUrl,
-        search: options?.search,
-        limit,
-        includeSubdomains: options?.includeSubdomains ?? false,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch('https://api.firecrawl.dev/v1/map', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: normalizedUrl,
+          search: options?.search,
+          limit,
+          includeSubdomains: options?.includeSubdomains ?? false,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const data = await response.json();
     const duration = Date.now() - startTime;
 
     if (!response.ok) {
-      console.error(`[firecrawl-map] Error: ${data.error || response.status} (${duration}ms)`);
+      const errorType = response.status === 429 ? 'rate_limit' : response.status === 401 ? 'auth_error' : response.status === 402 ? 'quota_exceeded' : 'request_failed';
+      console.error(`[firecrawl-map] ${errorType}: ${data.error || response.status} (${duration}ms)`);
       return new Response(
         JSON.stringify({ 
           success: false, 

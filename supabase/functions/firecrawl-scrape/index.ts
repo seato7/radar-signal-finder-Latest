@@ -43,29 +43,45 @@ serve(async (req) => {
 
     console.log(`[firecrawl-scrape] Scraping URL: ${normalizedUrl}`);
 
-    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: normalizedUrl,
-        formats: options?.formats || ['markdown'],
-        onlyMainContent: options?.onlyMainContent ?? true,
-        waitFor: options?.waitFor,
-      }),
-    });
+    // Add 30s timeout to prevent hanging function execution slots
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response: Response;
+    try {
+      response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: normalizedUrl,
+          formats: options?.formats || ['markdown'],
+          onlyMainContent: options?.onlyMainContent ?? true,
+          waitFor: options?.waitFor,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const data = await response.json();
     const duration = Date.now() - startTime;
 
     if (!response.ok) {
-      console.error(`[firecrawl-scrape] Error: ${data.error || response.status} (${duration}ms)`);
+      // Differentiate error types for better error handling by callers
+      const errorType = response.status === 429 ? 'rate_limit'
+        : response.status === 401 ? 'auth_error'
+        : response.status === 402 ? 'quota_exceeded'
+        : 'request_failed';
+      console.error(`[firecrawl-scrape] ${errorType}: ${data.error || response.status} (${duration}ms)`);
       return new Response(
         JSON.stringify({ 
           success: false, 
           error: data.error || `Request failed with status ${response.status}`,
+          error_type: errorType,
           duration_ms: duration
         }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
