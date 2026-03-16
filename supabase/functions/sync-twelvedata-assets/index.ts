@@ -132,7 +132,7 @@ serve(async (req) => {
           const batch = stockAssets.slice(i, i + 500);
           const { error } = await supabase
             .from('assets')
-            .upsert(batch, { onConflict: 'ticker', ignoreDuplicates: false });
+            .upsert(batch, { onConflict: 'ticker', ignoreDuplicates: true });
           
           if (error) {
             console.error(`Error inserting stocks batch ${i / 500 + 1}:`, error.message);
@@ -193,7 +193,7 @@ serve(async (req) => {
       if (forexAssets.length > 0) {
         const { error } = await supabase
           .from('assets')
-          .upsert(forexAssets, { onConflict: 'ticker', ignoreDuplicates: false });
+          .upsert(forexAssets, { onConflict: 'ticker', ignoreDuplicates: true });
         
         if (error) {
           console.error('Error inserting forex:', error.message);
@@ -258,7 +258,7 @@ serve(async (req) => {
           const batch = cryptoAssets.slice(i, i + 500);
           const { error } = await supabase
             .from('assets')
-            .upsert(batch, { onConflict: 'ticker', ignoreDuplicates: false });
+            .upsert(batch, { onConflict: 'ticker', ignoreDuplicates: true });
           
           if (error) {
             console.error(`Error inserting crypto batch ${i / 500 + 1}:`, error.message);
@@ -294,7 +294,7 @@ serve(async (req) => {
       if (commodityAssets.length > 0) {
         const { error } = await supabase
           .from('assets')
-          .upsert(commodityAssets, { onConflict: 'ticker', ignoreDuplicates: false });
+          .upsert(commodityAssets, { onConflict: 'ticker', ignoreDuplicates: true });
         
         if (error) {
           console.error('Error inserting commodities:', error.message);
@@ -356,7 +356,7 @@ serve(async (req) => {
           const batch = etfAssets.slice(i, i + 500);
           const { error } = await supabase
             .from('assets')
-            .upsert(batch, { onConflict: 'ticker', ignoreDuplicates: false });
+            .upsert(batch, { onConflict: 'ticker', ignoreDuplicates: true });
           
           if (error) {
             console.error(`Error inserting ETF batch ${i / 500 + 1}:`, error.message);

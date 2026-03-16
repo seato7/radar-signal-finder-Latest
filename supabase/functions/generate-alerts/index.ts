@@ -86,7 +86,8 @@ serve(async (req) => {
               value_text
             )
           `)
-          .eq('theme_id', theme.id);
+          .eq('theme_id', theme.id)
+          .limit(200); // cap per-theme signal load to prevent 10K+ row queries
         
         if (signalError) {
           console.error(`[GENERATE-ALERTS] Error fetching signals for theme "${theme.name}":`, signalError);

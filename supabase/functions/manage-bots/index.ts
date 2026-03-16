@@ -364,9 +364,9 @@ serve(async (req) => {
         }
       }
       
-      const winRate = allTrades.length > 1 ? 
-        allTrades.filter((t, i) => i > 0 && t.side === 'sell' && allTrades[i-1].side === 'buy' && t.price > allTrades[i-1].price).length / 
-        allTrades.filter((t, i) => i > 0 && t.side === 'sell' && allTrades[i-1].side === 'buy').length * 100 : 0;
+      const completedTrades = allTrades.filter((t, i) => i > 0 && t.side === 'sell' && allTrades[i-1].side === 'buy');
+      const winningTrades = allTrades.filter((t, i) => i > 0 && t.side === 'sell' && allTrades[i-1].side === 'buy' && t.price > allTrades[i-1].price);
+      const winRate = completedTrades.length > 0 ? (winningTrades.length / completedTrades.length) * 100 : 0;
       
       return new Response(JSON.stringify({
         trades: allTrades,

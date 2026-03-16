@@ -233,7 +233,7 @@ const handler = async (req: Request): Promise<Response> => {
               code: "EMAIL_EXISTS"
             }),
             {
-              status: 200, // Return 200 so it doesn't trigger error boundary
+              status: 409, // 409 Conflict - frontend can distinguish from success
               headers: { "Content-Type": "application/json", ...corsHeaders },
             }
           );
@@ -259,7 +259,7 @@ const handler = async (req: Request): Promise<Response> => {
       }
 
       const actionLink = linkData.properties.action_link;
-      console.log("Generated verification link for:", email);
+      console.log("Generated verification link for: [redacted]"); // don't log email in plaintext
 
       // 3. Send branded email via Brevo
       await sendViaBravo(

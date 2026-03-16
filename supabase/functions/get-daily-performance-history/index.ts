@@ -248,7 +248,7 @@ serve(async (req) => {
     }
 
     // Reverse to show newest first
-    dailyHistory.reverse();
+    dailyHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // safe sort instead of mutating reverse()
 
     return new Response(JSON.stringify({
       daily_history: dailyHistory,

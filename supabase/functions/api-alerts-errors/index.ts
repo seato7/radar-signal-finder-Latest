@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
 
       Object.keys(byEtl).forEach(etlName => {
         const logs = byEtl[etlName].slice(0, 5);
-        const consecutiveFailures = logs.filter(l => l.status === 'failure' || l.status === 'failed').length;
+        const consecutiveFailures = logs.filter(l => l.status === 'failure' || l.status === 'failed' || l.status === 'error').length;
         
         if (consecutiveFailures >= 3) {
           alerts.push({
@@ -54,8 +54,8 @@ Deno.serve(async (req) => {
             type: 'etl_failure',
             etl_name: etlName,
             message: `${etlName} has failed ${consecutiveFailures} times in the last 5 runs`,
-            last_error: logs.find(l => l.status === 'failure' || l.status === 'failed')?.error_message,
-            last_failure_at: logs.find(l => l.status === 'failure' || l.status === 'failed')?.started_at,
+            last_error: logs.find(l => l.status === 'failure' || l.status === 'failed' || l.status === 'error')?.error_message,
+            last_failure_at: logs.find(l => l.status === 'failure' || l.status === 'failed' || l.status === 'error')?.started_at,
             recommendation: `Investigate ${etlName} function immediately. Check logs and API quotas.`
           });
         }
