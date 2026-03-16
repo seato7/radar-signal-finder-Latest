@@ -598,6 +598,33 @@ export type Database = {
         }
         Relationships: []
       }
+      backtest_analyses: {
+        Row: {
+          backtest_result_snapshot: Json | null
+          generated_at: string | null
+          id: string
+          insights: string
+          model: string | null
+          strategy_name: string | null
+        }
+        Insert: {
+          backtest_result_snapshot?: Json | null
+          generated_at?: string | null
+          id?: string
+          insights: string
+          model?: string | null
+          strategy_name?: string | null
+        }
+        Update: {
+          backtest_result_snapshot?: Json | null
+          generated_at?: string | null
+          id?: string
+          insights?: string
+          model?: string | null
+          strategy_name?: string | null
+        }
+        Relationships: []
+      }
       backtest_diagnostics: {
         Row: {
           count: number
@@ -1365,6 +1392,7 @@ export type Database = {
           metadata: Json | null
           previous_value: number | null
           release_date: string
+          series_id: string | null
           source: string | null
           value: number
         }
@@ -1379,6 +1407,7 @@ export type Database = {
           metadata?: Json | null
           previous_value?: number | null
           release_date: string
+          series_id?: string | null
           source?: string | null
           value: number
         }
@@ -1393,6 +1422,7 @@ export type Database = {
           metadata?: Json | null
           previous_value?: number | null
           release_date?: string
+          series_id?: string | null
           source?: string | null
           value?: number
         }
@@ -2845,6 +2875,7 @@ export type Database = {
       }
       signals: {
         Row: {
+          ai_explanation: string | null
           asset_class: string | null
           asset_id: string | null
           checksum: string
@@ -2869,6 +2900,7 @@ export type Database = {
           value_text: string | null
         }
         Insert: {
+          ai_explanation?: string | null
           asset_class?: string | null
           asset_id?: string | null
           checksum: string
@@ -2893,6 +2925,7 @@ export type Database = {
           value_text?: string | null
         }
         Update: {
+          ai_explanation?: string | null
           asset_class?: string | null
           asset_id?: string | null
           checksum?: string
@@ -3025,6 +3058,7 @@ export type Database = {
           metadata: Json | null
           post_volume: number | null
           sentiment_score: number | null
+          signal_date: string
           source: string
           ticker: string
         }
@@ -3037,6 +3071,7 @@ export type Database = {
           metadata?: Json | null
           post_volume?: number | null
           sentiment_score?: number | null
+          signal_date?: string
           source: string
           ticker: string
         }
@@ -3049,6 +3084,7 @@ export type Database = {
           metadata?: Json | null
           post_volume?: number | null
           sentiment_score?: number | null
+          signal_date?: string
           source?: string
           ticker?: string
         }
@@ -3119,6 +3155,63 @@ export type Database = {
           ticker?: string
         }
         Relationships: []
+      }
+      theme_analyses: {
+        Row: {
+          analysis_type: string
+          days_window: number | null
+          generated_at: string | null
+          id: string
+          key_drivers: Json | null
+          model: string | null
+          signal_count: number | null
+          strength: string | null
+          summary: string | null
+          theme_id: string | null
+          theme_name: string | null
+        }
+        Insert: {
+          analysis_type: string
+          days_window?: number | null
+          generated_at?: string | null
+          id?: string
+          key_drivers?: Json | null
+          model?: string | null
+          signal_count?: number | null
+          strength?: string | null
+          summary?: string | null
+          theme_id?: string | null
+          theme_name?: string | null
+        }
+        Update: {
+          analysis_type?: string
+          days_window?: number | null
+          generated_at?: string | null
+          id?: string
+          key_drivers?: Json | null
+          model?: string | null
+          signal_count?: number | null
+          strength?: string | null
+          summary?: string | null
+          theme_id?: string | null
+          theme_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "theme_analyses_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "theme_overview"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "theme_analyses_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       theme_scores: {
         Row: {
