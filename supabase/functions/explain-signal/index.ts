@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
 
   try {
     const { signal } = await req.json();
@@ -79,6 +85,14 @@ Keep it actionable and educational.`;
 
     const data = await response.json();
     const explanation = data.choices[0].message.content;
+
+    // Persist explanation back to signals table if signal.id was provided
+    if (signal.id) {
+      await supabase
+        .from('signals')
+        .update({ ai_explanation: explanation })
+        .eq('id', signal.id);
+    }
 
     return new Response(
       JSON.stringify({ explanation }),

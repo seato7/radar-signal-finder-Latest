@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
 
   try {
     const { theme, signals, marketConditions } = await req.json();
@@ -76,8 +82,27 @@ Format as a structured analysis that's easy to scan.`;
     const data = await response.json();
     const assessment = data.choices[0].message.content;
 
+    // Persist to ai_research_reports (theme-scoped; ticker field uses theme name as surrogate key)
+    await supabase
+      .from('ai_research_reports')
+      .upsert({
+        ticker: theme?.name || 'THEME',
+        asset_class: 'theme',
+        report_type: 'risk_assessment',
+        executive_summary: assessment.substring(0, 500),
+        risk_assessment: assessment,
+        generated_by: 'gemini-2.5-flash',
+        metadata: {
+          signalCount: signals.length,
+          signalDiversity: signalTypes.length,
+          hasInstitutionalSupport,
+          hasInsiderBuying,
+          theme_name: theme?.name || null,
+        },
+      }, { onConflict: 'ticker,report_type' });
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         assessment,
         metadata: {
           signalCount: signals.length,
