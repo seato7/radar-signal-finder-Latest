@@ -195,17 +195,21 @@ serve(async (req) => {
 
     console.log('[v7] Starting supply chain signals ingestion via verified RSS feeds');
     
-    // Load valid tickers (limit to 500 for performance)
+    // Load ALL valid tickers via pagination
     const validTickers = new Set<string>();
-    const { data: assets } = await supabase
-      .from('assets')
-      .select('ticker')
-      .limit(500);
-    
-    if (assets && Array.isArray(assets)) {
-      for (const asset of assets as { ticker: string }[]) {
+    let tickerOffset = 0;
+    const tickerPageSize = 1000;
+    while (true) {
+      const { data: tickerBatch } = await supabase
+        .from('assets')
+        .select('ticker')
+        .range(tickerOffset, tickerOffset + tickerPageSize - 1);
+      if (!tickerBatch || tickerBatch.length === 0) break;
+      for (const asset of tickerBatch as { ticker: string }[]) {
         validTickers.add(asset.ticker.toUpperCase());
       }
+      if (tickerBatch.length < tickerPageSize) break;
+      tickerOffset += tickerPageSize;
     }
     console.log(`Loaded ${validTickers.size} valid tickers`);
     
@@ -314,7 +318,7 @@ serve(async (req) => {
       const batchSize = 50;
       for (let i = 0; i < uniqueSignals.length; i += batchSize) {
         const batch = uniqueSignals.slice(i, i + batchSize);
-        const { error } = await (supabase.from('supply_chain_signals') as any).insert(batch);
+        const { error } = await supabase.from('supply_chain_signals').upsert(batch, { onConflict: 'ticker,signal_type,report_date' });
         
         if (error) {
           console.error(`Insert error:`, error.message);
@@ -376,7 +380,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     
-    if (supabase!) {
+    if (supabase) {
       await logHeartbeat(supabase, {
         function_name: 'ingest-supply-chain',
         status: 'failure',
@@ -412,40 +416,36 @@ function inferTickersFromContent(content: string, validTickers: Set<string>): st
     for (const t of logisticsTickers) {
       if (validTickers.has(t)) {
         inferred.push(t);
-        break; // Just pick one
       }
     }
   }
-  
+
   // Retail/e-commerce content
   if (contentLower.includes('retail') || contentLower.includes('e-commerce') || contentLower.includes('consumer')) {
     const retailTickers = ['AMZN', 'WMT', 'TGT', 'COST'];
     for (const t of retailTickers) {
       if (validTickers.has(t)) {
         inferred.push(t);
-        break;
       }
     }
   }
-  
+
   // Semiconductor/chip content
   if (contentLower.includes('semiconductor') || contentLower.includes('chip') || contentLower.includes('microchip')) {
     const chipTickers = ['TSM', 'INTC', 'AMD', 'NVDA', 'MU'];
     for (const t of chipTickers) {
       if (validTickers.has(t)) {
         inferred.push(t);
-        break;
       }
     }
   }
-  
+
   // Automotive content
   if (contentLower.includes('automotive') || contentLower.includes('auto') || contentLower.includes('vehicle')) {
     const autoTickers = ['F', 'GM', 'TSLA', 'TM'];
     for (const t of autoTickers) {
       if (validTickers.has(t)) {
         inferred.push(t);
-        break;
       }
     }
   }
