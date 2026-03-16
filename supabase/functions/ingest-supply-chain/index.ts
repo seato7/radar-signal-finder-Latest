@@ -217,8 +217,8 @@ serve(async (req) => {
       ticker: string;
       signal_type: string;
       metric_name: string;
-      metric_value: number;
-      change_percentage: number;
+      metric_value: number | null;
+      change_percentage: number | null;
       indicator: string;
       report_date: string;
       metadata: Record<string, unknown>;

@@ -120,7 +120,7 @@ async function fetchAlphaVantageEarnings(
       quarter: quarter.substring(0, 10),
       earnings_date: latest.reportedDate || latest.fiscalDateEnding,
       earnings_surprise: Math.max(-100, Math.min(100, surprisePercentage)),
-      revenue_surprise: null, // Alpha Vantage doesn't provide revenue surprise data
+      revenue_surprise: 0, // Alpha Vantage doesn't provide revenue surprise data
       sentiment_score: sentiment,
       metadata: {
         source: 'alpha_vantage',

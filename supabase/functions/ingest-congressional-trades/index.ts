@@ -12,7 +12,7 @@ const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
 const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
 // Parse relative dates like "2 days ago", "1 week ago"
-function parseRelativeDate(dateStr: string): string {
+function parseRelativeDate(dateStr: string): string | null {
   const now = new Date();
   const lower = dateStr.toLowerCase().trim();
   
