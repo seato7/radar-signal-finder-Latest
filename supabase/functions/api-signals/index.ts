@@ -24,6 +24,7 @@ serve(async (req) => {
     const limit = parseInt(url.searchParams.get('limit') || '100');
 
     // Build query
+    // FIX: Remove signal_classification (column doesn't exist in signals table - use signal_type)
     let query = supabase
       .from('signals')
       .select(`
@@ -31,7 +32,6 @@ serve(async (req) => {
         signal_type,
         composite_score,
         score_factors,
-        signal_classification,
         asset_class,
         direction,
         magnitude,
@@ -77,11 +77,11 @@ serve(async (req) => {
     };
 
     if (signals && signals.length > 0) {
-      // Count by classification
+      // Count by signal_type (was signal_classification - column doesn't exist)
       signals.forEach(s => {
-        if (s.signal_classification) {
-          summary.by_classification[s.signal_classification] = 
-            (summary.by_classification[s.signal_classification] || 0) + 1;
+        if (s.signal_type) {
+          summary.by_classification[s.signal_type] = 
+            (summary.by_classification[s.signal_type] || 0) + 1;
         }
         if (s.asset_class) {
           summary.by_asset_class[s.asset_class] = 

@@ -50,7 +50,13 @@ async function encryptData(plaintext: string, masterKey: string): Promise<string
   combined.set(new Uint8Array(encrypted), salt.length + iv.length);
   
   // Return as base64 for database storage
-  return btoa(String.fromCharCode(...combined));
+  // FIX: Chunked btoa to prevent stack overflow on large buffers
+  let binaryStr = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < combined.length; i += chunkSize) {
+    binaryStr += String.fromCharCode(...combined.subarray(i, i + chunkSize));
+  }
+  return btoa(binaryStr);
 }
 
 async function decryptData(encryptedData: string, masterKey: string): Promise<string> {
@@ -223,7 +229,13 @@ class KrakenBroker {
       "raw", keyData, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]
     );
     const signature = await crypto.subtle.sign("HMAC", cryptoKey, message);
-    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+    // FIX: Chunked btoa to prevent stack overflow
+    const sigArray = new Uint8Array(signature);
+    let sigBinaryStr = '';
+    for (let i = 0; i < sigArray.length; i += 8192) {
+      sigBinaryStr += String.fromCharCode(...sigArray.subarray(i, i + 8192));
+    }
+    return btoa(sigBinaryStr);
   }
   
   async getAccount() {

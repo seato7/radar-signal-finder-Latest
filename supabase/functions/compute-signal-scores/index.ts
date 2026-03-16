@@ -191,8 +191,9 @@ function computeScoreFactors(signal: any, weights: ScoringWeights): SignalScoreF
   };
 
   // Normalize magnitude to 0-100 scale
+  // FIX: Magnitude is now on 0-5 scale (was 0-1). Divide by 5 before multiplying by 100.
   const magnitude = signal.magnitude || 1.0;
-  factors.normalized_magnitude = Math.min(Math.abs(magnitude) * 100, 100);
+  factors.normalized_magnitude = Math.min((Math.abs(magnitude) / 5) * 100, 100);
 
   // Map signal types to scoring dimensions
   const signalType = signal.signal_type.toLowerCase();

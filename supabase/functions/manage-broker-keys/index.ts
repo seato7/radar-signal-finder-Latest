@@ -50,7 +50,13 @@ async function encryptData(plaintext: string, masterKey: string): Promise<string
   combined.set(new Uint8Array(encrypted), salt.length + iv.length);
   
   // Return as base64 for database storage
-  return btoa(String.fromCharCode(...combined));
+  // FIX: Use chunked btoa to prevent stack overflow on large buffers
+  let binaryStr = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < combined.length; i += chunkSize) {
+    binaryStr += String.fromCharCode(...combined.subarray(i, i + chunkSize));
+  }
+  return btoa(binaryStr);
 }
 
 async function decryptData(encryptedData: string, masterKey: string): Promise<string> {
