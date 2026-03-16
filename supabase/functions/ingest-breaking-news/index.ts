@@ -155,18 +155,38 @@ function parseRSSXml(xml: string, sourceName: string): RSSItem[] {
 }
 
 // Keyword-based sentiment heuristic (NOT estimation - this is text analysis of REAL news content)
+// FIX: Added negation handling to correctly score "not rising", "no profit", "failed to beat", etc.
+const NEGATION_WORDS = ['not', 'no', 'never', "didn't", "doesn't", "won't", "can't", 'cannot', 'failed to', 'unable to'];
+
+function isNegated(text: string, wordIndex: number, windowSize = 5): boolean {
+  // Check if any negation word appears in the window of words before the target word
+  const words = text.split(/\s+/);
+  const start = Math.max(0, wordIndex - windowSize);
+  const contextWords = words.slice(start, wordIndex);
+  return NEGATION_WORDS.some(neg => contextWords.join(' ').includes(neg));
+}
+
 function calculateKeywordSentiment(text: string): number {
   const textLower = text.toLowerCase();
+  const words = textLower.split(/\s+/);
   let score = 0;
   
   const positiveWords = ['surge', 'soar', 'rally', 'gain', 'jump', 'rise', 'boost', 'record', 'beat', 'outperform', 'upgrade', 'bullish', 'growth', 'profit'];
   const negativeWords = ['crash', 'plunge', 'drop', 'fall', 'decline', 'slump', 'loss', 'miss', 'downgrade', 'bearish', 'warning', 'concern', 'risk', 'cut'];
   
   for (const word of positiveWords) {
-    if (textLower.includes(word)) score += 0.15;
+    const idx = words.findIndex(w => w.startsWith(word));
+    if (idx !== -1) {
+      // FIX: Invert sentiment if negated ("not rally" → negative)
+      score += isNegated(textLower, idx) ? -0.15 : 0.15;
+    }
   }
   for (const word of negativeWords) {
-    if (textLower.includes(word)) score -= 0.15;
+    const idx = words.findIndex(w => w.startsWith(word));
+    if (idx !== -1) {
+      // FIX: Invert sentiment if negated ("not falling" → positive)
+      score += isNegated(textLower, idx) ? 0.15 : -0.15;
+    }
   }
   
   return Math.max(-1, Math.min(1, score));

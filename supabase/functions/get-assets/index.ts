@@ -18,8 +18,10 @@ serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const limit = body.limit || 100;
-    const search = body.search;
+    const limit = Math.min(parseInt(body.limit || '100', 10), 1000); // FIX: cap limit, parse as int
+    // FIX: Sanitize search string - strip special chars that could alter PostgREST query syntax
+    const rawSearch = typeof body.search === 'string' ? body.search : null;
+    const search = rawSearch ? rawSearch.replace(/[%_*?()\[\]{}\\]/g, '').substring(0, 100).trim() || null : null;
     const theme = body.theme;
 
     if (theme) {

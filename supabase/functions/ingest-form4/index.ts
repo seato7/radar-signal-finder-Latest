@@ -405,6 +405,10 @@ serve(async (req) => {
           const hashArray = Array.from(new Uint8Array(hashBuffer));
           const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
+          // FIX: magnitude normalised to 0-5 scale
+          const transactionValue = tx.shares * (tx.pricePerShare ?? 1);
+          const signalMagnitude = Math.min(5, Math.max(0, (transactionValue / 1_000_000) * 5));
+
           const { error: insertError } = await supabaseClient
             .from('signals')
             .insert({
@@ -412,7 +416,7 @@ serve(async (req) => {
               asset_id: asset?.id,
               value_text: `${parsed.ownerName || 'Insider'}: ${tx.acquiredDisposed === 'A' ? 'Acquired' : 'Disposed'} ${tx.shares.toLocaleString()} shares`,
               direction,
-              magnitude: Math.min(Math.max((tx.shares * (tx.pricePerShare ?? 1)) / 1_000_000, 0), 1),
+              magnitude: signalMagnitude,
               observed_at: filingDate,
               raw: {
                 ticker,
@@ -444,6 +448,28 @@ serve(async (req) => {
           } else {
             signalsCreated++;
             console.log(`✅ ${signalType} [tx${txIndex}]: ${ticker} ${tx.shares} shares by ${parsed.ownerName || 'Insider'}`);
+
+            // FIX: Also write to form4_insider_trades table (was always 0 rows because ingest-form4
+            // was only writing to signals table, not form4_insider_trades)
+            await supabaseClient
+              .from('form4_insider_trades')
+              .upsert({
+                ticker,
+                asset_id: asset?.id || null,
+                filing_date: filingDate.split('T')[0],
+                transaction_date: filingDate.split('T')[0],
+                insider_name: parsed.ownerName || 'Unknown Insider',
+                insider_title: null,
+                transaction_type: tx.code,
+                shares: Math.round(tx.shares),
+                price_per_share: tx.pricePerShare,
+                total_value: transactionValue > 0 ? transactionValue : null,
+                shares_owned_after: null,
+                is_direct_ownership: true,
+                form_url: filingUrl,
+                metadata: { xml_url: successfulXmlUrl, acquired_disposed: tx.acquiredDisposed, tx_index: txIndex },
+                checksum,
+              }, { onConflict: 'ticker,filing_date,insider_name,transaction_type,shares', ignoreDuplicates: true });
           }
         }
 

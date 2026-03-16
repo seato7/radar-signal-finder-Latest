@@ -206,6 +206,11 @@ Deno.serve(async (req) => {
       // A "hit" is when the prediction direction was correct:
       // - If expected_return > 0 (bullish), hit if realized_return > 0
       // - If expected_return < 0 (bearish), hit if realized_return < 0
+      // FIX: expected_return == 0 → skip grading (no directional prediction was made)
+      if (pred.expected_return === 0) {
+        skippedNoPrices++;
+        continue;
+      }
       const expectedDirection = pred.expected_return > 0 ? 1 : -1;
       const realizedDirection = realizedReturn > 0 ? 1 : -1;
       const hit = expectedDirection === realizedDirection;

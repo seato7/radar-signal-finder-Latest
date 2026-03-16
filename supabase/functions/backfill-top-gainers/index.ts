@@ -69,6 +69,19 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // ⛔ DISABLED - This function inserts hardcoded fake portfolio data (HALO, KLAC, etc.)
+  // with synthetic scores and date variations. It pollutes asset_score_snapshots with
+  // fake data that skews the scoring validation system.
+  // Re-enable only if you want to seed demo data in a non-production environment.
+  console.log('[backfill-top-gainers] ⛔ DISABLED - fake data insertion prevented');
+  return new Response(
+    JSON.stringify({
+      disabled: true,
+      message: 'backfill-top-gainers is disabled. It was inserting hardcoded fake portfolio data. Only re-enable for explicit demo/seed purposes.',
+    }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 

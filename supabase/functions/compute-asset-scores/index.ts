@@ -397,6 +397,8 @@ function familyKey(signalType: string): string | null {
  */
 function applyTrustGating(alpha: number, n: number): number {
   if (!n || n <= 0) return 0;
+  // FIX: Zero out trust below n=5 to avoid noisy single-sample alphas distorting scores
+  if (n < 5) return 0;
   // SOFTENED: sqrt formula instead of linear to avoid over-penalizing
   const trust = Math.sqrt(n / (n + MIN_ALPHA_SAMPLE_SIZE));
   return alpha * trust;

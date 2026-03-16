@@ -834,22 +834,22 @@ serve(async (req) => {
       }
     }
 
-    // Batch update
+    // FIX: Batch update using parallel requests (was sequential - would timeout on large batches)
+    // Run up to 20 updates in parallel per batch to avoid overwhelming the DB
     if (updates.length > 0) {
-      console.log(`[ENRICH-SECTORS] Updating ${updates.length} assets`);
-      
-      for (let i = 0; i < updates.length; i += 100) {
-        const batch = updates.slice(i, i + 100);
-        for (const update of batch) {
+      console.log(`[ENRICH-SECTORS] Updating ${updates.length} assets in parallel batches`);
+      const PARALLEL_SIZE = 20;
+      for (let i = 0; i < updates.length; i += PARALLEL_SIZE) {
+        const batch = updates.slice(i, i + PARALLEL_SIZE);
+        await Promise.all(batch.map(async (update) => {
           const { error: updateError } = await supabase
             .from('assets')
             .update({ metadata: update.metadata })
             .eq('id', update.id);
-          
           if (updateError) {
             console.error(`[ENRICH-SECTORS] Update failed for ${update.id}:`, updateError.message);
           }
-        }
+        }));
       }
     }
 
