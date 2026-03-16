@@ -149,7 +149,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const batch_mode = body.batch_mode || body.batch || true; // Default to batch mode
+    const batch_mode = body.batch_mode ?? body.batch ?? true; // Default to batch mode (use ?? not || to allow false)
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

@@ -52,7 +52,7 @@ async function lookupOpenFIGI(cusips: string[]): Promise<Map<string, { ticker: s
       
       const data = await response.json();
       
-      for (let i = 0; i < data.length; i++) {
+      for (let i = 0; i < Math.min(data.length, batch.length); i++) { // guard against OpenFIGI returning fewer results than sent
         const cusip = batch[i];
         const mapping = data[i];
         

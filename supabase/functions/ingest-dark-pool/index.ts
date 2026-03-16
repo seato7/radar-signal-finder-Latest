@@ -29,27 +29,27 @@ function parseFinraShortSale(content: string): Array<{
 }> {
   const lines = content.trim().split('\n');
   const records: any[] = [];
-  
+
   // Skip header
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    
+
     const parts = line.split('|');
     if (parts.length < 5) continue;
-    
+
     const [dateStr, symbol, shortVol, shortExempt, totalVol] = parts;
-    
+
     // Basic validation
     if (!symbol || symbol.length > 10 || symbol.includes(' ') || symbol.includes('.')) continue;
-    
+
     const total = parseInt(totalVol) || 0;
     const short = parseInt(shortVol) || 0;
-    
-    if (total < 1000) continue;
-    
+
+    if (total <= 0 || total < 1000) continue; // guard against division by zero
+  
     const shortRatio = short / total;
-    
+
     records.push({
       date: `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`,
       ticker: symbol,
@@ -58,7 +58,7 @@ function parseFinraShortSale(content: string): Array<{
       short_ratio: Math.round(shortRatio * 1000) / 10, // As percentage
     });
   }
-  
+
   return records;
 }
 
@@ -72,7 +72,7 @@ serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const slackAlerter = new SlackAlerter();
-  
+
   try {
     console.log(`[DARK POOL ${VERSION}] REAL SHORT SALE DATA - NO ESTIMATIONS`);
     console.log(`NOTE: FINRA short sale data is stored - dark_pool_volume/percentage set to NULL (not available from this source)`);
@@ -93,7 +93,7 @@ serve(async (req) => {
     }
 
     console.log(`Found ${allAssets.length} stock/ETF assets`);
-    
+
     const assetMap = new Map(allAssets.map((a: any) => [a.ticker, a.id]));
     const trackedTickers = new Set(allAssets.map((a: any) => a.ticker));
 
@@ -101,22 +101,22 @@ serve(async (req) => {
     let finraData: any[] = [];
     let sourceUrl = '';
     let fileDate = '';
-    
+
     for (let daysBack = 0; daysBack <= 5; daysBack++) {
       const checkDate = new Date();
       checkDate.setDate(checkDate.getDate() - daysBack);
-      
+
       const dayOfWeek = checkDate.getDay();
       if (dayOfWeek === 0 || dayOfWeek === 6) continue; // Skip weekends
-      
+
       const url = getFinraShortSaleUrl(checkDate);
       console.log(`[FINRA CDN] Trying: ${url}`);
-      
+
       try {
         const response = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DataBot/1.0)' }
         });
-        
+
         if (response.ok) {
           const content = await response.text();
           if (content && content.length > 100 && content.includes('|')) {
@@ -135,12 +135,12 @@ serve(async (req) => {
     // If no FINRA data, return no data - DO NOT generate fake data
     if (finraData.length === 0) {
       console.log('[DARK POOL] ❌ No real FINRA data available - NOT inserting any fake data');
-      
+
       await sendNoDataFoundAlert(slackAlerter, 'ingest-dark-pool', {
         sourcesAttempted: ['FINRA CDN TRF'],
         reason: 'Could not fetch data from FINRA CDN for any of the last 5 trading days'
       });
-      
+
       await supabase.from('function_status').insert({
         function_name: 'ingest-dark-pool',
         executed_at: new Date().toISOString(),
@@ -153,9 +153,9 @@ serve(async (req) => {
       });
 
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          processed: 0, 
+        JSON.stringify({
+          success: true,
+          processed: 0,
           reason: 'No FINRA data available',
           version: VERSION,
           message: 'No real data available - no fake data inserted'
@@ -168,11 +168,11 @@ serve(async (req) => {
     // IMPORTANT: We store the REAL short sale data, NOT derived dark pool estimates
     const darkPoolRecords: any[] = [];
     let matchedCount = 0;
-    
+
     for (const r of finraData) {
       if (trackedTickers.has(r.ticker)) {
         matchedCount++;
-        
+
         // Store REAL data only - do NOT derive/estimate dark pool percentage
         // dark_pool_volume and dark_pool_percentage are set to NULL because
         // FINRA short sale data is NOT the same as dark pool data
@@ -190,7 +190,7 @@ serve(async (req) => {
           signal_type: r.short_ratio > 50 ? 'high_short_interest' : r.short_ratio < 30 ? 'low_short_interest' : 'normal_short_interest',
           signal_strength: r.short_ratio > 60 ? 'strong' : r.short_ratio > 45 ? 'moderate' : 'weak',
           source: 'FINRA_ShortSale_Official',
-          metadata: { 
+          metadata: {
             file_url: sourceUrl,
             data_quality: 'official_real',
             short_volume: r.short_volume,
@@ -202,17 +202,17 @@ serve(async (req) => {
         });
       }
     }
-    
+
     console.log(`Matched ${matchedCount}/${finraData.length} FINRA records to assets`);
 
     // Insert REAL records only
     let successCount = 0;
-    
+
     if (darkPoolRecords.length > 0) {
       const chunkSize = 500;
       for (let i = 0; i < darkPoolRecords.length; i += chunkSize) {
         const chunk = darkPoolRecords.slice(i, i + chunkSize);
-        
+
         const { error: upsertError } = await supabase
           .from('dark_pool_activity')
           .upsert(chunk, { onConflict: 'ticker,trade_date' });
@@ -223,12 +223,12 @@ serve(async (req) => {
           successCount += chunk.length;
         }
       }
-      
+
       console.log(`✅ Inserted ${successCount} REAL short sale records - NO ESTIMATIONS/DERIVATIONS`);
     }
 
     const duration = Date.now() - startTime;
-    
+
     await supabase.from('function_status').insert({
       function_name: 'ingest-dark-pool',
       executed_at: new Date().toISOString(),
@@ -237,15 +237,15 @@ serve(async (req) => {
       rows_skipped: finraData.length - matchedCount,
       duration_ms: duration,
       source_used: 'FINRA_ShortSale_Official',
-      metadata: { 
-        file_date: fileDate, 
+      metadata: {
+        file_date: fileDate,
         total_finra_records: finraData.length,
         matched_to_assets: matchedCount,
         version: VERSION,
         note: 'Real short sale data - dark pool fields NULL'
       }
     });
-    
+
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-dark-pool',
       status: successCount > 0 ? 'success' : 'partial',
@@ -271,7 +271,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[DARK POOL] Fatal error:', error);
-    
+
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'ingest-dark-pool',

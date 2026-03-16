@@ -118,7 +118,9 @@ Deno.serve(async (req) => {
         
         // Attempt to invoke the function again
         try {
-          const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${job.etl_name}`;
+          // SUPABASE_URL points to the DB (postgres), not edge functions. Construct the correct functions URL.
+          const supabaseRef = (Deno.env.get('SUPABASE_URL') ?? '').replace('https://', '').replace('.supabase.co', '');
+          const functionUrl = `https://${supabaseRef}.supabase.co/functions/v1/${job.etl_name}`;
           const response = await fetch(functionUrl, {
             method: 'POST',
             headers: {

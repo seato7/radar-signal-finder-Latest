@@ -177,8 +177,10 @@ async function fetchYahooFinanceFlows(): Promise<ETFFlowData[]> {
       const priceChange = latestClose - prevClose;
       
       const avgPrice = meta.regularMarketPrice || latestClose;
+      // Note: price direction ≠ ETF flow direction. Using volume*price as a rough flow proxy.
+      // A positive volume change suggests net inflows regardless of price direction.
       const flowEstimate = (volumeChange * avgPrice) / 1000000;
-      const netFlow = priceChange >= 0 ? Math.abs(flowEstimate) : -Math.abs(flowEstimate);
+      const netFlow = flowEstimate; // use volume-based estimate, not price-direction as proxy
       
       if (Math.abs(netFlow) > 1) {
         results.push({

@@ -40,8 +40,8 @@ function parseRelativeDate(dateStr: string): string {
     return parsed.toISOString().split('T')[0];
   }
   
-  // Default to today
-  return new Date().toISOString().split('T')[0];
+  // Return null for unparseable dates — don't default to today for historical trades
+  return null;
 }
 
 // Parse amount ranges like "1K–15K", "15K–50K", "1M–5M"

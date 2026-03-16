@@ -42,7 +42,7 @@ async function fetchBlockchainComData(): Promise<OnchainData | null> {
       console.log('✅ Blockchain.com: Got real BTC on-chain data');
       return {
         ticker: 'BTC/USD',
-        activeAddresses: data.n_btc_mined ? Math.floor(data.n_btc_mined / 6.25) : undefined, // Approximate from blocks
+        activeAddresses: undefined, // n_btc_mined/6.25 computes block count not addresses - no reliable estimate available
         transactionCount: data.n_tx,
         hashRate: data.hash_rate,
         difficulty: data.difficulty,
@@ -101,7 +101,7 @@ async function fetchCoinGeckoOnchain(coinId: string, ticker: string): Promise<On
       console.log(`✅ CoinGecko: Got on-chain metrics for ${ticker}`);
       return {
         ticker: `${ticker}/USD`,
-        activeAddresses: data.developer_data?.subscribers || undefined,
+        activeAddresses: undefined, // developer_data.subscribers = GitHub subscribers, not on-chain addresses
         transactionCount: undefined,
         source: 'CoinGecko_API',
       };
@@ -216,7 +216,7 @@ serve(async (req) => {
         ticker: d.ticker,
         asset_id: tickerToAssetId.get(d.ticker),
         active_addresses: d.activeAddresses ? Math.min(d.activeAddresses, 2147483647) : null,
-        transaction_count: d.transactionCount ? BigInt(d.transactionCount).toString() : null,
+        transaction_count: d.transactionCount ? Number(BigInt(d.transactionCount)) : null, // store as number not string
         hash_rate: d.hashRate || null,
         source: d.source,
         metadata: { 

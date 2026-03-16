@@ -71,7 +71,8 @@ async function getPatentCountsViaFirecrawl(firecrawlApiKey: string): Promise<Pat
                           markdown.match(/showing\s+\d+\s*-\s*\d+\s+of\s+([0-9,]+)/i);
       
       if (resultsMatch) {
-        const count = parseInt(resultsMatch[1].replace(/,/g, ''));
+        const countStr = resultsMatch[1].replace(/,/g, '').split('-')[0]; // handle 'X-Y' range format from some providers
+        const count = parseInt(countStr);
         if (count > 0) {
           results.push({
             ticker,
