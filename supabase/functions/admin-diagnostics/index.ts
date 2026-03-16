@@ -87,7 +87,7 @@ serve(async (req) => {
       rlsPolicies = data;
       rlsError = error?.message || null;
     } catch (e) {
-      rlsError = e.message;
+      rlsError = e instanceof Error ? e.message : String(e);
     }
 
     return new Response(JSON.stringify({
