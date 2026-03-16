@@ -99,7 +99,8 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    // FIX: Use SERVICE_ROLE_KEY - ANON_KEY cannot invoke protected edge functions
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     
     console.log(`🚀 Triggering ${ALL_FUNCTIONS.length} functions...`);
 

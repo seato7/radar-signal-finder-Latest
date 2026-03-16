@@ -1,4 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+// FIX: Import crypto explicitly so crypto.subtle.digest() is available in all Deno edge runtimes
+import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { logHeartbeat } from '../_shared/heartbeat.ts';
 import { SlackAlerter } from '../_shared/slack-alerts.ts';
@@ -253,7 +255,7 @@ Deno.serve(async (req) => {
               signal_type: 'cot_positioning',
               asset_id,
               direction: net_position > 0 ? 'up' : 'down',
-              magnitude: Math.abs(net_position) / 100000,
+              magnitude: Math.min(5, (Math.abs(net_position) / 100000) * 5), // FIX: normalised to 0-5 scale
               observed_at: new Date(record.report_date_as_yyyy_mm_dd).toISOString(),
               value_text: `${sentiment.toUpperCase()} positioning: ${net_position.toLocaleString()} contracts`,
               citation: {

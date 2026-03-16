@@ -79,7 +79,7 @@ serve(async (req) => {
       
       const direction = isBullish ? 'up' : 'down';
       const premium = option.premium || 0;
-      const magnitude = Math.min(1.0, premium / 10000000);
+      const magnitude = Math.min(5, (premium / 10000000) * 5); // Normalised to 0-5 scale
 
       const signalData = {
         ticker: option.ticker,

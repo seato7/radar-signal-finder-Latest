@@ -213,10 +213,12 @@ function calculateAdvancedIndicators(prices: any[]) {
   const vwap = closes.slice(0, 20).reduce((a: number, b: number) => a + b, 0) / 20;
   const priceVsVwapPct = ((currentPrice - vwap) / vwap) * 100;
 
+  // FIX: OBV uses actual volume (not hardcoded 1000000), falls back to 1 if volume absent
   let obv = 0;
   for (let i = 1; i < Math.min(prices.length, 50); i++) {
-    if (closes[i] > closes[i + 1]) obv += 1000000;
-    else if (closes[i] < closes[i + 1]) obv -= 1000000;
+    const vol = (prices[i] as any).volume || 1;
+    if (closes[i - 1] > closes[i]) obv += vol;
+    else if (closes[i - 1] < closes[i]) obv -= vol;
   }
 
   const recentPrices = closes.slice(0, Math.min(50, closes.length));
@@ -253,12 +255,36 @@ function calculateAdvancedIndicators(prices: any[]) {
   else if (trendDiff < -2) trend_strength = 'strong_downtrend';
   else if (trendDiff < -0.5) trend_strength = 'weak_downtrend';
 
-  const adx = Math.abs(trendDiff) * 10;
+  // FIX: ADX approximation using average directional movement over last 14 bars
+  let plusDM = 0, minusDM = 0, trSum = 0;
+  for (let i = 0; i < Math.min(14, closes.length - 1); i++) {
+    const high = closes[i]; // approximation: using close as high
+    const prevHigh = closes[i + 1];
+    const low = closes[i];
+    const prevLow = closes[i + 1];
+    plusDM += Math.max(0, high - prevHigh);
+    minusDM += Math.max(0, prevLow - low);
+    trSum += Math.abs(closes[i] - closes[i + 1]);
+  }
+  const avgTR = trSum / 14 || 1;
+  const plusDI = (plusDM / 14) / avgTR * 100;
+  const minusDI = (minusDM / 14) / avgTR * 100;
+  const adx = plusDI + minusDI > 0 ? Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100 : 0;
 
-  const highestHigh = Math.max(...closes.slice(0, 14));
-  const lowestLow = Math.min(...closes.slice(0, 14));
-  const stochastic_k = ((currentPrice - lowestLow) / (highestHigh - lowestLow || 1)) * 100;
-  const stochastic_d = stochastic_k;
+  // FIX: Stochastic - calculate %K for each of last 3 periods, then %D = 3-period SMA of %K
+  const stochKValues: number[] = [];
+  for (let shift = 0; shift < 3; shift++) {
+    const slice = closes.slice(shift, shift + 14);
+    if (slice.length < 14) break;
+    const hh = Math.max(...slice);
+    const ll = Math.min(...slice);
+    stochKValues.push(((closes[shift] - ll) / (hh - ll || 1)) * 100);
+  }
+  const stochastic_k = stochKValues[0] ?? ((currentPrice - Math.min(...closes.slice(0, 14))) / (Math.max(...closes.slice(0, 14)) - Math.min(...closes.slice(0, 14)) || 1)) * 100;
+  // FIX: %D = 3-period SMA of %K (not just %K)
+  const stochastic_d = stochKValues.length >= 3
+    ? (stochKValues[0] + stochKValues[1] + stochKValues[2]) / 3
+    : stochastic_k;
 
   let stochastic_signal = 'neutral';
   if (stochastic_k > 80) stochastic_signal = 'overbought';

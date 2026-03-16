@@ -31,7 +31,7 @@ function parseForexClientSentiment(markdown: string): ForexSentimentData[] {
   let match;
   while ((match = pairPattern.exec(markdown)) !== null) {
     const [, pairWithSlash, firstPctStr, , secondPctStr] = match;
-    const ticker = pairWithSlash.replace('/', ''); // Convert AUD/USD to AUDUSD
+    const ticker = pairWithSlash; // FIX: Keep AUD/USD format to match assets table ticker format
     const firstPct = parseInt(firstPctStr, 10);
     const secondPct = parseInt(secondPctStr, 10);
     
@@ -145,11 +145,14 @@ async function scrapeFXSSI(firecrawlApiKey: string): Promise<ForexSentimentData[
     console.log(`[FXSSI] Scraped ${content.length} chars`);
     
     // FXSSI has pairs listed with percentages nearby
-    const pairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD', 'EURGBP', 'EURJPY', 'GBPJPY'];
+    const pairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'USD/CHF', 'NZD/USD', 'EUR/GBP', 'EUR/JPY', 'GBP/JPY'] // FIX: Match assets table ticker format with slashes;
     
     for (const pair of pairs) {
       // Look for the pair followed by percentage data
-      const pairRegex = new RegExp(`${pair}[^\\d]{0,50}(\\d{1,2})(?:\\.[0-9]+)?%?[^\\d]{0,20}(\\d{1,2})(?:\\.[0-9]+)?%?`, 'i');
+      // FIX: Escape slash in pair name for regex, also try without slash (EURUSD format)
+      const pairNoSlash = pair.replace('/', '');
+      const pairEscaped = pair.replace('/', '\\/');
+      const pairRegex = new RegExp(`(?:${pairEscaped}|${pairNoSlash})[^\\d]{0,50}(\\d{1,2})(?:\\.[0-9]+)?%?[^\\d]{0,20}(\\d{1,2})(?:\\.[0-9]+)?%?`, 'i');
       const match = content.match(pairRegex);
       
       if (match) {

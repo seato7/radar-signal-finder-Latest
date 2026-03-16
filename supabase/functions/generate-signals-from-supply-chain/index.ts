@@ -27,7 +27,7 @@ serve(async (req) => {
       if (!assetId) continue;
       const changePct = supply.change_percentage || 0;
       const direction = changePct > 0 ? 'up' : changePct < 0 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(changePct) / 100);
+      const magnitude = Math.min(5, (Math.abs(changePct) / 100) * 5); // Normalised to 0-5 scale
       const signalData = { ticker: supply.ticker, signal_type: 'supply_chain_indicator', report_date: supply.report_date, change_percentage: changePct };
       signals.push({ asset_id: assetId, signal_type: 'supply_chain_indicator', direction, magnitude, observed_at: new Date(supply.report_date).toISOString(), value_text: `${supply.signal_type}: ${supply.metric_name} ${changePct > 0 ? '+' : ''}${changePct.toFixed(1)}%`, checksum: JSON.stringify(signalData), citation: { source: 'Supply Chain Intelligence', timestamp: new Date().toISOString() }, raw: { signal_type: supply.signal_type, metric_name: supply.metric_name, metric_value: supply.metric_value, change_percentage: changePct, indicator: supply.indicator } });
     }

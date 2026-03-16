@@ -76,7 +76,7 @@ serve(async (req) => {
       
       const totalPositions = Math.abs(report.noncommercial_net || 0) + 
                             Math.abs(report.commercial_net || 0);
-      const magnitude = Math.min(1.0, Math.abs(netChange) / (totalPositions || 1));
+      const magnitude = Math.min(5, (Math.abs(netChange) / (totalPositions || 1)) * 5); // Normalised to 0-5 scale
 
       const signalData = {
         ticker: report.ticker,

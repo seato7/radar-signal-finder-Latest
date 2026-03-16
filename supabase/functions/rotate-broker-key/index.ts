@@ -50,7 +50,13 @@ async function encryptData(plaintext: string, masterKey: string): Promise<string
   combined.set(iv, salt.length);
   combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
   
-  return btoa(String.fromCharCode(...combined));
+  // FIX: Use chunked btoa to avoid stack overflow for large buffers (spread operator has stack limit)
+  let binaryStr = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < combined.length; i += chunkSize) {
+    binaryStr += String.fromCharCode(...combined.subarray(i, i + chunkSize));
+  }
+  return btoa(binaryStr);
 }
 
 Deno.serve(async (req) => {
@@ -84,12 +90,14 @@ Deno.serve(async (req) => {
     }
 
     // Get the broker encryption key from secrets
-    const encryptionKey = Deno.env.get('BROKER_ENCRYPTION_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    // FIX: Require BROKER_ENCRYPTION_KEY explicitly - never fall back to service role key
+    // (using the service role key as an encryption key is a security risk)
+    const encryptionKey = Deno.env.get('BROKER_ENCRYPTION_KEY') ?? '';
 
     if (!encryptionKey) {
-      console.error('BROKER_ENCRYPTION_KEY not set');
+      console.error('BROKER_ENCRYPTION_KEY not set - refusing to encrypt with fallback key');
       return new Response(
-        JSON.stringify({ error: 'Server encryption configuration error' }),
+        JSON.stringify({ error: 'Server encryption configuration error: BROKER_ENCRYPTION_KEY is not set' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

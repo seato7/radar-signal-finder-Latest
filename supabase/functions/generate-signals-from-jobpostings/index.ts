@@ -94,9 +94,9 @@ serve(async (req) => {
           .filter(j => j.posted_date === date && j.growth_indicator)
           .reduce((sum, j) => sum + (j.growth_indicator || 0), 0) / tickerJobs.filter(j => j.posted_date === date).length;
         
-        // Ensure magnitude is always between 0 and 1 (use Math.abs for growth and clamp)
-        const baseMagnitude = Math.abs(count / 50) + Math.abs(avgGrowth || 0) / 2;
-        const magnitude = Math.max(0, Math.min(1.0, baseMagnitude));
+        // Magnitude on 0-5 scale (normalised from 0-1 * 5)
+        const baseMagnitude = Math.abs(count / 10) + Math.abs(avgGrowth || 0) * 2.5;
+        const magnitude = Math.max(0, Math.min(5, baseMagnitude)); // Normalised to 0-5 scale
         const direction = avgGrowth > 0.1 ? 'up' : avgGrowth < -0.1 ? 'down' : 'neutral';
         
         const signalData = {

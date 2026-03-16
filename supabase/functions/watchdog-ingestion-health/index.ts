@@ -114,10 +114,10 @@ Deno.serve(async (req) => {
     }
 
     // Check for fallback overuse (>80% fallback usage)
+    // FIX: Fetch ALL recent runs (not just those with fallback_used set) so denominator is correct
     const { data: fallbackData, error: fallbackError } = await supabaseClient
       .from('function_status')
       .select('function_name, fallback_used')
-      .not('fallback_used', 'is', null)
       .gte('executed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
 
     if (fallbackError) {
@@ -129,11 +129,15 @@ Deno.serve(async (req) => {
         if (!fallbackCounts[record.function_name]) {
           fallbackCounts[record.function_name] = { fallback: 0, total: 0 }
         }
-        fallbackCounts[record.function_name].fallback++
+        // FIX: Only count as fallback when fallback_used is a non-null, non-empty string
+        if (record.fallback_used && record.fallback_used !== 'null') {
+          fallbackCounts[record.function_name].fallback++
+        }
         fallbackCounts[record.function_name].total++
       }
 
       for (const [funcName, counts] of Object.entries(fallbackCounts)) {
+        if (counts.total === 0) continue
         const fallbackPct = (counts.fallback / counts.total) * 100
         if (fallbackPct > 80) {
           alerts.push({

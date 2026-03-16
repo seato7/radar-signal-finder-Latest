@@ -71,7 +71,7 @@ serve(async (req) => {
 
       const impactScore = policy.impact_score || 0.5;
       const direction = impactScore > 0 ? 'up' : impactScore < 0 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(impactScore));
+      const magnitude = Math.min(5, Math.abs(impactScore) * 5); // Normalised to 0-5 scale
 
       for (const asset of assets || []) {
         const signalData = {

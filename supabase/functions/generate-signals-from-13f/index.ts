@@ -99,7 +99,7 @@ serve(async (req) => {
       else if (changeType === 'exit') signalType = 'bigmoney_hold_exit';
       
       const direction = sharesChange > 0 ? 'up' : sharesChange < 0 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(holding.value || 0) / 1000000000); // Normalize by $1B
+      const magnitude = Math.min(5, (Math.abs(holding.value || 0) / 1000000000) * 5); // Normalised to 0-5 scale // Normalize by $1B
 
       const checksum = `13f_${holding.manager_cik}_${holding.cusip}_${holding.period_of_report}`;
       

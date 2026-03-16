@@ -28,7 +28,7 @@ serve(async (req) => {
       const searchVolume = trend.search_volume || 0;
       const changePct = trend.trend_change || 0;
       const direction = changePct > 20 ? 'up' : changePct < -20 ? 'down' : 'neutral';
-      const magnitude = Math.max(0, Math.min(1.0, Math.abs(changePct) / 100 + searchVolume / 100));
+      const magnitude = Math.max(0, Math.min(5, (Math.abs(changePct) / 100 + searchVolume / 100) * 5)); // Normalised to 0-5 scale
       const signalData = { ticker: trend.ticker, signal_type: 'search_interest', period_start: trend.period_start, search_volume: searchVolume };
       signals.push({ asset_id: assetId, signal_type: 'search_interest', direction, magnitude, observed_at: new Date(trend.period_start).toISOString(), value_text: `Search interest: ${changePct > 0 ? '+' : ''}${changePct.toFixed(0)}% (vol: ${searchVolume})`, checksum: JSON.stringify(signalData), citation: { source: 'Google Trends', timestamp: new Date().toISOString() }, raw: { search_volume: searchVolume, trend_change: changePct, region: trend.region, keyword: trend.keyword } });
     }

@@ -28,7 +28,7 @@ serve(async (req) => {
       const sentimentScore = item.sentiment_score || 0;
       const buzzScore = item.buzz_score || 0;
       const direction = sentimentScore > 0.2 ? 'up' : sentimentScore < -0.2 ? 'down' : 'neutral';
-      const magnitude = Math.max(0, Math.min(1.0, Math.abs(sentimentScore) + buzzScore / 100));
+      const magnitude = Math.max(0, Math.min(5, (Math.abs(sentimentScore) + buzzScore / 100) * 5)); // Normalised to 0-5 scale
       const signalData = { ticker: item.ticker, signal_type: 'news_sentiment', date: item.date, sentiment_score: sentimentScore };
       signals.push({ asset_id: assetId, signal_type: 'news_sentiment', direction, magnitude, observed_at: new Date(item.date).toISOString(), value_text: `News sentiment: ${item.sentiment_label || 'neutral'} (${item.total_articles || 0} articles)`, checksum: JSON.stringify(signalData), citation: { source: 'News Sentiment Aggregate', timestamp: new Date().toISOString() }, raw: { sentiment_score: sentimentScore, sentiment_label: item.sentiment_label, buzz_score: buzzScore, total_articles: item.total_articles, positive_articles: item.positive_articles, negative_articles: item.negative_articles } });
     }

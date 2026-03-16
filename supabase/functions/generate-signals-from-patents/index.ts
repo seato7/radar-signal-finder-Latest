@@ -94,7 +94,7 @@ serve(async (req) => {
 
       if (recentPatents.length === 0) continue;
 
-      const magnitude = Math.min(1.0, recentPatents.length / 10);
+      const magnitude = Math.min(5, (recentPatents.length / 10) * 5); // Normalised to 0-5 scale
       const direction = 'up';
 
       const categories = [...new Set(recentPatents.map(p => p.technology_category).filter(Boolean))];

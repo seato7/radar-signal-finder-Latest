@@ -84,7 +84,12 @@ serve(async (req) => {
         try {
           const priceInfo = priceByTicker[pair.ticker];
           const prices = priceInfo?.prices || [];
-          const currentPrice = priceInfo?.latest || 1.0 + Math.random() * 0.5;
+          // FIX: Remove random price fallback - skip pair if no real price data available
+          if (!priceInfo || prices.length === 0) {
+            errorCount++;
+            continue;
+          }
+          const currentPrice = priceInfo.latest;
 
           // Calculate technical indicators from price history or estimate
           let rsi_14 = 50;

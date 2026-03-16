@@ -53,8 +53,9 @@ serve(async (req) => {
       .limit(limit);
 
     // Apply filters
+    // FIX: Use signal_type column (signal_classification doesn't exist in signals table)
     if (signalType) {
-      query = query.eq('signal_classification', signalType);
+      query = query.eq('signal_type', signalType);
     }
 
     if (assetClass) {

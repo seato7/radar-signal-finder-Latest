@@ -77,7 +77,7 @@ serve(async (req) => {
       const direction = isBuy ? 'up' : 'down';
 
       const avgAmount = ((trade.amount_min || 0) + (trade.amount_max || 0)) / 2;
-      const magnitude = Math.min(1.0, avgAmount / 100000);
+      const magnitude = Math.min(5, (avgAmount / 100000) * 5); // Normalised to 0-5 scale
 
       const signalData = {
         ticker: trade.ticker,

@@ -246,14 +246,16 @@ serve(async (req) => {
         };
 
         // Calculate 5-day momentum
-        const lookbackIndex5d = Math.min(5, tickerPrices.length - 1);
-        const price5d = tickerPrices[lookbackIndex5d]?.close;
+        // FIX: Guard against length==1 producing index 0 (same as latest), use max(1, ...) to ensure lookback
+        const lookbackIndex5d = tickerPrices.length < 2 ? null : Math.min(5, tickerPrices.length - 1);
+        const price5d = lookbackIndex5d !== null ? tickerPrices[lookbackIndex5d]?.close : null;
         const hasLimitedData5d = tickerPrices.length < LIMITED_DATA_THRESHOLD;
         
         if (price5d && price5d > 0) {
           const momentum5d = ((latestPrice - price5d) / price5d) * 100;
           const direction = momentum5d > 0 ? 'up' : (momentum5d < 0 ? 'down' : 'neutral');
-          const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum5d) / 20));
+          // FIX: Normalised to 0-5 scale (was 0-1)
+          const magnitude = Math.min(5, Math.max(0, Math.abs(momentum5d) / 20) * 5);
 
           const dataQuality = hasLimitedData5d ? '_limited_data' : '';
           let signalType: string;
@@ -294,7 +296,8 @@ serve(async (req) => {
           if (price20d && price20d > 0) {
             const momentum20d = ((latestPrice - price20d) / price20d) * 100;
             const direction = momentum20d > 0 ? 'up' : (momentum20d < 0 ? 'down' : 'neutral');
-            const magnitude = Math.min(1.0, Math.max(0, Math.abs(momentum20d) / 30));
+            // FIX: Normalised to 0-5 scale (was 0-1)
+            const magnitude = Math.min(5, Math.max(0, Math.abs(momentum20d) / 30) * 5);
 
             const dataQuality = hasLimitedData20d ? '_limited_data' : '';
             let signalType: string;

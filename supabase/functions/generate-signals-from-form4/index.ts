@@ -66,7 +66,7 @@ serve(async (req) => {
                     filing.transaction_type?.toLowerCase().includes('acquisition');
       
       const direction = isBuy ? 'up' : 'down';
-      const magnitude = Math.min(1.0, transactionValue / 10000000); // Normalize to $10M
+      const magnitude = Math.min(5, (transactionValue / 10000000) * 5); // Normalised to 0-5 scale
       
       // Use specific signal types that match scoring expectations
       const signalType = isBuy ? 'insider_buy' : 'insider_sell';

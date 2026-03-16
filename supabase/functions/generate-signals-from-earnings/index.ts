@@ -68,7 +68,7 @@ serve(async (req) => {
       // Positive surprise = bullish
       const avgSurprise = (epsSurprise + revSurprise) / 2;
       const direction = avgSurprise > 0 ? 'up' : avgSurprise < 0 ? 'down' : 'neutral';
-      const magnitude = Math.min(1.0, Math.abs(avgSurprise) / 20 + Math.abs(sentimentScore));
+      const magnitude = Math.min(5, (Math.abs(avgSurprise) / 20 + Math.abs(sentimentScore)) * 5); // Normalised to 0-5 scale
 
       const signalData = {
         ticker: earning.ticker,
