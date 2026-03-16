@@ -114,8 +114,8 @@ serve(async (req) => {
         .eq('date', date)
         .in('ticker', allTickers);
 
-      if (dayPrices) {
-        for (const p of dayPrices) {
+      if (dayPrices && dayPrices.length > 0) {
+        for (const p of dayPrices as Array<{ ticker: string; close: number }>) {
           if (!priceMap[p.ticker]) priceMap[p.ticker] = {};
           priceMap[p.ticker][date] = p.close;
         }
@@ -228,7 +228,7 @@ serve(async (req) => {
   } catch (error: unknown) {
     console.error('Backfill error:', error);
     return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: (error as Error)?.message ?? 'Unknown error'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

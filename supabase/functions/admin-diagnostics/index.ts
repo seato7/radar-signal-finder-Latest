@@ -44,7 +44,7 @@ serve(async (req) => {
       cronJobs = data;
       cronError = error?.message || null;
     } catch (e) {
-      cronError = e.message;
+      cronError = e instanceof Error ? e.message : String(e);
     }
 
     // 3. Row counts and most recent created_at for key tables
@@ -87,7 +87,7 @@ serve(async (req) => {
       rlsPolicies = data;
       rlsError = error?.message || null;
     } catch (e) {
-      rlsError = e.message;
+      rlsError = e instanceof Error ? e.message : String(e);
     }
 
     return new Response(JSON.stringify({
@@ -100,7 +100,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

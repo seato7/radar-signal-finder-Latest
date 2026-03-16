@@ -85,8 +85,8 @@ serve(async (req) => {
 
       // Use pre-fetched asset map instead of per-policy DB query
       const assets = affectedTickers
-        .filter(t => tickerToAssetIdPolicy.has(t))
-        .map(t => ({ ticker: t, id: tickerToAssetIdPolicy.get(t)! }));
+        .filter((t: string) => tickerToAssetIdPolicy.has(t))
+        .map((t: string) => ({ ticker: t, id: tickerToAssetIdPolicy.get(t)! }));
 
       const impactScore = policy.impact_score || 0.5;
       const direction = impactScore > 0 ? 'up' : impactScore < 0 ? 'down' : 'neutral';

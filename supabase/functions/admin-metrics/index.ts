@@ -106,7 +106,7 @@ serve(async (req) => {
       const { data: users } = await supabaseClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const { data: roles } = await supabaseClient.from('user_roles').select('*');
 
-      const sevenDaysAgoForActive = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const sevenDaysAgoForActive = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       return new Response(JSON.stringify({
         users: (users?.users ?? []).map(u => {
           const userRole = roles?.find(r => r.user_id === u.id);
