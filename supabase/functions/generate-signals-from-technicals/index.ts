@@ -70,8 +70,8 @@ serve(async (req) => {
         let magnitude = 0;
         let signalType = 'technical_stochastic';
         
-        if (stochK < 20) {
-          direction = 'up'; // Oversold - bullish
+        if (stochK <= 20) {
+          direction = 'up'; // Oversold - bullish (use <= 20 so stochK=20 boundary is included)
           magnitude = Math.min(5, (20 - stochK) / 4); // 0-5 scale
         } else if (stochK > 80) {
           direction = 'down'; // Overbought - bearish

@@ -40,7 +40,7 @@ serve(async (req) => {
 
     // Get metrics
     if (url.pathname.endsWith('/metrics')) {
-      const [alertsCount, assetsCount, themesCount, usersCount, signalsCount] = await Promise.all([
+      const [alertsCount, assetsCount, themesCount, usersCount, signalsCount] = await Promise.allSettled([
         supabaseClient.from('alerts').select('*', { count: 'exact', head: true }),
         supabaseClient.from('assets').select('*', { count: 'exact', head: true }),
         supabaseClient.from('themes').select('*', { count: 'exact', head: true }),
@@ -62,11 +62,11 @@ serve(async (req) => {
         .gte('created_at', oneDayAgo.toISOString());
 
       return new Response(JSON.stringify({
-        total_alerts: alertsCount.count || 0,
-        total_assets: assetsCount.count || 0,
-        total_themes: themesCount.count || 0,
-        total_users: usersCount.count || 0,
-        total_signals: signalsCount.count || 0,
+        total_alerts: alertsCount.status === 'fulfilled' ? (alertsCount.value?.count || 0) : 0,
+        total_assets: assetsCount.status === 'fulfilled' ? (assetsCount.value?.count || 0) : 0,
+        total_themes: themesCount.status === 'fulfilled' ? (themesCount.value?.count || 0) : 0,
+        total_users: usersCount.status === 'fulfilled' ? (usersCount.value?.count || 0) : 0,
+        total_signals: signalsCount.status === 'fulfilled' ? (signalsCount.value?.count || 0) : 0,
         recent_alerts_24h: recentAlerts || 0,
         recent_signals_24h: recentSignals || 0
       }), {
@@ -89,18 +89,32 @@ serve(async (req) => {
 
     // Make user admin
     if (req.method === 'POST' && url.pathname.endsWith('/make-admin')) {
-      const { email } = await req.json();
-      
-      const { data: targetUser } = await supabaseClient.auth.admin.listUsers();
-      const userToPromote = targetUser.users.find(u => u.email === email);
-      
+      const { email, role: newRole = 'admin' } = await req.json();
+
+      // Validate role BEFORE doing anything expensive
+      const allowedRoles = ['admin', 'pro', 'lite', 'free'];
+      if (!allowedRoles.includes(newRole)) {
+        throw new Error(`Invalid role: ${newRole}. Must be one of: ${allowedRoles.join(', ')}`);
+      }
+
+      // Pagination loop to find user across all pages
+      let userToPromote: any = null;
+      let page = 1;
+      while (!userToPromote) {
+        const { data: pageData } = await supabaseClient.auth.admin.listUsers({ page, perPage: 1000 });
+        if (!pageData?.users?.length) break;
+        userToPromote = pageData.users.find((u: any) => u.email === email);
+        if (pageData.users.length < 1000) break; // Last page
+        page++;
+      }
+
       if (!userToPromote) throw new Error('User not found');
 
       await supabaseClient
         .from('user_roles')
         .upsert({ 
           user_id: userToPromote.id, 
-          role: 'admin',
+          role: newRole,
           granted_by: user.id 
         });
 
@@ -112,10 +126,24 @@ serve(async (req) => {
     // Upgrade user to premium/pro
     if (req.method === 'POST' && url.pathname.endsWith('/upgrade-user')) {
       const { email, plan = 'pro' } = await req.json();
-      
-      const { data: targetUser } = await supabaseClient.auth.admin.listUsers();
-      const userToUpgrade = targetUser.users.find(u => u.email === email);
-      
+
+      // Validate plan BEFORE creating service role operations
+      const allowedPlans = ['pro', 'lite', 'admin', 'free'];
+      if (!allowedPlans.includes(plan)) {
+        throw new Error(`Invalid plan: ${plan}. Must be one of: ${allowedPlans.join(', ')}`);
+      }
+
+      // Pagination loop to find user across all pages
+      let userToUpgrade: any = null;
+      let page = 1;
+      while (!userToUpgrade) {
+        const { data: pageData } = await supabaseClient.auth.admin.listUsers({ page, perPage: 1000 });
+        if (!pageData?.users?.length) break;
+        userToUpgrade = pageData.users.find((u: any) => u.email === email);
+        if (pageData.users.length < 1000) break; // Last page
+        page++;
+      }
+
       if (!userToUpgrade) throw new Error('User not found');
 
       await supabaseClient

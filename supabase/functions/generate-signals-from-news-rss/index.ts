@@ -63,6 +63,8 @@ serve(async (req) => {
 
     const signals = [];
     for (const article of articles) {
+      // Guard against null title to prevent crashes
+      if (!article?.title) continue;
       if (!article.ticker) continue;
       
       const assetId = tickerToAssetId.get(article.ticker);
@@ -74,11 +76,12 @@ serve(async (req) => {
       let positiveScore = 0;
       let negativeScore = 0;
       
+      // Use word boundary regex to avoid partial matches (e.g. "falls" matching "all")
       for (const keyword of POSITIVE_KEYWORDS) {
-        if (text.includes(keyword)) positiveScore++;
+        if (new RegExp(`\\b${keyword}\\b`).test(text)) positiveScore++;
       }
       for (const keyword of NEGATIVE_KEYWORDS) {
-        if (text.includes(keyword)) negativeScore++;
+        if (new RegExp(`\\b${keyword}\\b`).test(text)) negativeScore++;
       }
 
       const netScore = positiveScore - negativeScore;
@@ -87,7 +90,9 @@ serve(async (req) => {
       if (netScore === 0) continue;
 
       const direction = netScore > 0 ? 'up' : 'down';
-      const magnitude = Math.min(4, Math.abs(netScore) * 1.5);
+      // Scale preserving distinction: each keyword match adds 1.5, max 5
+      // Use min(5, ...) to cap but preserve proportionality between low/high matches
+      const magnitude = Math.min(5, Math.max(1, Math.abs(netScore) * 1.5));
       
       // Use specific signal types that match scoring expectations
       const signalType = direction === 'up' ? 'news_rss_bullish' : 'news_rss_bearish';

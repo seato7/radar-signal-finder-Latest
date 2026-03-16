@@ -84,9 +84,9 @@ serve(async (req) => {
         magnitude = 1;
       }
 
-      // Adjust magnitude by confidence score
+      // Confidence is already factored into recommendation strength above (strong buy = 5, buy = 4, etc.)
+      // Do NOT re-apply confidence multiplier here as that would double-weight confidence
       const confidence = report.confidence_score || 50;
-      magnitude = magnitude * (confidence / 100);
 
       // Skip weak signals
       if (direction === 'neutral' && magnitude < 1) continue;

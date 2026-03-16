@@ -84,7 +84,7 @@ serve(async (req) => {
         direction,
         magnitude,
         observed_at: new Date(filing.transaction_date).toISOString(),
-        value_text: `${filing.insider_name} (${filing.insider_title}): ${isBuy ? 'Buy' : 'Sell'} $${(transactionValue / 1000).toFixed(0)}K`,
+        value_text: `${filing.insider_name ?? 'Unknown Insider'} (${filing.insider_title ?? ''}): ${isBuy ? 'Buy' : 'Sell'} $${(transactionValue / 1000).toFixed(0)}K`,
         checksum: JSON.stringify(signalData),
         citation: {
           source: 'SEC Form 4',

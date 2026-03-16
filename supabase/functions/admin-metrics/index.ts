@@ -70,16 +70,17 @@ serve(async (req) => {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       const roleCount = (role: string) => roles?.filter(r => r.role === role).length || 0;
-      const recentSignups = users?.users.filter(u => new Date(u.created_at) > sevenDaysAgo).length || 0;
+      const recentSignups = (users?.users ?? []).filter(u => new Date(u.created_at) > sevenDaysAgo).length;
 
       return new Response(JSON.stringify({
         totals: {
-          all_users: users?.users.length || 0,
+          all_users: users?.users?.length || 0,
           free: roleCount('free'),
           lite: roleCount('lite'),
           pro: roleCount('pro'),
           admin: roleCount('admin'),
-          active: users?.users.filter(u => new Date(u.last_sign_in_at || 0) > sevenDaysAgo).length || 0
+          // Fix: use ?? new Date(0) so null last_sign_in_at = epoch, not 1970 from (|| 0)
+          active: (users?.users ?? []).filter(u => new Date(u.last_sign_in_at ?? new Date(0)) > sevenDaysAgo).length
         },
         growth: {
           signups_7d: recentSignups
@@ -105,17 +106,19 @@ serve(async (req) => {
       const { data: users } = await supabaseClient.auth.admin.listUsers();
       const { data: roles } = await supabaseClient.from('user_roles').select('*');
 
+      const sevenDaysAgoForActive = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       return new Response(JSON.stringify({
-        users: users?.users.map(u => {
+        users: (users?.users ?? []).map(u => {
           const userRole = roles?.find(r => r.user_id === u.id);
+          const lastSignIn = u.last_sign_in_at != null ? new Date(u.last_sign_in_at) : new Date(0);
           return {
             id: u.id,
             email: u.email,
             role: userRole?.role || 'free',
-            is_active: true,
+            is_active: lastSignIn > sevenDaysAgoForActive,
             created_at: u.created_at
           };
-        }) || []
+        })
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

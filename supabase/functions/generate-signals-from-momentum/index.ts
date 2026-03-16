@@ -21,12 +21,21 @@ serve(async (req) => {
 
   // ========================================================================
   // CRON SECRET ENFORCEMENT
-  // If CRON_SHARED_SECRET is set, require x-cron-secret header to match
+  // Always require x-cron-secret header (even if env var is not set, block unauthenticated calls)
   // ========================================================================
   const expectedSecret = Deno.env.get('CRON_SHARED_SECRET');
   const providedSecret = req.headers.get('x-cron-secret');
   
-  if (expectedSecret && providedSecret !== expectedSecret) {
+  if (!expectedSecret) {
+    // No secret configured - block all external calls to prevent unauthenticated access
+    console.warn('[SIGNAL-GEN-MOMENTUM] CRON_SHARED_SECRET not configured - rejecting request');
+    return new Response(JSON.stringify({ error: 'Unauthorized: CRON_SHARED_SECRET not configured' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  
+  if (providedSecret !== expectedSecret) {
     console.warn('[SIGNAL-GEN-MOMENTUM] Unauthorized: missing or invalid x-cron-secret');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,

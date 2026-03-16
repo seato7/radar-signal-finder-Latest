@@ -279,8 +279,8 @@ serve(async (req) => {
               ticker: ticker.substring(0, 10),
               signal_type: type.substring(0, 20),
               metric_name: item.title.substring(0, 50),
-              metric_value: 0,
-              change_percentage: 0,
+              metric_value: null, // No quantitative data available from RSS feed - use null instead of misleading 0
+              change_percentage: null, // No quantitative data available from RSS feed - use null instead of misleading 0
               indicator: indicator.substring(0, 20),
               report_date: today,
               metadata: {

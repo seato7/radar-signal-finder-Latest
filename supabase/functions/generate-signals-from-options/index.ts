@@ -73,7 +73,9 @@ serve(async (req) => {
 
       // Use the sentiment field directly - it already contains bullish/bearish values
       // (flow_type only contains 'block', not 'sweep_buy'/'sweep_sell')
-      const isBullish = option.sentiment?.toLowerCase() === 'bullish';
+      // Explicit null check before .toLowerCase() to prevent crash on null sentiment
+      const sentimentStr = option.sentiment != null ? option.sentiment.toLowerCase() : '';
+      const isBullish = sentimentStr === 'bullish';
       const isCall = option.option_type?.toLowerCase() === 'call';
       const flowType = option.flow_type?.toLowerCase();
       

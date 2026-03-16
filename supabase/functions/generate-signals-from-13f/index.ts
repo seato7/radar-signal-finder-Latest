@@ -101,7 +101,9 @@ serve(async (req) => {
       const direction = sharesChange > 0 ? 'up' : sharesChange < 0 ? 'down' : 'neutral';
       const magnitude = Math.min(5, (Math.abs(holding.value || 0) / 1000000000) * 5); // Normalised to 0-5 scale // Normalize by $1B
 
-      const checksum = `13f_${holding.manager_cik}_${holding.cusip}_${holding.period_of_report}`;
+      // Include manager identifier in checksum to prevent collision when different managers buy same asset
+      const managerKey = holding.manager_cik || holding.manager_name || 'unknown';
+      const checksum = `13f_${managerKey}_${holding.cusip}_${holding.ticker}_${holding.period_of_report}`;
       
       // Skip if already exists
       if (existingChecksums.has(checksum)) {

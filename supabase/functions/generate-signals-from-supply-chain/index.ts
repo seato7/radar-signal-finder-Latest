@@ -25,7 +25,8 @@ serve(async (req) => {
     for (const supply of supplyChain) {
       const assetId = tickerToAssetId.get(supply.ticker);
       if (!assetId) continue;
-      const changePct = supply.change_percentage || 0;
+      // change_percentage may be null if sourced from RSS (no quantitative data)
+      const changePct = supply.change_percentage ?? 0;
       const direction = changePct > 0 ? 'up' : changePct < 0 ? 'down' : 'neutral';
       const magnitude = Math.min(5, (Math.abs(changePct) / 100) * 5); // Normalised to 0-5 scale
       const signalData = { ticker: supply.ticker, signal_type: 'supply_chain_indicator', report_date: supply.report_date, change_percentage: changePct };

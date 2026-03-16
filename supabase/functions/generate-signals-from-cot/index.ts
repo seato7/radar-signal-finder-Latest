@@ -74,9 +74,10 @@ serve(async (req) => {
       const netChange = report.net_position_change || 0;
       const direction = netChange > 0 ? 'up' : netChange < 0 ? 'down' : 'neutral';
       
-      const totalPositions = Math.abs(report.noncommercial_net || 0) + 
-                            Math.abs(report.commercial_net || 0);
-      const magnitude = Math.min(5, (Math.abs(netChange) / (totalPositions || 1)) * 5); // Normalised to 0-5 scale
+      // Use actual net positions (not sum of absolutes) to avoid inflating denominator
+      // when long/short are opposite-signed they should partially cancel out
+      const totalPositions = Math.abs((report.noncommercial_net || 0) + (report.commercial_net || 0)) || 1;
+      const magnitude = Math.min(5, (Math.abs(netChange) / totalPositions) * 5); // Normalised to 0-5 scale
 
       const signalData = {
         ticker: report.ticker,

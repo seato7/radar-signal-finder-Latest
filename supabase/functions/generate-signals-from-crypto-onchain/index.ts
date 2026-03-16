@@ -82,7 +82,7 @@ serve(async (req) => {
             signal_type: signalType,
             direction,
             magnitude,
-            observed_at: metric.timestamp,
+            observed_at: metric.timestamp || new Date().toISOString(),
             value_text: `Whale ${whaleSignal} detected`,
             checksum: JSON.stringify({ ticker: metric.ticker, signal_type: 'crypto_whale_activity', timestamp: metric.timestamp, whaleSignal }),
             citation: { source: metric.source || 'On-Chain Analytics', timestamp: new Date().toISOString() },
@@ -117,7 +117,7 @@ serve(async (req) => {
             signal_type: signalType,
             direction,
             magnitude,
-            observed_at: metric.timestamp,
+            observed_at: metric.timestamp || new Date().toISOString(),
             value_text: `Exchange ${direction === 'up' ? 'outflow' : 'inflow'}: ${Math.abs(netFlow).toFixed(0)} BTC`,
             checksum: JSON.stringify({ ticker: metric.ticker, signal_type: 'crypto_exchange_flow', timestamp: metric.timestamp, netFlow }),
             citation: { source: metric.source || 'On-Chain Analytics', timestamp: new Date().toISOString() },
@@ -132,12 +132,12 @@ serve(async (req) => {
         let direction = 'neutral';
         let magnitude = 0;
 
-        // Extreme fear = contrarian bullish
+        // Extreme fear = contrarian bullish (intentional contrarian logic: fear = buy signal)
         if (fearGreed < 25) {
           direction = 'up';
           magnitude = Math.min(5, (25 - fearGreed) / 5);
         }
-        // Extreme greed = contrarian bearish
+        // Extreme greed = contrarian bearish (intentional contrarian logic: greed = sell signal)
         else if (fearGreed > 75) {
           direction = 'down';
           magnitude = Math.min(4, (fearGreed - 75) / 6);
@@ -151,7 +151,7 @@ serve(async (req) => {
             signal_type: signalType,
             direction,
             magnitude,
-            observed_at: metric.timestamp,
+            observed_at: metric.timestamp || new Date().toISOString(),
             value_text: `Fear & Greed: ${fearGreed} (${fearGreed < 25 ? 'Extreme Fear' : 'Extreme Greed'})`,
             checksum: JSON.stringify({ ticker: metric.ticker, signal_type: 'crypto_fear_greed', timestamp: metric.timestamp, fearGreed }),
             citation: { source: metric.source || 'On-Chain Analytics', timestamp: new Date().toISOString() },
@@ -183,7 +183,7 @@ serve(async (req) => {
             signal_type: 'crypto_mvrv',
             direction,
             magnitude,
-            observed_at: metric.timestamp,
+            observed_at: metric.timestamp || new Date().toISOString(),
             value_text: `MVRV Ratio: ${mvrv.toFixed(2)} (${mvrv < 1 ? 'Undervalued' : 'Overvalued'})`,
             checksum: JSON.stringify({ ticker: metric.ticker, signal_type: 'crypto_mvrv', timestamp: metric.timestamp, mvrv }),
             citation: { source: metric.source || 'On-Chain Analytics', timestamp: new Date().toISOString() },

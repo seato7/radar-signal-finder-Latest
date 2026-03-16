@@ -83,7 +83,7 @@ serve(async (req) => {
         direction,
         magnitude,
         observed_at: new Date(earning.earnings_date).toISOString(),
-        value_text: `${earning.quarter}: EPS ${epsSurprise > 0 ? '+' : ''}${epsSurprise.toFixed(1)}%, Rev ${revSurprise > 0 ? '+' : ''}${revSurprise.toFixed(1)}%`,
+        value_text: `${earning.quarter ?? 'Unknown Quarter'}: EPS ${epsSurprise > 0 ? '+' : ''}${epsSurprise.toFixed(1)}%, Rev ${revSurprise > 0 ? '+' : ''}${revSurprise.toFixed(1)}%`,
         checksum: JSON.stringify(signalData),
         citation: {
           source: 'Earnings Reports',

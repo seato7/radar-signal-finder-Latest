@@ -58,22 +58,41 @@ serve(async (req) => {
       });
     }
 
+    // Fetch all affected tickers upfront to avoid N+1 DB queries
+    const allAffectedTickers = new Set<string>();
+    for (const policy of policies) {
+      for (const ticker of (policy.affected_tickers || [])) {
+        allAffectedTickers.add(ticker);
+      }
+    }
+
+    const tickerToAssetIdPolicy = new Map<string, string>();
+    if (allAffectedTickers.size > 0) {
+      const { data: allAssets } = await supabaseClient
+        .from('assets')
+        .select('id, ticker')
+        .in('ticker', Array.from(allAffectedTickers));
+      for (const asset of allAssets || []) {
+        tickerToAssetIdPolicy.set(asset.ticker, asset.id);
+      }
+    }
+
     const signals = [];
     for (const policy of policies) {
       const affectedTickers = policy.affected_tickers || [];
       
       if (affectedTickers.length === 0) continue;
 
-      const { data: assets } = await supabaseClient
-        .from('assets')
-        .select('id, ticker')
-        .in('ticker', affectedTickers);
+      // Use pre-fetched asset map instead of per-policy DB query
+      const assets = affectedTickers
+        .filter(t => tickerToAssetIdPolicy.has(t))
+        .map(t => ({ ticker: t, id: tickerToAssetIdPolicy.get(t)! }));
 
       const impactScore = policy.impact_score || 0.5;
       const direction = impactScore > 0 ? 'up' : impactScore < 0 ? 'down' : 'neutral';
       const magnitude = Math.min(5, Math.abs(impactScore) * 5); // Normalised to 0-5 scale
 
-      for (const asset of assets || []) {
+      for (const asset of assets) {
         const signalData = {
           ticker: asset.ticker,
           signal_type: 'policy_regulatory',
