@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     // The compute-asset-scores function already sets price_status = 'fresh' for valid assets
     const { data: topAssets, error: topError } = await supabase
       .from('assets')
-      .select('id, ticker, expected_return, confidence_score, confidence_label, model_version, score_explanation, metadata')
+      .select('id, ticker, expected_return, confidence_score, confidence_label, model_version, score_explanation')
       .gt('expected_return', 0)
       .eq('price_status', 'fresh')
       .gte('score_computed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Scored in last 24h
@@ -45,21 +45,10 @@ Deno.serve(async (req) => {
 
     console.log(`Fetched ${topAssets?.length || 0} bullish assets from database`);
 
-    // Filter by price threshold if metadata contains price
-    const filteredTopAssets = (topAssets || []).filter(a => {
-      // Try to get price from metadata
-      const price = a.metadata?.last_close || a.metadata?.current_price || null;
-      // If no price in metadata, include asset (will be filtered later by grading)
-      if (price === null) return true;
-      return price >= MIN_PRICE_USD;
-    });
-
-    console.log(`After price filter: ${filteredTopAssets.length} bullish assets`);
-
     // Also fetch bottom assets (negative expected returns) for completeness
     const { data: bottomAssets, error: bottomError } = await supabase
       .from('assets')
-      .select('id, ticker, expected_return, confidence_score, confidence_label, model_version, score_explanation, metadata')
+      .select('id, ticker, expected_return, confidence_score, confidence_label, model_version, score_explanation')
       .lt('expected_return', 0)
       .eq('price_status', 'fresh')
       .gte('score_computed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
@@ -68,9 +57,40 @@ Deno.serve(async (req) => {
 
     if (bottomError) throw bottomError;
 
+    // Bulk-fetch most recent closing price for all candidate assets in one query
+    const allCandidates = [...(topAssets || []), ...(bottomAssets || [])];
+    const assetIds = allCandidates.map(a => a.id);
+    const priceMap = new Map<string, number>();
+
+    if (assetIds.length > 0) {
+      const { data: priceRows } = await supabase
+        .from('prices')
+        .select('asset_id, close')
+        .in('asset_id', assetIds)
+        .order('date', { ascending: false })
+        .limit(10000);
+
+      for (const row of priceRows || []) {
+        if (!priceMap.has(row.asset_id)) {
+          priceMap.set(row.asset_id, row.close);
+        }
+      }
+    }
+
+    console.log(`Fetched closing prices for ${priceMap.size} of ${assetIds.length} assets`);
+
+    // Filter by price threshold using real closing prices
+    const filteredTopAssets = (topAssets || []).filter(a => {
+      const price = priceMap.get(a.id) ?? null;
+      if (price === null) return true; // No price data yet — include, grader will handle
+      return price >= MIN_PRICE_USD;
+    });
+
+    console.log(`After price filter: ${filteredTopAssets.length} bullish assets`);
+
     // Filter bottom assets by price
     const filteredBottomAssets = (bottomAssets || []).filter(a => {
-      const price = a.metadata?.last_close || a.metadata?.current_price || null;
+      const price = priceMap.get(a.id) ?? null;
       if (price === null) return true;
       return price >= MIN_PRICE_USD;
     });
@@ -120,7 +140,7 @@ Deno.serve(async (req) => {
           expected_return: Number(a.expected_return ?? 0),
           confidence_score: Number(a.confidence_score ?? 0),
           score_explanation: a.score_explanation || [],
-          price_at_prediction: a.metadata?.last_close || null,
+          price_at_prediction: priceMap.get(a.id) ?? null,
         },
         top_n: topN,
       });
@@ -144,7 +164,7 @@ Deno.serve(async (req) => {
           expected_return: Number(a.expected_return ?? 0),
           confidence_score: Number(a.confidence_score ?? 0),
           score_explanation: a.score_explanation || [],
-          price_at_prediction: a.metadata?.last_close || null,
+          price_at_prediction: priceMap.get(a.id) ?? null,
         },
         top_n: MAX_PREDICTIONS, // Bearish predictions stored with max top_n
       });
