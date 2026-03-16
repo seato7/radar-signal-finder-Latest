@@ -299,3 +299,6 @@ verify_jwt = false
 
 [functions.compute-price-coverage-daily]
 verify_jwt = false
+
+[functions.admin-diagnostics]
+verify_jwt = false
