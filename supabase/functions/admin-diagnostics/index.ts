@@ -44,7 +44,7 @@ serve(async (req) => {
       cronJobs = data;
       cronError = error?.message || null;
     } catch (e) {
-      cronError = e.message;
+      cronError = e instanceof Error ? e.message : String(e);
     }
 
     // 3. Row counts and most recent created_at for key tables
