@@ -43,7 +43,7 @@ serve(async (req) => {
     report.phases.asset_universe = {
       total_assets: assets?.length || 0,
       by_class: assetsByClass,
-      status: assets && assets.length >= 700 ? 'PASS' : 'WARNING'
+      status: assets && assets.length >= 20000 ? 'PASS' : 'WARNING'
     };
 
     // Check recent ingestion logs

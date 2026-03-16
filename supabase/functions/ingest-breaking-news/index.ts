@@ -13,19 +13,19 @@ const corsHeaders = {
 
 // High-volume financial news RSS feeds
 const NEWS_RSS_FEEDS = [
-  // Primary news sources - high reliability
-  { name: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline', priority: 1 },
-  { name: 'MarketWatch Top Stories', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', priority: 1 },
-  { name: 'CNBC Top News', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', priority: 1 },
+  // Primary news sources - high reliability (relevance tier 1 = 0.9)
+  { name: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline', priority: 1, relevanceTier: 0.9 },
+  { name: 'MarketWatch Top Stories', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', priority: 1, relevanceTier: 0.9 },
+  { name: 'CNBC Top News', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', priority: 1, relevanceTier: 0.9 },
   
-  // Tech and market news
-  { name: 'Reuters Business', url: 'https://feeds.reuters.com/reuters/businessNews', priority: 1 },
-  { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', priority: 2 },
-  { name: 'Benzinga', url: 'https://www.benzinga.com/feed/', priority: 2 },
+  // Tech and market news (relevance tier 2 = 0.75)
+  { name: 'Reuters Business', url: 'https://feeds.reuters.com/reuters/businessNews', priority: 1, relevanceTier: 0.9 },
+  { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', priority: 2, relevanceTier: 0.75 },
+  { name: 'Benzinga', url: 'https://www.benzinga.com/feed/', priority: 2, relevanceTier: 0.75 },
   
-  // Sector-specific
-  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', priority: 2 },
-  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', priority: 2 },
+  // Sector-specific (relevance tier 3 = 0.65)
+  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', priority: 2, relevanceTier: 0.65 },
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', priority: 2, relevanceTier: 0.65 },
 ];
 
 // Ticker patterns for extraction
@@ -276,44 +276,41 @@ serve(async (req) => {
     let feedsProcessed = 0;
     let feedsFailed = 0;
     const seenUrls = new Set<string>();
-    
-    // Process all feeds (fast RSS parsing)
-    for (const feed of NEWS_RSS_FEEDS) {
-      try {
-        console.log(`Fetching ${feed.name}...`);
+
+    // Fetch all feeds in parallel instead of sequentially (was up to 48s sequential)
+    const feedResults = await Promise.allSettled(
+      NEWS_RSS_FEEDS.map(async (feed) => {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-        
-        const response = await fetch(feed.url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/2.0)' },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-          console.log(`Feed failed: ${feed.name} (${response.status})`);
-          feedsFailed++;
-          continue;
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        try {
+          const response = await fetch(feed.url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/2.0)' },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const xml = await response.text();
+          const items = parseRSSXml(xml, feed.name);
+          return { feed, items, ok: true };
+        } catch (e) {
+          clearTimeout(timeoutId);
+          throw { feed, error: e };
         }
-        
-        const xml = await response.text();
-        const items = parseRSSXml(xml, feed.name);
+      })
+    );
+
+    for (const result of feedResults) {
+      if (result.status === 'fulfilled') {
+        const { feed, items } = result.value;
         console.log(`Parsed ${items.length} items from ${feed.name}`);
         feedsProcessed++;
-        
-        // Process items
         for (const item of items) {
-          // Skip duplicates
           if (item.link && seenUrls.has(item.link)) continue;
           if (item.link) seenUrls.add(item.link);
-          
           const fullText = `${item.title} ${item.description || ''}`;
           const tickers = extractTickers(fullText, validTickers);
-          
-          // Create news entry for each matched ticker
           for (const ticker of tickers) {
             const sentiment = calculateKeywordSentiment(fullText);
-            
             allNews.push({
               ticker,
               headline: item.title.substring(0, 500),
@@ -322,14 +319,14 @@ serve(async (req) => {
               url: item.link || null,
               published_at: safeParseDate(item.pubDate),
               sentiment_score: sentiment,
-              relevance_score: 0.8,
+              relevance_score: feed.relevanceTier ?? 0.7,
               metadata: { matched_by: 'ticker_extraction' },
             });
           }
         }
-        
-      } catch (e) {
-        console.error(`Error fetching ${feed.name}:`, e);
+      } else {
+        const { feed, error } = result.reason;
+        console.error(`Feed failed: ${feed?.name}:`, error);
         feedsFailed++;
       }
     }

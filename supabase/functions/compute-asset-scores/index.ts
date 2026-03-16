@@ -1089,6 +1089,12 @@ Deno.serve(async (req) => {
         cov
       } = data;
 
+      // CRITICAL FIX: Skip assets where ALL signal alphas are 0 (no alpha data available)
+      // These assets would be ranked at (0 - globalMean) which is noise, not signal
+      if (signalsWithAlpha === 0 && signalsTotal > 0) {
+        continue;
+      }
+
       // GLOBAL RECENTER: subtract global mean to remove bearish bias
       const expectedReturnCentered = expectedReturnRaw - globalMeanExpectedReturn;
 

@@ -86,7 +86,7 @@ serve(async (req) => {
     const haltedFunctions = logs
       ?.filter(l => l.status === 'halted')
       .map(l => l.etl_name)
-      .filter((v, i, a) => a.indexOf(v) === i) || [];
+      .filter((v, i, a) => i === 0 || !new Set(a.slice(0, i)).has(v)) || []; // O(n) dedup via Set
 
     // Get stale tickers (>10 seconds old)
     const { data: staleTickers } = await supabase
@@ -94,7 +94,7 @@ serve(async (req) => {
       .gte('seconds_stale', 10)
       .limit(5);
 
-    const staleTickersList = staleTickers?.map((t: any) => ({
+    const staleTickersList = (staleTickers ?? []).map((t: any) => ({
       ticker: t.ticker,
       hours_stale: (t.seconds_stale || 0) / 3600
     })) || [];

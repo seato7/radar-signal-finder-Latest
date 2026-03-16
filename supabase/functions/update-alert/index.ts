@@ -37,9 +37,12 @@ serve(async (req) => {
     const { alert_id, status } = await req.json();
     if (!alert_id) throw new Error('alert_id is required');
 
+    const ALLOWED_STATUSES = ['active', 'dismissed', 'read', 'resolved'];
+    const safeStatus = status && ALLOWED_STATUSES.includes(status) ? status : 'dismissed';
+
     const { data, error } = await supabaseClient
       .from('alerts')
-      .update({ status: status || 'dismissed' })
+      .update({ status: safeStatus })
       .eq('id', alert_id)
       .eq('user_id', user.id)
       .select()

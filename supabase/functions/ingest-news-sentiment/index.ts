@@ -48,7 +48,7 @@ serve(async (req) => {
     const aggregates: { [key: string]: any } = {};
 
     for (const item of news) {
-      const dateKey = new Date(item.published_at).toISOString().split('T')[0];
+      const dateKey = item.published_at ? new Date(item.published_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
       const key = `${item.ticker}-${dateKey}`;
 
       if (!aggregates[key]) {
@@ -99,7 +99,7 @@ serve(async (req) => {
         sentiment_score: avgSentiment,
         sentiment_label: sentimentLabel,
         trending_keywords: Array.from(agg.keywords).slice(0, 10),
-        buzz_score: Math.min(agg.total_articles / 5, 1.0),
+        buzz_score: Math.min(1.0, Math.log10(agg.total_articles + 1) / 2), // logarithmic - distinguishes 5 vs 20 vs 100 articles
         buzz_change_pct: 0,
         metadata: {
           sources: Array.from(agg.sources),

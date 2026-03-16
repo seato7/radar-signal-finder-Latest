@@ -22,9 +22,27 @@ serve(async (req) => {
     if (authError || !user) throw new Error('Unauthorized');
 
     if (req.method === 'GET') {
-      // Get all user bots (from MongoDB-like structure stored in JSON)
-      // For now, return empty array - would need to migrate bot data
-      return new Response(JSON.stringify({ bots: [] }), {
+      // Query bots table from database
+      const { data: bots, error: botsError } = await supabaseClient
+        .from('trading_bots')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (botsError) {
+        // Fall back to 'bots' table name if trading_bots doesn't exist
+        const { data: botsAlt, error: botsAltError } = await supabaseClient
+          .from('bots')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        return new Response(JSON.stringify({ bots: botsAlt ?? [] }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ bots: bots ?? [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

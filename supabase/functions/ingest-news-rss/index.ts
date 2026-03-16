@@ -137,7 +137,7 @@ function extractTickers(text: string, validTickers: Set<string>): string[] {
     const matches = text.matchAll(regex);
     for (const match of matches) {
       const ticker = match[1].toUpperCase();
-      if (validTickers.has(ticker) && ticker.length >= 2 && ticker.length <= 5) {
+      if (validTickers.has(ticker) && ticker.length >= 2 && ticker.length <= 6) { // allow 6-char forex tickers (EURUSD etc)
         tickers.add(ticker);
       }
     }

@@ -205,7 +205,7 @@ serve(async (req) => {
 
     results.push({
       name: 'score_return_correlation',
-      passed: !hasEnoughData || correlation >= -0.1, // Allow slight negative correlation due to market conditions
+      passed: !hasEnoughData || correlation >= 0.05, // Require weak positive correlation minimum
       actual: hasEnoughData ? 
         `Correlation: ${correlation.toFixed(4)}, D1: ${lowestReturn.toFixed(2)}%, D10: ${highestReturn.toFixed(2)}% (n=${scoreWithReturns.length})` : 
         `Insufficient data (n=${scoreWithReturns.length})`,

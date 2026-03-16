@@ -298,6 +298,12 @@ serve(async (req) => {
                 .eq('ticker', price.ticker)
                 .single();
               
+              // Skip if asset not found - don't insert orphaned rows with null asset_id
+              if (!asset?.id) {
+                skipped++;
+                continue;
+              }
+
               // Insert price
               const { error: insertError } = await supabaseClient
                 .from('prices')
@@ -309,7 +315,7 @@ serve(async (req) => {
                   low: price.low,
                   close: price.close,
                   volume: price.volume,
-                  asset_id: asset?.id,
+                  asset_id: asset.id,
                   checksum,
                 });
               

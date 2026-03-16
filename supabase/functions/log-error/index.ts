@@ -26,7 +26,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const errorLog: ErrorLog = await req.json();
+    const rawBody = await req.text();
+    if (rawBody.length > 10240) { // 10KB limit
+      return new Response(JSON.stringify({ error: 'Payload too large (max 10KB)' }), {
+        status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const errorLog: ErrorLog = JSON.parse(rawBody);
     
     // Log to database
     await supabase.from('alert_history').insert({

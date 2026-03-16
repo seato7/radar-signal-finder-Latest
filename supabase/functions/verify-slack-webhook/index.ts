@@ -76,7 +76,7 @@ serve(async (req) => {
           webhook_working: false
         }),
         { 
-          status: 200, 
+          status: 502, // Return 502 so caller can detect failure from status code
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       );

@@ -46,9 +46,9 @@ Deno.serve(async (req) => {
       successful: logs.filter(l => l.status === 'success').length,
       failed: logs.filter(l => l.status === 'failure').length,
       running: logs.filter(l => l.status === 'running').length,
-      avg_duration: logs
-        .filter(l => l.duration_seconds)
-        .reduce((acc, l) => acc + (l.duration_seconds || 0), 0) / logs.length || 0,
+      avg_duration: logs.length > 0
+        ? logs.filter(l => l.duration_seconds).reduce((acc, l) => acc + (l.duration_seconds || 0), 0) / logs.length
+        : 0,
       total_rows_inserted: logs
         .reduce((acc, l) => acc + (l.rows_inserted || 0), 0),
     };

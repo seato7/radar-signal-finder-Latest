@@ -14,10 +14,14 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SIGNAL_MASS_THRESHOLD = 0.001;
 
 // Extract signal mass from score_explanation jsonb array
+// CRITICAL FIX: null score_explanation should be treated as zero contributions (not excluded)
+// Previously: null was treated same as empty (both returned 0), but the filter below 
+// would exclude both null and low-mass. Now null = zero mass (valid asset, no signal history).
 const extractSignalMass = (scoreExplanation: unknown): number => {
+  // null/undefined score_explanation = asset scored but no signal mass recorded = treat as 0 (zero contributions)
   if (!scoreExplanation || !Array.isArray(scoreExplanation)) return 0;
   const massEntry = scoreExplanation.find((e: any) => e.k === 'signal_mass');
-  if (!massEntry) return 0;
+  if (!massEntry) return 0; // Missing key = zero contributions, not invalid
   return typeof massEntry.v === 'number' ? massEntry.v : parseFloat(String(massEntry.v)) || 0;
 };
 

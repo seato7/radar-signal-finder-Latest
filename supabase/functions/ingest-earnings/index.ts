@@ -103,9 +103,10 @@ async function fetchAlphaVantageEarnings(
     
     // Get the most recent earnings
     const latest = quarterlyEarnings[0];
-    const surprisePercentage = parseFloat(latest.surprisePercentage) || 0;
-    const reportedEPS = parseFloat(latest.reportedEPS) || 0;
-    const estimatedEPS = parseFloat(latest.estimatedEPS) || 0;
+    // Handle 'N/A' strings from Alpha Vantage — parseFloat('N/A') = NaN which then gets clamped to -100
+    const surprisePercentage = (latest.surprisePercentage && latest.surprisePercentage !== 'N/A') ? parseFloat(latest.surprisePercentage) || 0 : 0;
+    const reportedEPS = (latest.reportedEPS && latest.reportedEPS !== 'N/A') ? parseFloat(latest.reportedEPS) || 0 : 0;
+    const estimatedEPS = (latest.estimatedEPS && latest.estimatedEPS !== 'N/A') ? parseFloat(latest.estimatedEPS) || 0 : 0;
     
     // Determine quarter from fiscal date
     const fiscalDate = new Date(latest.fiscalDateEnding);
@@ -119,7 +120,7 @@ async function fetchAlphaVantageEarnings(
       quarter: quarter.substring(0, 10),
       earnings_date: latest.reportedDate || latest.fiscalDateEnding,
       earnings_surprise: Math.max(-100, Math.min(100, surprisePercentage)),
-      revenue_surprise: 0,
+      revenue_surprise: null, // Alpha Vantage doesn't provide revenue surprise data
       sentiment_score: sentiment,
       metadata: {
         source: 'alpha_vantage',

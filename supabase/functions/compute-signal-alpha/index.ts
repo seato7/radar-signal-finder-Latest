@@ -203,7 +203,9 @@ Deno.serve(async (req) => {
       if (dates.length === 0) continue;
 
       const minDate = dates[0];
-      const maxDate = new Date(new Date(dates[dates.length - 1]).getTime() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      // Use last signal date + 7 days (to capture forward return window) without excessive extension
+      // Previously had +10 days which over-extended the price fetch range
+      const maxDate = new Date(new Date(dates[dates.length - 1]).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       // ========================================================================
       // CRITICAL FIX: Fetch prices by ASSET_ID in small batches to avoid URL length issues
@@ -473,7 +475,9 @@ Deno.serve(async (req) => {
         .select('signal_type');
       
       if (deleteError) {
-        console.warn(`Failed to delete stale alphas for ${horizon}:`, deleteError);
+        // Log warning and include in response so callers know deletion failed (not silently swallow)
+        console.warn(`[ALPHA] WARNING: Failed to delete stale alphas for ${horizon}: ${deleteError.message}`);
+        // Note: totalDeleted is NOT incremented on error - caller should check response for delete_errors
       } else if (deleted && deleted.length > 0) {
         console.log(`Deleted ${deleted.length} stale alpha rows for horizon ${horizon}:`, deleted.map(d => d.signal_type).join(', '));
         totalDeleted += deleted.length;
