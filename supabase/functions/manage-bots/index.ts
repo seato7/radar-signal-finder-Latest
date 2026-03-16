@@ -252,7 +252,8 @@ serve(async (req) => {
 
     // POST /:bot_id/start - Start bot
     if (req.method === 'POST' && path.includes('/start')) {
-      const bot_id = path.split('/')[path.split('/').length - 2];
+      const segments = path.split('/').filter(Boolean);
+      const bot_id = segments[segments.indexOf('start') - 1] || segments[segments.length - 2];
       
       await supabaseClient
         .from('bots')
@@ -267,7 +268,8 @@ serve(async (req) => {
 
     // POST /:bot_id/stop - Stop bot
     if (req.method === 'POST' && path.includes('/stop')) {
-      const bot_id = path.split('/')[path.split('/').length - 2];
+      const segments = path.split('/').filter(Boolean);
+      const bot_id = segments[segments.indexOf('stop') - 1] || segments[segments.length - 2];
       
       await supabaseClient
         .from('bots')
@@ -282,7 +284,8 @@ serve(async (req) => {
 
     // POST /:bot_id/simulate - Simulate bot
     if (req.method === 'POST' && path.includes('/simulate')) {
-      const bot_id = path.split('/')[path.split('/').length - 2];
+      const segments = path.split('/').filter(Boolean);
+      const bot_id = segments[segments.indexOf('simulate') - 1] || segments[segments.length - 2];
       const { since_days = 30 } = await req.json();
       
       const { data: bot } = await supabaseClient

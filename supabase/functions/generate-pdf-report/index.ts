@@ -79,6 +79,7 @@ Use markdown formatting for easy conversion to PDF.`;
     }
 
     const data = await response.json();
+    if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
     const reportMarkdown = data.choices[0].message.content;
 
     // Return markdown (client can convert to PDF using libraries like jsPDF or html2pdf)

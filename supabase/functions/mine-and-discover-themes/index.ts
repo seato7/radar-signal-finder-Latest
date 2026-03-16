@@ -31,12 +31,16 @@ serve(async (req) => {
     console.log('Mining data patterns from Supabase...');
 
     // Fetch recent patterns from all data sources
-    const [congressionalTrades, earnings, optionsFlow, shortInterest] = await Promise.all([
+    const [congressionalTradesResult, earningsResult, optionsFlowResult, shortInterestResult] = await Promise.allSettled([
       supabase.from('congressional_trades').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('earnings').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('options_flow').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('short_interest').select('*').order('created_at', { ascending: false }).limit(50),
     ]);
+    const congressionalTrades = congressionalTradesResult.status === 'fulfilled' ? congressionalTradesResult.value : { data: null };
+    const earnings = earningsResult.status === 'fulfilled' ? earningsResult.value : { data: null };
+    const optionsFlow = optionsFlowResult.status === 'fulfilled' ? optionsFlowResult.value : { data: null };
+    const shortInterest = shortInterestResult.status === 'fulfilled' ? shortInterestResult.value : { data: null };
 
     // Aggregate ticker patterns
     const tickerFrequency: Record<string, { count: number; sources: Set<string>; signals: any[] }> = {};
@@ -107,7 +111,7 @@ serve(async (req) => {
 
     // Identify high-signal tickers (appearing across multiple sources)
     const hotTickers = Object.entries(tickerFrequency)
-      .filter(([_, data]) => data.sources.size >= 2 || data.count >= 5)
+      .filter(([_, data]) => data.sources.size >= 2 && data.count >= 5) // AND: require both multi-source AND minimum count
       .sort((a, b) => b[1].count - a[1].count)
       .slice(0, 15)
       .map(([ticker, data]) => ({

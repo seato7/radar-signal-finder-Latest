@@ -80,8 +80,8 @@ serve(async (req) => {
         newsSentiment, patterns, aiReports, etfFlows, form4Data, holdings13f,
         ratesDiff, newsCoverage, rssNews, policyFeeds, pricesData, signalsData,
         themesData, themeScores, assetSummary
-      ] = await Promise.all([
-        // Original 21 sources
+      ] = (await Promise.allSettled([
+        // Original 21 sources - using allSettled so one failing query doesn't kill all 36
         supabase.from('social_signals').select('*').order('created_at', { ascending: false }).limit(15),
         supabase.from('congressional_trades').select('*').order('transaction_date', { ascending: false }).limit(15),
         supabase.from('patent_filings').select('*').order('filing_date', { ascending: false }).limit(10),
@@ -116,7 +116,7 @@ serve(async (req) => {
         supabase.from('themes').select('*').order('updated_at', { ascending: false }).limit(10),
         supabase.from('theme_scores').select('*').order('computed_at', { ascending: false }).limit(10),
         supabase.from('assets').select('*').order('score_computed_at', { ascending: false }).limit(20)
-      ]);
+      ])).map((r: any) => r.status === 'fulfilled' ? r.value : { data: null, error: r.reason });
 
       // === FORMAT ALL 36 DATA SOURCES ===
 

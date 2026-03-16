@@ -65,6 +65,7 @@ Keep it practical and actionable for traders.`;
     }
 
     const data = await response.json();
+    if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
     const insights = data.choices[0].message.content;
 
     // Persist to backtest_analyses

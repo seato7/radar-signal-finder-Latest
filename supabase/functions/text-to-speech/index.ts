@@ -20,7 +20,11 @@ serve(async (req) => {
 
     const ELEVEN_LABS_API_KEY = Deno.env.get('ELEVEN_LABS_API_KEY');
     if (!ELEVEN_LABS_API_KEY) {
-      throw new Error('ELEVEN_LABS_API_KEY is not configured');
+      // Don't leak internal config details in response body
+      console.error('ELEVEN_LABS_API_KEY is not configured');
+      return new Response(JSON.stringify({ error: 'Text-to-speech service is not configured' }), {
+        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     // Default to professional voice (Brian)
@@ -47,9 +51,10 @@ serve(async (req) => {
     );
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('ElevenLabs API error:', error);
-      throw new Error('Failed to generate speech');
+      const errorBody = await response.text();
+      console.error('ElevenLabs API error:', response.status, errorBody);
+      // Surface the actual error code to caller without leaking secrets
+      throw new Error(`Speech generation failed (ElevenLabs HTTP ${response.status})`);
     }
 
     // Convert audio to base64

@@ -149,7 +149,7 @@ async function fetchRecentFilings(cik: string): Promise<string[]> {
       }
     }
     
-    return accessionNumbers.slice(0, 2);
+    return accessionNumbers.slice(0, 4); // process up to 4 most recent filings (was 2, could miss latest)
   } catch (e) {
     console.error(`Error fetching filings for CIK ${cik}:`, e);
     return [];

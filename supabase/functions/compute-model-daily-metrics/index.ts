@@ -275,6 +275,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Inserting ${metricsToInsert.length} metric records...`);
+    let upsertErrors = 0;
 
     // Upsert metrics
     if (metricsToInsert.length > 0) {
@@ -287,6 +288,7 @@ Deno.serve(async (req) => {
         
         if (upsertErr) {
           console.error(`Error upserting metric for ${metric.snapshot_date}/${metric.top_n}:`, upsertErr);
+          upsertErrors++;
         }
       }
     }
@@ -310,7 +312,8 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        ok: true,
+        ok: upsertErrors === 0,
+        upsert_errors: upsertErrors,
         metrics_computed: metricsToInsert.length,
         groups_analyzed: groupedResults.size,
         total_graded_results: results.length,

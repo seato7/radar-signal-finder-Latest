@@ -120,17 +120,17 @@ serve(async (req) => {
       
       await logHeartbeat(supabase, {
         function_name: 'ingest-short-interest',
-        status: 'success',
+        status: 'failure', // all retries failed = failure, not success
         rows_inserted: 0,
         rows_skipped: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'none',
-        error_message: 'No FINRA files available',
+        error_message: 'No FINRA files available after retrying last 5 trading days',
       });
 
       return new Response(
-        JSON.stringify({ success: true, count: 0, reason: 'No FINRA files available' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, count: 0, reason: 'No FINRA files available after retrying last 5 trading days' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

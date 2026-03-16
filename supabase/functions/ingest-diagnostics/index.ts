@@ -50,6 +50,22 @@ Deno.serve(async (req) => {
       'patent_filings',
       'short_interest'
     ];
+
+    // FIX: Per-table timestamp column mapping (many tables don't use created_at)
+    const tableTimestampCol: Record<string, string> = {
+      'prices': 'last_updated_at',
+      'advanced_technicals': 'timestamp',
+      'forex_technicals': 'timestamp',
+      'signals': 'observed_at',
+      'cot_reports': 'report_date',
+      'forex_sentiment': 'timestamp',
+      'options_flow': 'trade_date',
+      'dark_pool_activity': 'trade_date',
+      'crypto_onchain_metrics': 'timestamp',
+      'smart_money_flow': 'timestamp',
+      'congressional_trades': 'transaction_date',
+      'short_interest': 'report_date',
+    };
     
     const diagnostics: any[] = [];
     
@@ -69,13 +85,14 @@ Deno.serve(async (req) => {
         const countHeader = countRes.headers.get('content-range');
         const totalRows = countHeader ? parseInt(countHeader.split('/')[1]) : 0;
         
-        // Get most recent row
+        // Get most recent row using correct timestamp column per table
+        const tsCol = tableTimestampCol[table] || 'created_at';
         const recentRes = await fetch(
-          `${supabaseUrl}/rest/v1/${table}?select=created_at&order=created_at.desc&limit=1`,
+          `${supabaseUrl}/rest/v1/${table}?select=${tsCol}&order=${tsCol}.desc&limit=1`,
           { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
         );
         const recentData = await recentRes.json();
-        const lastUpdate = recentData[0]?.created_at || null;
+        const lastUpdate = recentData[0]?.[tsCol] || null;
         
         // Calculate freshness
         const hoursOld = lastUpdate 

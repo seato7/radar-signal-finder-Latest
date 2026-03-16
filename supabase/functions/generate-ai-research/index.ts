@@ -223,7 +223,14 @@ function parseAIReport(content: string, context: any) {
       if (match) recommendation = match[1].toLowerCase();
     } else if (lower.includes('confidence score:') || lower.includes('confidence:')) {
       const match = line.match(/(\d+)/);
-      if (match) confidence_score = parseInt(match[1]);
+      if (match) {
+        const parsed = parseInt(match[1]);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+          confidence_score = parsed;
+        } else {
+          console.warn(`[generate-ai-research] Confidence score out of range or NaN: ${match[1]}, keeping default 50`);
+        }
+      }
     } else if (currentSection === 'summary' && line.trim()) {
       summaryLines.push(line.trim());
     } else if (currentSection === 'technical' && line.trim()) {

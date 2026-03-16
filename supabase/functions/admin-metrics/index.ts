@@ -63,7 +63,7 @@ serve(async (req) => {
     }
 
     if (action === 'user-stats') {
-      const { data: users } = await supabaseClient.auth.admin.listUsers();
+      const { data: users } = await supabaseClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const { data: roles } = await supabaseClient.from('user_roles').select('*');
 
       const now = new Date();
@@ -103,7 +103,7 @@ serve(async (req) => {
     }
 
     if (action === 'users') {
-      const { data: users } = await supabaseClient.auth.admin.listUsers();
+      const { data: users } = await supabaseClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const { data: roles } = await supabaseClient.from('user_roles').select('*');
 
       const sevenDaysAgoForActive = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -142,7 +142,7 @@ serve(async (req) => {
     }
 
     if (action === 'make-admin' || action === 'upgrade-premium') {
-      const { data: targetUser } = await supabaseClient.auth.admin.listUsers();
+      const { data: targetUser } = await supabaseClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const foundUser = targetUser?.users.find(u => u.email === email);
       
       if (!foundUser) throw new Error('User not found');

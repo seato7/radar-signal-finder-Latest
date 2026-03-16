@@ -18,7 +18,8 @@ serve(async (req) => {
   );
 
   try {
-    const { signals, themeName, days } = await req.json();
+    const { signals, themeName, days: rawDays } = await req.json();
+    const days = Math.max(1, Math.min(365, parseInt(rawDays) || 7)); // validate: positive, max 1 year
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -84,6 +85,7 @@ Provide a clear, professional summary suitable for investors.`;
     }
 
     const data = await response.json();
+    if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
     const summary = data.choices[0].message.content;
 
     // Persist to theme_analyses

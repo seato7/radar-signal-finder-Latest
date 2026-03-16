@@ -74,6 +74,7 @@ Only suggest themes with at least 3 supporting signals.`;
     }
 
     const data = await response.json();
+    if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
     const suggestions = data.choices[0].message.content;
 
     return new Response(

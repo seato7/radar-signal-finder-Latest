@@ -192,7 +192,7 @@ async function sendViaBravo(to: string, subject: string, htmlContent: string): P
     throw new Error(`Failed to send email: ${response.status} ${errorText}`);
   }
 
-  console.log("Email sent successfully via Brevo to:", to);
+  console.log("Email sent successfully via Brevo to: [redacted]");
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -208,7 +208,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     const { action, email, password }: AuthEmailRequest = await req.json();
 
-    console.log(`Processing ${action} request for email: ${email}`);
+    console.log(`Processing ${action} request`); // email redacted from logs
 
     if (action === "signup") {
       if (!password) {
@@ -307,7 +307,7 @@ const handler = async (req: Request): Promise<Response> => {
       }
 
       const actionLink = linkData.properties.action_link;
-      console.log("Generated recovery link for:", email);
+      console.log("Generated recovery link for: [redacted]");
 
       // 2. Send branded email via Brevo
       await sendViaBravo(
@@ -345,7 +345,7 @@ const handler = async (req: Request): Promise<Response> => {
       }
 
       const actionLink = linkData.properties.action_link;
-      console.log("Generated resend verification link for:", email);
+      console.log("Generated resend verification link for: [redacted]");
 
       await sendViaBravo(
         email,

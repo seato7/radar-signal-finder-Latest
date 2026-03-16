@@ -60,7 +60,7 @@ function parseYahooFinanceHtml(html: string, ticker: string): PriceData[] {
         const high = parseFloat(cells[2]?.replace(/,/g, ''));
         const low = parseFloat(cells[3]?.replace(/,/g, ''));
         const close = parseFloat(cells[4]?.replace(/,/g, ''));
-        const volume = parseInt(cells[6]?.replace(/,/g, '') || '0');
+        const volume = cells.length >= 7 ? parseInt(cells[6]?.replace(/,/g, '') || '0') : 0; // guard: cells[6] requires >= 7 columns
         
         // Validate data
         if (dateStr && !isNaN(close) && close > 0) {
@@ -229,7 +229,7 @@ serve(async (req) => {
             .from('prices')
             .select('id')
             .eq('checksum', checksum)
-            .single();
+            .maybeSingle();
           
           if (existing) {
             skipped++;
@@ -240,7 +240,7 @@ serve(async (req) => {
             .from('assets')
             .select('id')
             .eq('ticker', ticker)
-            .single();
+            .maybeSingle();
           
           await supabaseClient.from('prices').insert({
             ticker,
@@ -284,7 +284,7 @@ serve(async (req) => {
                 .from('prices')
                 .select('id')
                 .eq('checksum', checksum)
-                .single();
+                .maybeSingle();
               
               if (existing) {
                 skipped++;
@@ -296,7 +296,7 @@ serve(async (req) => {
                 .from('assets')
                 .select('id')
                 .eq('ticker', price.ticker)
-                .single();
+                .maybeSingle();
               
               // Skip if asset not found - don't insert orphaned rows with null asset_id
               if (!asset?.id) {

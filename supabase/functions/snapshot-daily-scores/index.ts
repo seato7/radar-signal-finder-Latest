@@ -70,6 +70,9 @@ serve(async (req) => {
     
     // Filter to only include assets with meaningful signal mass (matches Asset Radar "Scored Only")
     const scoredAssets = allAssets.filter(asset => {
+      // FIX: null score_explanation = asset has a valid score but no signal history recorded
+      // Include these assets (don't filter them out) - they have a score, just no detailed explanation
+      if (asset.score_explanation === null || asset.score_explanation === undefined) return true;
       const signalMass = extractSignalMass(asset.score_explanation);
       return signalMass >= SIGNAL_MASS_THRESHOLD;
     });

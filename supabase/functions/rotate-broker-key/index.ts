@@ -161,8 +161,12 @@ Deno.serve(async (req) => {
         });
 
       if (logError) {
-        console.error('Error logging rotation:', logError);
-        // Don't fail the request, just log the error
+        // Security event: rotation audit log failure must be surfaced - don't silently suppress
+        console.error('SECURITY WARNING: Failed to write rotation audit log:', logError);
+        return new Response(
+          JSON.stringify({ error: 'Rotation completed but audit log failed — contact support', details: logError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       return new Response(
