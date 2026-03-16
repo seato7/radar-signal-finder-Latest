@@ -186,7 +186,7 @@ serve(async (req) => {
 
   const startTime = Date.now();
   const slackAlerter = new SlackAlerter();
-  let supabase: ReturnType<typeof createClient>;
+  let supabase: ReturnType<typeof createClient> | null = null;
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
