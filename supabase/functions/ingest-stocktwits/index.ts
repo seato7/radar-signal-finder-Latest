@@ -258,6 +258,8 @@ serve(async (req) => {
   let apiSuccessCount = 0;
   let firecrawlScrapeCount = 0;
   let firecrawlSearchCount = 0;
+  let firecrawlCallCount = 0;
+  const FIRECRAWL_BUDGET = 20;
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -340,6 +342,7 @@ serve(async (req) => {
     const signals: any[] = [];
     let skippedCount = 0;
     let rateLimitedCount = 0;
+    let failedCount = 0;
     
     // Process tickers
     for (let i = 0; i < tickerList.length; i++) {
@@ -362,22 +365,36 @@ serve(async (req) => {
         if (apiResult.error === 'rate_limited') {
           rateLimitedCount++;
         }
-        
+
+        if (firecrawlCallCount >= FIRECRAWL_BUDGET) {
+          console.log(`⚠️ Firecrawl budget limit reached (${FIRECRAWL_BUDGET} calls), skipping remaining tickers`);
+          skippedCount++;
+          continue;
+        }
+
+        firecrawlCallCount++;
         const scrapeResult = await scrapeStockTwitsViaFirecrawl(ticker, firecrawlKey);
-        
+
         if (scrapeResult.success && scrapeResult.data?.markdown && scrapeResult.data.markdown.length >= 50) {
           sentiment = extractSentimentFromContent(scrapeResult.data.markdown);
           dataSource = 'firecrawl_stocktwits_scrape';
           firecrawlScrapeCount++;
           console.log(`✅ ${ticker}: ${sentiment.total} signals via Firecrawl scrape`);
-        } 
+        }
         // === TIER 3: Firecrawl search (last resort) ===
         else {
+          if (firecrawlCallCount >= FIRECRAWL_BUDGET) {
+            console.log(`⚠️ Firecrawl budget limit reached (${FIRECRAWL_BUDGET} calls), skipping remaining tickers`);
+            skippedCount++;
+            continue;
+          }
+
+          firecrawlCallCount++;
           const searchResults = await searchStockTwitsViaFirecrawl(ticker, firecrawlKey);
-          
+
           if (searchResults.length > 0) {
             const content = searchResults.map(r => `${r.title || ''} ${r.description || ''} ${r.markdown || ''}`).join(' ');
-            
+
             if (content.length >= 50) {
               sentiment = extractSentimentFromContent(content);
               dataSource = 'firecrawl_stocktwits_search';
@@ -417,6 +434,7 @@ serve(async (req) => {
       signals.push({
         ticker: ticker.substring(0, 10),
         source: 'stocktwits',
+        signal_date: new Date().toISOString().split('T')[0],
         mention_count: sentiment.total,
         bullish_count: sentiment.bullish,
         bearish_count: sentiment.bearish,
@@ -432,9 +450,9 @@ serve(async (req) => {
       });
       
       // Rate limit - different for API vs Firecrawl
-      // StockTwits API: ~200 req/hr = 1 per 18s (be conservative with 2s)
+      // StockTwits API: ~200 req/hr = 1 per 18s
       // Firecrawl: 1s between requests
-      const delay = dataSource === 'stocktwits_api' ? 2000 : 1000;
+      const delay = dataSource === 'stocktwits_api' ? 18000 : 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
       
       // Progress log every 20 tickers
@@ -463,9 +481,12 @@ serve(async (req) => {
       const insertBatchSize = 100;
       for (let i = 0; i < signals.length; i += insertBatchSize) {
         const batch = signals.slice(i, i + insertBatchSize);
-        const { error } = await supabase.from('social_signals').insert(batch);
+        const { error } = await supabase
+          .from('social_signals')
+          .upsert(batch, { onConflict: 'ticker,source,signal_date' });
         if (error) {
-          console.error('Insert error:', error.message);
+          console.error('Upsert error:', error.message);
+          failedCount += batch.length;
         }
       }
     }
@@ -478,8 +499,8 @@ serve(async (req) => {
     await logHeartbeat(supabase, {
       function_name: 'ingest-stocktwits',
       status: 'success',
-      rows_inserted: signals.length,
-      rows_skipped: skippedCount,
+      rows_inserted: signals.length - failedCount,
+      rows_skipped: skippedCount + failedCount,
       duration_ms: durationMs,
       source_used: `${primarySource} (API: ${apiSuccessCount}, Firecrawl: ${firecrawlScrapeCount + firecrawlSearchCount})`,
     });
