@@ -405,8 +405,14 @@ serve(async (req) => {
       }
 
       // Encrypt credentials using AES-GCM
-      const encryptedApiKey = await encryptData(api_key, encryptionKey);
-      const encryptedSecret = await encryptData(secret_key, encryptionKey);
+      let encryptedApiKey: string;
+      let encryptedSecret: string;
+      try {
+        encryptedApiKey = await encryptData(api_key, encryptionKey);
+        encryptedSecret = await encryptData(secret_key, encryptionKey);
+      } catch (cryptoErr) {
+        throw new Error(`Credential encryption failed: ${(cryptoErr as Error).message}`);
+      }
 
       // Store encrypted credentials
       const { data: existing } = await supabaseClient

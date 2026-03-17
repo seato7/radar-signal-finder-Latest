@@ -106,8 +106,11 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-    const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+      throw new Error('Missing required env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
+    }
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
     // Parse optional parameters
