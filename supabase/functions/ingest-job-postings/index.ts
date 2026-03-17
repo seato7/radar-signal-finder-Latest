@@ -222,7 +222,7 @@ serve(async (req) => {
       const batch = jobPostings.slice(i, i + insertBatchSize);
       const { error } = await supabase
         .from('job_postings')
-        .insert(batch);
+        .upsert(batch, { onConflict: 'ticker,job_title,company,posted_date', ignoreDuplicates: true });
 
       if (error) {
         console.error(`Insert error at batch ${i}:`, error.message);

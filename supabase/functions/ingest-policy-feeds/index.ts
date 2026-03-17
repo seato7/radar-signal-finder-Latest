@@ -141,7 +141,8 @@ serve(async (req) => {
         // Insert signal with ON CONFLICT to handle duplicates
         const { error: insertError } = await supabaseClient
           .from('signals')
-          .insert({
+          .upsert({
+            // onConflict: checksum ensures idempotent runs
             signal_type: 'policy_approval',
             value_text: title,
             direction: 'up',
@@ -155,7 +156,7 @@ serve(async (req) => {
             },
             source_id: feedUrl,
             checksum
-          });
+          }, { onConflict: 'checksum', ignoreDuplicates: true });
         
         if (insertError) {
           if (insertError.code === '23505') { // Duplicate key
