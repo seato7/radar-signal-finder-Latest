@@ -49,12 +49,19 @@ serve(async (req) => {
       if (!assetId) continue;
       const floatPct = short.float_percentage || 0;
       const daysToCover = short.days_to_cover || 0;
+
+      // Skip null/zero short interest — not meaningful
+      if (!floatPct || floatPct <= 0) continue;
+
       const squeezePotential = floatPct > 20 && daysToCover > 5;
-      // FIX: High short interest = bearish pressure (not up), unless squeeze potential triggers reversal
-      // squeeze_potential → contrarian up signal (short squeeze); otherwise high short = 'down' pressure
+      // High short interest = bearish pressure, unless squeeze potential (contrarian up)
       const direction = squeezePotential ? 'up' : floatPct > 30 ? 'down' : 'neutral';
-      // FIX: Normalise to 0-5 scale (was 0-1)
-      const magnitude = Math.min(5, (floatPct / 100 + daysToCover / 10) * 5); // Normalised to 0-5 scale
+
+      // Magnitude: floatPct is already a percentage (0-100), normalise to 0-5
+      // daysToCover is in days — normalise separately then combine on same scale
+      const floatComponent = Math.min(2.5, floatPct / 20); // 50% float = 2.5
+      const dtcComponent = Math.min(2.5, daysToCover / 4); // 10 days = 2.5
+      const magnitude = Math.min(5, floatComponent + dtcComponent);
       const signalData = { ticker: short.ticker, signal_type: 'short_interest', report_date: short.report_date, float_percentage: floatPct };
       signals.push({ asset_id: assetId, signal_type: 'short_interest', direction, magnitude, observed_at: new Date(short.report_date).toISOString(), value_text: `Short interest: ${floatPct.toFixed(1)}% of float, ${daysToCover.toFixed(1)} days to cover${squeezePotential ? ' (SQUEEZE RISK)' : ''}`, checksum: JSON.stringify(signalData), citation: { source: 'Short Interest Data', timestamp: new Date().toISOString() }, raw: { short_volume: short.short_volume, float_percentage: floatPct, days_to_cover: daysToCover, squeeze_potential: squeezePotential } });
     }

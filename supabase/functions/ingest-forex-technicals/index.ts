@@ -187,7 +187,7 @@ serve(async (req) => {
       if (insertData.length > 0) {
         const { error: insertError } = await supabaseClient
           .from('forex_technicals')
-          .insert(insertData);
+          .upsert(insertData, { onConflict: 'pair,timestamp', ignoreDuplicates: false });
 
         if (insertError) {
           console.error(`Batch insert error:`, insertError.message);

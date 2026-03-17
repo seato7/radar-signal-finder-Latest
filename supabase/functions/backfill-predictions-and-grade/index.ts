@@ -673,6 +673,7 @@ Deno.serve(async (req) => {
               const { error: gradeErr } = await supabase.from('asset_prediction_results').insert(chunk);
               if (gradeErr) {
                 console.error(`Error grading ${dateStr}/${modelVersion}:`, gradeErr.message);
+                errors.push(`grading ${dateStr}/${modelVersion}: ${gradeErr.message}`);
               } else {
                 totalGraded += chunk.length;
               }

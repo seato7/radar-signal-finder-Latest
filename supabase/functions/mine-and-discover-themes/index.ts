@@ -240,7 +240,7 @@ Requirements:
       try {
         const { data: created, error } = await supabase
           .from('themes')
-          .insert({
+          .upsert({
             name: theme.name,
             keywords: theme.keywords || [],
             alpha: 1.0,
@@ -248,7 +248,7 @@ Requirements:
               discovered: true,
               tickers: theme.tickers || []
             }
-          })
+          }, { onConflict: 'name', ignoreDuplicates: true })
           .select()
           .single();
         

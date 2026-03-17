@@ -370,12 +370,13 @@ function calculateThemeScore(
   };
 }
 
-const startTime = Date.now();
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // FIX: startTime must be inside the handler, not module-level (module-level is shared across concurrent requests)
+  const startTime = Date.now();
 
   try {
     const supabaseClient = createClient(

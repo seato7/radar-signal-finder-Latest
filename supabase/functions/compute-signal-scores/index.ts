@@ -277,7 +277,8 @@ function computeCompositeScore(
   }
 
   // Normalize by total weight to get 0-100 scale
-  return totalWeight > 0 ? Math.round((score / totalWeight) * 100) / 100 : 0;
+  const raw = totalWeight > 0 ? (score / totalWeight) * 100 : 0;
+  return Math.round(Math.min(100, Math.max(0, raw)) * 100) / 100; // clamp 0-100
 }
 
 function classifySignal(score: number, direction: string | null): string {

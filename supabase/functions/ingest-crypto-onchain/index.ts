@@ -231,7 +231,7 @@ serve(async (req) => {
     if (insertData.length > 0) {
       const { error: insertError } = await supabaseClient
         .from('crypto_onchain_metrics')
-        .insert(insertData);
+        .upsert(insertData, { onConflict: 'asset_id,timestamp', ignoreDuplicates: false });
 
       if (insertError) {
         console.error('Insert error:', insertError.message);

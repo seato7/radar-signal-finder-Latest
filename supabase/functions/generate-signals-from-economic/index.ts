@@ -107,9 +107,11 @@ serve(async (req) => {
       const affectedTickers = impactConfig?.assets || ['SPY'];
       const multiplier = impactConfig?.multiplier || 1.0;
 
-      // Calculate magnitude based on surprise size (0-5 scale, capped at 4 for economic data)
-      // Note: multiplier adjusts relative importance but surprise is already on comparable scale
-      const magnitude = Math.min(4, Math.abs(surprise) * multiplier / 10);
+      // Calculate magnitude: surprise is a percentage change, normalise to 0-5 scale
+      // Divide by 5 to convert percentage surprise to 0-1 range, then multiply by 5 for 0-5 scale
+      // multiplier adjusts by indicator importance (1.0-1.8x)
+      const rawMagnitude = Math.abs(surprise) / 5 * multiplier;
+      const magnitude = Math.min(4, rawMagnitude); // cap at 4 for economic signals
 
       // Create signals for affected assets
       for (const ticker of affectedTickers) {
