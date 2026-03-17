@@ -80,10 +80,19 @@ serve(async (req) => {
       const buyOrders = botOrders.filter(o => o.side === 'buy');
       const sellOrders = botOrders.filter(o => o.side === 'sell');
       
-      for (const sell of sellOrders) {
-        const matchingBuy = buyOrders.find(b => b.ticker === sell.ticker);
-        if (matchingBuy && sell.price > matchingBuy.price) {
-          botWins++;
+      // FIFO matching: sort by timestamp, pair each sell with oldest unmatched buy for that ticker
+      const unmatchedBuys: Record<string, typeof buyOrders> = {};
+      for (const buy of buyOrders.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())) {
+        if (!unmatchedBuys[buy.ticker]) unmatchedBuys[buy.ticker] = [];
+        unmatchedBuys[buy.ticker].push(buy);
+      }
+      for (const sell of sellOrders.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())) {
+        const queue = unmatchedBuys[sell.ticker];
+        if (queue && queue.length > 0) {
+          const matchingBuy = queue.shift(); // FIFO: oldest buy first
+          if (matchingBuy && sell.price > matchingBuy.price) {
+            botWins++;
+          }
         }
       }
 

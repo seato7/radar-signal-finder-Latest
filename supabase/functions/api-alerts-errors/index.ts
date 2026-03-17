@@ -124,10 +124,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check for stale data (>10 seconds) - Enhanced SLA monitoring
-    const { data: staleTickers } = await supabaseClient
-      .rpc('get_stale_tickers');
-    
+    // Check for stale data + duplicate errors in parallel (independent queries)
+    const [staleResult, dupResult] = await Promise.allSettled([
+      supabaseClient.rpc('get_stale_tickers'),
+      supabaseClient.from('view_duplicate_key_errors').select('*')
+    ]);
+    const staleTickers = staleResult.status === 'fulfilled' ? staleResult.value.data : null;
+    const duplicateErrorsParallel = dupResult.status === 'fulfilled' ? dupResult.value.data : null;
+
     if (staleTickers && staleTickers.length > 0) {
       const criticallyStale = staleTickers.filter((t: any) => t.seconds_stale > 10);
       
@@ -152,13 +156,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // NEW: Check for duplicate key errors (>5 per hour threshold)
-    const { data: duplicateErrors } = await supabaseClient
-      .from('view_duplicate_key_errors')
-      .select('*');
-    
-    if (duplicateErrors && duplicateErrors.length > 0) {
-      duplicateErrors.forEach((dupError: any) => {
+    // Use parallel-fetched duplicate errors result
+    if (duplicateErrorsParallel && duplicateErrorsParallel.length > 0) {
+      duplicateErrorsParallel.forEach((dupError: any) => {
         alerts.push({
           severity: 'high',
           type: 'duplicate_key_errors',
