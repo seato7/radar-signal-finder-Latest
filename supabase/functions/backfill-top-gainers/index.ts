@@ -109,17 +109,26 @@ serve(async (req) => {
     const priceMap: Record<string, Record<string, number>> = {};
 
     for (const date of dates) {
-      const { data: dayPrices } = await supabase
-        .from('prices')
-        .select('ticker, close')
-        .eq('date', date)
-        .in('ticker', allTickers);
+      try {
+        const { data: dayPrices, error: priceErr } = await supabase
+          .from('prices')
+          .select('ticker, close')
+          .eq('date', date)
+          .in('ticker', allTickers);
 
-      if (dayPrices && dayPrices.length > 0) {
-        for (const p of dayPrices as Array<{ ticker: string; close: number }>) {
-          if (!priceMap[p.ticker]) priceMap[p.ticker] = {};
-          priceMap[p.ticker][date] = p.close;
+        if (priceErr) {
+          console.warn(`[backfill-top-gainers] Price fetch error for ${date}:`, priceErr.message);
+          continue;
         }
+
+        if (dayPrices && dayPrices.length > 0) {
+          for (const p of dayPrices as Array<{ ticker: string; close: number }>) {
+            if (!priceMap[p.ticker]) priceMap[p.ticker] = {};
+            priceMap[p.ticker][date] = p.close;
+          }
+        }
+      } catch (err) {
+        console.warn(`[backfill-top-gainers] Exception fetching prices for ${date}:`, err);
       }
     }
 

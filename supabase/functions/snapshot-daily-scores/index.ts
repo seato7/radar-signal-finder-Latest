@@ -106,7 +106,16 @@ serve(async (req) => {
     if (insertError) throw insertError;
     
     console.log(`Created ${snapshots.length} score snapshots for ${today} (filtered from ${allAssets.length} total, ${scoredAssets.length} with signal mass >= ${SIGNAL_MASS_THRESHOLD})`);
-    
+
+    // Log to function_status for monitoring
+    await supabase.from('function_status').insert({
+      function_name: 'snapshot-daily-scores',
+      status: 'success',
+      rows_inserted: snapshots.length,
+      duration_ms: Date.now() - new Date().getTime(),
+      metadata: { date: today, total_assets: allAssets.length, scored_assets: scoredAssets.length }
+    }).catch(() => {}); // non-critical — don't fail snapshot if logging fails
+
     return new Response(
       JSON.stringify({
         message: `Created ${snapshots.length} score snapshots for ${today}`,

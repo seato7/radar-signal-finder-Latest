@@ -178,8 +178,8 @@ async function sendViaBravo(to: string, subject: string, htmlContent: string): P
     },
     body: JSON.stringify({
       sender: {
-        name: "InsiderPulse",
-        email: "support@insiderpulse.org",
+        name: Deno.env.get('EMAIL_SENDER_NAME') || "InsiderPulse",
+        email: Deno.env.get('EMAIL_SENDER_ADDRESS') || "support@insiderpulse.org",
       },
       to: [{ email: to }],
       subject,

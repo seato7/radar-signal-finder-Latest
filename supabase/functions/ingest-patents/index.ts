@@ -58,7 +58,8 @@ async function getPatentCountsViaFirecrawl(firecrawlApiKey: string): Promise<Pat
       });
 
       if (!response.ok) {
-        console.log(`[Google Patents] Scrape failed for ${company}: ${response.status}`);
+        const errorType = response.status === 429 ? 'rate_limit' : response.status === 402 ? 'quota_exceeded' : response.status === 401 ? 'auth_error' : 'request_failed';
+        console.error(`[Google Patents] Firecrawl ${errorType} (${response.status}) for ${company}`);
         continue;
       }
 

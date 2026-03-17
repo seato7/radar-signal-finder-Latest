@@ -618,7 +618,8 @@ Remember: You are the InsiderPulse AI Assistant. Synthesize ALL available data n
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages
+          // Truncate history to last 20 messages to prevent token/memory overflow on long conversations
+          ...messages.slice(-20)
         ],
         stream: true,
       }),

@@ -1,6 +1,7 @@
 // redeployed 2026-03-17
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,6 +78,20 @@ Only suggest themes with at least 3 supporting signals.`;
     const data = await response.json();
     if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
     const suggestions = data.choices[0].message.content;
+
+    // Persist suggestions to DB so they can be used by the system
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    await supabase.from('discovered_theme_suggestions').upsert({
+      suggestions_text: suggestions,
+      generated_at: new Date().toISOString(),
+      model: 'gemini-2.5-flash',
+    }, { onConflict: 'generated_at', ignoreDuplicates: false }).catch(() => {
+      // Table may not exist — log but don't fail the response
+      console.log('[discover-themes] Could not persist to DB — table may not exist yet');
+    });
 
     return new Response(
       JSON.stringify({ suggestions }),

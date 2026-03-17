@@ -130,8 +130,10 @@ Deno.serve(async (req) => {
         if (!fallbackCounts[record.function_name]) {
           fallbackCounts[record.function_name] = { fallback: 0, total: 0 }
         }
-        // FIX: Only count as fallback when fallback_used is a non-null, non-empty string
-        if (record.fallback_used && record.fallback_used !== 'null') {
+        // FIX: Check actual boolean true OR non-empty/non-null string (DB stores as text)
+        const isFallback = record.fallback_used === true || record.fallback_used === 'true' ||
+          (typeof record.fallback_used === 'string' && record.fallback_used !== 'null' && record.fallback_used !== '' && record.fallback_used !== 'false');
+        if (isFallback) {
           fallbackCounts[record.function_name].fallback++
         }
         fallbackCounts[record.function_name].total++

@@ -19,6 +19,18 @@ serve(async (req) => {
 
   try {
     const { theme, signals, marketConditions } = await req.json();
+
+    // Input validation
+    if (!theme || typeof theme !== 'object' || !theme.name) {
+      return new Response(JSON.stringify({ error: 'theme object with name is required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    if (!Array.isArray(signals)) {
+      return new Response(JSON.stringify({ error: 'signals must be an array' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
