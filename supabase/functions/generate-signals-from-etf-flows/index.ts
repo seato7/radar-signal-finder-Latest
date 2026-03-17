@@ -62,6 +62,7 @@ serve(async (req) => {
       if (!assetId) continue;
 
       const netFlow = flow.net_flow || ((flow.inflow || 0) - (flow.outflow || 0));
+      if (!netFlow || netFlow === 0) continue; // skip zero/null flow — no signal
       const direction = netFlow > 0 ? 'up' : netFlow < 0 ? 'down' : 'neutral';
       // Scale magnitude: 0-5 based on flow size (normalize to $100M scale for better differentiation)
       const magnitude = Math.min(5, Math.abs(netFlow) / 100000000 * 2.5);

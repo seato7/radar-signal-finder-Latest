@@ -210,8 +210,11 @@ ${combinedContent.substring(0, 8000)}`,
         }
 
       } catch (aiErr) {
-        // Re-throw 402 billing errors to abort the whole run
-        if (aiErr instanceof Error && aiErr.message.includes('402')) throw aiErr;
+        // Log 402 but continue processing other tickers (don't abort whole run)
+        if (aiErr instanceof Error && aiErr.message.includes('402')) {
+          console.error('[ingest-search-trends] AI quota exhausted (402) — skipping remaining AI calls for this run');
+          break; // stop AI calls but don't throw — partial results are better than none
+        }
         console.error(`[SEARCH-TRENDS] AI error for ${asset.ticker}:`, aiErr);
         skipped++;
         continue;

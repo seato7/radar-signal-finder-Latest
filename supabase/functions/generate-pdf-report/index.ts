@@ -14,6 +14,18 @@ serve(async (req) => {
 
   try {
     const { reportData, reportType } = await req.json();
+
+    if (!reportData || typeof reportData !== 'object') {
+      return new Response(JSON.stringify({ error: 'reportData object is required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const validReportTypes = ['portfolio', 'theme', 'asset', 'backtest', 'comprehensive'];
+    if (reportType && !validReportTypes.includes(reportType)) {
+      return new Response(JSON.stringify({ error: `reportType must be one of: ${validReportTypes.join(', ')}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {

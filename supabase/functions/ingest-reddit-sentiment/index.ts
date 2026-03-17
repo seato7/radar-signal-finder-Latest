@@ -401,7 +401,10 @@ serve(async (req) => {
     // Convert to signals - REAL DATA ONLY
     for (const [ticker, data] of tickerData) {
       const avgSentiment = data.mentions > 0 ? data.totalSentiment / data.mentions : 0;
-      
+
+      // Skip neutral/zero sentiment — no signal value
+      if (Math.abs(avgSentiment) < 0.05 && data.mentions < 5) continue;
+
       signals.push({
         ticker: ticker.substring(0, 10),
         source: 'reddit',

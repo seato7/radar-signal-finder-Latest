@@ -18,6 +18,11 @@ serve(async (req) => {
     if (!text) {
       throw new Error('Text is required');
     }
+    if (text.length > 5000) {
+      return new Response(JSON.stringify({ error: 'Text too long — maximum 5000 characters' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     const ELEVEN_LABS_API_KEY = Deno.env.get('ELEVEN_LABS_API_KEY');
     if (!ELEVEN_LABS_API_KEY) {

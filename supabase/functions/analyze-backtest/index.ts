@@ -20,6 +20,12 @@ serve(async (req) => {
 
   try {
     const { backtestResults, strategy } = await req.json();
+
+    if (!backtestResults || (Array.isArray(backtestResults) && backtestResults.length === 0)) {
+      return new Response(JSON.stringify({ error: 'backtestResults is required and must be non-empty' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {

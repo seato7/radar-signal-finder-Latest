@@ -20,6 +20,11 @@ serve(async (req) => {
     let processedCount = 0;
     let errorCount = 0;
     for (const bot of bots || []) {
+      // Validate bot has required config before executing
+      if (!bot.id || !bot.status || bot.status !== 'running') {
+        console.log(`[BOT-SCHEDULER] Skipping bot ${bot.id} — status: ${bot.status}`);
+        continue;
+      }
       console.log(`[BOT-SCHEDULER] Processing bot ${bot.id}`);
       try {
         const { error } = await supabaseClient.functions.invoke('manage-bots', { body: { action: 'tick', bot_id: bot.id } });

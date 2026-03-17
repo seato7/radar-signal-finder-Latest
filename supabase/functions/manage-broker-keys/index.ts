@@ -136,6 +136,10 @@ serve(async (req) => {
       if (!exchange || !api_key || !secret_key) {
         throw new Error('Missing required fields: exchange, api_key, secret_key');
       }
+      const KNOWN_EXCHANGES = ['oanda','forex_com','ig','pepperstone','fxcm','binance','coinbase','kraken','gemini','kucoin','bybit','alpaca','ibkr','tastytrade','tradier','etrade','schwab','amp_futures'];
+      if (!KNOWN_EXCHANGES.includes(exchange.toLowerCase())) {
+        throw new Error(`Unknown exchange: ${exchange}. Must be one of: ${KNOWN_EXCHANGES.join(', ')}`);
+      }
 
       // Get encryption key from environment
       const encryptionKey = Deno.env.get('BROKER_ENCRYPTION_KEY');

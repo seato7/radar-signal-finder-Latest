@@ -78,6 +78,10 @@ serve(async (req) => {
       const direction = isBuy ? 'up' : 'down';
 
       const avgAmount = ((trade.amount_min || 0) + (trade.amount_max || 0)) / 2;
+
+      // Skip trivial trades under $1,000 — noise not signal
+      if (avgAmount < 1000) continue;
+
       const magnitude = Math.min(5, (avgAmount / 100000) * 5); // Normalised to 0-5 scale
 
       const signalData = {

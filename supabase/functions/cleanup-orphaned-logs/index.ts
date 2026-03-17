@@ -11,7 +11,9 @@ Deno.serve(async (req) => {
   const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
   try {
-    console.log('Starting cleanup of orphaned ingest logs...');
+    const body = await req.json().catch(() => ({}));
+    const dry_run = body.dry_run === true; // dry_run mode — preview without deleting
+    console.log(`Starting cleanup of orphaned ingest logs... (dry_run: ${dry_run})`);
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const { data: orphanedLogs, error: selectError } = await supabase.from('ingest_logs').select('id, etl_name, started_at, duration_seconds').eq('status', 'running').lt('started_at', twoHoursAgo);
     if (selectError) throw selectError;
@@ -24,7 +26,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true, cleaned: 0, message: 'No orphaned logs found' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    console.log(`Found ${orphanedLogs.length} orphaned logs to clean up`);
+    console.log(`Found ${orphanedLogs.length} orphaned logs to clean up (dry_run: ${dry_run})`);
+    if (dry_run) {
+      return new Response(JSON.stringify({ success: true, dry_run: true, would_clean: orphanedLogs.length, logs: orphanedLogs.map(l => ({ id: l.id, etl_name: l.etl_name, started_at: l.started_at })) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     for (const log of orphanedLogs) {
       const durationSeconds = Math.round((Date.now() - new Date(log.started_at).getTime()) / 1000);
       await supabase.from('ingest_logs').update({ status: 'failure', completed_at: new Date().toISOString(), duration_seconds: durationSeconds, error_message: 'Process orphaned after 2+ hours - marked as failure by cleanup job', metadata: { cleanup_timestamp: new Date().toISOString(), original_started_at: log.started_at, cleanup_reason: 'stuck_in_running_status' } }).eq('id', log.id);

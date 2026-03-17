@@ -88,7 +88,8 @@ Format as a structured analysis that's easy to scan.`;
     });
 
     if (!response.ok) {
-      throw new Error(`AI gateway error: ${response.status}`);
+      const errType = response.status === 429 ? 'Rate limited' : response.status === 402 ? 'Quota exceeded' : response.status === 401 ? 'Auth error' : 'Gateway error';
+      throw new Error(`AI gateway ${errType} (${response.status})`);
     }
 
     const data = await response.json();

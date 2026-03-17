@@ -60,6 +60,11 @@ serve(async (req) => {
         })
       });
 
+      if (!response.ok) {
+        if (response.status === 429) console.warn('[explain-theme] AI gateway rate limited (429) — falling back to data-driven summary');
+        else if (response.status === 402) console.warn('[explain-theme] AI gateway quota exceeded (402) — falling back to data-driven summary');
+        else console.warn(`[explain-theme] AI gateway error ${response.status} — falling back`);
+      }
       if (response.ok) {
         const data = await response.json();
         if (data.choices?.length) {

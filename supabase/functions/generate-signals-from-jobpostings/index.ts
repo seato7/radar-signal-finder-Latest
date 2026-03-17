@@ -90,6 +90,7 @@ serve(async (req) => {
       
       for (let i = 0; i < sortedDates.length; i++) {
         const [date, count] = sortedDates[i];
+        if (!count || count <= 0) continue; // skip zero job count
         
         const dateJobs = tickerJobs.filter(j => j.posted_date === date && j.growth_indicator);
         const avgGrowth = dateJobs.length > 0

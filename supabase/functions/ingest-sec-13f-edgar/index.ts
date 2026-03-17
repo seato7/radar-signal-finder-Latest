@@ -595,7 +595,10 @@ serve(async (req) => {
     
     for (const { holding, manager, filing, change } of allHoldings) {
       const ticker = cusipCache.get(holding.cusip) || null;
-      
+
+      // Skip zero/null positions — not meaningful signals
+      if (!holding.shares || holding.shares <= 0 || !holding.value || holding.value <= 0) continue;
+
       if (ticker) {
         tickersMatched++;
       } else {

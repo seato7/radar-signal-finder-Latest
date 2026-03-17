@@ -95,7 +95,9 @@ serve(async (req) => {
       // Calculate magnitude based on confidence and risk/reward
       const confidence = (pattern.confidence_score || 50) / 100;
       const riskReward = Math.min(pattern.risk_reward_ratio || 1, 5);
-      const magnitude = Math.min(5, confidence * riskReward * 2);
+      const rawMagnitude = confidence * riskReward * 2;
+      const magnitude = (!isNaN(rawMagnitude) && isFinite(rawMagnitude)) ? Math.min(5, rawMagnitude) : 0;
+      if (magnitude <= 0) continue; // skip zero/invalid magnitude signals
 
       // Determine signal type
       let signalType = 'chart_pattern';

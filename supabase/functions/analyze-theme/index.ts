@@ -20,7 +20,13 @@ serve(async (req) => {
 
   try {
     const { signals, themeName, days: rawDays } = await req.json();
-    const days = Math.max(1, Math.min(365, parseInt(rawDays) || 7)); // validate: positive, max 1 year
+    const days = Math.max(1, Math.min(365, parseInt(rawDays) || 7));
+
+    if (!Array.isArray(signals) || signals.length === 0) {
+      return new Response(JSON.stringify({ error: 'signals array is required and must be non-empty' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {

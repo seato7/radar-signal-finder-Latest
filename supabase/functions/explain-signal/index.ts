@@ -19,6 +19,12 @@ serve(async (req) => {
 
   try {
     const { signal } = await req.json();
+
+    if (!signal || !signal.signal_type) {
+      return new Response(JSON.stringify({ error: 'signal object with signal_type is required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {

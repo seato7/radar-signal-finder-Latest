@@ -119,6 +119,9 @@ serve(async (req) => {
           granted_by: user.id 
         });
 
+      // Audit log
+      await supabaseClient.from('function_status').insert({ function_name: 'admin-actions:make-admin', status: 'success', rows_inserted: 1, metadata: { action: 'make-admin', target_email: email, new_role: newRole, performed_by: user.id } }).catch(() => {});
+
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -154,6 +157,9 @@ serve(async (req) => {
           role: plan,
           granted_by: user.id 
         });
+
+      // Audit log
+      await supabaseClient.from('function_status').insert({ function_name: 'admin-actions:upgrade-user', status: 'success', rows_inserted: 1, metadata: { action: 'upgrade-user', target_email: email, new_plan: plan, performed_by: user.id } }).catch(() => {});
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
