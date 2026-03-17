@@ -64,7 +64,7 @@ async def get_ingestion_health():
     stats = get_scheduler_stats()
     success_rate = stats.get("global_success_rate", 0)
     
-    # Get recent ingestion logs from Supabase (tiered scheduler uses railway-price-{tier})
+    # Get recent ingestion logs from Supabase (tiered scheduler uses twelvedata-{tier})
     recent_logs = []
     try:
         async with SupabaseSync() as sync:
@@ -73,7 +73,7 @@ async def get_ingestion_health():
                     f"{sync.url}/rest/v1/ingest_logs",
                     params={
                         "select": "etl_name,status,rows_inserted,duration_seconds,created_at,error_message",
-                        "etl_name": "like.railway-price-%",
+                        "etl_name": "like.twelvedata-%",
                         "order": "created_at.desc",
                         "limit": "20"
                     }

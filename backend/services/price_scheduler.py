@@ -389,8 +389,8 @@ async def _run_tiered_price_batch():
                         error_message=str(e),
                         source_used="twelvedata"
                     )
-            except:
-                pass
+            except Exception as log_err:
+                logger.warning(f"Failed to log ingestion failure to Supabase: {log_err}")
         finally:
             _is_running = False
 
