@@ -91,9 +91,10 @@ serve(async (req) => {
       for (let i = 0; i < sortedDates.length; i++) {
         const [date, count] = sortedDates[i];
         
-        const avgGrowth = tickerJobs
-          .filter(j => j.posted_date === date && j.growth_indicator)
-          .reduce((sum, j) => sum + (j.growth_indicator || 0), 0) / tickerJobs.filter(j => j.posted_date === date).length;
+        const dateJobs = tickerJobs.filter(j => j.posted_date === date && j.growth_indicator);
+        const avgGrowth = dateJobs.length > 0
+          ? dateJobs.reduce((sum, j) => sum + (j.growth_indicator || 0), 0) / dateJobs.length
+          : 0; // guard: prevent NaN when denominator is 0
         
         // Magnitude on 0-5 scale (normalised from 0-1 * 5)
         const baseMagnitude = Math.abs(count / 10) + Math.abs(avgGrowth || 0) * 2.5;

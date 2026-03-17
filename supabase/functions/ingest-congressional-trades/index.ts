@@ -400,40 +400,26 @@ ${combinedContent.substring(0, 20000)}`
 
     console.log(`[CONGRESSIONAL] Total trades to insert: ${trades.length}`);
 
-    // Insert trades into database
+    // Build records and batch upsert (was one-at-a-time)
     let inserted = 0;
     let skipped = 0;
+    const records = [];
 
     for (const trade of trades) {
-      if (!trade.representative || !trade.ticker) {
-        console.log(`[CONGRESSIONAL] Skipping invalid trade:`, trade);
-        skipped++;
-        continue;
-      }
-
+      if (!trade.representative || !trade.ticker) { skipped++; continue; }
       const normalizedTicker = normalizeTicker(trade.ticker);
-      if (!normalizedTicker || normalizedTicker.length > 10) {
-        console.log(`[CONGRESSIONAL] Skipping invalid ticker: ${trade.ticker}`);
-        skipped++;
-        continue;
-      }
+      if (!normalizedTicker || normalizedTicker.length > 10) { skipped++; continue; }
 
-      const txDate = trade.transaction_date || new Date().toISOString().split('T')[0];
-      
-      // Chamber must be lowercase ('house' or 'senate') to match DB check constraint
+      const txDate = trade.transaction_date || null; // null if unparseable — don't default to today
       let chamber: string | null = null;
       if (trade.chamber) {
-        const chamberLower = trade.chamber.toLowerCase();
-        if (chamberLower === 'house' || chamberLower === 'senate') {
-          chamber = chamberLower;
-        }
+        const c = trade.chamber.toLowerCase();
+        if (c === 'house' || c === 'senate') chamber = c;
       }
-      
       const txType = (trade.transaction_type || 'buy').toLowerCase();
-      // Transaction type must be 'buy', 'sell', or 'exchange' to match DB check constraint
       const validTxType = ['buy', 'sell', 'exchange'].includes(txType) ? txType : 'buy';
-      
-      const record = {
+
+      records.push({
         ticker: normalizedTicker,
         representative: String(trade.representative).trim().substring(0, 100),
         party: trade.party || 'Unknown',
@@ -448,24 +434,21 @@ ${combinedContent.substring(0, 20000)}`
           ingested_at: new Date().toISOString(),
           parsing_method: regexParsedTrades.length > 0 ? 'regex' : 'ai',
         },
-      };
+      });
+    }
 
-      const { error } = await supabase
-        .from('congressional_trades')
-        .upsert(record, {
-          onConflict: 'representative,ticker,transaction_date,transaction_type',
-          ignoreDuplicates: true
-        });
-
+    // Batch upsert in chunks of 50
+    for (let i = 0; i < records.length; i += 50) {
+      const batch = records.slice(i, i + 50);
+      const { error } = await supabase.from('congressional_trades').upsert(batch, {
+        onConflict: 'representative,ticker,transaction_date,transaction_type',
+        ignoreDuplicates: true
+      });
       if (error) {
-        if (error.code === '23505') {
-          skipped++;
-        } else {
-          console.error('[CONGRESSIONAL] Insert error:', error.message);
-          skipped++;
-        }
+        console.error('[CONGRESSIONAL] Batch upsert error:', error.message);
+        skipped += batch.length;
       } else {
-        inserted++;
+        inserted += batch.length;
       }
     }
 
