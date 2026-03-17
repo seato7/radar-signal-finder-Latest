@@ -342,38 +342,14 @@ serve(async (req) => {
     if (authError || !user) throw new Error('Unauthorized');
 
 
-    // GET /supported - List brokers (kept for backwards compatibility)
+    // GET /supported - List brokers (kept for backwards compatibility — delegates to main GET handler)
     if (req.method === 'GET' && path.includes('/supported')) {
-      return new Response(JSON.stringify({
-        brokers: [
-          // FOREX BROKERS
-          { id: "oanda", name: "Oanda", description: "Leading forex broker with competitive spreads", supports_paper: true, assets: ["forex", "commodity"], regions: ["global"], url: "https://www.oanda.com/" },
-          { id: "forex_com", name: "Forex.com", description: "Major US-based forex broker", supports_paper: true, assets: ["forex", "commodity", "crypto"], regions: ["us", "global"], url: "https://www.forex.com/" },
-          { id: "ig", name: "IG Markets", description: "UK-based multi-asset broker", supports_paper: true, assets: ["forex", "stocks", "commodity", "crypto"], regions: ["uk", "eu", "global"], url: "https://www.ig.com/" },
-          { id: "pepperstone", name: "Pepperstone", description: "Australian forex and CFD broker", supports_paper: false, assets: ["forex", "commodity", "stocks"], regions: ["au", "global"], url: "https://www.pepperstone.com/" },
-          { id: "fxcm", name: "FXCM", description: "Global forex broker", supports_paper: true, assets: ["forex", "commodity"], regions: ["global"], url: "https://www.fxcm.com/" },
-          
-          // CRYPTO BROKERS
-          { id: "binance", name: "Binance", description: "World's largest crypto exchange", supports_paper: false, assets: ["crypto"], regions: ["global"], url: "https://www.binance.com/" },
-          { id: "coinbase", name: "Coinbase", description: "US-regulated crypto exchange", supports_paper: false, assets: ["crypto"], regions: ["us", "global"], url: "https://www.coinbase.com/" },
-          { id: "kraken", name: "Kraken", description: "Secure crypto exchange", supports_paper: false, assets: ["crypto"], regions: ["us", "eu", "global"], url: "https://www.kraken.com/" },
-          { id: "gemini", name: "Gemini", description: "Regulated US crypto exchange", supports_paper: false, assets: ["crypto"], regions: ["us"], url: "https://www.gemini.com/" },
-          { id: "kucoin", name: "KuCoin", description: "Global crypto exchange with wide selection", supports_paper: false, assets: ["crypto"], regions: ["global"], url: "https://www.kucoin.com/" },
-          { id: "bybit", name: "Bybit", description: "Crypto derivatives exchange", supports_paper: true, assets: ["crypto"], regions: ["global"], url: "https://www.bybit.com/" },
-          
-          // STOCK BROKERS
-          { id: "alpaca", name: "Alpaca Markets", description: "Commission-free US stocks and crypto trading", supports_paper: true, assets: ["stocks", "crypto"], regions: ["us", "global"], url: "https://alpaca.markets/" },
-          { id: "ibkr", name: "Interactive Brokers", description: "Professional multi-asset trading platform", supports_paper: true, assets: ["stocks", "options", "futures", "forex", "bonds", "crypto", "commodity"], regions: ["global"], url: "https://www.interactivebrokers.com/" },
-          { id: "tastytrade", name: "tastytrade", description: "Options-focused broker", supports_paper: true, assets: ["stocks", "options"], regions: ["us"], url: "https://tastytrade.com/" },
-          { id: "tradier", name: "Tradier", description: "API-focused brokerage platform", supports_paper: true, assets: ["stocks", "options"], regions: ["us"], url: "https://tradier.com/" },
-          { id: "etrade", name: "E*TRADE", description: "Major US retail broker", supports_paper: true, assets: ["stocks", "options", "etfs"], regions: ["us"], url: "https://us.etrade.com/" },
-          { id: "schwab", name: "Charles Schwab", description: "Full-service US broker", supports_paper: false, assets: ["stocks", "options", "etfs", "futures"], regions: ["us"], url: "https://www.schwab.com/" },
-          
-          // COMMODITY BROKERS
-          { id: "amp_futures", name: "AMP Futures", description: "Futures and commodities trading", supports_paper: true, assets: ["futures", "commodity"], regions: ["us"], url: "https://ampfutures.com/" }
-        ]
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      // FIX: Duplicate broker list removed — forward to the same list defined in the GET / handler above
+      // This prevents the two lists from diverging when brokers are added/removed
+      const forwardReq = new Request(req.url.replace('/supported', ''), { method: 'GET', headers: req.headers });
+      return new Response(JSON.stringify({ message: 'Use GET / for broker list' }), {
+        status: 301,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Location': req.url.replace('/supported', '') }
       });
     }
 
