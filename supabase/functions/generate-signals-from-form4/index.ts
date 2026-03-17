@@ -63,6 +63,9 @@ serve(async (req) => {
       if (!assetId) continue;
 
       const transactionValue = (filing.transaction_shares || 0) * (filing.price_per_share || 0);
+
+      // Skip micro-transactions under $1,000 — adds noise without alpha
+      if (transactionValue < 1000) continue;
       const isBuy = filing.transaction_type?.toLowerCase().includes('purchase') || 
                     filing.transaction_type?.toLowerCase().includes('acquisition');
       

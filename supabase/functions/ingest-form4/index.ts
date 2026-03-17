@@ -405,9 +405,13 @@ serve(async (req) => {
           const hashArray = Array.from(new Uint8Array(hashBuffer));
           const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-          // FIX: magnitude normalised to 0-5 scale
           const transactionValue = tx.shares * (tx.pricePerShare ?? 1);
-          const signalMagnitude = Math.min(5, Math.max(0, (transactionValue / 1_000_000) * 5));
+
+          // Skip micro-transactions under $1,000 — noise not signal
+          if (transactionValue < 1000) continue;
+
+          // FIX: magnitude normalised to 0-5 scale ($1M = 5)
+          const signalMagnitude = Math.min(5, Math.max(0.1, (transactionValue / 1_000_000) * 5));
 
           const { error: insertError } = await supabaseClient
             .from('signals')
