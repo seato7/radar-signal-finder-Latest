@@ -246,33 +246,33 @@ function computeCompositeScore(
   let score = 0;
   let totalWeight = 0;
 
-  // Technical
+  // Technical — cap each component at 100 before combining
   if (factors.technical_score > 0) {
-    score += factors.technical_score * weights.technical;
+    score += Math.min(100, factors.technical_score) * weights.technical;
     totalWeight += weights.technical;
   }
 
   // Institutional
   if (factors.institutional_score > 0) {
-    score += factors.institutional_score * weights.institutional;
+    score += Math.min(100, factors.institutional_score) * weights.institutional;
     totalWeight += weights.institutional;
   }
 
   // Sentiment
   if (factors.sentiment_score > 0) {
-    score += factors.sentiment_score * weights.sentiment;
+    score += Math.min(100, factors.sentiment_score) * weights.sentiment;
     totalWeight += weights.sentiment;
   }
 
   // Macro
   if (factors.macro_score > 0) {
-    score += factors.macro_score * weights.macro;
+    score += Math.min(100, factors.macro_score) * weights.macro;
     totalWeight += weights.macro;
   }
 
   // On-chain (crypto only)
   if (assetClass === 'crypto' && factors.onchain_score > 0) {
-    score += factors.onchain_score * weights.onchain;
+    score += Math.min(100, factors.onchain_score) * weights.onchain;
     totalWeight += weights.onchain;
   }
 

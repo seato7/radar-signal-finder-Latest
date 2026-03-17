@@ -131,6 +131,7 @@ Deno.serve(async (req) => {
           fallbackCounts[record.function_name] = { fallback: 0, total: 0 }
         }
         // FIX: Check actual boolean true OR non-empty/non-null string (DB stores as text)
+        // Check both strict boolean true AND string 'true' (Supabase may return either)
         const isFallback = record.fallback_used === true || record.fallback_used === 'true' ||
           (typeof record.fallback_used === 'string' && record.fallback_used !== 'null' && record.fallback_used !== '' && record.fallback_used !== 'false');
         if (isFallback) {

@@ -93,6 +93,7 @@ serve(async (req) => {
       return {
         ticker: agg.ticker,
         date: agg.date,
+        signal_date: agg.date, // explicit signal_date column for dedup consistency
         total_articles: agg.total_articles,
         positive_articles: agg.positive_articles,
         negative_articles: agg.negative_articles,
