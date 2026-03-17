@@ -1,3 +1,4 @@
+// redeployed 2026-03-17
 /**
  * Firecrawl Search - Web search with optional content scraping
  */

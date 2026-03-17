@@ -1,3 +1,4 @@
+// redeployed 2026-03-17
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 // FIX: Import crypto explicitly so crypto.subtle.digest() is available in all Deno edge runtimes
 import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts";

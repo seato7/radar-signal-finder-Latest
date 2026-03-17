@@ -1,3 +1,4 @@
+// redeployed 2026-03-17
 /**
  * Firecrawl Map - Quickly discover all URLs on a website
  */
