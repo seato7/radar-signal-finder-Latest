@@ -350,7 +350,7 @@ serve(async (req) => {
       
       const { error } = await supabase
         .from('breaking_news')
-        .insert(batch);
+        .upsert(batch, { onConflict: 'url,ticker', ignoreDuplicates: true });
       
       if (error) {
         console.error(`Insert batch ${i} error:`, error.message);

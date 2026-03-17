@@ -167,7 +167,7 @@ serve(async (req) => {
     const batchSize = 500;
     for (let i = 0; i < shortInterestRecords.length; i += batchSize) {
       const batch = shortInterestRecords.slice(i, i + batchSize);
-      const { data, error } = await supabase.from('short_interest').insert(batch).select('id');
+      const { data, error } = await supabase.from('short_interest').upsert(batch, { onConflict: 'ticker,report_date', ignoreDuplicates: false }).select('id');
       
       if (error) {
         console.error(`Batch ${Math.floor(i/batchSize)} insert error:`, error.message);

@@ -78,7 +78,7 @@ serve(async (req) => {
           magnitude = Math.min(5, (stochK - 80) / 4);
         }
         
-        if (direction !== 'neutral') {
+        if (direction !== 'neutral' && !isNaN(magnitude) && isFinite(magnitude) && magnitude > 0) {
           signals.push({
             asset_id: assetId,
             signal_type: signalType,

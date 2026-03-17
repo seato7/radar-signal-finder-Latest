@@ -98,10 +98,10 @@ serve(async (req) => {
       rank: index + 1,
     }));
     
-    // Insert snapshots
+    // Upsert snapshots — idempotent on re-run
     const { error: insertError } = await supabase
       .from('asset_score_snapshots')
-      .insert(snapshots);
+      .upsert(snapshots, { onConflict: 'snapshot_date,asset_id', ignoreDuplicates: false });
     
     if (insertError) throw insertError;
     

@@ -439,7 +439,7 @@ serve(async (req) => {
       const insertBatchSize = 100;
       for (let i = 0; i < signals.length; i += insertBatchSize) {
         const batch = signals.slice(i, i + insertBatchSize);
-        const { error } = await supabase.from('social_signals').insert(batch);
+        const { error } = await supabase.from('social_signals').upsert(batch, { onConflict: 'ticker,source,signal_date', ignoreDuplicates: true });
         if (error) {
           console.error('Insert error:', error.message);
         } else {

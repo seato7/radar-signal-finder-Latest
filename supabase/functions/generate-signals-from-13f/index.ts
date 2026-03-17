@@ -115,6 +115,9 @@ serve(async (req) => {
       const valueInMillions = (holding.value / 1000).toFixed(1);
       const sharesInThousands = (holding.shares / 1000).toFixed(0);
       
+      // Skip zero/near-zero magnitude signals — they add noise without alpha
+      if (!magnitude || magnitude < 0.01) continue;
+
       signals.push({
         asset_id: assetId,
         signal_type: signalType,
