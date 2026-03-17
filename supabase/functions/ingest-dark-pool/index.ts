@@ -47,7 +47,8 @@ function parseFinraShortSale(content: string): Array<{
     const short = parseInt(shortVol) || 0;
 
     if (total <= 0 || total < 1000) continue; // guard against division by zero
-  
+    if (short <= 0) continue; // skip records with no short volume activity
+
     const shortRatio = short / total;
 
     records.push({

@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        function: [ingest-prices-yahoo, ingest-advanced-technicals, ingest-pattern-recognition]
+        function: [ingest-prices-twelvedata, ingest-advanced-technicals, ingest-pattern-recognition]
     steps:
       - name: Run ${{ matrix.function }}
         run: |

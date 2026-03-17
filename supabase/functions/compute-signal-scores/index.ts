@@ -73,10 +73,18 @@ serve(async (req) => {
     const assetClassMap = new Map(assets?.map(a => [a.id, a.asset_class]) || []);
 
     // Compute scores for each signal
+    const HALF_LIFE_DAYS = 7; // Signals decay to 50% weight after 7 days
     const updates = signals.map(signal => {
       const assetClass = signal.asset_id ? assetClassMap.get(signal.asset_id) || 'unknown' : 'unknown';
       const scoreFactors = computeScoreFactors(signal, weights);
-      const compositeScore = computeCompositeScore(scoreFactors, weights, assetClass);
+      const rawScore = computeCompositeScore(scoreFactors, weights, assetClass);
+
+      // Apply exponential decay by signal age
+      const ageMs = Date.now() - new Date(signal.observed_at).getTime();
+      const ageDays = Math.max(0, ageMs / (1000 * 60 * 60 * 24));
+      const decayFactor = Math.exp(-0.693 * ageDays / HALF_LIFE_DAYS);
+      const compositeScore = Math.round(Math.min(100, Math.max(0, rawScore * decayFactor)) * 100) / 100;
+
       const signalClassification = classifySignal(compositeScore, signal.direction);
 
       return {
