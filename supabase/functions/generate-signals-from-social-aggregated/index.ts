@@ -49,18 +49,19 @@ serve(async (req) => {
     }
 
     // Aggregate by ticker
-    const tickerAggregates = new Map<string, { bullish: number; bearish: number; sentimentSum: number; count: number; latestTimestamp: string }>();
+    const tickerAggregates = new Map<string, { bullish: number; bearish: number; sentimentSum: number; count: number; latestTimestamp: string | null }>();
     
     for (const signal of socialSignals) {
       const ticker = signal.ticker;
-      const existing = tickerAggregates.get(ticker) || { bullish: 0, bearish: 0, sentimentSum: 0, count: 0, latestTimestamp: '' };
+      const existing = tickerAggregates.get(ticker) || { bullish: 0, bearish: 0, sentimentSum: 0, count: 0, latestTimestamp: null };
       
       tickerAggregates.set(ticker, {
         bullish: existing.bullish + (signal.bullish_count || 0),
         bearish: existing.bearish + (signal.bearish_count || 0),
         sentimentSum: existing.sentimentSum + (signal.sentiment_score || 0),
         count: existing.count + 1,
-        latestTimestamp: signal.created_at > existing.latestTimestamp ? signal.created_at : existing.latestTimestamp
+        // Use null-safe comparison — both are ISO-8601 strings so lexicographic comparison is valid
+        latestTimestamp: (!existing.latestTimestamp || (signal.created_at && signal.created_at > existing.latestTimestamp)) ? (signal.created_at || null) : existing.latestTimestamp
       });
     }
 

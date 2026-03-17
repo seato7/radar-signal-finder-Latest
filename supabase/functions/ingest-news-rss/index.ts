@@ -14,27 +14,27 @@ const corsHeaders = {
 
 // Verified working RSS feeds - all processed each run
 const RSS_FEEDS = [
-  // Primary financial news
-  { name: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline', type: 'general' },
-  { name: 'MarketWatch', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', type: 'general' },
-  { name: 'CNBC', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', type: 'general' },
-  { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', type: 'general' },
-  { name: 'Benzinga', url: 'https://www.benzinga.com/feed/', type: 'general' },
+  // Primary financial news - tier 1 (0.9)
+  { name: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline', type: 'general', relevanceTier: 0.9 },
+  { name: 'MarketWatch', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', type: 'general', relevanceTier: 0.9 },
+  { name: 'CNBC', url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', type: 'general', relevanceTier: 0.9 },
+  { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', type: 'general', relevanceTier: 0.8 },
+  { name: 'Benzinga', url: 'https://www.benzinga.com/feed/', type: 'general', relevanceTier: 0.75 },
   
-  // Tech news
-  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', type: 'tech' },
-  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', type: 'tech' },
-  { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index', type: 'tech' },
+  // Tech news - tier 2 (0.7)
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', type: 'tech', relevanceTier: 0.7 },
+  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', type: 'tech', relevanceTier: 0.65 },
+  { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index', type: 'tech', relevanceTier: 0.65 },
   
-  // Crypto news
-  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto' },
-  { name: 'CoinTelegraph', url: 'https://cointelegraph.com/rss', type: 'crypto' },
+  // Crypto news - tier 2 (0.7)
+  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto', relevanceTier: 0.7 },
+  { name: 'CoinTelegraph', url: 'https://cointelegraph.com/rss', type: 'crypto', relevanceTier: 0.65 },
   
-  // Energy/Sector news
-  { name: 'Oil Price', url: 'https://oilprice.com/rss/main', type: 'energy' },
+  // Energy/Sector news - tier 2 (0.65)
+  { name: 'Oil Price', url: 'https://oilprice.com/rss/main', type: 'energy', relevanceTier: 0.65 },
   
-  // General business
-  { name: 'Business Insider', url: 'https://www.businessinsider.com/rss', type: 'general' },
+  // General business - tier 3 (0.6)
+  { name: 'Business Insider', url: 'https://www.businessinsider.com/rss', type: 'general', relevanceTier: 0.6 },
 ];
 
 // Expanded ticker patterns
@@ -365,7 +365,7 @@ serve(async (req) => {
               url: item.link,
               published_at: safeParseDate(item.pubDate),
               checksum,
-              relevance_score: 0.7,
+              relevance_score: feed.relevanceTier ?? 0.65,
             });
           }
         }
