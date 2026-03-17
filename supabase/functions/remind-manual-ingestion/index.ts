@@ -114,8 +114,8 @@ serve(async (req) => {
       });
       
       return new Response(
-        JSON.stringify({ success: true, message: 'Logged (no Slack webhook configured)' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, message: 'SLACK_WEBHOOK_URL not configured — reminder not sent' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

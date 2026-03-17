@@ -12,9 +12,9 @@ const corsHeaders = {
 // SEC-compliant User-Agent with explicit product name + contact
 const SEC_USER_AGENT = "InsiderPulse/1.0 (contact: support@insiderpulse.org)";
 
-// Track first N parse errors for debugging
+// Track parse errors — increased cap so systemic failures (e.g. SEC schema changes) don't go silent
 let debugErrorCount = 0;
-const MAX_DEBUG_ERRORS = 5;
+const MAX_DEBUG_ERRORS = 50; // was 5 — too low, systemic failures would go completely silent
 
 // Parse Form 4 XML using fast-xml-parser with removeNSPrefix
 function parseForm4XML(xmlText: string): {

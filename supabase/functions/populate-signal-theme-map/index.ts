@@ -322,6 +322,8 @@ serve(async (req) => {
 
     // Build ticker to theme mapping (reverse lookup)
     const tickerToThemes = new Map<string, string[]>();
+    // FIX: Also build a keyword → theme index to avoid O(n × themes × tickers) per signal
+    const keywordToTheme = new Map<string, string>();
     for (const [themeName, tickers] of Object.entries(THEME_TICKERS)) {
       for (const ticker of tickers) {
         const key = ticker.toUpperCase();
@@ -329,6 +331,10 @@ serve(async (req) => {
           tickerToThemes.set(key, []);
         }
         tickerToThemes.get(key)!.push(themeName);
+        // Pre-index keyword → first theme for O(1) keyword lookup
+        if (!keywordToTheme.has(ticker.toLowerCase())) {
+          keywordToTheme.set(ticker.toLowerCase(), themeName);
+        }
       }
     }
 
@@ -429,18 +435,17 @@ serve(async (req) => {
           }
         }
 
-        // Strategy 4: Keyword matching in value_text (medium confidence)
+        // Strategy 4: Keyword matching in value_text - O(1) via pre-built index
         if (!themeName && signal.value_text) {
           const textLower = signal.value_text.toLowerCase();
-          outer: for (const [name, tickers] of Object.entries(THEME_TICKERS)) {
-            for (const ticker of tickers.slice(0, 30)) { // Check first 30 tickers per theme
-              if (textLower.includes(ticker.toLowerCase()) || 
-                  textLower.includes(` ${ticker.toLowerCase()} `)) {
-                themeName = name;
-                relevanceScore = 0.4;
-                mappingStats.byKeyword++;
-                break outer;
-              }
+          const words = textLower.split(/\s+/);
+          for (const word of words) {
+            const cleanWord = word.replace(/[^a-z0-9]/g, '');
+            if (cleanWord.length >= 2 && keywordToTheme.has(cleanWord)) {
+              themeName = keywordToTheme.get(cleanWord)!;
+              relevanceScore = 0.4;
+              mappingStats.byKeyword++;
+              break;
             }
           }
         }
