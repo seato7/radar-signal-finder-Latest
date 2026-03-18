@@ -15,7 +15,7 @@ const corsHeaders = {
 //    (requires unique constraint from migration)
 
 const PRICE_CHUNK_SIZE = 500;  // tickers per price fetch query
-const PRICE_DAYS_LOOKBACK = 60; // days of price history to fetch
+const PRICE_DAYS_LOOKBACK = 90; // days of price history to fetch
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -72,7 +72,7 @@ serve(async (req) => {
         .in('ticker', tickerChunk)
         .gte('date', cutoffStr)
         .order('date', { ascending: false })
-        .limit(PRICE_CHUNK_SIZE * PRICE_DAYS_LOOKBACK); // max rows = 500 tickers × 60 days
+        .limit(PRICE_CHUNK_SIZE * PRICE_DAYS_LOOKBACK); // max rows = 500 tickers × 90 days
 
       if (prices) {
         for (const price of prices) {
@@ -95,7 +95,7 @@ serve(async (req) => {
         const prices = priceMap.get(asset.ticker) || [];
 
         // Real data only: skip assets without sufficient price data
-        if (prices.length < 10) {
+        if (prices.length < 5) {
           skipCount++;
           continue;
         }
