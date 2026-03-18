@@ -112,7 +112,7 @@ serve(async (req) => {
       function_name: 'snapshot-daily-scores',
       status: 'success',
       rows_inserted: snapshots.length,
-      duration_ms: Date.now() - new Date().getTime(),
+      duration_ms: Date.now() - startTime,
       metadata: { date: today, total_assets: allAssets.length, scored_assets: scoredAssets.length }
     }).then(() => {}).catch(() => {}); // non-critical — don't fail snapshot if logging fails
 
