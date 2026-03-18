@@ -16,7 +16,7 @@ class SupabaseSync:
     """Syncs data from Railway backend to Supabase"""
     
     def __init__(self):
-        self.url = settings.SUPABASE_URL
+        self.url = (settings.SUPABASE_URL or '').rstrip('/')
         self.key = settings.SUPABASE_SERVICE_KEY
         self.session: Optional[httpx.AsyncClient] = None
         
@@ -137,7 +137,7 @@ class SupabaseSync:
                     failed += len(batch)
                     error_msg = f"Supabase error {response.status_code}: {response.text[:200]}"
                     errors.append(error_msg)
-                    logger.warning(f"Ingestion log insert error: {error_msg}")
+                    logger.error(f"price_ingestion_log insert FAILED: {error_msg}")
                     
             except Exception as e:
                 failed += len(batch)

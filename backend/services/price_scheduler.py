@@ -332,8 +332,10 @@ async def _run_tiered_price_batch():
                 
                 # Sync per-ticker ingestion logs
                 if ingestion_logs:
-                    logs_inserted, logs_failed, _ = await sync.upsert_ingestion_logs(ingestion_logs)
-                    logger.debug(f"📝 Ingestion logs: {logs_inserted} inserted, {logs_failed} failed")
+                    logs_inserted, logs_failed, log_errors = await sync.upsert_ingestion_logs(ingestion_logs)
+                    logger.info(f"📝 Ingestion logs: {logs_inserted} inserted, {logs_failed} failed")
+                    if logs_failed > 0:
+                        logger.error(f"❌ price_ingestion_log write failures: {logs_failed} rows failed — errors: {log_errors[:3]}")
                 
                 # Update tier offset
                 tier_stat["offset"] = end_offset
