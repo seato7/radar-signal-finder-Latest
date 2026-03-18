@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { SlackAlerter } from '../_shared/slack-alerts.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -346,6 +347,23 @@ Deno.serve(async (req) => {
         winsorize_threshold: MAX_RETURN_WINSORIZE,
       },
     });
+
+    // Alert if predictions existed but none were graded — silent failure condition
+    if (gradedCount === 0 && ungraded.length > 0) {
+      const alerter = new SlackAlerter();
+      await alerter.sendCriticalAlert({
+        type: 'no_data_found',
+        etlName: 'grade-predictions-1d',
+        message: `grade-predictions-1d ran with ${ungraded.length} ungraded prediction(s) but graded 0. All were skipped — T1 prices likely missing for all tickers.`,
+        details: {
+          ungraded_count: String(ungraded.length),
+          dates_scanned: datesFound.join(', '),
+          skipped_no_prices: String(totalSkippedNoPrices),
+          horizon,
+          scan_range: `${scanFrom} to ${scanTo}`,
+        },
+      });
+    }
 
     console.log(`grade-predictions-1d completed in ${duration}ms`);
 
