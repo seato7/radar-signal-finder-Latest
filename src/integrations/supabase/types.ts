@@ -2361,6 +2361,7 @@ export type Database = {
           target_price: number | null
           ticker: string
           timeframe: string | null
+          updated_at: string | null
           volume_confirmed: boolean | null
         }
         Insert: {
@@ -2381,6 +2382,7 @@ export type Database = {
           target_price?: number | null
           ticker: string
           timeframe?: string | null
+          updated_at?: string | null
           volume_confirmed?: boolean | null
         }
         Update: {
@@ -2401,6 +2403,7 @@ export type Database = {
           target_price?: number | null
           ticker?: string
           timeframe?: string | null
+          updated_at?: string | null
           volume_confirmed?: boolean | null
         }
         Relationships: [
