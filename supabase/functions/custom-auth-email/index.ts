@@ -234,7 +234,7 @@ const handler = async (req: Request): Promise<Response> => {
               code: "EMAIL_EXISTS"
             }),
             {
-              status: 409, // 409 Conflict - frontend can distinguish from success
+              status: 200, // Return 200 so supabase.functions.invoke() parses the body correctly
               headers: { "Content-Type": "application/json", ...corsHeaders },
             }
           );
