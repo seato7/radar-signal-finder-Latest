@@ -219,7 +219,7 @@ function detectPatterns(prices: any[], asset: any) {
 
   if (highs.length >= 2) {
     const [idx1, idx2] = highs.slice(-2);
-    if (Math.abs(closes[idx1] - closes[idx2]) / closes[idx1] < 0.03) {
+    if (Math.abs(closes[idx1] - closes[idx2]) / closes[idx1] < 0.06) {
       const dtPatternStart = closes[idx1];
       const dtPatternEnd = closes[idx2];
       const dtRange = Math.abs(dtPatternEnd - dtPatternStart);
@@ -256,7 +256,7 @@ function detectPatterns(prices: any[], asset: any) {
 
   if (lows.length >= 2) {
     const [idx1, idx2] = lows.slice(-2);
-    if (Math.abs(closes[idx1] - closes[idx2]) / closes[idx1] < 0.03) {
+    if (Math.abs(closes[idx1] - closes[idx2]) / closes[idx1] < 0.06) {
       const dbPatternStart = closes[idx1];
       const dbPatternEnd = closes[idx2];
       const dbRange = Math.abs(dbPatternEnd - dbPatternStart);
