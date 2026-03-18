@@ -114,7 +114,7 @@ serve(async (req) => {
       rows_inserted: snapshots.length,
       duration_ms: Date.now() - new Date().getTime(),
       metadata: { date: today, total_assets: allAssets.length, scored_assets: scoredAssets.length }
-    }).catch(() => {}); // non-critical — don't fail snapshot if logging fails
+    }).then(() => {}).catch(() => {}); // non-critical — don't fail snapshot if logging fails
 
     return new Response(
       JSON.stringify({
