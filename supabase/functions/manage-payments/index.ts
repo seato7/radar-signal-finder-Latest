@@ -8,12 +8,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const ALLOWED_CURRENCIES = ['USD', 'AUD', 'GBP', 'EUR', 'CAD'];
+
+function detectCurrency(req: Request, body?: Record<string, unknown>): string {
+  if (body?.currency && typeof body.currency === 'string' &&
+      ALLOWED_CURRENCIES.includes(body.currency.toUpperCase())) {
+    return body.currency.toUpperCase();
+  }
+  const acceptLang = req.headers.get('Accept-Language') || '';
+  if (acceptLang.includes('en-AU')) return 'AUD';
+  if (acceptLang.includes('en-GB')) return 'GBP';
+  if (acceptLang.includes('en-CA')) return 'CAD';
+  if (/\b(fr|de|es|it|nl)\b/.test(acceptLang)) return 'EUR';
+  return 'USD';
+}
+
+function getPlans(currency: string) {
+  return PLANS.map(p => ({ ...p, currency }));
+}
+
+const ALLOWED_ORIGINS = [
+  'https://insiderpulse.org',
+  'https://www.insiderpulse.org',
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+
+function safeOrigin(req: Request): string {
+  const origin = req.headers.get('origin') || '';
+  return ALLOWED_ORIGINS.includes(origin) ? origin : 'https://insiderpulse.org';
+}
+
 const PLANS = [
   {
     id: 'free',
     name: 'Free',
     price: 0,
-    currency: 'AUD',
+    currency: 'USD',
     features: {
       max_bots: 1,
       max_alerts: 10,
@@ -27,7 +58,7 @@ const PLANS = [
     id: 'lite',
     name: 'Lite',
     price: 19,
-    currency: 'AUD',
+    currency: 'USD',
     stripe_price_id: 'price_lite_monthly',
     features: {
       max_bots: 3,
@@ -42,7 +73,7 @@ const PLANS = [
     id: 'pro',
     name: 'Pro',
     price: 49,
-    currency: 'AUD',
+    currency: 'USD',
     stripe_price_id: 'price_pro_monthly',
     features: {
       max_bots: 10,
@@ -71,7 +102,8 @@ serve(async (req) => {
   try {
     // Get plans endpoint (public)
     if (url.pathname.endsWith('/plans')) {
-      return new Response(JSON.stringify({ plans: PLANS }), {
+      const currency = detectCurrency(req);
+      return new Response(JSON.stringify({ plans: getPlans(currency) }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -109,7 +141,7 @@ serve(async (req) => {
       }
 
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2025-08-27.basil',
+        apiVersion: '2024-11-20',
       });
 
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
@@ -128,8 +160,8 @@ serve(async (req) => {
         client_reference_id: user.id,
         line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
         mode: 'subscription',
-        success_url: `${req.headers.get('origin')}/settings?success=true`,
-        cancel_url: `${req.headers.get('origin')}/pricing`,
+        success_url: `${safeOrigin(req)}/settings?success=true`,
+        cancel_url: `${safeOrigin(req)}/pricing`,
         metadata: {
           user_id: user.id,
           plan_id: plan.id
@@ -144,7 +176,7 @@ serve(async (req) => {
     // Webhook handler for Stripe events
     if (req.method === 'POST' && url.pathname.endsWith('/webhook')) {
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2025-08-27.basil',
+        apiVersion: '2024-11-20',
       });
       
       const signature = req.headers.get('stripe-signature') || '';
@@ -210,7 +242,7 @@ serve(async (req) => {
     // Customer portal
     if (url.pathname.endsWith('/portal')) {
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2025-08-27.basil',
+        apiVersion: '2024-11-20',
       });
 
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
@@ -218,7 +250,7 @@ serve(async (req) => {
 
       const session = await stripe.billingPortal.sessions.create({
         customer: customers.data[0].id,
-        return_url: `${req.headers.get('origin')}/settings`,
+        return_url: `${safeOrigin(req)}/settings`,
       });
 
       return new Response(JSON.stringify({ url: session.url }), {

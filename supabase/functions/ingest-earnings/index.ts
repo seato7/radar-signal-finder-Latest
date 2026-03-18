@@ -20,7 +20,7 @@ interface EarningsData {
   quarter: string;
   earnings_date: string;
   earnings_surprise: number;
-  revenue_surprise: number;
+  revenue_surprise: number | null;
   sentiment_score: number;
   metadata: Record<string, any>;
   created_at: string;
@@ -121,7 +121,7 @@ async function fetchAlphaVantageEarnings(
       quarter: quarter.substring(0, 10),
       earnings_date: latest.reportedDate || latest.fiscalDateEnding,
       earnings_surprise: Math.max(-100, Math.min(100, surprisePercentage)),
-      revenue_surprise: 0, // Alpha Vantage doesn't provide revenue surprise data
+      revenue_surprise: null, // Alpha Vantage doesn't provide revenue surprise data
       sentiment_score: sentiment,
       metadata: {
         source: 'alpha_vantage',

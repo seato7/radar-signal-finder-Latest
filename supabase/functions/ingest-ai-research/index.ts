@@ -237,7 +237,7 @@ Deno.serve(async (req) => {
     const { data: recentReports } = await supabaseClient
       .from('ai_research_reports')
       .select('ticker')
-      .gte('created_at', new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString());
+      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     const recentlyProcessed = new Set(recentReports?.map(r => r.ticker) || []);
 
@@ -255,8 +255,9 @@ Deno.serve(async (req) => {
     for (const asset of allAssets) {
       const isPriority = PRIORITY_TICKERS.includes(asset.ticker);
       const isRecent = recentlyProcessed.has(asset.ticker);
-      const totalSignals = (asset.flow_signals || 0) + (asset.institutional_signals || 0) + 
-                          (asset.insider_signals || 0) + (asset.technical_signals || 0);
+      const totalSignals = (asset.flow_signals || 0) + (asset.institutional_signals || 0) +
+                          (asset.insider_signals || 0) + (asset.technical_signals || 0) +
+                          (asset.sentiment_signals || 0);
 
       if (isPriority && !isRecent) {
         priorityAssets.push(asset);
@@ -271,8 +272,8 @@ Deno.serve(async (req) => {
 
     // Sort high signal assets by total signals
     highSignalAssets.sort((a, b) => {
-      const aTotal = (a.flow_signals || 0) + (a.institutional_signals || 0);
-      const bTotal = (b.flow_signals || 0) + (b.institutional_signals || 0);
+      const aTotal = (a.flow_signals || 0) + (a.institutional_signals || 0) + (a.sentiment_signals || 0);
+      const bTotal = (b.flow_signals || 0) + (b.institutional_signals || 0) + (b.sentiment_signals || 0);
       return bTotal - aTotal;
     });
 

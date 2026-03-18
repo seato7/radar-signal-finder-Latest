@@ -214,21 +214,36 @@ function detectPatterns(prices: any[], asset: any) {
   if (highs.length >= 2) {
     const [idx1, idx2] = highs.slice(-2);
     if (Math.abs(closes[idx1] - closes[idx2]) / closes[idx1] < 0.03) {
+      const dtPatternStart = closes[idx1];
+      const dtPatternEnd = closes[idx2];
+      const dtRange = Math.abs(dtPatternEnd - dtPatternStart);
+      const dtCompletionPct = dtRange > 0
+        ? Math.max(0, Math.min(100, Math.round((Math.abs(currentPrice - dtPatternStart) / dtRange) * 100)))
+        : 85;
+      const dtRecent = closes.slice(-10);
+      const dtConsistency = dtRecent.length > 1
+        ? dtRecent.filter((c: number, i: number, arr: number[]) => i > 0 && c < arr[i - 1]).length / (dtRecent.length - 1)
+        : 0.5;
+      const dtConfidence = Math.round(60 + (dtConsistency * 30));
+      const dtVols = prices.map((p: any) => p.volume || 0).reverse();
+      const dtAvgRecent = dtVols.slice(-3).reduce((s: number, v: number) => s + v, 0) / 3;
+      const dtAvgPrior = dtVols.slice(-13, -3).reduce((s: number, v: number) => s + v, 0) / 10;
+      const dtVolConfirmed = dtAvgPrior > 0 && dtAvgRecent > dtAvgPrior;
       patterns.push({
         ticker: asset.ticker.substring(0, 50),
         asset_id: asset.id,
         pattern_type: 'double_top',
         pattern_category: 'reversal',
         timeframe: 'daily',
-        pattern_completion_pct: 85,
+        pattern_completion_pct: dtCompletionPct,
         entry_price: currentPrice,
         target_price: currentPrice * 0.95,
         stop_loss_price: currentPrice * 1.02,
         risk_reward_ratio: 2.5,
-        confidence_score: 72,
+        confidence_score: dtConfidence,
         historical_success_rate: 65,
         status: 'confirmed',
-        volume_confirmed: true,
+        volume_confirmed: dtVolConfirmed,
       });
     }
   }
@@ -236,21 +251,36 @@ function detectPatterns(prices: any[], asset: any) {
   if (lows.length >= 2) {
     const [idx1, idx2] = lows.slice(-2);
     if (Math.abs(closes[idx1] - closes[idx2]) / closes[idx1] < 0.03) {
+      const dbPatternStart = closes[idx1];
+      const dbPatternEnd = closes[idx2];
+      const dbRange = Math.abs(dbPatternEnd - dbPatternStart);
+      const dbCompletionPct = dbRange > 0
+        ? Math.max(0, Math.min(100, Math.round((Math.abs(currentPrice - dbPatternStart) / dbRange) * 100)))
+        : 80;
+      const dbRecent = closes.slice(-10);
+      const dbConsistency = dbRecent.length > 1
+        ? dbRecent.filter((c: number, i: number, arr: number[]) => i > 0 && c > arr[i - 1]).length / (dbRecent.length - 1)
+        : 0.5;
+      const dbConfidence = Math.round(60 + (dbConsistency * 30));
+      const dbVols = prices.map((p: any) => p.volume || 0).reverse();
+      const dbAvgRecent = dbVols.slice(-3).reduce((s: number, v: number) => s + v, 0) / 3;
+      const dbAvgPrior = dbVols.slice(-13, -3).reduce((s: number, v: number) => s + v, 0) / 10;
+      const dbVolConfirmed = dbAvgPrior > 0 && dbAvgRecent > dbAvgPrior;
       patterns.push({
         ticker: asset.ticker.substring(0, 50),
         asset_id: asset.id,
         pattern_type: 'double_bottom',
         pattern_category: 'reversal',
         timeframe: 'daily',
-        pattern_completion_pct: 80,
+        pattern_completion_pct: dbCompletionPct,
         entry_price: currentPrice,
         target_price: currentPrice * 1.05,
         stop_loss_price: currentPrice * 0.98,
         risk_reward_ratio: 2.5,
-        confidence_score: 70,
+        confidence_score: dbConfidence,
         historical_success_rate: 68,
         status: 'confirmed',
-        volume_confirmed: true,
+        volume_confirmed: dbVolConfirmed,
       });
     }
   }
@@ -260,21 +290,28 @@ function detectPatterns(prices: any[], asset: any) {
     const veryRecentRange = Math.max(...closes.slice(-5)) - Math.min(...closes.slice(-5));
 
     if (recentRange > 0 && veryRecentRange / recentRange < 0.4) {
+      const stConsistency = 1 - (veryRecentRange / recentRange);
+      const stCompletionPct = Math.max(0, Math.min(100, Math.round(stConsistency * 100)));
+      const stConfidence = Math.round(60 + (stConsistency * 30));
+      const stVols = prices.map((p: any) => p.volume || 0).reverse();
+      const stAvgRecent = stVols.slice(-3).reduce((s: number, v: number) => s + v, 0) / 3;
+      const stAvgPrior = stVols.slice(-13, -3).reduce((s: number, v: number) => s + v, 0) / 10;
+      const stVolConfirmed = stAvgPrior > 0 && stAvgRecent > stAvgPrior;
       patterns.push({
         ticker: asset.ticker.substring(0, 50),
         asset_id: asset.id,
         pattern_type: 'symmetrical_triangle',
         pattern_category: 'bilateral',
         timeframe: 'daily',
-        pattern_completion_pct: 75,
+        pattern_completion_pct: stCompletionPct,
         entry_price: currentPrice,
         target_price: currentPrice * 1.06,
         stop_loss_price: currentPrice * 0.96,
         risk_reward_ratio: 1.5,
-        confidence_score: 65,
+        confidence_score: stConfidence,
         historical_success_rate: 55,
         status: 'forming',
-        volume_confirmed: false,
+        volume_confirmed: stVolConfirmed,
       });
     }
   }

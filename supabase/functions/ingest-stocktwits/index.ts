@@ -157,7 +157,8 @@ function extractSentimentFromContent(markdown: string): {
     if (matches) bearish += matches.length;
   }
   
-  const messageCountMatch = markdown.match(/(\d+)\s*messages?/i);
+  const cleanText = markdown.replace(/,(\d)/g, '$1');
+  const messageCountMatch = cleanText.match(/(\d+)\s*messages?/i);
   const total = messageCountMatch ? parseInt(messageCountMatch[1]) : Math.max(bullish + bearish, 5);
   
   // Extract sample content

@@ -318,7 +318,7 @@ serve(async (req) => {
       const batchSize = 50;
       for (let i = 0; i < uniqueSignals.length; i += batchSize) {
         const batch = uniqueSignals.slice(i, i + batchSize);
-        const { error } = await supabase!.from('supply_chain_signals' as any).upsert(batch as any, { onConflict: 'ticker,signal_type,report_date' });
+        const { error } = await supabase.from('supply_chain_signals' as any).upsert(batch as any, { onConflict: 'ticker,signal_type,report_date' });
         
         if (error) {
           console.error(`Insert error:`, error.message);
