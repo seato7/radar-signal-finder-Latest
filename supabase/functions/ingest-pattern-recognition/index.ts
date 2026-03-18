@@ -109,7 +109,8 @@ serve(async (req) => {
           skipCount++;
         }
 
-      } catch {
+      } catch (assetErr) {
+        console.error(`detectPatterns error for ${asset.ticker}:`, (assetErr as Error).message);
         skipCount++;
       }
     }
@@ -134,21 +135,26 @@ serve(async (req) => {
     const duration = Date.now() - startTime;
     console.log(`✅ Pattern recognition complete: ${successCount} assets with patterns, ${allPatterns.length} total patterns, ${skipCount} skipped, ${insertErrors} batch errors`);
 
+    const finalStatus = insertErrors > 0 ? 'partial' : 'success';
+    if (insertErrors > 0) {
+      console.error(`⚠️ ${insertErrors} upsert batch(es) failed — check column schema on pattern_recognition table`);
+    }
     await supabase.from('function_status').insert({
       function_name: 'ingest-pattern-recognition',
       executed_at: new Date().toISOString(),
-      status: 'success',
+      status: finalStatus,
       rows_inserted: allPatterns.length,
       rows_skipped: skipCount,
       fallback_used: null,
       duration_ms: duration,
       source_used: 'Pattern Recognition Engine',
-      error_message: null,
+      error_message: insertErrors > 0 ? `${insertErrors} upsert batch(es) failed` : null,
       metadata: {
         assets_processed: allAssets.length,
         assets_with_patterns: successCount,
         patterns_found: allPatterns.length,
         price_tickers_loaded: priceMap.size,
+        insert_batch_errors: insertErrors,
         version: 'v6_real_data_only',
       },
     });
