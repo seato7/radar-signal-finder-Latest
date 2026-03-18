@@ -117,11 +117,11 @@ serve(async (req) => {
           .in('ticker', allTickers);
 
         if (priceErr) {
-          console.warn(`[backfill-top-gainers] Price fetch error for ${date}:`, priceErr.message);
+          console.warn(`[backfill-top-gainers] Price fetch error for ${date}:`, priceErr?.message);
           continue;
         }
 
-        if (dayPrices && dayPrices.length > 0) {
+        if (dayPrices && dayPrices!.length > 0) {
           for (const p of dayPrices as Array<{ ticker: string; close: number }>) {
             if (!priceMap[p.ticker]) priceMap[p.ticker] = {};
             priceMap[p.ticker][date] = p.close;

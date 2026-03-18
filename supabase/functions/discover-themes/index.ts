@@ -88,7 +88,7 @@ Only suggest themes with at least 3 supporting signals.`;
       suggestions_text: suggestions,
       generated_at: new Date().toISOString(),
       model: 'gemini-2.5-flash',
-    }, { onConflict: 'generated_at', ignoreDuplicates: false }).catch(() => {
+    }, { onConflict: 'generated_at', ignoreDuplicates: false }).then(() => {}).catch(() => {
       // Table may not exist — log but don't fail the response
       console.log('[discover-themes] Could not persist to DB — table may not exist yet');
     });
