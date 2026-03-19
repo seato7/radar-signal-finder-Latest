@@ -34,9 +34,9 @@ serve(async (req) => {
     }
 
     const duration = Date.now() - startTime;
-    await logHeartbeat(supabaseClient, { function_name: 'bot-scheduler', status: errorCount === 0 ? 'success' : 'failure', rows_inserted: processedCount, duration_ms: duration, source_used: 'bots', metadata: { errors: errorCount, totalBots: bots?.length || 0 } });
-    
+
     if ((bots && bots.length > 0) || errorCount > 0) {
+      await logHeartbeat(supabaseClient, { function_name: 'bot-scheduler', status: errorCount === 0 ? 'success' : 'failure', rows_inserted: processedCount, duration_ms: duration, source_used: 'bots', metadata: { errors: errorCount, totalBots: bots?.length || 0 } });
       await slackAlerter.sendLiveAlert({ etlName: 'bot-scheduler', status: errorCount === 0 ? 'success' : 'partial', duration, latencyMs: duration, rowsInserted: processedCount, metadata: { errors: errorCount, totalBots: bots?.length || 0 } });
     }
 
