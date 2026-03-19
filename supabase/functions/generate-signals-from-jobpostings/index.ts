@@ -180,17 +180,17 @@ serve(async (req) => {
       function_name: 'generate-signals-from-jobpostings',
       status: 'failure',
       duration_ms: duration,
-      error_message: error instanceof Error ? error.message : 'Unknown error',
+      error_message: error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error)),
     });
     
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'generate-signals-from-jobpostings',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error)),
     });
     
     return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+      error: error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error)) 
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

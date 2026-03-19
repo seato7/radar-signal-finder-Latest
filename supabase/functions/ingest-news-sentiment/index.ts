@@ -49,6 +49,7 @@ serve(async (req) => {
     const aggregates: { [key: string]: any } = {};
 
     for (const item of news) {
+      if (!item.ticker) continue;
       const dateKey = item.published_at ? new Date(item.published_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
       const key = `${item.ticker}-${dateKey}`;
 
@@ -155,13 +156,13 @@ serve(async (req) => {
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
       source_used: 'Aggregation',
-      error_message: error instanceof Error ? error.message : 'Unknown error',
+      error_message: error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error)),
     });
     
     await slackAlerter.sendCriticalAlert({
       type: 'halted',
       etlName: 'ingest-news-sentiment',
-      message: `News sentiment aggregation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      message: `News sentiment aggregation failed: ${error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error))}`,
     });
     
     return new Response(

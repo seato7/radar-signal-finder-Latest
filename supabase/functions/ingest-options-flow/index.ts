@@ -46,8 +46,9 @@ serve(async (req) => {
   }
 
   // Resolve Railway base URL
-  const railwayBaseUrl = Deno.env.get('RAILWAY_BASE_URL') || Deno.env.get('BACKEND_BASE_URL');
-  
+  const railwayBaseUrl = (Deno.env.get('RAILWAY_BASE_URL') || Deno.env.get('BACKEND_BASE_URL') || '').replace(/\/$/, '');
+  const safeUrl = railwayBaseUrl.startsWith('http') ? railwayBaseUrl : `https://${railwayBaseUrl}`;
+
   if (!railwayBaseUrl) {
     const errorMsg = 'Missing RAILWAY_BASE_URL/BACKEND_BASE_URL environment variable';
     console.error(`[ERROR] ${errorMsg}`);
@@ -80,7 +81,7 @@ serve(async (req) => {
   }
 
   // Build request to Railway
-  const railwayEndpoint = `${railwayBaseUrl.replace(/\/$/, '')}/api/options/ingest`;
+  const railwayEndpoint = `${safeUrl}/api/options/ingest`;
   const backendJwt = Deno.env.get('BACKEND_JWT');
   
   const headers: Record<string, string> = {
@@ -408,7 +409,7 @@ serve(async (req) => {
       error_message: errorMsg,
       metadata: {
         version: 'v12_railway_trigger',
-        railway_endpoint: railwayBaseUrl ? `${railwayBaseUrl}/api/options/ingest` : 'unknown',
+        railway_endpoint: railwayBaseUrl ? `${safeUrl}/api/options/ingest` : 'unknown',
         tickers_requested: tickers.length,
         debug_mode: debug,
         is_timeout: isTimeout,
