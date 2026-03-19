@@ -97,9 +97,9 @@ serve(async (req) => {
           ? dateJobs.reduce((sum, j) => sum + (j.growth_indicator || 0), 0) / dateJobs.length
           : 0; // guard: prevent NaN when denominator is 0
         
-        // Magnitude on 0-5 scale (normalised from 0-1 * 5)
+        // Magnitude on 0-1 scale
         const baseMagnitude = Math.abs(count / 10) + Math.abs(avgGrowth || 0) * 2.5;
-        const magnitude = Math.max(0, Math.min(5, baseMagnitude)); // Normalised to 0-5 scale
+        const magnitude = Math.max(0, Math.min(1, baseMagnitude)); // Normalised to 0-1 scale
         const direction = avgGrowth > 0.1 ? 'up' : avgGrowth < -0.1 ? 'down' : 'neutral';
         
         const signalData = {

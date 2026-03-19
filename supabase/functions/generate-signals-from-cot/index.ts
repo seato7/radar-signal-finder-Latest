@@ -77,7 +77,7 @@ serve(async (req) => {
       // Use actual net positions (not sum of absolutes) to avoid inflating denominator
       // when long/short are opposite-signed they should partially cancel out
       const totalPositions = Math.abs((report.noncommercial_net || 0) + (report.commercial_net || 0)) || 1;
-      const magnitude = Math.min(5, (Math.abs(netChange) / totalPositions) * 5); // Normalised to 0-5 scale
+      const magnitude = Math.min(1, Math.abs(netChange) / totalPositions); // Normalised to 0-1 scale
 
       const signalData = {
         ticker: report.ticker,
