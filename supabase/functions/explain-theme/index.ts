@@ -47,11 +47,11 @@ serve(async (req) => {
         `${s.signal_type} (magnitude: ${s.magnitude?.toFixed(2)}): ${s.value_text?.substring(0, 100)}`
       ).join('\n');
 
-      const response = await fetch('https://api.lovable.app/v1/chat/completions', {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'gemini-2.5-flash',
+          model: 'google/gemini-2.5-flash',
           max_tokens: 300,
           messages: [{
             role: 'user',
