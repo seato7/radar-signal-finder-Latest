@@ -9,6 +9,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Tavily search — called conditionally when message contains tickers or market keywords
+async function searchTavily(query: string, supabase: any): Promise<string> {
+  try {
+    const { data, error } = await supabase.functions.invoke('search-tavily', {
+      body: { query, max_results: 3, search_depth: 'basic' },
+    });
+    if (error || !data) return '';
+    const parts: string[] = [];
+    if (data.answer) parts.push(data.answer);
+    if (data.results?.length) {
+      parts.push(
+        data.results
+          .map((r: any) => `${r.title}: ${(r.content || '').substring(0, 300)}`)
+          .join('\n')
+      );
+    }
+    return parts.join('\n\n');
+  } catch (err) {
+    console.error('Tavily search error:', err);
+    return '';
+  }
+}
+
 // Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
   const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY');
@@ -71,6 +94,7 @@ serve(async (req) => {
     // Fetch real-time market data from Supabase
     let marketData = '';
     let webSearchResults = '';
+    let tavilyResults = '';
     
     try {
       // Fetch ALL 36 data sources from Supabase
@@ -421,7 +445,13 @@ serve(async (req) => {
         : `Latest financial news and market developments: ${userQuery}`;
       
       webSearchResults = await searchWeb(searchQuery);
-      
+
+      // Tavily: targeted real-time search triggered by ticker symbols or market keywords
+      const TAVILY_TRIGGER = /\b(news|today|latest|what happened|why is|price|moving)\b|\b[A-Z]{2,5}\b/;
+      if (TAVILY_TRIGGER.test(userQuery)) {
+        tavilyResults = await searchTavily(userQuery, supabase);
+      }
+
     } catch (error) {
       console.error('Error fetching market data:', error);
       marketData = '\n\n[Note: Real-time data temporarily unavailable]';
@@ -555,6 +585,9 @@ InsiderPulse covers ALL tradeable assets: Stocks, ETFs, Forex, Crypto, Commoditi
 
 ===== PLATFORM DATA (37 SOURCES) =====
 ${marketData || '[Platform initializing - data will populate as signals are ingested]'}
+
+===== REAL-TIME MARKET INTELLIGENCE (Tavily) =====
+${tavilyResults || '[No targeted search performed for this query]'}
 
 ===== REAL-TIME WEB SEARCH =====
 ${webSearchResults || '[Web search results will appear here]'}
