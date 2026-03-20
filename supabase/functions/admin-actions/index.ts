@@ -120,7 +120,7 @@ serve(async (req) => {
         });
 
       // Audit log
-      await supabaseClient.from('function_status').insert({ function_name: 'admin-actions:make-admin', status: 'success', rows_inserted: 1, metadata: { action: 'make-admin', target_email: email, new_role: newRole, performed_by: user.id } }).then(() => {}).catch(() => {});
+      try { await supabaseClient.from('function_status').insert({ function_name: 'admin-actions:make-admin', status: 'success', rows_inserted: 1, metadata: { action: 'make-admin', target_email: email, new_role: newRole, performed_by: user.id } }); } catch {}
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
