@@ -122,21 +122,30 @@ serve(async (req) => {
       );
     }
 
+    // Deduplicate by ticker+quarter — Finnhub can return the same pair multiple times
+    const seen = new Set<string>();
+    const dedupedRows = rows.filter(row => {
+      const key = `${row.ticker}:${row.quarter}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
     // Upsert — ignoreDuplicates: false so estimates get refreshed on each run
     const { error: upsertError } = await supabase
       .from('earnings_sentiment')
-      .upsert(rows, { onConflict: 'ticker,quarter', ignoreDuplicates: false });
+      .upsert(dedupedRows, { onConflict: 'ticker,quarter', ignoreDuplicates: false });
 
     if (upsertError) throw upsertError;
 
-    console.log(`[INGEST-FINNHUB-CALENDAR] ✅ Upserted ${rows.length} calendar events`);
+    console.log(`[INGEST-FINNHUB-CALENDAR] ✅ Upserted ${dedupedRows.length} calendar events (${rows.length - dedupedRows.length} duplicates removed)`);
 
     const duration = Date.now() - startTime;
 
     await logHeartbeat(supabase, {
       function_name: 'ingest-finnhub-calendar',
       status: 'success',
-      rows_inserted: rows.length,
+      rows_inserted: dedupedRows.length,
       duration_ms: duration,
       source_used: 'finnhub_calendar',
     });
@@ -144,8 +153,8 @@ serve(async (req) => {
     await slackAlerter.sendLiveAlert({
       etlName: 'ingest-finnhub-calendar',
       status: 'success',
-      rowsInserted: rows.length,
-      rowsSkipped: calendarItems.length - rows.length,
+      rowsInserted: dedupedRows.length,
+      rowsSkipped: calendarItems.length - dedupedRows.length,
       sourceUsed: 'finnhub_calendar',
       duration,
       latencyMs: duration,
@@ -154,7 +163,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        inserted: rows.length,
+        inserted: dedupedRows.length,
+        duplicates_removed: rows.length - dedupedRows.length,
         total_events: calendarItems.length,
         unmatched: calendarItems.length - rows.length,
         window: { from, to },
