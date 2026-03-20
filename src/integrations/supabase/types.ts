@@ -244,6 +244,76 @@ export type Database = {
           },
         ]
       }
+      ai_scores: {
+        Row: {
+          ai_score: number | null
+          asset_id: string | null
+          confidence: number | null
+          created_at: string | null
+          direction: string | null
+          formula_score: number | null
+          hybrid_score: number | null
+          id: string
+          key_signals: Json | null
+          model_version: string | null
+          reasoning: string | null
+          scored_at: string | null
+          ticker: string
+        }
+        Insert: {
+          ai_score?: number | null
+          asset_id?: string | null
+          confidence?: number | null
+          created_at?: string | null
+          direction?: string | null
+          formula_score?: number | null
+          hybrid_score?: number | null
+          id?: string
+          key_signals?: Json | null
+          model_version?: string | null
+          reasoning?: string | null
+          scored_at?: string | null
+          ticker: string
+        }
+        Update: {
+          ai_score?: number | null
+          asset_id?: string | null
+          confidence?: number | null
+          created_at?: string | null
+          direction?: string | null
+          formula_score?: number | null
+          hybrid_score?: number | null
+          id?: string
+          key_signals?: Json | null
+          model_version?: string | null
+          reasoning?: string | null
+          scored_at?: string | null
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_scores_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "ai_scores_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_scores_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alert_history: {
         Row: {
           alert_type: string
@@ -519,6 +589,7 @@ export type Database = {
       }
       assets: {
         Row: {
+          ai_score: number | null
           asset_class: string | null
           base_currency: string | null
           computed_score: number | null
@@ -529,6 +600,7 @@ export type Database = {
           days_stale: number | null
           exchange: string
           expected_return: number | null
+          hybrid_score: number | null
           id: string
           last_price_date: string | null
           metadata: Json | null
@@ -545,6 +617,7 @@ export type Database = {
           ticker: string
         }
         Insert: {
+          ai_score?: number | null
           asset_class?: string | null
           base_currency?: string | null
           computed_score?: number | null
@@ -555,6 +628,7 @@ export type Database = {
           days_stale?: number | null
           exchange: string
           expected_return?: number | null
+          hybrid_score?: number | null
           id?: string
           last_price_date?: string | null
           metadata?: Json | null
@@ -571,6 +645,7 @@ export type Database = {
           ticker: string
         }
         Update: {
+          ai_score?: number | null
           asset_class?: string | null
           base_currency?: string | null
           computed_score?: number | null
@@ -581,6 +656,7 @@ export type Database = {
           days_stale?: number | null
           exchange?: string
           expected_return?: number | null
+          hybrid_score?: number | null
           id?: string
           last_price_date?: string | null
           metadata?: Json | null
