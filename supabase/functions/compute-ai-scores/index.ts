@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 5;
 const BATCH_DELAY_MS = 1000;
 const CACHE_HOURS = 6;
 const SIGNAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -227,8 +227,11 @@ serve(async (req) => {
       const totalBatches = Math.ceil(assetsToProcess.length / BATCH_SIZE);
       console.log(`[COMPUTE-AI-SCORES] Batch ${batchNum}/${totalBatches}: ${batch.map((a) => a.ticker).join(', ')}`);
 
-      const batchResults = await Promise.allSettled(
-        batch.map(async (asset) => {
+      // Process assets sequentially within the batch — 300ms between each call
+      // to avoid bursting 5-10 simultaneous requests against the gateway rate limit
+      for (let j = 0; j < batch.length; j++) {
+        const asset = batch[j];
+        try {
           const signals = signalsByAsset.get(asset.id) || [];
           const formulaScore = Number(asset.computed_score ?? 50);
 
@@ -241,52 +244,44 @@ serve(async (req) => {
           const llmContent = await callLLM(prompt, LOVABLE_API_KEY);
           if (!llmContent) {
             console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: callLLM returned null content`);
-            return null;
-          }
-
-          const parsed = parseAIResponse(llmContent);
-          if (!parsed) {
-            console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: failed to parse LLM response:`, llmContent.substring(0, 200));
-            return null;
-          }
-
-          const hybridScore = 0.4 * formulaScore + 0.6 * parsed.ai_score;
-
-          return {
-            asset_id: asset.id,
-            ticker: asset.ticker,
-            ai_score: parsed.ai_score,
-            confidence: parsed.confidence,
-            direction: parsed.direction,
-            reasoning: parsed.reasoning,
-            key_signals: parsed.key_signals,
-            formula_score: formulaScore,
-            hybrid_score: Math.round(hybridScore * 100) / 100,
-            model_version: 'v1_hybrid',
-          };
-        })
-      );
-
-      for (let j = 0; j < batchResults.length; j++) {
-        const result = batchResults[j];
-        const ticker = batch[j]?.ticker ?? 'unknown';
-        if (result.status === 'fulfilled' && result.value) {
-          aiScoreRows.push(result.value);
-        } else {
-          parseErrors++;
-          if (result.status === 'rejected') {
-            const msg = result.reason?.message || String(result.reason);
-            const isRateLimit = msg.includes('429') || msg.includes('Rate limited');
-            if (isRateLimit) rateLimitErrors++;
-            console.warn(`[COMPUTE-AI-SCORES] ${ticker}: REJECTED — ${msg}`);
+            parseErrors++;
           } else {
-            // fulfilled but returned null — already logged inside the map above
-            console.warn(`[COMPUTE-AI-SCORES] ${ticker}: returned null (parse or content failure)`);
+            const parsed = parseAIResponse(llmContent);
+            if (!parsed) {
+              console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: failed to parse LLM response:`, llmContent.substring(0, 200));
+              parseErrors++;
+            } else {
+              const hybridScore = 0.4 * formulaScore + 0.6 * parsed.ai_score;
+              aiScoreRows.push({
+                asset_id: asset.id,
+                ticker: asset.ticker,
+                ai_score: parsed.ai_score,
+                confidence: parsed.confidence,
+                direction: parsed.direction,
+                reasoning: parsed.reasoning,
+                key_signals: parsed.key_signals,
+                formula_score: formulaScore,
+                hybrid_score: Math.round(hybridScore * 100) / 100,
+                model_version: 'v1_hybrid',
+              });
+            }
           }
+        } catch (err) {
+          parseErrors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          const isRateLimit = msg.includes('429') || msg.includes('Rate limited');
+          if (isRateLimit) rateLimitErrors++;
+          console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: REJECTED — ${msg}`);
+        }
+
+        // 300ms pause between individual asset calls (skip after last asset in last batch)
+        const isLastAsset = i + j + 1 >= assetsToProcess.length;
+        if (!isLastAsset) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
       }
 
-      // Delay between batches (skip after last)
+      // Inter-batch delay (skip after last batch)
       if (i + BATCH_SIZE < assetsToProcess.length) {
         await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
       }
