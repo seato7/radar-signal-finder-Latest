@@ -412,7 +412,7 @@ serve(async (req) => {
       if (assetSummary.data && assetSummary.data.length > 0) {
         marketData += `\n\nTOP ASSETS BY SIGNAL ACTIVITY:\n`;
         assetSummary.data.forEach((a: any) => {
-          marketData += `- ${a.ticker} (${a.name}): ${a.asset_class || 'stock'}, Score: ${a.computed_score?.toFixed(1) || 'N/A'}\n`;
+          marketData += `- ${a.ticker} (${a.name}): ${a.asset_class || 'stock'}, Score: ${(a.hybrid_score ?? a.computed_score)?.toFixed(1) || 'N/A'}\n`;
         });
       }
       

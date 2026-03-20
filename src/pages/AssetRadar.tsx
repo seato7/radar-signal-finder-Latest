@@ -24,6 +24,7 @@ interface AssetRow {
   exchange: string;
   asset_class: string | null;
   computed_score: number | null;
+  hybrid_score: number | null;
   score_computed_at: string | null;
   score_explanation: unknown;
 }
@@ -145,7 +146,7 @@ const AssetRadar = () => {
         // Fetch assets ordered by pre-computed score from database
         let assetQuery = supabase
           .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score, score_computed_at, score_explanation', { count: 'exact' });
+          .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_computed_at, score_explanation', { count: 'exact' });
 
         if (tabConfig?.filter) {
           assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
@@ -211,7 +212,7 @@ const AssetRadar = () => {
 
         // Build enhanced assets using pre-computed scores
         const enhancedAssets: AssetWithScore[] = assets.map((asset) => {
-          const score = asset.computed_score ?? 50;
+          const score = asset.hybrid_score ?? asset.computed_score ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
           const signalMass = extractSignalMass(asset.score_explanation);
@@ -264,7 +265,7 @@ const AssetRadar = () => {
 
         let assetQuery = supabase
           .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score, score_explanation')
+          .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_explanation')
           .in('ticker', recentTickers);
 
         if (tabConfig?.filter) {
@@ -308,9 +309,9 @@ const AssetRadar = () => {
           }
         });
 
-        // Use database computed_score directly
+        // Use database computed_score directly, prefer hybrid_score when available
         const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
-          const score = asset.computed_score ?? 50;
+          const score = asset.hybrid_score ?? asset.computed_score ?? 50;
           const sentiment = getSentiment(score);
           const priceInfo = priceMap.get(asset.ticker);
           const previousPrice = previousPriceMap.get(asset.ticker);
@@ -348,7 +349,7 @@ const AssetRadar = () => {
       // ═══════════════════════════════════════════════════════════════════
       let query = supabase
         .from('assets')
-        .select('id, ticker, name, exchange, asset_class, computed_score, score_explanation', { count: 'exact' });
+        .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_explanation', { count: 'exact' });
 
       if (tabConfig?.filter) {
         query = query.eq('asset_class', tabConfig.filter);
@@ -406,9 +407,9 @@ const AssetRadar = () => {
         }
       });
 
-      // Use database computed_score directly
+      // Use database score directly, prefer hybrid_score when available
       const enhancedAssets: AssetWithScore[] = assetsData.map((asset) => {
-        const score = asset.computed_score ?? 50;
+        const score = asset.hybrid_score ?? asset.computed_score ?? 50;
         const sentiment = getSentiment(score);
         const priceInfo = priceMap.get(asset.ticker);
         const signalMass = extractSignalMass(asset.score_explanation);

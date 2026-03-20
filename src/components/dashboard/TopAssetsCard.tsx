@@ -39,7 +39,7 @@ const TopAssetsCard = () => {
       // Get top SCORED assets (with signal mass >= 0.001), sorted by score descending
       const { data: scoredAssets, error } = await supabase
         .from('assets')
-        .select('ticker, name, computed_score, expected_return, score_explanation')
+        .select('ticker, name, computed_score, hybrid_score, expected_return, score_explanation')
         .not('computed_score', 'is', null)
         .order('computed_score', { ascending: false })
         .limit(100); // Fetch more to filter by mass
@@ -62,7 +62,7 @@ const TopAssetsCard = () => {
         return {
           ticker: a.ticker,
           name: a.name || a.ticker,
-          score: a.computed_score ?? 50,
+          score: a.hybrid_score ?? a.computed_score ?? 50,
           expectedReturn: a.expected_return ?? 0,
           signalStrength: strengthInfo.level
         };
