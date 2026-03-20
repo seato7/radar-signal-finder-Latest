@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 10;
-const BATCH_DELAY_MS = 500;
+const BATCH_DELAY_MS = 1000;
 const CACHE_HOURS = 6;
 const SIGNAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SIGNALS_PER_ASSET = 20;
@@ -112,11 +112,16 @@ async function callLLM(
       response.status === 429 ? 'Rate limited' :
       response.status === 402 ? 'Quota exceeded' :
       response.status === 401 ? 'Auth error' : 'Gateway error';
-    throw new Error(`AI gateway ${errType} (${response.status})`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`AI gateway ${errType} (${response.status}): ${body.substring(0, 300)}`);
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? null;
+  const content = data.choices?.[0]?.message?.content ?? null;
+  if (content === null) {
+    console.warn('[COMPUTE-AI-SCORES] callLLM: response ok but no content in choices:', JSON.stringify(data).substring(0, 300));
+  }
+  return content;
 }
 
 async function getTavilyContext(ticker: string, supabase: any): Promise<string> {
@@ -214,6 +219,7 @@ serve(async (req) => {
     // 4. Process in batches
     const aiScoreRows: any[] = [];
     let parseErrors = 0;
+    let rateLimitErrors = 0;
 
     for (let i = 0; i < assetsToProcess.length; i += BATCH_SIZE) {
       const batch = assetsToProcess.slice(i, i + BATCH_SIZE);
@@ -233,10 +239,16 @@ serve(async (req) => {
 
           const prompt = buildPrompt(asset.ticker, formulaScore, signals, tavilyContext);
           const llmContent = await callLLM(prompt, LOVABLE_API_KEY);
-          if (!llmContent) return null;
+          if (!llmContent) {
+            console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: callLLM returned null content`);
+            return null;
+          }
 
           const parsed = parseAIResponse(llmContent);
-          if (!parsed) return null;
+          if (!parsed) {
+            console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: failed to parse LLM response:`, llmContent.substring(0, 200));
+            return null;
+          }
 
           const hybridScore = 0.4 * formulaScore + 0.6 * parsed.ai_score;
 
@@ -255,13 +267,21 @@ serve(async (req) => {
         })
       );
 
-      for (const result of batchResults) {
+      for (let j = 0; j < batchResults.length; j++) {
+        const result = batchResults[j];
+        const ticker = batch[j]?.ticker ?? 'unknown';
         if (result.status === 'fulfilled' && result.value) {
           aiScoreRows.push(result.value);
         } else {
           parseErrors++;
           if (result.status === 'rejected') {
-            console.warn('[COMPUTE-AI-SCORES] Asset error:', result.reason?.message || result.reason);
+            const msg = result.reason?.message || String(result.reason);
+            const isRateLimit = msg.includes('429') || msg.includes('Rate limited');
+            if (isRateLimit) rateLimitErrors++;
+            console.warn(`[COMPUTE-AI-SCORES] ${ticker}: REJECTED — ${msg}`);
+          } else {
+            // fulfilled but returned null — already logged inside the map above
+            console.warn(`[COMPUTE-AI-SCORES] ${ticker}: returned null (parse or content failure)`);
           }
         }
       }
@@ -272,7 +292,7 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[COMPUTE-AI-SCORES] ${aiScoreRows.length} valid scores, ${parseErrors} failures`);
+    console.log(`[COMPUTE-AI-SCORES] ${aiScoreRows.length} valid scores, ${parseErrors} failures (${rateLimitErrors} rate-limited)`);
 
     if (!aiScoreRows.length) {
       await logHeartbeat(supabase, {
@@ -281,10 +301,10 @@ serve(async (req) => {
         rows_inserted: 0,
         duration_ms: Date.now() - startTime,
         source_used: 'llm',
-        error_message: `All ${parseErrors} LLM responses failed to parse`,
+        error_message: `All ${parseErrors} LLM responses failed (${rateLimitErrors} rate-limited)`,
       });
       return new Response(
-        JSON.stringify({ success: false, error: 'no_valid_scores', parse_errors: parseErrors }),
+        JSON.stringify({ success: false, error: 'no_valid_scores', parse_errors: parseErrors, rate_limit_errors: rateLimitErrors }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -340,6 +360,7 @@ serve(async (req) => {
         success: true,
         scored: aiScoreRows.length,
         parse_errors: parseErrors,
+        rate_limit_errors: rateLimitErrors,
         duration_ms: duration,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
