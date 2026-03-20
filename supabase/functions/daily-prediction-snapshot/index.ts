@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     // The compute-asset-scores function already sets price_status = 'fresh' for valid assets
     const { data: topAssets, error: topError } = await supabase
       .from('assets')
-      .select('id, ticker, expected_return, confidence_score, confidence_label, model_version, score_explanation')
+      .select('id, ticker, expected_return, hybrid_score, confidence_score, confidence_label, model_version, score_explanation')
       .gt('expected_return', 0)
       .eq('price_status', 'fresh')
       .gte('score_computed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Scored in last 24h
@@ -44,6 +44,16 @@ Deno.serve(async (req) => {
     if (topError) throw topError;
 
     console.log(`Fetched ${topAssets?.length || 0} bullish assets from database`);
+
+    // Re-sort by hybrid_score when available; fall back to expected_return
+    // hybrid_score = 0.4 * formula + 0.6 * AI — better predictor when compute-ai-scores has run
+    if (topAssets) {
+      topAssets.sort((a: any, b: any) => {
+        const scoreA = a.hybrid_score ?? a.expected_return;
+        const scoreB = b.hybrid_score ?? b.expected_return;
+        return scoreB - scoreA;
+      });
+    }
 
     // Also fetch bottom assets (negative expected returns) for completeness
     const { data: bottomAssets, error: bottomError } = await supabase
@@ -138,6 +148,8 @@ Deno.serve(async (req) => {
         model_version: String(a.model_version ?? 'v1_alpha'),
         feature_snapshot: {
           expected_return: Number(a.expected_return ?? 0),
+          hybrid_score: a.hybrid_score != null ? Number(a.hybrid_score) : null,
+          ranking_score: a.hybrid_score != null ? Number(a.hybrid_score) : Number(a.expected_return ?? 0),
           confidence_score: Number(a.confidence_score ?? 0),
           score_explanation: a.score_explanation || [],
           price_at_prediction: priceMap.get(a.id) ?? null,
