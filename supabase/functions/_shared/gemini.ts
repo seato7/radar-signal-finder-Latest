@@ -2,8 +2,8 @@
  * Direct Google Gemini API utility — ~100x cheaper than the Lovable gateway.
  * Requires GEMINI_API_KEY env var.
  *
- * callGemini     — gemini-2.0-flash  (cheap, for simple/structured tasks)
- * callGeminiPro  — gemini-2.5-flash-preview-04-17  (smarter, for complex tasks)
+ * callGemini     — gemini-2.5-flash  (simple/structured tasks, low default tokens)
+ * callGeminiPro  — gemini-2.5-flash  (complex tasks, higher default tokens, text output)
  */
 
 async function _callGeminiModel(

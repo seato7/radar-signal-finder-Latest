@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
     // Get all assets with any signal activity
     const { data: allAssets, error: assetsError } = await supabaseClient
       .from('asset_signal_summary')
-      .select('asset_id,ticker,name,asset_class,current_price,trend,flow_signals,institutional_signals,insider_signals,technical_signals,sentiment_signals')
+      .select('asset_id,ticker,name,asset_class,flow_signals,institutional_signals,insider_signals,technical_signals,sentiment_signals')
       .or('flow_signals.gt.0,institutional_signals.gt.0,insider_signals.gt.0,technical_signals.gt.0,sentiment_signals.gt.0')
       .limit(500);
 
@@ -361,8 +361,8 @@ Deno.serve(async (req) => {
       asset_id: asset.asset_id,
       name: asset.name || asset.ticker,
       asset_class: asset.asset_class || 'stock',
-      current_price: asset.current_price,
-      trend: asset.trend,
+      current_price: null,
+      trend: null,
       signals: signalsByAsset.get(asset.asset_id) || [],
       technicals: technicalsByAsset.get(asset.asset_id) || null,
       sentiment: sentimentByAsset.get(asset.asset_id) || null,
