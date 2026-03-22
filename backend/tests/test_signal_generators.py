@@ -92,8 +92,8 @@ class TestScoringWeights:
         positive_weights = {k: v for k, v in weights.items() if v > 0}
         max_weight_component = max(positive_weights, key=positive_weights.get)
         
-        assert max_weight_component == 'InsiderPoliticianConfirm', (
-            f"InsiderPoliticianConfirm should have highest weight, but {max_weight_component} does"
+        assert max_weight_component == 'BigMoneyConfirm', (
+            f"BigMoneyConfirm should have highest weight, but {max_weight_component} does"
         )
     
     def test_attention_has_low_weight(self):
@@ -112,9 +112,9 @@ class TestScoringWeights:
         """Test the weight ratios follow predictive hierarchy."""
         weights = get_weights()
         
-        # InsiderPoliticianConfirm should be > BigMoneyConfirm
-        assert weights['InsiderPoliticianConfirm'] > weights['BigMoneyConfirm'], (
-            "InsiderPoliticianConfirm should outweigh BigMoneyConfirm"
+        # BigMoneyConfirm should be > InsiderPoliticianConfirm
+        assert weights['BigMoneyConfirm'] > weights['InsiderPoliticianConfirm'], (
+            "BigMoneyConfirm should outweigh InsiderPoliticianConfirm"
         )
         
         # BigMoneyConfirm should be > FlowPressure

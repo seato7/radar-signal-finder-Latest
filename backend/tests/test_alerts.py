@@ -32,7 +32,8 @@ async def test_slack_webhook_failure():
     result = await send_slack_alert(
         {"id": "test", "name": "Test Theme"},
         85.0,
-        ["PolicyMomentum", "FlowPressure", "BigMoneyConfirm"]
+        ["PolicyMomentum", "FlowPressure", "BigMoneyConfirm"],
+        {}
     )
     
     # Should return False on failure

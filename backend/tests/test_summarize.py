@@ -9,12 +9,12 @@ async def test_why_now_summary_with_signals():
     db = get_db()
     
     # Clean up
-    await db.signals.delete_many({"theme_id": "test-theme-summary"})
-    await db.themes.delete_many({"_id": "test-theme-summary"})
+    await db.signals.delete_many({"theme_id": "507f191e810c19729de860ea"})
+    await db.themes.delete_many({"_id": "507f191e810c19729de860ea"})
     
     # Create test theme
     await db.themes.insert_one({
-        "_id": "test-theme-summary",
+        "_id": "507f191e810c19729de860ea",
         "name": "Test Summary Theme",
         "keywords": ["test"],
         "alpha": 1.0
@@ -25,7 +25,7 @@ async def test_why_now_summary_with_signals():
     signals = [
         {
             "signal_type": "policy_approval",
-            "theme_id": "test-theme-summary",
+            "theme_id": "507f191e810c19729de860ea",
             "value_text": "Policy approval signal",
             "observed_at": now - timedelta(days=5),
             "created_at": now,
@@ -38,7 +38,7 @@ async def test_why_now_summary_with_signals():
         },
         {
             "signal_type": "bigmoney_hold_new",
-            "theme_id": "test-theme-summary",
+            "theme_id": "507f191e810c19729de860ea",
             "value_text": "New institutional position",
             "observed_at": now - timedelta(days=3),
             "created_at": now,
@@ -51,7 +51,7 @@ async def test_why_now_summary_with_signals():
         },
         {
             "signal_type": "insider_buy",
-            "theme_id": "test-theme-summary",
+            "theme_id": "507f191e810c19729de860ea",
             "value_text": "Insider purchase",
             "observed_at": now - timedelta(days=1),
             "created_at": now,
@@ -68,7 +68,7 @@ async def test_why_now_summary_with_signals():
         await db.signals.insert_one(sig)
     
     # Get summary
-    result = await get_why_now_summary("test-theme-summary", days=14)
+    result = await get_why_now_summary("507f191e810c19729de860ea", days=14)
     
     # Assertions
     assert result["summary"] != ""
