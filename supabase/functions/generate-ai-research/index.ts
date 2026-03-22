@@ -1,6 +1,7 @@
 // redeployed 2026-03-17
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { callGeminiPro } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -83,41 +84,10 @@ serve(async (req) => {
     };
 
     // Generate report using AI
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
+    const researchPrompt = buildResearchPrompt(context, report_type || 'comprehensive');
+    const fullPrompt = `You are an expert financial analyst generating professional research reports. Be analytical, data-driven, and provide actionable insights.\n\n${researchPrompt}`;
 
-    const prompt = buildResearchPrompt(context, report_type || 'comprehensive');
-
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert financial analyst generating professional research reports. Be analytical, data-driven, and provide actionable insights.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.status}`);
-    }
-
-    const aiData = await response.json();
-    const reportContent = aiData.choices[0]?.message?.content;
-
+    const reportContent = await callGeminiPro(fullPrompt, 4000);
     if (!reportContent) {
       throw new Error('No report generated');
     }
@@ -134,7 +104,7 @@ serve(async (req) => {
         asset_class: asset.asset_class,
         report_type: report_type || 'comprehensive',
         ...report,
-        generated_by: 'gemini-2.5-flash',
+        generated_by: 'gemini-2.5-flash-preview-04-17',
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
       })
       .select()

@@ -1,7 +1,7 @@
 // redeployed 2026-03-17
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,11 +27,6 @@ serve(async (req) => {
       });
     }
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
     const prompt = `Analyze these backtest results and provide actionable insights:
 
 Strategy: ${strategy}
@@ -46,34 +41,9 @@ Provide:
 
 Keep it practical and actionable for traders.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a quantitative trading analyst providing clear, data-driven insights on backtest results.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`AI gateway error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
-    const insights = data.choices[0].message.content;
+    const fullPrompt = `You are a quantitative trading analyst providing clear, data-driven insights on backtest results.\n\n${prompt}`;
+    const insights = await callGemini(fullPrompt, 600, 'text');
+    if (!insights) throw new Error('Gemini returned no content');
 
     // Persist to backtest_analyses
     await supabase
@@ -82,7 +52,7 @@ Keep it practical and actionable for traders.`;
         strategy_name: strategy,
         insights,
         backtest_result_snapshot: backtestResults,
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
       });
 
     return new Response(

@@ -1,8 +1,8 @@
 // redeployed 2026-03-17
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { sendErrorAlert } from '../_shared/error-alerter.ts';
+import { callGeminiPro } from '../_shared/gemini.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -457,24 +457,23 @@ serve(async (req) => {
       marketData = '\n\n[Note: Real-time data temporarily unavailable]';
     }
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
     // Check if user wants image generation
     const lastMessage = messages[messages.length - 1]?.content || '';
     const wantsImage = generateImage || 
       /\b(generate|create|make|show|visualize|draw)\b.*\b(image|chart|graph|visualization|picture)\b/i.test(lastMessage) ||
       /\b(chart|graph|visualization)\b/i.test(lastMessage);
 
-    // If image generation is requested, use the image model
+    // If image generation is requested, use the image model (stays on Lovable gateway —
+    // gemini-2.5-flash-image-preview is only available there)
     if (wantsImage) {
       console.log('Image generation requested for:', lastMessage);
-      
+
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured for image generation');
+
       // Create a specific prompt for image generation with market data context
-      const imagePrompt = `Create a professional financial chart/visualization for the following request: "${lastMessage}". 
-      
+      const imagePrompt = `Create a professional financial chart/visualization for the following request: "${lastMessage}".
+
 Context: ${marketData.substring(0, 2000)}
 
 Make it suitable for investment analysis with clear labels, professional styling, and relevant financial data.`;
@@ -641,45 +640,21 @@ Web Search (Live market news)
 
 Remember: You are the InsiderPulse AI Assistant. Synthesize ALL available data naturally. Be confident, be direct, format cleanly, and always validate with real-time information.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          // Truncate history to last 20 messages to prevent token/memory overflow on long conversations
-          ...messages.slice(-20)
-        ],
-        stream: true,
-      }),
-    });
+    // Build combined prompt: system instructions + truncated conversation history
+    // Note: response is now non-streaming (full JSON); frontend should handle both formats
+    const conversationHistory = messages.slice(-20)
+      .map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n');
+    const fullPrompt = `${systemPrompt}\n\n[CONVERSATION HISTORY]\n${conversationHistory}\n\nRespond to the user's last message.`;
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        await sendErrorAlert('chat-assistant', new Error('Rate limit exceeded'), { status: 429 });
-        return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        await sendErrorAlert('chat-assistant', new Error('AI credits exhausted'), { status: 402 });
-        return new Response(
-          JSON.stringify({ error: 'AI credits exhausted. Please add credits to your workspace.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      throw new Error(`AI gateway error: ${response.status}`);
-    }
+    const aiContent = await callGeminiPro(fullPrompt, 4096);
+    if (!aiContent) throw new Error('Gemini returned no content');
 
-    // Stream the response back
-    return new Response(response.body, {
-      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
-    });
+    // Return in OpenAI-compatible non-streaming format
+    return new Response(
+      JSON.stringify({ choices: [{ message: { role: 'assistant', content: aiContent }, finish_reason: 'stop' }] }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
 
   } catch (error) {
     console.error('Error in chat-assistant:', error);

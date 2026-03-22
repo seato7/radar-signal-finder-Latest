@@ -1,6 +1,6 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,44 +41,26 @@ interface AssetContext {
 
 async function generateAIReport(
   context: AssetContext,
-  apiKey: string
 ): Promise<{ success: boolean; report?: any; error?: string }> {
   try {
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a professional financial analyst. Generate a CONCISE investment research report. Output ONLY:
+    const aiPrompt = `You are a professional financial analyst. Generate a CONCISE investment research report. Output ONLY:
 1. Executive Summary (2 sentences max)
 2. Recommendation: BUY/HOLD/SELL
 3. Confidence: 0-100
 4. Key Risk: 1 sentence
 5. Time Horizon: short_term/medium_term/long_term
 
-Be factual and cite specific data points.`
-          },
-          {
-            role: 'user',
-            content: `Analyze ${context.ticker} (${context.name})\n\nPrice: $${context.current_price || 'N/A'}\nTrend: ${context.trend || 'N/A'}\nSignals: ${context.signal_counts.flow} flow, ${context.signal_counts.institutional} institutional, ${context.signal_counts.insider} insider\nPatterns: ${context.patterns.length} active\nSentiment: ${context.sentiment?.sentiment_label || 'N/A'} (${context.sentiment?.sentiment_score || 'N/A'})`
-          }
-        ],
-      }),
-    });
+Be factual and cite specific data points.
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      return { success: false, error: `API ${aiResponse.status}: ${errorText}` };
-    }
+Analyze ${context.ticker} (${context.name})
 
-    const aiData = await aiResponse.json();
-    const reportText = aiData.choices?.[0]?.message?.content;
+Price: $${context.current_price || 'N/A'}
+Trend: ${context.trend || 'N/A'}
+Signals: ${context.signal_counts.flow} flow, ${context.signal_counts.institutional} institutional, ${context.signal_counts.insider} insider
+Patterns: ${context.patterns.length} active
+Sentiment: ${context.sentiment?.sentiment_label || 'N/A'} (${context.sentiment?.sentiment_score || 'N/A'})`;
+
+    const reportText = await callGemini(aiPrompt, 600, 'text');
 
     if (!reportText) {
       return { success: false, error: 'No content in AI response' };
@@ -127,7 +109,7 @@ Be factual and cite specific data points.`
         generated_by: 'gemini-2.5-flash',
         data_sources: ['signals', 'advanced_technicals', 'news_sentiment_aggregate', 'pattern_recognition'],
         metadata: {
-          ai_model: 'google/gemini-2.5-flash',
+          ai_model: 'gemini-2.0-flash',
           full_report: reportText,
           signal_summary: context.signal_counts,
           processed_at: new Date().toISOString()
@@ -141,7 +123,6 @@ Be factual and cite specific data points.`
 
 async function processAIBatch(
   contexts: AssetContext[],
-  apiKey: string
 ): Promise<{ reports: any[]; errors: number }> {
   const reports: any[] = [];
   let errors = 0;
@@ -149,9 +130,9 @@ async function processAIBatch(
   // Process in parallel batches
   for (let i = 0; i < contexts.length; i += AI_CONCURRENCY) {
     const batch = contexts.slice(i, i + AI_CONCURRENCY);
-    
+
     const results = await Promise.allSettled(
-      batch.map(ctx => generateAIReport(ctx, apiKey))
+      batch.map(ctx => generateAIReport(ctx))
     );
 
     for (const result of results) {
@@ -196,11 +177,6 @@ Deno.serve(async (req) => {
     });
 
     console.log('🤖 [BATCH MODE] Starting AI research report generation...');
-
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
 
     // ========================================
     // STEP 1: Smart Ticker Selection
@@ -405,7 +381,7 @@ Deno.serve(async (req) => {
     // ========================================
     
     console.log(`🤖 Generating ${contexts.length} AI reports (${AI_CONCURRENCY} concurrent)...`);
-    const { reports, errors } = await processAIBatch(contexts, LOVABLE_API_KEY);
+    const { reports, errors } = await processAIBatch(contexts);
     console.log(`✅ Generated ${reports.length} reports, ${errors} errors`);
 
     // ========================================
@@ -455,7 +431,7 @@ Deno.serve(async (req) => {
       rows_inserted: inserted,
       rows_skipped: skipped,
       duration_ms: duration * 1000,
-      source_used: 'gemini-2.5-flash-batch',
+      source_used: 'gemini-2.0-flash-batch',
       metadata: {
         batch_size: selectedAssets.length,
         priority_count: priorityAssets.length,
@@ -470,7 +446,7 @@ Deno.serve(async (req) => {
       duration_seconds: duration,
       rows_inserted: inserted,
       rows_skipped: skipped,
-      source_used: 'Lovable AI Batch',
+      source_used: 'Gemini 2.0 Flash Batch',
     }).eq('id', logId);
     
     await slackAlerter.sendLiveAlert({

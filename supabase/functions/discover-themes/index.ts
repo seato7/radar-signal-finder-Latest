@@ -1,7 +1,7 @@
 // redeployed 2026-03-17
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,11 +16,6 @@ serve(async (req) => {
   try {
     const { unmappedSignals, existingThemes } = await req.json();
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
     const signalSummary = unmappedSignals.slice(0, 20).map((s: any) => ({
       type: s.signal_type,
       text: s.value_text,
@@ -50,34 +45,9 @@ For each potential theme, provide:
 
 Only suggest themes with at least 3 supporting signals.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a market analyst identifying emerging investment themes from signal patterns.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`AI gateway error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (!data.choices?.length) throw new Error('AI gateway returned empty choices array');
-    const suggestions = data.choices[0].message.content;
+    const fullPrompt = `You are a market analyst identifying emerging investment themes from signal patterns.\n\n${prompt}`;
+    const suggestions = await callGemini(fullPrompt, 1500, 'text');
+    if (!suggestions) throw new Error('Gemini returned no content');
 
     // Persist suggestions to DB so they can be used by the system
     const supabase = createClient(
@@ -87,7 +57,7 @@ Only suggest themes with at least 3 supporting signals.`;
     await supabase.from('discovered_theme_suggestions').upsert({
       suggestions_text: suggestions,
       generated_at: new Date().toISOString(),
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.0-flash',
     }, { onConflict: 'generated_at', ignoreDuplicates: false }).then(() => {}).catch(() => {
       // Table may not exist — log but don't fail the response
       console.log('[discover-themes] Could not persist to DB — table may not exist yet');

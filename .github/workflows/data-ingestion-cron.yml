@@ -86,7 +86,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        function: [ingest-prices-twelvedata, ingest-advanced-technicals, ingest-pattern-recognition]
+        # Removed: ingest-prices-twelvedata (disabled stub — Railway handles prices)
+        # Removed: ingest-advanced-technicals (pg_cron runs every 6h — redundant)
+        function: [ingest-pattern-recognition]
     steps:
       - name: Run ${{ matrix.function }}
         run: |
@@ -118,7 +120,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        function: [ingest-ai-research, ingest-forex-sentiment, generate-alerts]
+        # Removed: ingest-ai-research (intentionally disabled Phase 0 — was causing CI failures)
+        # Removed: generate-alerts (pg_cron runs every 15min — redundant)
+        function: [ingest-forex-sentiment]
     steps:
       - name: Run ${{ matrix.function }}
         run: |

@@ -1,6 +1,6 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,11 +32,6 @@ serve(async (req) => {
       });
     }
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
     // Analyze signal diversity
     const signalTypes = [...new Set(signals.map((s: any) => s.signal_type))];
     const hasMultipleSignalTypes = signalTypes.length >= 3;
@@ -66,34 +61,9 @@ Provide a risk assessment with:
 
 Format as a structured analysis that's easy to scan.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a risk analyst providing clear, actionable risk assessments for investment opportunities.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errType = response.status === 429 ? 'Rate limited' : response.status === 402 ? 'Quota exceeded' : response.status === 401 ? 'Auth error' : 'Gateway error';
-      throw new Error(`AI gateway ${errType} (${response.status})`);
-    }
-
-    const data = await response.json();
-    const assessment = data.choices[0].message.content;
+    const fullPrompt = `You are a risk analyst providing clear, actionable risk assessments for investment opportunities.\n\n${prompt}`;
+    const assessment = await callGemini(fullPrompt, 600, 'text');
+    if (!assessment) throw new Error('Gemini returned no content');
 
     // Persist to ai_research_reports (theme-scoped; ticker field uses theme name as surrogate key)
     await supabase

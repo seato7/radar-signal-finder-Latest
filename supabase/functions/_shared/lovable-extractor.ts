@@ -1,10 +1,10 @@
 /**
- * Lovable AI Extractor - Extract structured data from scraped content
- * Uses Lovable AI for intelligent data extraction
+ * Gemini AI Extractor - Extract structured data from scraped content
+ * Migrated from Lovable API to direct Gemini API (callGemini).
  * NO ESTIMATION - Returns only what can be extracted from real content
  */
 
-const LOVABLE_API_URL = 'https://api.lovable.ai/v1';
+import { callGemini } from './gemini.ts';
 
 export interface ExtractionSchema {
   [key: string]: {
@@ -19,22 +19,11 @@ export interface ExtractionResult<T = Record<string, any>> {
   data?: T;
   error?: string;
   confidence?: number;
-  source: 'lovable-ai';
+  source: string;
 }
 
 /**
- * Get API key from environment
- */
-function getApiKey(): string {
-  const apiKey = Deno.env.get('LOVABLE_API_KEY');
-  if (!apiKey) {
-    throw new Error('LOVABLE_API_KEY not configured');
-  }
-  return apiKey;
-}
-
-/**
- * Extract structured data from content using Lovable AI
+ * Extract structured data from content using Gemini AI.
  * NO ESTIMATION - Only returns data that can be confidently extracted
  */
 export async function extractStructuredData<T = Record<string, any>>(
@@ -46,18 +35,16 @@ export async function extractStructuredData<T = Record<string, any>>(
     return {
       success: false,
       error: 'Content too short for extraction',
-      source: 'lovable-ai',
+      source: 'gemini',
     };
   }
 
-  const apiKey = getApiKey();
-  
   // Build the extraction prompt
   const schemaDescription = Object.entries(schema)
     .map(([key, def]) => `- ${key} (${def.type}${def.required ? ', required' : ''}): ${def.description}`)
     .join('\n');
 
-  const systemPrompt = `You are a precise data extraction assistant. Extract structured data from the provided content.
+  const prompt = `You are a precise data extraction assistant. Extract structured data from the provided content.
 
 RULES:
 1. ONLY extract data that is EXPLICITLY stated in the content
@@ -70,49 +57,25 @@ RULES:
 Schema to extract:
 ${schemaDescription}
 
-${context ? `Additional context: ${context}` : ''}`;
+${context ? `Additional context: ${context}` : ''}
+
+Extract data from this content:
+
+${content.slice(0, 15000)}`;
 
   try {
-    const response = await fetch(`${LOVABLE_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Extract data from this content:\n\n${content.slice(0, 15000)}` }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1, // Low temperature for precise extraction
-      }),
-    });
+    const aiContent = await callGemini(prompt, 2000);
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error(`[LovableExtractor] API error: ${response.status} - ${errorData}`);
-      return {
-        success: false,
-        error: `API error: ${response.status}`,
-        source: 'lovable-ai',
-      };
-    }
-
-    const result = await response.json();
-    const extractedText = result.choices?.[0]?.message?.content;
-
-    if (!extractedText) {
+    if (!aiContent) {
       return {
         success: false,
         error: 'No extraction result returned',
-        source: 'lovable-ai',
+        source: 'gemini',
       };
     }
 
     // Parse the JSON response
-    const extracted = JSON.parse(extractedText) as T;
+    const extracted = JSON.parse(aiContent) as T;
 
     // Validate required fields
     const missingRequired = Object.entries(schema)
@@ -120,28 +83,28 @@ ${context ? `Additional context: ${context}` : ''}`;
       .map(([key]) => key);
 
     if (missingRequired.length > 0) {
-      console.warn(`[LovableExtractor] Missing required fields: ${missingRequired.join(', ')}`);
+      console.warn(`[GeminiExtractor] Missing required fields: ${missingRequired.join(', ')}`);
     }
 
     return {
       success: true,
       data: extracted,
       confidence: missingRequired.length === 0 ? 1.0 : 0.7,
-      source: 'lovable-ai',
+      source: 'gemini',
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[LovableExtractor] Extraction failed: ${errorMessage}`);
+    console.error(`[GeminiExtractor] Extraction failed: ${errorMessage}`);
     return {
       success: false,
       error: errorMessage,
-      source: 'lovable-ai',
+      source: 'gemini',
     };
   }
 }
 
 /**
- * Extract a list of items from tabular content
+ * Extract a list of items from tabular content.
  * NO ESTIMATION - Only returns rows that can be parsed
  */
 export async function extractTableData<T = Record<string, any>>(
@@ -161,13 +124,11 @@ export async function extractTableData<T = Record<string, any>>(
     };
   }
 
-  const apiKey = getApiKey();
-
   const schemaDescription = Object.entries(rowSchema)
     .map(([key, def]) => `- ${key} (${def.type}): ${def.description}`)
     .join('\n');
 
-  const systemPrompt = `You are a data table extraction assistant. Extract rows of data from the provided content.
+  const prompt = `You are a data table extraction assistant. Extract rows of data from the provided content.
 
 RULES:
 1. ONLY extract rows that are EXPLICITLY present in the content
@@ -182,38 +143,16 @@ ${schemaDescription}
 
 ${tableContext ? `Table context: ${tableContext}` : ''}
 
-Return format: { "rows": [...] }`;
+Return format: { "rows": [...] }
+
+Extract table rows from this content:
+
+${content.slice(0, 20000)}`;
 
   try {
-    const response = await fetch(`${LOVABLE_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Extract table rows from this content:\n\n${content.slice(0, 20000)}` }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
-    });
+    const aiContent = await callGemini(prompt, 4000);
 
-    if (!response.ok) {
-      return {
-        success: false,
-        rows: [],
-        error: `API error: ${response.status}`,
-      };
-    }
-
-    const result = await response.json();
-    const extractedText = result.choices?.[0]?.message?.content;
-
-    if (!extractedText) {
+    if (!aiContent) {
       return {
         success: false,
         rows: [],
@@ -221,10 +160,10 @@ Return format: { "rows": [...] }`;
       };
     }
 
-    const parsed = JSON.parse(extractedText);
+    const parsed = JSON.parse(aiContent);
     const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
 
-    console.log(`[LovableExtractor] Extracted ${rows.length} rows from table`);
+    console.log(`[GeminiExtractor] Extracted ${rows.length} rows from table`);
 
     return {
       success: rows.length > 0,
@@ -241,7 +180,7 @@ Return format: { "rows": [...] }`;
 }
 
 /**
- * Extract sentiment and key metrics from financial news/text
+ * Extract sentiment and key metrics from financial news/text.
  * NO ESTIMATION - Sentiment based only on content analysis
  */
 export async function extractFinancialSentiment(
@@ -262,9 +201,7 @@ export async function extractFinancialSentiment(
     };
   }
 
-  const apiKey = getApiKey();
-
-  const systemPrompt = `You are a financial sentiment analyzer. Analyze the provided content for market sentiment.
+  const prompt = `You are a financial sentiment analyzer. Analyze the provided content for market sentiment.
 
 RULES:
 1. Base sentiment ONLY on the actual content provided
@@ -278,38 +215,20 @@ Return JSON: {
   "sentimentScore": number,
   "keyPoints": string[],
   "mentionedTickers": string[]
-}`;
+}
+
+${ticker ? `Focus on ${ticker}. ` : ''}Analyze this content:
+
+${content.slice(0, 10000)}`;
 
   try {
-    const response = await fetch(`${LOVABLE_API_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `${ticker ? `Focus on ${ticker}. ` : ''}Analyze this content:\n\n${content.slice(0, 10000)}` }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.2,
-      }),
-    });
+    const aiContent = await callGemini(prompt, 500);
 
-    if (!response.ok) {
-      return { success: false, error: `API error: ${response.status}` };
-    }
-
-    const result = await response.json();
-    const extractedText = result.choices?.[0]?.message?.content;
-
-    if (!extractedText) {
+    if (!aiContent) {
       return { success: false, error: 'No result returned' };
     }
 
-    const parsed = JSON.parse(extractedText);
+    const parsed = JSON.parse(aiContent);
 
     return {
       success: true,
