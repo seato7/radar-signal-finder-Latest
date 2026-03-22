@@ -1,4 +1,3 @@
-import pytest
 from backend.services.bot_strategies import GridBot, MomentumBot, DCABot, MeanReversionBot
 
 def test_grid_strategy():

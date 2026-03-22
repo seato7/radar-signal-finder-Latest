@@ -90,7 +90,7 @@ async def subscribe_to_theme(
     if max_alerts != -1 and alert_count >= max_alerts:
         raise HTTPException(
             status_code=403,
-            detail=f"Alert limit reached. Upgrade your plan to add more alerts."
+            detail="Alert limit reached. Upgrade your plan to add more alerts."
         )
     
     # Check if already subscribed

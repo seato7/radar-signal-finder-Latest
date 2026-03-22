@@ -1,9 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from backend.db import get_db
 from backend.services.payments import get_plans, create_checkout_session, create_portal_session, verify_webhook
-from backend.models_bots import Subscription
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict
 from bson import ObjectId
 
 router = APIRouter()

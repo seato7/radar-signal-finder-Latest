@@ -309,7 +309,7 @@ async def _run_ingestion(asset_class: Optional[str] = None, test_mode: bool = Fa
                         error_message=str(e),
                         source_used="twelvedata"
                     )
-            except:
+            except Exception:
                 pass
 
 

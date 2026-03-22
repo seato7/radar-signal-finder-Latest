@@ -20,7 +20,6 @@ from typing import Optional, Dict, List, Set
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from backend.config import settings
 from backend.etl.twelvedata_prices import TwelveDataPriceFetcher
 from backend.services.supabase_sync import SupabaseSync
 
@@ -437,7 +436,7 @@ def start_scheduler():
         _run_tiered_price_batch,
         trigger=IntervalTrigger(seconds=CYCLE_INTERVAL_SECONDS),
         id="twelvedata_price_tiered",
-        name=f"TwelveData Tiered Refresh (Hot=5min, Active=30min, Standard=daily)",
+        name="TwelveData Tiered Refresh (Hot=5min, Active=30min, Standard=daily)",
         replace_existing=True,
         max_instances=1,
         coalesce=True
@@ -446,9 +445,9 @@ def start_scheduler():
     _scheduler.start()
     
     logger.info(
-        f"✅ Price scheduler started: CREDIT-BUDGETED TIERED mode | "
-        f"Hot(100)=5min, Active(500)=30min, Standard=daily | "
-        f"Budget: 79,200 credits/day"
+        "✅ Price scheduler started: CREDIT-BUDGETED TIERED mode | "
+        "Hot(100)=5min, Active(500)=30min, Standard=daily | "
+        "Budget: 79,200 credits/day"
     )
     
     return get_scheduler_stats()

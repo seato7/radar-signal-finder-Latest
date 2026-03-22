@@ -1,8 +1,7 @@
 """Price CSV ETL - ingest price data for backtesting"""
 import hashlib
 import csv
-from datetime import datetime
-from typing import List, Dict
+from typing import Dict
 import httpx
 from io import StringIO
 from backend.db import get_db
@@ -77,7 +76,7 @@ async def run_prices_etl() -> Dict[str, int]:
                     await db.prices.insert_one(price_doc)
                     inserted += 1
                     
-                except Exception as e:
+                except Exception:
                     # Skip bad rows
                     skipped += 1
                     continue

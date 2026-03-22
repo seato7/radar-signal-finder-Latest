@@ -1,6 +1,4 @@
-import pytest
 from backend.scoring import exponential_decay, get_weights
-from backend.config import settings
 
 def test_decay_at_half_life():
     """Test decay function returns ~0.5 at one half-life"""

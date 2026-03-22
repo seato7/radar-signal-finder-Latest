@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from backend.db import get_db
 from backend.scoring import compute_theme_score, get_weights
 from backend.cache import cache
-from typing import List
 
 router = APIRouter()
 

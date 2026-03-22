@@ -460,7 +460,7 @@ class TwelveDataPriceFetcher:
         # Log comprehensive summary
         total_input = len(assets)
         skipped = self.stats["skipped_unsupported"]
-        attempted = total_input - skipped
+        total_input - skipped
         succeeded = len(price_records)
         failed = self.stats["failed"]
         

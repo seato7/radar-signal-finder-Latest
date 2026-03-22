@@ -85,7 +85,7 @@ def load_sector_map(json_str: str) -> Dict[str, str]:
         return {}
     try:
         return json.loads(json_str)
-    except:
+    except Exception:
         return {}
 
 def aggregate_by_sector(flows_with_z: List[dict], sector_map: Dict[str, str]) -> List[dict]:
@@ -164,7 +164,7 @@ async def run_etf_flows_etl() -> dict:
             # Create signal
             try:
                 observed_at = datetime.strptime(date, "%Y-%m-%d")
-            except:
+            except Exception:
                 observed_at = datetime.utcnow()
             
             signal = Signal(
@@ -215,7 +215,7 @@ async def run_etf_flows_etl() -> dict:
             # Create sector signal
             try:
                 observed_at = datetime.strptime(date, "%Y-%m-%d")
-            except:
+            except Exception:
                 observed_at = datetime.utcnow()
             
             signal = Signal(

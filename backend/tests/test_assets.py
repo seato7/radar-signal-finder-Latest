@@ -1,5 +1,4 @@
 import pytest
-from backend.routers.assets import router
 from backend.db import get_db
 
 @pytest.mark.asyncio

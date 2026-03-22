@@ -1,6 +1,6 @@
 """Stripe payment integration"""
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from backend.logging_config import get_logger
 
 logger = get_logger(__name__)

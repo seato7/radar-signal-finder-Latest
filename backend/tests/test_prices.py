@@ -1,14 +1,9 @@
 """Tests for Twelve Data Price Ingestion Service (Serial Queue)"""
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime, timezone
 
 from backend.etl.twelvedata_prices import (
     TwelveDataPriceFetcher,
-    fetch_crypto_prices,
-    fetch_forex_prices,
-    fetch_stock_prices,
-    fetch_commodity_prices,
 )
 
 
@@ -149,7 +144,7 @@ class TestPriceRouter:
         with patch.dict('os.environ', {'TWELVEDATA_API_KEY': ''}):
             result = await test_price_fetch()
             
-            assert result["success"] == False
+            assert not result["success"]
             assert "TWELVEDATA_API_KEY" in result["error"]
 
 

@@ -1,7 +1,7 @@
 """SEC Form 4 Insider Transactions ETL"""
 import feedparser
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 import httpx
 from xml.etree import ElementTree as ET
 from backend.db import get_db
@@ -10,7 +10,7 @@ from backend.config import settings
 
 async def fetch_form4_atom_feed(days_back: int = 7) -> List[dict]:
     """Fetch recent Form 4 filings from SEC Atom feed"""
-    url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&count=100&output=atom"
+    url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&count=100&output=atom"
     
     headers = {
         "User-Agent": settings.SEC_USER_AGENT,
@@ -56,7 +56,7 @@ async def fetch_form4_xml(filing_url: str) -> str:
             response = await client.get(xml_url, headers=headers, timeout=30.0)
             response.raise_for_status()
             return response.text
-        except:
+        except Exception:
             return ""
 
 def parse_form4_xml(xml_content: str) -> dict:
@@ -66,7 +66,7 @@ def parse_form4_xml(xml_content: str) -> dict:
     
     try:
         root = ET.fromstring(xml_content)
-    except:
+    except Exception:
         return {}
     
     ns = {"": "http://www.sec.gov/edgar/document/ownership/2006-05-01"}
@@ -196,7 +196,7 @@ async def run_form4_etl(limit: int = 100) -> dict:
             # Create signal
             try:
                 observed_at = datetime.strptime(date, "%Y-%m-%d")
-            except:
+            except Exception:
                 observed_at = datetime.utcnow()
             
             signal = Signal(

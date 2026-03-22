@@ -36,7 +36,7 @@ async def test_slack_webhook_failure():
     )
     
     # Should return False on failure
-    assert result == False
+    assert not result
     
     # Restore
     settings.SLACK_WEBHOOK = original

@@ -34,7 +34,7 @@ async def add_to_watchlist(data: WatchlistAdd):
     db = get_db()
     
     try:
-        result = await db.watchlist.update_one(
+        await db.watchlist.update_one(
             {"_id": "singleton"},
             {
                 "$addToSet": {"tickers": data.ticker},
@@ -44,7 +44,7 @@ async def add_to_watchlist(data: WatchlistAdd):
         )
         
         return {"status": "added", "ticker": data.ticker}
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to add ticker")
 
 @router.delete("/{ticker}")
@@ -64,5 +64,5 @@ async def remove_from_watchlist(ticker: str):
         )
         
         return {"status": "removed", "ticker": ticker}
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to remove ticker")

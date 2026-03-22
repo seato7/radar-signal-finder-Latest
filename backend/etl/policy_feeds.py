@@ -1,14 +1,12 @@
 """Policy Feeds ETL - RSS/Atom feed ingestion with keyword filtering"""
 import feedparser
 import hashlib
-import json
 from datetime import datetime
 from typing import List, Dict, Any
 from urllib.parse import urlparse
 import httpx
 from backend.db import get_db
 from backend.config import settings
-from backend.models import Signal, Citation
 
 async def fetch_feed(feed_url: str) -> feedparser.FeedParserDict:
     """Fetch RSS/Atom feed with proper headers"""
@@ -128,9 +126,9 @@ async def run_policy_feeds_etl() -> Dict[str, int]:
                 }
                 
                 try:
-                    result = await db.signals.insert_one(signal_doc)
+                    await db.signals.insert_one(signal_doc)
                     inserted += 1
-                except Exception as e:
+                except Exception:
                     # Duplicate key error - already exists
                     skipped += 1
                     

@@ -73,7 +73,7 @@ async def get_asset(asset_id: str):
     # Get asset
     try:
         asset = await db.assets.find_one({"_id": ObjectId(asset_id)})
-    except:
+    except Exception:
         asset = None
     
     if not asset:

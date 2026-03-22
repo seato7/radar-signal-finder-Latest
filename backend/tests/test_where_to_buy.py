@@ -1,4 +1,3 @@
-import pytest
 from backend.services.where_to_buy import get_where_to_buy
 
 def test_us_exchange():

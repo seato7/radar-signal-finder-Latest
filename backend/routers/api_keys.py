@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from backend.db import get_db
 from backend.auth import get_current_user
 from backend.models_api import ApiKeyCreate, generate_api_key
-from backend.services.payments import get_plans
 from typing import Optional
 from datetime import datetime
 from bson import ObjectId

@@ -7,8 +7,7 @@ These tests validate that:
 3. Scoring weights prioritize leading indicators over lagging indicators
 4. The scoring system is properly configured for predictive (not lagging) performance
 """
-import pytest
-from backend.scoring import get_weights, WEIGHTS
+from backend.scoring import get_weights
 
 # All expected signal types that generators should produce
 EXPECTED_SIGNAL_TYPES = [

@@ -332,8 +332,10 @@ def get_recommended_brokers(asset_class: str, region: str = "global") -> List[Di
     # Sort by features (API support, paper trading, min deposit)
     def broker_score(b):
         score = 0
-        if b["api_support"]: score += 10
-        if b["paper_trading"]: score += 5
+        if b["api_support"]:
+            score += 10
+        if b["paper_trading"]:
+            score += 5
         score -= b["min_deposit"] / 100  # Lower deposit = higher score
         return score
     

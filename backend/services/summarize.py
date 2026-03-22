@@ -1,5 +1,5 @@
 """Why now? summaries - AI-powered explanations for themes with rule-based fallback"""
-from typing import Dict, List, Optional
+from typing import Dict
 from datetime import datetime, timedelta
 from backend.db import get_db
 import os

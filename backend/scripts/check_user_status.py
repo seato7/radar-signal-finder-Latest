@@ -16,18 +16,18 @@ async def check_user_status(email: str):
     # Check user record
     user = await db.users.find_one({"email": email})
     if user:
-        print(f"\n✓ USER RECORD FOUND:")
+        print("\n✓ USER RECORD FOUND:")
         print(f"  Email: {user.get('email')}")
         print(f"  Role: {user.get('role', 'user')}")
         print(f"  Active: {user.get('is_active', True)}")
         print(f"  Created: {user.get('created_at')}")
     else:
-        print(f"\n✗ No user record found")
+        print("\n✗ No user record found")
     
     # Check subscription
     subscription = await db.subscriptions.find_one({"user_id": email})
     if subscription:
-        print(f"\n✓ SUBSCRIPTION FOUND:")
+        print("\n✓ SUBSCRIPTION FOUND:")
         print(f"  Plan: {subscription.get('plan', 'free')}")
         print(f"  Status: {subscription.get('status', 'unknown')}")
         print(f"  Created: {subscription.get('created_at')}")
@@ -35,7 +35,7 @@ async def check_user_status(email: str):
         if subscription.get('expires_at'):
             print(f"  Expires: {subscription.get('expires_at')}")
     else:
-        print(f"\n✗ No subscription found (defaults to free)")
+        print("\n✗ No subscription found (defaults to free)")
     
     print(f"\n{'='*60}\n")
     

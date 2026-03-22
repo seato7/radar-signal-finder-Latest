@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from backend.db import get_db
 from backend.services.summarize import get_why_now_summary
 from pydantic import BaseModel

@@ -119,7 +119,6 @@ async def test_13f_signals_have_oa_citation():
 @pytest.mark.asyncio
 async def test_13f_amendment_supersedes_original():
     """Test 13F-HR/A amendments supersede original filings"""
-    from backend.etl.sec_13f_holdings import diagnose_13f_mappings
     db = get_db()
     
     # Clear test data
@@ -170,7 +169,7 @@ async def test_diagnose_13f_mappings():
     # Clear and insert test data
     await db.signals.delete_many({"raw.manager": "Diagnose Test LLC"})
     
-    result = await run_13f_holdings_etl(
+    await run_13f_holdings_etl(
         "https://sec.gov/filing/diagnose-test",
         SAMPLE_13F_XML,
         "Diagnose Test LLC",

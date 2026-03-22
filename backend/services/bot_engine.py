@@ -1,9 +1,8 @@
 """Trading bot simulation and execution engine"""
-import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from backend.db import get_db
-from backend.models_bots import Bot, OrderSim, PositionSim, BotLog, RiskPolicy
+from backend.models_bots import Bot, OrderSim
 from backend.services.bot_strategies import STRATEGIES
 from backend.logging_config import get_logger
 from backend.metrics import metrics
@@ -387,7 +386,7 @@ class BotEngine:
     async def _check_theme_trigger(self, bot: Bot, subscription: Dict):
         """Check if theme subscription should trigger action"""
         theme_id = subscription.get("theme_id")
-        score_threshold = subscription.get("score_threshold", 0)
+        subscription.get("score_threshold", 0)
         
         # Get theme score (simplified - in production would call radar endpoint)
         theme = await self.db.themes.find_one({"_id": theme_id})

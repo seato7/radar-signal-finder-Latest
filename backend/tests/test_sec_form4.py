@@ -1,9 +1,7 @@
 import pytest
-from datetime import datetime
 from backend.etl.sec_form4 import parse_form4_xml, run_form4_etl
 from backend.db import get_db
-from backend.models import Signal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 MOCK_FORM4_XML = """<?xml version="1.0"?>
 <ownershipDocument xmlns="http://www.sec.gov/edgar/document/ownership/2006-05-01">
@@ -135,7 +133,7 @@ async def test_form4_signal_mapping():
         
         # Run theme mapper
         from backend.services.theme_mapper import run_theme_mapper
-        mapper_result = await run_theme_mapper()
+        await run_theme_mapper()
         
         # Verify signal was created
         signal = await db.signals.find_one({"signal_type": "insider_buy", "ticker": "EXMP"})

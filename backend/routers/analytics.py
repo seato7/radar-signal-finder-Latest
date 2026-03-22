@@ -1,9 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from backend.db import get_db
 from backend.auth import get_current_user
-from backend.services.payments import get_plans
-from typing import Dict, Any
-from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 

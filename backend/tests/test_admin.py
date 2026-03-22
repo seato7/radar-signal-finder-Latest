@@ -1,8 +1,6 @@
 import pytest
 from httpx import AsyncClient
 from backend.main import app
-from backend.db import get_db
-from datetime import datetime
 
 @pytest.mark.asyncio
 async def test_seed_themes():

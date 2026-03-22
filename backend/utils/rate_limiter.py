@@ -1,7 +1,6 @@
 """Rate limiting utilities for API and outbound requests"""
 import asyncio
 import time
-from typing import Dict
 from collections import deque
 import logging
 

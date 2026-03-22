@@ -3,7 +3,6 @@ from backend.db import get_db
 from backend.auth import require_admin, TokenData
 from backend.models_admin import AdminActionRequest
 from datetime import datetime, timedelta
-from backend.config import settings
 
 router = APIRouter()
 
@@ -209,7 +208,7 @@ async def make_user_admin(
         raise HTTPException(status_code=404, detail="User not found")
     
     # Update role to admin
-    result = await db.users.update_one(
+    await db.users.update_one(
         {"email": data.email},
         {"$set": {"role": UserRole.ADMIN.value, "updated_at": datetime.utcnow()}}
     )
@@ -249,7 +248,7 @@ async def upgrade_user_to_premium(
     
     if existing_sub:
         # Update existing subscription
-        result = await db.subscriptions.update_one(
+        await db.subscriptions.update_one(
             {"user_id": user_id},
             {
                 "$set": {
@@ -271,7 +270,7 @@ async def upgrade_user_to_premium(
             "updated_at": datetime.utcnow(),
             "expires_at": datetime.utcnow() + timedelta(days=365)
         }
-        result = await db.subscriptions.insert_one(subscription)
+        await db.subscriptions.insert_one(subscription)
         message = "Created new premium subscription"
     
     # Log admin action

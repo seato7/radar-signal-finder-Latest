@@ -23,7 +23,7 @@ async def upgrade_user_to_premium(email: str):
     
     if existing_sub:
         # Update existing subscription
-        result = await db.subscriptions.update_one(
+        await db.subscriptions.update_one(
             {"user_id": email},
             {
                 "$set": {
@@ -34,7 +34,7 @@ async def upgrade_user_to_premium(email: str):
                 }
             }
         )
-        print(f"✓ Updated existing subscription to premium")
+        print("✓ Updated existing subscription to premium")
     else:
         # Create new subscription
         subscription = {
@@ -45,8 +45,8 @@ async def upgrade_user_to_premium(email: str):
             "updated_at": datetime.utcnow(),
             "expires_at": datetime.utcnow() + timedelta(days=365)
         }
-        result = await db.subscriptions.insert_one(subscription)
-        print(f"✓ Created new premium subscription")
+        await db.subscriptions.insert_one(subscription)
+        print("✓ Created new premium subscription")
     
     # Verify the update
     updated_sub = await db.subscriptions.find_one({"user_id": email})

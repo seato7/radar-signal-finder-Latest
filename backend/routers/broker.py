@@ -1,11 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from backend.db import get_db
 from backend.auth import get_current_user
-from backend.models_bots import ApiKey
 from backend.utils.encryption import encrypt_secret, decrypt_secret
-from typing import Dict, List
 from pydantic import BaseModel, Field
-import httpx
 from datetime import datetime
 
 router = APIRouter(prefix="/api/broker", tags=["broker"])
@@ -53,7 +50,7 @@ async def _validate_broker_credentials(exchange: str, api_key: str, secret_key: 
         
         else:
             return False
-    except Exception as e:
+    except Exception:
         return False
 
 @router.post("/keys")

@@ -4,7 +4,6 @@ from backend.etl.sec_13f_holdings import run_13f_holdings_etl, diagnose_13f_mapp
 from backend.etl.sec_form4 import run_form4_etl
 from backend.etl.etf_flows import run_etf_flows_etl
 from backend.services.theme_mapper import run_theme_mapper
-from typing import Optional
 
 router = APIRouter()
 

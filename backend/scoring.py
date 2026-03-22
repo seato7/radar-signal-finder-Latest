@@ -1,6 +1,6 @@
 import math
 from typing import Dict, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 from backend.config import settings
 from backend.models import Signal
 

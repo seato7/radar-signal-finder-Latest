@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import httpx
 from backend.db import get_db
 from backend.config import settings
-from backend.scoring import compute_theme_score, get_weights
+from backend.scoring import compute_theme_score
 
 async def calculate_rolling_max(theme_id: str, days: int = 7) -> float:
     """Calculate rolling max score for a theme over the last N days"""
@@ -67,13 +67,13 @@ async def send_slack_alert(theme: Dict, score: float, positives: List[str], comp
     
     # Main text
     text_lines = [
-        f"⚡ *Opportunity Radar Alert*",
-        f"",
+        "⚡ *Opportunity Radar Alert*",
+        "",
         f"Theme: *{theme['name'][:50]}*",  # Truncate long titles
         f"Score: *{score:.2f}*",
         f"Positive Components: {', '.join(positives)}",
-        f"",
-        f"*Top Contributors:*",
+        "",
+        "*Top Contributors:*",
         components_text
     ]
     
@@ -236,7 +236,7 @@ async def check_and_fire_alerts():
             
             try:
                 await db.signals.insert_one(advisory_doc)
-            except:
+            except Exception:
                 pass  # Already exists
     
     return {"alerts_fired": len(alerts_fired), "themes": alerts_fired}

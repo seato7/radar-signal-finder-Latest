@@ -1,5 +1,4 @@
 """Supabase Sync Service - Push data from Railway to Supabase"""
-import asyncio
 import httpx
 import logging
 from datetime import datetime, timezone
@@ -275,7 +274,7 @@ class SupabaseSync:
                 f"{self.url}/rest/v1/prices",
                 params={
                     "select": "ticker,updated_at",
-                    f"updated_at": f"gte.{datetime.now(timezone.utc).isoformat()}"
+                    "updated_at": f"gte.{datetime.now(timezone.utc).isoformat()}"
                 }
             )
             

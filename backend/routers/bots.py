@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.db import get_db
-from backend.models_bots import Bot, RiskPolicy
+from backend.models_bots import Bot
 from backend.services.bot_strategies import get_strategy_schemas
 from backend.services.bot_engine import get_bot_engine
 from backend.auth import get_current_active_user, TokenData
-from typing import List, Dict, Any
+from typing import Dict, Any
 from datetime import datetime
 
 router = APIRouter()

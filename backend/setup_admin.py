@@ -21,7 +21,7 @@ async def setup_admin():
     client = AsyncIOMotorClient(mongo_url)
     db = client.opportunity_radar
     
-    print(f"🔌 Connected to MongoDB")
+    print("🔌 Connected to MongoDB")
     
     # Hash password
     hashed_password = pwd_context.hash(ADMIN_PASSWORD)
@@ -69,7 +69,7 @@ async def setup_admin():
             "expires_at": expires_at
         }
         await db.subscriptions.insert_one(subscription_data)
-        print(f"✅ Created premium subscription")
+        print("✅ Created premium subscription")
     else:
         await db.subscriptions.update_one(
             {"user_id": user_id},
@@ -79,18 +79,18 @@ async def setup_admin():
                 "expires_at": expires_at
             }}
         )
-        print(f"✅ Updated to premium subscription")
+        print("✅ Updated to premium subscription")
     
     # Verify
     final_user = await db.users.find_one({"email": ADMIN_EMAIL})
     final_sub = await db.subscriptions.find_one({"user_id": user_id})
     
-    print(f"\n🎉 Setup complete!")
+    print("\n🎉 Setup complete!")
     print(f"   Email: {ADMIN_EMAIL}")
     print(f"   Role: {final_user['role']}")
     print(f"   Plan: {final_sub['plan']}")
     print(f"   Expires: {final_sub['expires_at']}")
-    print(f"\n👉 Now log out and log back in with these credentials")
+    print("\n👉 Now log out and log back in with these credentials")
     
     client.close()
 

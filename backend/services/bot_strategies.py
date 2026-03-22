@@ -1,6 +1,6 @@
 """Trading bot strategy implementations"""
-from typing import List, Dict, Any, Tuple
-from datetime import datetime, timedelta
+from typing import List, Dict, Any
+from datetime import datetime
 import statistics
 from backend.models_bots import OrderSim
 

@@ -128,7 +128,7 @@ async def count_requests(request: Request, call_next):
         response = await call_next(request)
         metrics.increment(f"http_responses_{response.status_code}")
         return response
-    except Exception as e:
+    except Exception:
         metrics.increment("http_errors")
         raise
 

@@ -1,4 +1,3 @@
-import pytest
 from backend.cache import SimpleCache
 import time
 

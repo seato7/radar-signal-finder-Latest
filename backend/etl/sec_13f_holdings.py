@@ -1,8 +1,6 @@
 import httpx
-import hashlib
-import json
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 from backend.db import get_db
 from backend.config import settings
@@ -68,7 +66,7 @@ def normalize_period_ended(period_str: str) -> str:
     try:
         dt = datetime.fromisoformat(period_str.replace("Z", "+00:00"))
         return dt.strftime("%Y-%m-%d")
-    except:
+    except Exception:
         pass
     
     # Try common date formats
@@ -76,7 +74,7 @@ def normalize_period_ended(period_str: str) -> str:
         try:
             dt = datetime.strptime(period_str, fmt)
             return dt.strftime("%Y-%m-%d")
-        except:
+        except Exception:
             continue
     
     # If all else fails, return as-is

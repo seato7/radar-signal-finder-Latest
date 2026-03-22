@@ -1,4 +1,3 @@
-import pytest
 from backend.metrics import MetricsCollector
 
 def test_metrics_increment():

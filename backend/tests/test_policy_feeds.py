@@ -1,7 +1,5 @@
 import pytest
 from backend.etl.policy_feeds import run_policy_feeds_etl, generate_entry_checksum, matches_keywords
-from backend.db import get_db
-from datetime import datetime
 
 def test_generate_checksum():
     """Test checksum generation is deterministic"""

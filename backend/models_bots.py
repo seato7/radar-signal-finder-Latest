@@ -1,8 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
-import hashlib
-import json
 
 class RiskPolicy(BaseModel):
     max_drawdown_pct: float = 20.0

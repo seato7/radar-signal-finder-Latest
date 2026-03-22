@@ -2,7 +2,6 @@
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from backend.db import get_db
-from backend.scoring import compute_theme_score
 
 async def get_forward_returns(ticker: str, date: str, horizons: List[int]) -> Dict[int, float]:
     """
