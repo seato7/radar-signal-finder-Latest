@@ -1,10 +1,10 @@
 // redeployed 2026-03-17
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 // FIX: Import crypto explicitly so crypto.subtle.digest() is available in all Deno edge runtimes
 import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { logHeartbeat } from '../_shared/heartbeat.ts';
 import { SlackAlerter } from '../_shared/slack-alerts.ts';
+import { callGemini } from '../_shared/gemini.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +12,6 @@ const corsHeaders = {
 };
 
 const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
-const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
 // Commodity mapping for tickers
 const commodityMap: Record<string, string> = {
@@ -52,7 +51,7 @@ async function fetchCFTCData(): Promise<any[]> {
   return await response.json();
 }
 
-async function fetchCOTFallback(firecrawlKey: string, lovableApiKey: string): Promise<any[]> {
+async function fetchCOTFallback(firecrawlKey: string): Promise<any[]> {
   console.log('[COT] Using Firecrawl + AI fallback for COT data...');
   
   // Search for recent COT reports
@@ -85,21 +84,10 @@ async function fetchCOTFallback(firecrawlKey: string, lovableApiKey: string): Pr
     .map((r: any) => `[${r.url}]\n${r.markdown || r.description || ''}`)
     .join('\n\n---\n\n');
 
-  // Use Lovable AI to extract structured COT data
-  const aiResponse = await fetch(LOVABLE_AI_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${lovableApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [{
-        role: 'system',
-        content: 'Extract COT positioning data. Return valid JSON array only.'
-      }, {
-        role: 'user',
-        content: `Extract Commitments of Traders data from this content. Return JSON array:
+  // Use Gemini to extract structured COT data
+  const aiPrompt = `Extract COT positioning data. Return valid JSON array only.
+
+Extract Commitments of Traders data from this content. Return JSON array:
 [{
   "cftc_contract_market_code": "code",
   "market_and_exchange_names": "name",
@@ -114,25 +102,18 @@ async function fetchCOTFallback(firecrawlKey: string, lovableApiKey: string): Pr
 Include Gold (067651), Silver (088691), Crude Oil (067411), Copper (088661), EUR/USD (099741) if found.
 
 Content:
-${combinedContent.substring(0, 10000)}`
-      }],
-      temperature: 0.1,
-      max_tokens: 2000,
-    }),
-  });
+${combinedContent.substring(0, 10000)}`;
 
-  if (!aiResponse.ok) {
+  const content = await callGemini(aiPrompt, 2000);
+  if (!content) {
     throw new Error('AI extraction failed');
   }
 
-  const aiData = await aiResponse.json();
-  const content = aiData.choices?.[0]?.message?.content || '[]';
-  
   const jsonMatch = content.match(/\[[\s\S]*\]/);
   if (jsonMatch) {
     return JSON.parse(jsonMatch[0]);
   }
-  
+
   return [];
 }
 
@@ -152,7 +133,6 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     
     const supabase = createClient(supabaseUrl, supabaseKey);
     
@@ -166,9 +146,9 @@ Deno.serve(async (req) => {
     } catch (primaryError) {
       console.error(`[COT] ❌ Primary CFTC API failed:`, primaryError);
       
-      if (firecrawlKey && lovableApiKey) {
+      if (firecrawlKey) {
         try {
-          cotData = await fetchCOTFallback(firecrawlKey, lovableApiKey);
+          cotData = await fetchCOTFallback(firecrawlKey);
           fallbackUsed = true;
           console.log(`[COT] ✅ Fallback successful: ${cotData.length} records`);
         } catch (fallbackError) {
