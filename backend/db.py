@@ -1,6 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
-import certifi
 
 client: AsyncIOMotorClient = None
 db = None

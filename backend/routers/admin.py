@@ -3,7 +3,6 @@ from backend.db import get_db
 from backend.auth import require_admin, TokenData
 from backend.models_admin import AdminActionRequest
 from datetime import datetime, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
 from backend.config import settings
 
 router = APIRouter()

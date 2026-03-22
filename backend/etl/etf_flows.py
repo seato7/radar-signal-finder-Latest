@@ -3,8 +3,8 @@ import httpx
 import csv
 import json
 from io import StringIO
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from datetime import datetime
+from typing import List, Dict
 from collections import defaultdict
 import statistics
 from backend.db import get_db

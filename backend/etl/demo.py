@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from backend.db import get_db
-from backend.models import Signal, Citation
+from backend.models import Signal
 import random
 
 # Canonical theme IDs
