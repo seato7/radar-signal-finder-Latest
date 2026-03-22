@@ -43,9 +43,12 @@ jobs:
       - name: Run tests with coverage
         working-directory: ./backend
         env:
+          JWT_SECRET_KEY: test-secret-key-for-ci
           MONGO_URL: mongodb://localhost:27017
           DB_NAME: test_opportunity_radar
           FRONTEND_PUBLIC_URL: http://localhost:5173
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SERVICE_KEY: test-key
         run: |
           coverage run -m pytest -v
           coverage report
