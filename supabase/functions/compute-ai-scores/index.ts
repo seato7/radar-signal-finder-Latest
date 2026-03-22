@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,44 +86,6 @@ function parseAIResponse(
   }
 }
 
-async function callLLM(
-  prompt: string,
-  lovableApiKey: string
-): Promise<string | null> {
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${lovableApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a quantitative analyst. Always respond with valid JSON only — no markdown, no prose.',
-        },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errType =
-      response.status === 429 ? 'Rate limited' :
-      response.status === 402 ? 'Quota exceeded' :
-      response.status === 401 ? 'Auth error' : 'Gateway error';
-    const body = await response.text().catch(() => '');
-    throw new Error(`AI gateway ${errType} (${response.status}): ${body.substring(0, 300)}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content ?? null;
-  if (content === null) {
-    console.warn('[COMPUTE-AI-SCORES] callLLM: response ok but no content in choices:', JSON.stringify(data).substring(0, 300));
-  }
-  return content;
-}
 
 async function getTavilyContext(ticker: string, supabase: any): Promise<string> {
   try {
@@ -156,9 +119,6 @@ serve(async (req) => {
   );
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY not configured');
-
     // 1. Fetch top 200 assets by formula score
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
@@ -241,9 +201,9 @@ serve(async (req) => {
             : '';
 
           const prompt = buildPrompt(asset.ticker, formulaScore, signals, tavilyContext);
-          const llmContent = await callLLM(prompt, LOVABLE_API_KEY);
+          const llmContent = await callGemini(prompt, 1024);
           if (!llmContent) {
-            console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: callLLM returned null content`);
+            console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: callGemini returned null content`);
             parseErrors++;
           } else {
             const parsed = parseAIResponse(llmContent);
@@ -345,7 +305,7 @@ serve(async (req) => {
       status: 'success',
       rowsInserted: aiScoreRows.length,
       rowsSkipped: parseErrors,
-      sourceUsed: 'gemini-2.5-flash',
+      sourceUsed: 'gemini-2.0-flash',
       duration,
       latencyMs: duration,
     });

@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +10,6 @@ const corsHeaders = {
 };
 
 const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
-const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
 // Parse relative dates like "2 days ago", "1 week ago"
 function parseRelativeDate(dateStr: string): string | null {
@@ -184,13 +184,9 @@ serve(async (req) => {
     console.log('[CONGRESSIONAL] Starting congressional trades ingestion...');
     
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    
+
     if (!firecrawlKey) {
       throw new Error('FIRECRAWL_API_KEY not configured');
-    }
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
     }
 
     let allMarkdownContent: string[] = [];
@@ -335,17 +331,7 @@ serve(async (req) => {
     if (trades.length === 0) {
       console.log('[CONGRESSIONAL] Using AI extraction...');
       
-      const aiResponse = await fetch(LOVABLE_AI_URL, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json' 
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash',
-          messages: [{
-            role: 'system',
-            content: `You are a congressional trading data extractor. Extract stock trades from the provided content.
+      const aiPrompt = `You are a congressional trading data extractor. Extract stock trades from the provided content.
 
 IMPORTANT PARSING RULES:
 - Dates like "2 days ago" mean ${new Date(Date.now() - 2*24*60*60*1000).toISOString().split('T')[0]}
@@ -357,10 +343,7 @@ IMPORTANT PARSING RULES:
 - "RepublicanHouseKY" means party=Republican, chamber=House
 - "DemocratSenateCA" means party=Democrat, chamber=Senate
 
-Return valid JSON array only.`
-          }, {
-            role: 'user',
-            content: `Extract congressional stock trades from this content. Return a JSON array with this structure:
+Extract congressional stock trades from this content. Return a JSON array with this structure:
 [{
   "representative": "Full Name",
   "ticker": "SYMBOL (without :US suffix)",
@@ -372,18 +355,14 @@ Return valid JSON array only.`
   "chamber": "Senate" or "House" or null
 }]
 
-Content:
-${combinedContent.substring(0, 20000)}`
-          }],
-          temperature: 0.1,
-          max_tokens: 4000,
-        }),
-      });
+Return valid JSON array only.
 
-      if (aiResponse.ok) {
-        const aiData = await aiResponse.json();
-        const aiContent = aiData.choices?.[0]?.message?.content || '[]';
-        
+Content:
+${combinedContent.substring(0, 20000)}`;
+
+      const aiContent = await callGemini(aiPrompt, 4000);
+
+      if (aiContent) {
         try {
           const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
@@ -394,7 +373,7 @@ ${combinedContent.substring(0, 20000)}`
           console.error('[CONGRESSIONAL] Failed to parse AI response:', parseError);
         }
       } else {
-        console.error('[CONGRESSIONAL] AI extraction failed:', aiResponse.status);
+        console.error('[CONGRESSIONAL] AI extraction returned null');
       }
     }
 

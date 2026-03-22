@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
+import { callGemini } from "../_shared/gemini.ts";
 
 const slackAlerter = new SlackAlerter();
 
@@ -11,7 +12,6 @@ const corsHeaders = {
 };
 
 const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v1';
-const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
 // v2 fixes:
 // 1. fetchWithRetry: exponential backoff on 429 for both Firecrawl and AI calls
@@ -58,10 +58,8 @@ Deno.serve(async (req) => {
     console.log('[SEARCH-TRENDS] v2 starting...');
 
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
 
     if (!firecrawlKey) throw new Error('FIRECRAWL_API_KEY not configured');
-    if (!lovableApiKey) throw new Error('LOVABLE_API_KEY not configured');
 
     // Fetch top assets
     const { data: assets, error: assetsError } = await supabase
@@ -145,23 +143,9 @@ Deno.serve(async (req) => {
       let trend: { search_volume?: number; trend_change?: number; breakout?: boolean } | null = null;
 
       try {
-        const aiResponse = await fetchWithRetry(() =>
-          fetch(LOVABLE_AI_URL, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${lovableApiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'google/gemini-2.5-flash',
-              messages: [
-                {
-                  role: 'system',
-                  content: 'Extract search trend data for a single stock ticker. Return valid JSON only.',
-                },
-                {
-                  role: 'user',
-                  content: `Find search trend data for ticker: ${asset.ticker} (${asset.name})
+        const aiPrompt = `Extract search trend data for a single stock ticker. Return valid JSON only.
+
+Find search trend data for ticker: ${asset.ticker} (${asset.name})
 
 Return a single JSON object (not an array):
 {
@@ -173,28 +157,15 @@ Return a single JSON object (not an array):
 Only return data you find evidence for in the content below. If no data for ${asset.ticker}, return {"search_volume": null, "trend_change": null, "breakout": false}.
 
 Content:
-${combinedContent.substring(0, 8000)}`,
-                },
-              ],
-              temperature: 0.1,
-              max_tokens: 200,
-            }),
-          })
-        );
+${combinedContent.substring(0, 8000)}`;
 
-        if (aiResponse.status === 402) {
-          // Billing issue — log and abort the whole run, no point continuing
-          throw new Error(`AI extraction failed: 402 — check LOVABLE_API_KEY quota`);
-        }
+        const aiContent = await callGemini(aiPrompt, 200);
 
-        if (!aiResponse.ok) {
-          console.error(`[SEARCH-TRENDS] AI call failed for ${asset.ticker}: ${aiResponse.status} — skipping`);
+        if (!aiContent) {
+          console.error(`[SEARCH-TRENDS] AI call returned null for ${asset.ticker} — skipping`);
           skipped++;
           continue;
         }
-
-        const aiData = await aiResponse.json();
-        const aiContent = aiData.choices?.[0]?.message?.content || '{}';
 
         try {
           const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
@@ -210,11 +181,6 @@ ${combinedContent.substring(0, 8000)}`,
         }
 
       } catch (aiErr) {
-        // Log 402 but continue processing other tickers (don't abort whole run)
-        if (aiErr instanceof Error && aiErr.message.includes('402')) {
-          console.error('[ingest-search-trends] AI quota exhausted (402) — skipping remaining AI calls for this run');
-          break; // stop AI calls but don't throw — partial results are better than none
-        }
         console.error(`[SEARCH-TRENDS] AI error for ${asset.ticker}:`, aiErr);
         skipped++;
         continue;
