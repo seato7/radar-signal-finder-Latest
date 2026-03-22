@@ -61,13 +61,13 @@ async function _callGeminiModel(
   return text;
 }
 
-/** gemini-2.0-flash — cheap, ideal for simple/structured extraction tasks */
+/** gemini-2.5-flash-lite — cheap, ideal for simple/structured extraction tasks */
 export async function callGemini(
   prompt: string,
   maxTokens: number = 300,
   responseType: 'json' | 'text' = 'json',
 ): Promise<string | null> {
-  return _callGeminiModel('gemini-2.0-flash', prompt, maxTokens, responseType);
+  return _callGeminiModel('gemini-2.5-flash-lite', prompt, maxTokens, responseType);
 }
 
 /** gemini-2.5-flash — smarter, for moderate/complex reasoning tasks */
