@@ -52,7 +52,7 @@ class TestTwelveDataPriceFetcher:
             fetcher.session = AsyncMock()
             fetcher.session.get = AsyncMock(return_value=mock_response)
             
-            results = await fetcher._fetch_single_batch(["AAPL", "MSFT"])
+            results = await fetcher._fetch_single_batch(["AAPL", "MSFT"], {})
             
             assert "AAPL" in results
             assert "MSFT" in results
@@ -74,13 +74,14 @@ class TestTwelveDataPriceFetcher:
             "MSFT": {"price": "380.0"}
         }
         
-        with patch.dict('os.environ', {'TWELVEDATA_API_KEY': 'test_key'}):
+        with patch("backend.etl.twelvedata_prices.settings") as mock_settings:
+            mock_settings.TWELVEDATA_API_KEY = "test_key"
             with patch("httpx.AsyncClient") as mock_client:
                 mock_instance = MagicMock()
                 mock_instance.get = AsyncMock(return_value=mock_response)
                 mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
                 mock_client.return_value.__aexit__ = AsyncMock()
-                
+
                 async with TwelveDataPriceFetcher() as fetcher:
                     fetcher.session = mock_instance
                     
@@ -133,7 +134,7 @@ class TestPriceRouter:
         assert result["data_provider"] == "Twelve Data"
         assert "scheduler_active" in result
         assert "mode" in result
-        assert result["mode"] == "serial_queue"
+        assert result["mode"] == "credit_budgeted_tiered"
         assert "api_key_configured" in result
     
     @pytest.mark.asyncio
@@ -160,5 +161,5 @@ class TestSchedulerStats:
         assert "scheduler_active" in stats
         assert "config" in stats
         assert "mode" in stats
-        assert stats["mode"] == "serial_queue"
+        assert stats["mode"] == "credit_budgeted_tiered"
         assert stats["data_provider"] == "Twelve Data"

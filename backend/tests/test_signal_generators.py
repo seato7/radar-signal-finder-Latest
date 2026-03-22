@@ -182,20 +182,26 @@ class TestThemeScoreComputation:
         from datetime import datetime
         
         # Create test signals with various magnitudes
+        from backend.models import Citation
+        dummy_citation = Citation(source="test", url="https://example.com", timestamp="2024-01-01T00:00:00")
         test_signals = [
             Signal(
                 id="test1",
                 asset_id="asset1",
                 signal_type="policy_keyword",
                 magnitude=10.0,
-                observed_at=datetime.utcnow()
+                observed_at=datetime.utcnow(),
+                oa_citation=dummy_citation,
+                checksum="test_checksum_1"
             ),
             Signal(
                 id="test2",
                 asset_id="asset1",
                 signal_type="flow_pressure",
                 magnitude=5.0,
-                observed_at=datetime.utcnow()
+                observed_at=datetime.utcnow(),
+                oa_citation=dummy_citation,
+                checksum="test_checksum_2"
             ),
         ]
         

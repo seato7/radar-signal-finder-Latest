@@ -1,19 +1,25 @@
 import pytest
 import asyncio
+import pytest_asyncio
 from backend.db import init_db, close_db
 
 
-@pytest.fixture(scope="session", autouse=True)
-def initialize_db():
-    """Initialize MongoDB connection once for the entire test session.
+@pytest.fixture(scope="session")
+def event_loop():
+    """Single event loop for the entire session.
 
-    Tests call get_db() which returns the global `db` variable set by
-    init_db(). Without this fixture, get_db() returns None and every
-    async DB operation fails with AttributeError.
-
-    Uses asyncio.run() so it is self-contained and does not interfere
-    with the per-test event loops created by pytest-asyncio.
+    Motor creates AsyncIOMotorClient bound to the running event loop.
+    All async tests must share this same loop so Motor never dispatches
+    operations to a closed loop from a previous asyncio.run() call.
     """
-    asyncio.run(init_db())
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def initialize_db():
+    """Initialize MongoDB connection once for the entire test session."""
+    await init_db()
     yield
-    asyncio.run(close_db())
+    await close_db()
