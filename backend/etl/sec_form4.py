@@ -223,6 +223,7 @@ async def run_form4_etl(limit: int = 100) -> dict:
             )
             
             signal_dict = signal.dict(exclude={"id"})
+            signal_dict["ticker"] = ticker
             await db.signals.insert_one(signal_dict)
             signals_created += 1
     

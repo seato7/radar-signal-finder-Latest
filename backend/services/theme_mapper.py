@@ -105,18 +105,21 @@ async def map_signal_to_theme(signal_id: str, value_text: str, allow_multi: bool
             mapper_route = "semantic"
             mapper_score = best_semantic_score
     
-    # Update signal with theme_id if found
-    if best_theme_id and (max_matches > 0 or mapper_route == "semantic"):
+    # Always record mapper trace when semantic mode is active
+    if semantic_enabled:
         await db.signals.update_one(
             {"_id": signal_id},
-            {"$set": {
-                "theme_id": best_theme_id,
-                "raw.mapper": mapper_route,
-                "raw.mapper_score": mapper_score
-            }}
+            {"$set": {"raw.mapper": mapper_route, "raw.mapper_score": mapper_score}}
+        )
+
+    # Update signal with theme_id if found
+    if best_theme_id:
+        await db.signals.update_one(
+            {"_id": signal_id},
+            {"$set": {"theme_id": best_theme_id}}
         )
         return best_theme_id
-    
+
     return None
 
 async def run_theme_mapper() -> dict:

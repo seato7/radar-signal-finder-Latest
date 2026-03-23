@@ -236,8 +236,8 @@ async def run_13f_holdings_etl(filing_url: str, xml_content: str, manager_name: 
         }
         checksum = Signal.generate_checksum(checksum_data)
         
-        # Check if already exists
-        existing = await db.signals.find_one({"checksum": checksum})
+        # Check if already exists (exclude superseded so amendments can re-insert)
+        existing = await db.signals.find_one({"checksum": checksum, "raw.superseded": {"$ne": True}})
         if existing:
             skipped += 1
             continue
