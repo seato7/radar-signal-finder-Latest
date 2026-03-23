@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { fireAiScoring } from '../_shared/fire-ai-scoring.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,6 +59,7 @@ serve(async (req) => {
       .in('ticker', tickers);
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
+    const assetIdToTicker = new Map(assets?.map(a => [a.id, a.ticker]) || []);
     console.log(`[SIGNAL-GEN-ETF] ${tickerToAssetId.size}/${tickers.length} tickers matched in assets`);
 
     const signals = [];
@@ -119,8 +121,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-ETF] ✅ Upserted ${insertedCount} ETF flow signals (${signals.length - insertedCount} duplicates skipped)`);
 
+    if (insertedCount > 0) {
+      const affectedTickers = [...new Set(
+        signals.map((s: any) => assetIdToTicker.get(s.asset_id)).filter((t): t is string => Boolean(t))
+      )];
+      fireAiScoring(affectedTickers);
+    }
+
     const duration = Date.now() - startTime;
-    
+
     await logHeartbeat(supabaseClient, {
       function_name: 'generate-signals-from-etf-flows',
       status: 'success',

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { fireAiScoring } from '../_shared/fire-ai-scoring.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -155,8 +156,10 @@ serve(async (req) => {
 
     // Create ticker to asset ID mapping
     const tickerToAssetId = new Map<string, string>();
+    const assetIdToTicker = new Map<string, string>();
     for (const asset of assetBatch) {
       tickerToAssetId.set(asset.ticker, asset.id);
+      assetIdToTicker.set(asset.id, asset.ticker);
     }
 
     // Filter assets based on coverage
@@ -363,6 +366,13 @@ serve(async (req) => {
     const hasMore = nextOffset < (totalAssets || 0);
 
     console.log(`[SIGNAL-GEN-MOMENTUM] ✅ Chunk complete: ${insertedCount} signals created, next_offset: ${hasMore ? nextOffset : null}`);
+
+    if (insertedCount > 0) {
+      const affectedTickers = [...new Set(
+        signals.map((s: any) => assetIdToTicker.get(s.asset_id)).filter((t): t is string => Boolean(t))
+      )];
+      fireAiScoring(affectedTickers);
+    }
 
     const duration = Date.now() - startTime;
     await logHeartbeat(supabaseClient, {

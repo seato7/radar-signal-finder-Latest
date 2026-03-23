@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { fireAiScoring } from '../_shared/fire-ai-scoring.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,6 +77,11 @@ serve(async (req) => {
       for (const asset of allAssets || []) {
         tickerToAssetIdPolicy.set(asset.ticker, asset.id);
       }
+    }
+
+    const assetIdToTicker = new Map<string, string>();
+    for (const [ticker, id] of tickerToAssetIdPolicy) {
+      assetIdToTicker.set(id, ticker);
     }
 
     const signals = [];
@@ -168,8 +174,15 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-POLICY] ✅ Created ${insertedCount} policy/regulatory signals`);
 
+    if (insertedCount > 0) {
+      const affectedTickers = [...new Set(
+        signals.map((s: any) => assetIdToTicker.get(s.asset_id)).filter((t): t is string => Boolean(t))
+      )];
+      fireAiScoring(affectedTickers);
+    }
+
     const duration = Date.now() - startTime;
-    
+
     await logHeartbeat(supabaseClient, {
       function_name: 'generate-signals-from-policy',
       status: 'success',

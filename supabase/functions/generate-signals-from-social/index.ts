@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { fireAiScoring } from '../_shared/fire-ai-scoring.ts';
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 
@@ -21,6 +22,7 @@ serve(async (req) => {
     const tickers = [...new Set(sentimentData.map(s => s.ticker))];
     const { data: assets } = await supabaseClient.from('assets').select('id, ticker').in('ticker', tickers);
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
+    const assetIdToTicker = new Map(assets?.map(a => [a.id, a.ticker]) || []);
     const signals = [];
     for (const item of sentimentData) {
       const assetId = tickerToAssetId.get(item.ticker);
@@ -45,6 +47,12 @@ serve(async (req) => {
       if (!insertError) insertedCount += data?.length || 0;
     }
     console.log(`[SIGNAL-GEN-SOCIAL] ✅ Upserted ${insertedCount} news sentiment signals`);
+    if (insertedCount > 0) {
+      const affectedTickers = [...new Set(
+        signals.map((s: any) => assetIdToTicker.get(s.asset_id)).filter((t): t is string => Boolean(t))
+      )];
+      fireAiScoring(affectedTickers);
+    }
     const duration = Date.now() - startTime;
     await logHeartbeat(supabaseClient, { function_name: 'generate-signals-from-social', status: 'success', rows_inserted: insertedCount, rows_skipped: signals.length - insertedCount, duration_ms: duration, source_used: 'news_sentiment_aggregate' });
     return new Response(JSON.stringify({ success: true, records_processed: sentimentData.length, signals_created: insertedCount, duplicates_skipped: signals.length - insertedCount }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

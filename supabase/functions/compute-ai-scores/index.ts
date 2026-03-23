@@ -11,10 +11,10 @@ const corsHeaders = {
 
 const BATCH_SIZE = 5;
 const BATCH_DELAY_MS = 1000;
-const CACHE_HOURS = 6;
+const CACHE_HOURS_FALLBACK = 24;   // daily fallback: skip assets scored in last 24h
 const SIGNAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SIGNALS_PER_ASSET = 20;
-const TOP_ASSETS = 200;
+const MAX_TICKERS_ON_DEMAND = 20;  // cap per on-demand call to prevent overload
 
 function buildPrompt(
   ticker: string,
@@ -119,27 +119,62 @@ serve(async (req) => {
   );
 
   try {
-    // 1. Fetch top 200 assets by formula score
-    const { data: assets, error: assetsError } = await supabase
-      .from('assets')
-      .select('id, ticker, computed_score')
-      .order('computed_score', { ascending: false })
-      .limit(TOP_ASSETS);
+    // 1. Parse request body — check for on-demand tickers[] parameter
+    let requestedTickers: string[] | null = null;
+    try {
+      const body = await req.json();
+      if (Array.isArray(body?.tickers) && body.tickers.length > 0) {
+        requestedTickers = (body.tickers as string[]).slice(0, MAX_TICKERS_ON_DEMAND);
+      }
+    } catch { /* no body or not JSON — fallback mode */ }
 
-    if (assetsError) throw assetsError;
-    const assetList: { id: string; ticker: string; computed_score: number }[] = assets || [];
-    console.log(`[COMPUTE-AI-SCORES] ${assetList.length} assets fetched`);
+    const mode = requestedTickers ? 'on_demand' : 'fallback_daily';
+    console.log(`[COMPUTE-AI-SCORES] mode=${mode}${requestedTickers ? ` tickers=[${requestedTickers.join(',')}]` : ''}`);
 
-    // 2. Filter out assets already scored in the last CACHE_HOURS
-    const cacheThreshold = new Date(Date.now() - CACHE_HOURS * 60 * 60 * 1000).toISOString();
-    const { data: recentScores } = await supabase
-      .from('ai_scores')
-      .select('asset_id')
-      .gte('scored_at', cacheThreshold);
+    // 2. Fetch assets — on-demand: by ticker list; fallback: all signal-active assets
+    let assetList: { id: string; ticker: string; computed_score: number }[] = [];
 
-    const cachedIds = new Set((recentScores || []).map((r: any) => r.asset_id));
-    const assetsToProcess = assetList.filter((a) => !cachedIds.has(a.id));
-    console.log(`[COMPUTE-AI-SCORES] ${cachedIds.size} cached, ${assetsToProcess.length} to process`);
+    if (requestedTickers) {
+      // On-demand: score only the requested tickers, no cache filter (signals just arrived)
+      const { data, error: assetsError } = await supabase
+        .from('assets')
+        .select('id, ticker, computed_score')
+        .in('ticker', requestedTickers);
+      if (assetsError) throw assetsError;
+      assetList = data || [];
+      console.log(`[COMPUTE-AI-SCORES] ${assetList.length}/${requestedTickers.length} requested tickers found in assets`);
+    } else {
+      // Fallback: find all assets with signals in last 7 days — NOT top-200 blind scan
+      const signalCutoff = new Date(Date.now() - SIGNAL_WINDOW_MS).toISOString();
+      const { data: recentSignalRows } = await supabase
+        .from('signals')
+        .select('asset_id')
+        .gte('observed_at', signalCutoff);
+      const activeAssetIds = [...new Set((recentSignalRows || []).map((r: any) => r.asset_id))];
+      console.log(`[COMPUTE-AI-SCORES] ${activeAssetIds.length} signal-active assets found`);
+
+      if (!activeAssetIds.length) {
+        await logHeartbeat(supabase, { function_name: 'compute-ai-scores', status: 'success', rows_inserted: 0, duration_ms: Date.now() - startTime, source_used: 'no_active_signals' });
+        return new Response(JSON.stringify({ success: true, scored: 0, reason: 'no_signal_active_assets' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const { data, error: assetsError } = await supabase
+        .from('assets')
+        .select('id, ticker, computed_score')
+        .in('id', activeAssetIds);
+      if (assetsError) throw assetsError;
+      assetList = data || [];
+
+      // Fallback: filter out assets already scored in last 24h
+      const cacheThreshold = new Date(Date.now() - CACHE_HOURS_FALLBACK * 60 * 60 * 1000).toISOString();
+      const { data: recentScores } = await supabase.from('ai_scores').select('asset_id').gte('scored_at', cacheThreshold);
+      const cachedIds = new Set((recentScores || []).map((r: any) => r.asset_id));
+      assetList = assetList.filter((a) => !cachedIds.has(a.id));
+      console.log(`[COMPUTE-AI-SCORES] ${cachedIds.size} cached (24h), ${assetList.length} to process`);
+    }
+
+    const assetsToProcess = assetList;
+    console.log(`[COMPUTE-AI-SCORES] ${assetsToProcess.length} assets to process`);
 
     if (!assetsToProcess.length) {
       await logHeartbeat(supabase, {
@@ -261,7 +296,7 @@ serve(async (req) => {
       }
 
       // Inter-batch delay (skip after last batch)
-      if (i + BATCH_SIZE < assetsToProcess.length) {
+      if (i + BATCH_SIZE < assetsWithSignals.length) {
         await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
       }
     }
