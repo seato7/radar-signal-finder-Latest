@@ -176,15 +176,34 @@ serve(async (req) => {
       }
     }
 
+    // Filter to only assets with at least 1 active signal — zero-signal assets return score=50/neutral which is useless
+    const assetsWithSignals = assetsToProcess.filter((a) => (signalsByAsset.get(a.id)?.length ?? 0) > 0);
+    const noSignalCount = assetsToProcess.length - assetsWithSignals.length;
+    console.log(`[COMPUTE-AI-SCORES] signal coverage: ${assetsWithSignals.length} have signals, ${noSignalCount} skipped (no signals in last 7d)`);
+
+    if (!assetsWithSignals.length) {
+      await logHeartbeat(supabase, {
+        function_name: 'compute-ai-scores',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: Date.now() - startTime,
+        source_used: 'signal_filter_skip',
+      });
+      return new Response(
+        JSON.stringify({ success: true, scored: 0, reason: 'no_assets_with_signals', assets_fetched: assetList.length, cached: cachedIds.size, no_signals: noSignalCount }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // 4. Process in batches
     const aiScoreRows: any[] = [];
     let parseErrors = 0;
     let rateLimitErrors = 0;
 
-    for (let i = 0; i < assetsToProcess.length; i += BATCH_SIZE) {
-      const batch = assetsToProcess.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < assetsWithSignals.length; i += BATCH_SIZE) {
+      const batch = assetsWithSignals.slice(i, i + BATCH_SIZE);
       const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(assetsToProcess.length / BATCH_SIZE);
+      const totalBatches = Math.ceil(assetsWithSignals.length / BATCH_SIZE);
       console.log(`[COMPUTE-AI-SCORES] Batch ${batchNum}/${totalBatches}: ${batch.map((a) => a.ticker).join(', ')}`);
 
       // Process assets sequentially within the batch — 300ms between each call
@@ -235,7 +254,7 @@ serve(async (req) => {
         }
 
         // 300ms pause between individual asset calls (skip after last asset in last batch)
-        const isLastAsset = i + j + 1 >= assetsToProcess.length;
+        const isLastAsset = i + j + 1 >= assetsWithSignals.length;
         if (!isLastAsset) {
           await new Promise((resolve) => setTimeout(resolve, 300));
         }
