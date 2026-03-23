@@ -226,18 +226,19 @@ async def run_13f_holdings_etl(filing_url: str, xml_content: str, manager_name: 
         if not ticker:
             unmapped_cusips.append({"cusip": cusip, "value": pos["value"], "map_status": map_status})
         
-        # Generate checksum for idempotency
+        # Generate checksum for idempotency (filing_url included so amendments get unique checksums)
         checksum_data = {
             "manager": pos["manager"],
             "period_ended": pos["period_ended"],
             "cusip": cusip,
             "value": pos["value"],
-            "shares": pos["shares"]
+            "shares": pos["shares"],
+            "filing_url": filing_url
         }
         checksum = Signal.generate_checksum(checksum_data)
-        
-        # Check if already exists (exclude superseded so amendments can re-insert)
-        existing = await db.signals.find_one({"checksum": checksum, "raw.superseded": {"$ne": True}})
+
+        # Check if already exists
+        existing = await db.signals.find_one({"checksum": checksum})
         if existing:
             skipped += 1
             continue
