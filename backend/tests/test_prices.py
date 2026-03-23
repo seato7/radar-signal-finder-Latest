@@ -79,6 +79,7 @@ class TestTwelveDataPriceFetcher:
             with patch("httpx.AsyncClient") as mock_client:
                 mock_instance = MagicMock()
                 mock_instance.get = AsyncMock(return_value=mock_response)
+                mock_instance.aclose = AsyncMock()
                 mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
                 mock_client.return_value.__aexit__ = AsyncMock()
 

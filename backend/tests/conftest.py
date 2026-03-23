@@ -1,25 +1,17 @@
-import pytest
-import asyncio
 import pytest_asyncio
 from backend.db import init_db, close_db
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Single event loop for the entire session.
-
-    Motor creates AsyncIOMotorClient bound to the running event loop.
-    All async tests must share this same loop so Motor never dispatches
-    operations to a closed loop from a previous asyncio.run() call.
-    """
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def initialize_db():
-    """Initialize MongoDB connection once for the entire test session."""
+    """Re-initialize Motor for every test's event loop.
+
+    pytest-asyncio 0.23.x gives each async test its own function-scoped event
+    loop. Motor creates Futures tied to the loop that was running when it first
+    performed I/O. Re-initializing per-test ensures Motor always creates
+    Futures on the same loop the test is running on, avoiding the
+    'Future attached to a different loop' cross-loop error.
+    """
     await init_db()
     yield
     await close_db()
