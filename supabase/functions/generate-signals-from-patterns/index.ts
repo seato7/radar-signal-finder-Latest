@@ -63,18 +63,23 @@ serve(async (req) => {
       });
     }
 
+    // Normalize tickers: strip exchange suffixes like "AAPL:US" -> "AAPL"
+    const normalizeTicker = (t: string) => t.split(':')[0].trim().toUpperCase();
+
     // Get asset mappings
-    const tickers = [...new Set(patterns.map(p => p.ticker))];
+    const tickers = [...new Set(patterns.map(p => normalizeTicker(p.ticker)))];
     const { data: assets } = await supabaseClient
       .from('assets')
       .select('id, ticker')
       .in('ticker', tickers);
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
+    console.log(`[SIGNAL-GEN-PATTERNS] ${tickerToAssetId.size}/${tickers.length} tickers matched in assets`);
 
     const signals = [];
     for (const pattern of patterns) {
-      const assetId = tickerToAssetId.get(pattern.ticker);
+      const normalizedTicker = normalizeTicker(pattern.ticker);
+      const assetId = tickerToAssetId.get(normalizedTicker);
       if (!assetId) continue;
 
       const patternType = pattern.pattern_type?.toLowerCase() || '';
@@ -111,11 +116,11 @@ serve(async (req) => {
         magnitude,
         observed_at: pattern.detected_at || new Date().toISOString(),
         value_text: `${pattern.pattern_type} pattern (${(confidence * 100).toFixed(0)}% confidence, ${riskReward.toFixed(1)}:1 R/R)`,
-        checksum: JSON.stringify({ 
-          ticker: pattern.ticker, 
-          signal_type: signalType, 
+        checksum: JSON.stringify({
+          ticker: normalizedTicker,
+          signal_type: signalType,
           pattern_type: pattern.pattern_type,
-          detected_at: pattern.detected_at 
+          detected_at: pattern.detected_at
         }),
         citation: { source: 'Pattern Recognition', timestamp: new Date().toISOString() },
         raw: {
