@@ -50,7 +50,7 @@ Respond ONLY with valid JSON in this exact format:
   "ai_score": <0-100 integer>,
   "confidence": <0.0-1.0 float>,
   "direction": "<up|down|neutral>",
-  "reasoning": "<1 sentence max>",
+  "reasoning": "<10 words max>",
   "key_signals": ["<signal_type_1>", "<signal_type_2>"]
 }`;
 }
@@ -220,7 +220,7 @@ serve(async (req) => {
             : '';
 
           const prompt = buildPrompt(asset.ticker, formulaScore, signals, tavilyContext);
-          const llmContent = await callGemini(prompt, 500, 'json');
+          const llmContent = await callGemini(prompt, 1000, 'json');
           if (!llmContent) {
             console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: callGemini returned null content`);
             parseErrors++;
