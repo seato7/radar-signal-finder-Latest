@@ -220,7 +220,7 @@ serve(async (req) => {
             : '';
 
           const prompt = buildPrompt(asset.ticker, formulaScore, signals, tavilyContext);
-          const llmContent = await callGemini(prompt, 300, 'text');
+          const llmContent = await callGemini(prompt, 500, 'json');
           if (!llmContent) {
             console.warn(`[COMPUTE-AI-SCORES] ${asset.ticker}: callGemini returned null content`);
             parseErrors++;
