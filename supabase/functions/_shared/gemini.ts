@@ -26,6 +26,7 @@ async function _callGeminiModel(
   };
   if (responseType === 'json') {
     generationConfig.responseMimeType = 'application/json';
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
   let response: Response;
