@@ -107,6 +107,7 @@ serve(async (req) => {
             ticker: asset.ticker.substring(0, 50),
             asset_id: asset.id,
             asset_class: asset.asset_class || 'stock',
+            timestamp: new Date().toISOString(),
             ...indicators,
           });
           successCount++;
