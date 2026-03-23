@@ -139,7 +139,7 @@ serve(async (req) => {
     const reportDate = finraData[0]?.date;
     const shortInterestRecords = finraData.map(r => ({
       ticker: r.ticker,
-      report_date: r.date,
+      report_date: new Date().toISOString().split('T')[0],
       short_volume: r.short_volume,
       float_percentage: r.total_volume > 0 ? (r.short_volume / r.total_volume) * 100 : 0,
       days_to_cover: r.total_volume > 0 ? r.short_volume / (r.total_volume / 20) : 0, // Assume 20 trading days

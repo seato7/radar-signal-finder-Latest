@@ -48,17 +48,22 @@ serve(async (req) => {
       });
     }
 
-    const tickers = [...new Set(flows.map(f => f.ticker))];
+    // Normalize tickers: strip exchange suffixes like "SPY:US" -> "SPY", "QQQ:NA" -> "QQQ"
+    const normalizeTicker = (t: string) => t.split(':')[0].trim().toUpperCase();
+
+    const tickers = [...new Set(flows.map(f => normalizeTicker(f.ticker)))];
     const { data: assets } = await supabaseClient
       .from('assets')
       .select('id, ticker')
       .in('ticker', tickers);
 
     const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
+    console.log(`[SIGNAL-GEN-ETF] ${tickerToAssetId.size}/${tickers.length} tickers matched in assets`);
 
     const signals = [];
     for (const flow of flows) {
-      const assetId = tickerToAssetId.get(flow.ticker);
+      const normalizedTicker = normalizeTicker(flow.ticker);
+      const assetId = tickerToAssetId.get(normalizedTicker);
       if (!assetId) continue;
 
       const netFlow = flow.net_flow || ((flow.inflow || 0) - (flow.outflow || 0));
@@ -68,7 +73,7 @@ serve(async (req) => {
       const magnitude = Math.min(5, Math.abs(netFlow) / 100000000 * 2.5);
 
       const signalData = {
-        ticker: flow.ticker,
+        ticker: normalizedTicker,
         signal_type: 'etf_flow',
         flow_date: flow.flow_date,
         net_flow: netFlow
