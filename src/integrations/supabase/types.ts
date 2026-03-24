@@ -1507,6 +1507,67 @@ export type Database = {
         }
         Relationships: []
       }
+      eps_revisions: {
+        Row: {
+          asset_id: string | null
+          created_at: string
+          current_estimate: number | null
+          fetched_at: string
+          id: string
+          period: string
+          prior_estimate: number | null
+          revision_direction: string | null
+          revision_pct: number | null
+          ticker: string
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string
+          current_estimate?: number | null
+          fetched_at?: string
+          id?: string
+          period: string
+          prior_estimate?: number | null
+          revision_direction?: string | null
+          revision_pct?: number | null
+          ticker: string
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string
+          current_estimate?: number | null
+          fetched_at?: string
+          id?: string
+          period?: string
+          prior_estimate?: number | null
+          revision_direction?: string | null
+          revision_pct?: number | null
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eps_revisions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "eps_revisions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "eps_revisions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       etf_flows: {
         Row: {
           asset_id: string | null
