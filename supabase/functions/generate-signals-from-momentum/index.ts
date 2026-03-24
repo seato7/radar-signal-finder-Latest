@@ -365,6 +365,23 @@ serve(async (req) => {
       fireAiScoring(affectedTickers);
     }
 
+    // Self-chain: if there are more assets to process, fire the next chunk immediately.
+    // Fire-and-forget — no await — so this invocation returns before the next one starts.
+    if (hasMore) {
+      const selfUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-signals-from-momentum`;
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      fetch(selfUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'x-cron-secret': expectedSecret,
+        },
+        body: JSON.stringify({ offset: nextOffset }),
+      }).catch((err) => console.warn('[SIGNAL-GEN-MOMENTUM] Self-chain trigger failed:', err));
+      console.log(`[SIGNAL-GEN-MOMENTUM] Fired next chunk at offset ${nextOffset}`);
+    }
+
     const duration = Date.now() - startTime;
     await logHeartbeat(supabaseClient, {
       function_name: 'generate-signals-from-momentum',
