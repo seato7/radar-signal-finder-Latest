@@ -676,6 +676,8 @@ Deno.serve(async (req) => {
       usedHorizon7d: number;
       usedComponent: number;
       uniqueComponentCount: number;
+      techEdgePosMass: number;
+      techEdgeNegMass: number;
       cov: { status: string; points_30d: number; last_price_date: string | null; days_stale: number } | undefined;
     }
 
@@ -805,6 +807,8 @@ Deno.serve(async (req) => {
           let maxContribThisAsset = 0;
           const scoreExplanation: any[] = [];
           const componentSet = new Set<string>();
+          let techEdgePosMass = 0;
+          let techEdgeNegMass = 0;
 
           // ================================================================
           // COVERAGE COUNTERS for this asset
@@ -936,6 +940,17 @@ Deno.serve(async (req) => {
             if (contrib > 0) posMass += contrib;
             if (contrib < 0) negMass += Math.abs(contrib);
 
+            // PER-COMPONENT DIRECTION TRACKING: TechEdge disqualification gate
+            if (component === 'TechEdge') {
+              const signalContribMass = decay * Math.min(mag, 5);
+              const dir = String(s.direction ?? '');
+              if (dir === 'up') {
+                techEdgePosMass += signalContribMass;
+              } else {
+                techEdgeNegMass += signalContribMass;
+              }
+            }
+
             if (Math.abs(contrib) > 0.001) {
               scoreExplanation.push({
                 signal_type: canonType,
@@ -987,6 +1002,8 @@ Deno.serve(async (req) => {
             usedHorizon7d,
             usedComponent,
             uniqueComponentCount: componentSet.size,
+            techEdgePosMass,
+            techEdgeNegMass,
             cov,
           });
           
@@ -1095,7 +1112,7 @@ Deno.serve(async (req) => {
         id, ticker, asset_class, expectedReturnRaw, alphaStdPenalty, posMass, negMass,
         scoreExplanation, signalsTotal, signalsWithAlpha, signalsWithoutAlpha,
         usedExact, usedCanonical, usedFamily, usedHorizon3d, usedHorizon7d, usedComponent,
-        uniqueComponentCount, cov
+        uniqueComponentCount, techEdgePosMass, techEdgeNegMass, cov
       } = data;
 
       // CRITICAL FIX: Skip assets where ALL signal alphas are 0 (no alpha data available)
@@ -1135,7 +1152,15 @@ Deno.serve(async (req) => {
       const label = confidenceLabel(confScore);
 
       // DYNAMIC SCORE MAPPING using empirical P95 scale
-      const finalScore = scoreFromExpected(expectedReturnFinal, confScore, p95Scale);
+      let finalScore = scoreFromExpected(expectedReturnFinal, confScore, p95Scale);
+
+      // DISQUALIFICATION CAP: all TechEdge (momentum) signals bearish
+      if (techEdgeNegMass > 0 && techEdgePosMass === 0 && mass >= 0.002) {
+        if (finalScore > 55) {
+          console.log(`[DISQUALIFY] ${ticker}: capped from ${finalScore} to 55 — all TechEdge signals bearish`);
+          finalScore = 55;
+        }
+      }
 
       // Track floor/ceiling hits
       if (finalScore <= 15) assetsAtFloor += 1;
