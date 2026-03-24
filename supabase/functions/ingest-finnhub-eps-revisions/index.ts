@@ -70,7 +70,7 @@ serve(async (req) => {
       }
 
       try {
-        const url = `https://finnhub.io/api/v1/estimate?symbol=${encodeURIComponent(asset.ticker)}&freq=quarterly&token=${FINNHUB_API_KEY}`;
+        const url = `https://finnhub.io/api/v1/stock/eps-estimate?symbol=${encodeURIComponent(asset.ticker)}&freq=quarterly&token=${FINNHUB_API_KEY}`;
         const res = await fetch(url);
 
         if (!res.ok) {
