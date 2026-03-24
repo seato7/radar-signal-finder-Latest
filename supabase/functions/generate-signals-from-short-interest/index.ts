@@ -56,8 +56,10 @@ serve(async (req) => {
       if (!floatPct || floatPct <= 0) continue;
 
       const squeezePotential = floatPct > 20 && daysToCover > 5;
-      // High short interest = bearish pressure, unless squeeze potential (contrarian up)
-      const direction = squeezePotential ? 'up' : floatPct > 30 ? 'down' : 'neutral';
+      // High short interest / high days-to-cover = bearish pressure = 'down'
+      // Low short interest = bullish (minimal short pressure) = 'up'
+      const highShortPressure = floatPct > 20 || daysToCover > 5;
+      const direction = highShortPressure ? 'down' : floatPct < 5 ? 'up' : 'neutral';
 
       // Magnitude: floatPct is already a percentage (0-100), normalise to 0-5
       // daysToCover is in days — normalise separately then combine on same scale
