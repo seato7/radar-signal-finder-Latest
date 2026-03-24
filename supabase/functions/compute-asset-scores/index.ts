@@ -1017,6 +1017,48 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================================
+    // VOLATILITY MAP: Compute 30-day daily return std dev per ticker
+    // Single bulk query against prices table for all assets collected in Pass 1
+    // ========================================================================
+    const volatilityMap = new Map<string, number>();
+
+    if (allRawAssetData.length > 0) {
+      const thirtyDaysAgoDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const tickersToScore = allRawAssetData.map(d => d.ticker);
+
+      const { data: priceRows, error: priceErr } = await supabase
+        .from('prices')
+        .select('ticker, date, close')
+        .in('ticker', tickersToScore)
+        .gte('date', thirtyDaysAgoDate)
+        .order('ticker')
+        .order('date', { ascending: true });
+
+      if (priceErr) {
+        console.warn(`[VOLATILITY] Price query failed: ${priceErr.message} — skipping volatility adjustment`);
+      } else {
+        // Group close prices by ticker
+        const closesByTicker = new Map<string, number[]>();
+        for (const row of priceRows || []) {
+          const closes = closesByTicker.get(row.ticker) ?? [];
+          closes.push(Number(row.close));
+          closesByTicker.set(row.ticker, closes);
+        }
+
+        // Compute daily return std dev for each ticker
+        for (const [ticker, closes] of closesByTicker) {
+          if (closes.length < 2) continue;
+          const returns = closes.slice(1).map((c, i) => (c - closes[i]) / closes[i]);
+          const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+          const variance = returns.reduce((a, r) => a + (r - mean) ** 2, 0) / returns.length;
+          volatilityMap.set(ticker, Math.sqrt(variance));
+        }
+
+        console.log(`[VOLATILITY] Computed volatility for ${volatilityMap.size}/${tickersToScore.length} tickers`);
+      }
+    }
+
+    // ========================================================================
     // PASS 2: GLOBAL RECENTERING AND FINAL SCORING
     // Now we have ALL raw data, compute global mean and P95 scale
     // ========================================================================
@@ -1164,6 +1206,17 @@ Deno.serve(async (req) => {
         }
       }
 
+      // VOLATILITY PENALTY: compress score toward 50 for high-volatility assets
+      const vol = volatilityMap.get(ticker) ?? 0;
+      let volatilityMultiplier = 1.0;
+      if (vol > 0.20) volatilityMultiplier = 0.50;
+      else if (vol > 0.10) volatilityMultiplier = 0.70;
+      else if (vol > 0.05) volatilityMultiplier = 0.85;
+
+      if (volatilityMultiplier < 1.0) {
+        finalScore = 50 + (finalScore - 50) * volatilityMultiplier;
+      }
+
       // Track floor/ceiling hits
       if (finalScore <= 15) assetsAtFloor += 1;
       if (finalScore >= 85) assetsAtCeiling += 1;
@@ -1189,6 +1242,8 @@ Deno.serve(async (req) => {
           { k: 'convergence_multiplier', v: convergenceMultiplier },
           { k: 'convergence_dominance', v: Math.round(dominance * 1000) / 1000 },
           { k: 'convergence_component_count', v: uniqueComponentCount },
+          { k: 'volatility_30d', v: Math.round(vol * 10000) / 100 },
+          { k: 'volatility_multiplier', v: volatilityMultiplier },
           { k: 'global_mean_expected_return', v: Math.round(globalMeanExpectedReturn * 100000) / 100000 },
           { k: 'p95_scale', v: Math.round(p95Scale * 100000) / 100000 },
           { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
