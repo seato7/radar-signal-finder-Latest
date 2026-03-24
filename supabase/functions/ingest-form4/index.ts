@@ -353,6 +353,19 @@ serve(async (req) => {
         }
         
         const ticker = parsed.ticker;
+
+        // Validate ticker — reject values that come from parsing the wrong XML field
+        const tickerUpper = ticker.toUpperCase();
+        if (
+          tickerUpper === 'N/A' ||
+          ticker.trim() === '' ||
+          ticker.length > 10
+        ) {
+          console.warn(`[INGEST-FORM4] Skipping invalid ticker "${ticker}" (filingUrl: ${filingUrl})`);
+          privateCompanySkips++;
+          continue;
+        }
+
         const issuerName = parsed.issuerName || ticker;
         
         if (parsed.transactions.length === 0) {
