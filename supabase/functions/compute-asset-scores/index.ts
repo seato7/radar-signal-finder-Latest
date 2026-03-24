@@ -232,6 +232,8 @@ const SIGNAL_TYPE_TO_COMPONENT: Record<string, string> = {
   'earnings_beat': 'EarningsMomentum',
   'earnings_miss': 'EarningsMomentum',
   'revenue_surprise': 'EarningsMomentum',
+  'eps_revision_up': 'EarningsMomentum',
+  'eps_revision_down': 'EarningsMomentum',
   
   // RiskFlags
   'short_squeeze': 'RiskFlags',
