@@ -202,7 +202,7 @@ ${combinedContent.substring(0, 8000)}`;
         region: 'US',
         metadata: {
           breakout: trend.breakout || false,
-          source: 'Firecrawl + Lovable AI',
+          source: 'Firecrawl + Gemini',
           sources: results.slice(0, 3).map((r: any) => r.url).filter(Boolean),
         },
       };
@@ -235,7 +235,7 @@ ${combinedContent.substring(0, 8000)}`;
           value_text: `Search interest breakout: +${(trend.trend_change ?? 0).toFixed(1)}% (volume: ${trend.search_volume ?? 50})`,
           observed_at: new Date().toISOString(),
           citation: {
-            source: 'Firecrawl + Lovable AI - Search Trends',
+            source: 'Firecrawl + Gemini - Search Trends',
             url: `https://trends.google.com/trends/explore?q=${encodeURIComponent(asset.ticker)}`,
             timestamp: new Date().toISOString(),
           },
@@ -257,7 +257,7 @@ ${combinedContent.substring(0, 8000)}`;
       rows_inserted: inserted,
       rows_skipped: skipped,
       duration_ms: durationMs,
-      source_used: 'Firecrawl + Lovable AI',
+      source_used: 'Firecrawl + Gemini',
       error_message: reasonCode,
       metadata: {
         outcome: inserted > 0 ? 'success' : 'no_data',
@@ -271,7 +271,7 @@ ${combinedContent.substring(0, 8000)}`;
       status: 'success',
       rowsInserted: inserted,
       rowsSkipped: skipped,
-      sourceUsed: 'Firecrawl + Lovable AI',
+      sourceUsed: 'Firecrawl + Gemini',
       duration: durationMs,
     });
 
@@ -283,7 +283,7 @@ ${combinedContent.substring(0, 8000)}`;
         processed: assets.length,
         inserted,
         skipped,
-        source: 'Firecrawl + Lovable AI',
+        source: 'Firecrawl + Gemini',
         version: 'v2_per_ticker_retry',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -298,7 +298,7 @@ ${combinedContent.substring(0, 8000)}`;
       rows_inserted: 0,
       rows_skipped: 0,
       duration_ms: Date.now() - startTime,
-      source_used: 'Firecrawl + Lovable AI',
+      source_used: 'Firecrawl + Gemini',
       error_message: error instanceof Error ? error.message : String(error),
     });
 

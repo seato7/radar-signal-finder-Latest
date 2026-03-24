@@ -269,22 +269,27 @@ serve(async (req) => {
       console.log(`[INFO] Railway endpoint used: ${railwayEndpoint}`);
       console.log(`[INFO] Railway response: ${JSON.stringify(railwayData)}`);
 
-      // Attempt Slack alert with explicit error handling
+      // Only send Slack alert for unexpected no-data (HTTP errors).
+      // 'no_supported_provider_configured' is a known stub state — log to console only.
       let slackSuccess = false;
-      try {
-        await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
-          sourcesAttempted: [source],
-          reason: noDataReason,
-        });
-        slackSuccess = true;
-        console.log('[INFO] Slack no-data alert sent successfully');
-      } catch (slackErr) {
-        const slackErrMsg = slackErr instanceof Error ? slackErr.message : String(slackErr);
-        const slackStack = slackErr instanceof Error ? slackErr.stack : undefined;
-        console.error(`[ERROR] Slack no-data alert failed: ${slackErrMsg}`);
-        if (slackStack) {
-          console.error(`[ERROR] Slack error stack: ${slackStack}`);
+      if (noDataReason !== 'no_supported_provider_configured') {
+        try {
+          await sendNoDataFoundAlert(slackAlerter, 'ingest-options-flow', {
+            sourcesAttempted: [source],
+            reason: noDataReason,
+          });
+          slackSuccess = true;
+          console.log('[INFO] Slack no-data alert sent successfully');
+        } catch (slackErr) {
+          const slackErrMsg = slackErr instanceof Error ? slackErr.message : String(slackErr);
+          const slackStack = slackErr instanceof Error ? slackErr.stack : undefined;
+          console.error(`[ERROR] Slack no-data alert failed: ${slackErrMsg}`);
+          if (slackStack) {
+            console.error(`[ERROR] Slack error stack: ${slackStack}`);
+          }
         }
+      } else {
+        console.log('[INFO] Skipping Slack alert — no provider configured (expected, not an error)');
       }
 
       // Attempt function_status insert with explicit error handling
