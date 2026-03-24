@@ -674,6 +674,7 @@ Deno.serve(async (req) => {
       usedHorizon3d: number;
       usedHorizon7d: number;
       usedComponent: number;
+      uniqueComponentCount: number;
       cov: { status: string; points_30d: number; last_price_date: string | null; days_stale: number } | undefined;
     }
 
@@ -802,6 +803,7 @@ Deno.serve(async (req) => {
           let negMass = 0;
           let maxContribThisAsset = 0;
           const scoreExplanation: any[] = [];
+          const componentSet = new Set<string>();
 
           // ================================================================
           // COVERAGE COUNTERS for this asset
@@ -827,6 +829,7 @@ Deno.serve(async (req) => {
             const ageDays = (Date.now() - observedAt.getTime()) / (1000 * 60 * 60 * 24);
 
             const component = SIGNAL_TYPE_TO_COMPONENT[rawType] || SIGNAL_TYPE_TO_COMPONENT[canonType];
+            if (component) componentSet.add(component);
             const halfLifeDays = component ? (HALF_LIFE_BY_CATEGORY[component] || 14) : 14;
             const decay = expDecay(ageDays, halfLifeDays);
 
@@ -981,6 +984,7 @@ Deno.serve(async (req) => {
             usedHorizon3d,
             usedHorizon7d,
             usedComponent,
+            uniqueComponentCount: componentSet.size,
             cov,
           });
           
@@ -1066,6 +1070,7 @@ Deno.serve(async (req) => {
     // ========================================================================
     const DISAGREE_MASS_MIN = 0.002; // Only penalize when total signal mass >= 0.2%
     const DISAGREE_MAX = 0.02;
+    const CONVERGENCE_MASS_MIN = 0.002; // Minimum mass to qualify for convergence bonus
     const now = new Date().toISOString();
 
     const updates: {
@@ -1086,7 +1091,7 @@ Deno.serve(async (req) => {
         id, ticker, expectedReturnRaw, alphaStdPenalty, posMass, negMass,
         scoreExplanation, signalsTotal, signalsWithAlpha, signalsWithoutAlpha,
         usedExact, usedCanonical, usedFamily, usedHorizon3d, usedHorizon7d, usedComponent,
-        cov
+        uniqueComponentCount, cov
       } = data;
 
       // CRITICAL FIX: Skip assets where ALL signal alphas are 0 (no alpha data available)
@@ -1098,8 +1103,22 @@ Deno.serve(async (req) => {
       // GLOBAL RECENTER: subtract global mean to remove bearish bias
       const expectedReturnCentered = expectedReturnRaw - globalMeanExpectedReturn;
 
-      // MASS-BASED DISAGREEMENT PENALTY: gate by total signal mass, not net
+      // CONVERGENCE BONUS: amplify expectedReturn when multiple independent components agree
       const mass = posMass + negMass;
+      const dominance = mass >= CONVERGENCE_MASS_MIN && mass > 0
+        ? Math.max(posMass, negMass) / mass
+        : 0;
+      let convergenceMultiplier = 1.0;
+      if (mass >= CONVERGENCE_MASS_MIN) {
+        if (dominance > 0.9 && uniqueComponentCount >= 5) {
+          convergenceMultiplier = 1.25;
+        } else if (dominance > 0.8 && uniqueComponentCount >= 3) {
+          convergenceMultiplier = 1.15;
+        }
+      }
+      const expectedReturnFinal = expectedReturnCentered * convergenceMultiplier;
+
+      // MASS-BASED DISAGREEMENT PENALTY: gate by total signal mass, not net
       const balance = (posMass > 0 && negMass > 0) ? (Math.min(posMass, negMass) / Math.max(posMass, negMass)) : 0;
       let disagreementPenalty = 0;
       if (mass >= DISAGREE_MASS_MIN && posMass > 0 && negMass > 0) {
@@ -1108,11 +1127,11 @@ Deno.serve(async (req) => {
 
       const aggregatedStd = Math.sqrt(alphaStdPenalty);
       const uncertainty = Math.max(0.005, aggregatedStd + disagreementPenalty);
-      const confScore = expectedReturnCentered !== 0 ? expectedReturnCentered / uncertainty : 0;
+      const confScore = expectedReturnFinal !== 0 ? expectedReturnFinal / uncertainty : 0;
       const label = confidenceLabel(confScore);
 
       // DYNAMIC SCORE MAPPING using empirical P95 scale
-      const finalScore = scoreFromExpected(expectedReturnCentered, confScore, p95Scale);
+      const finalScore = scoreFromExpected(expectedReturnFinal, confScore, p95Scale);
 
       // Track floor/ceiling hits
       if (finalScore <= 15) assetsAtFloor += 1;
@@ -1125,7 +1144,7 @@ Deno.serve(async (req) => {
         id,
         ticker,
         score: Math.round(finalScore * 10) / 10,
-        expected_return: Math.round(expectedReturnCentered * 100000) / 100000, // Store CENTERED value
+        expected_return: Math.round(expectedReturnFinal * 100000) / 100000, // Store post-convergence value
         expected_return_raw: Math.round(expectedReturnRaw * 100000) / 100000,
         expected_return_centered: Math.round(expectedReturnCentered * 100000) / 100000,
         confidence_score: Math.round(confScore * 1000) / 1000,
@@ -1133,6 +1152,10 @@ Deno.serve(async (req) => {
         score_explanation: [
           { k: 'expected_return_raw', v: Math.round(expectedReturnRaw * 100000) / 100000 },
           { k: 'expected_return_centered', v: Math.round(expectedReturnCentered * 100000) / 100000 },
+          { k: 'expected_return_final', v: Math.round(expectedReturnFinal * 100000) / 100000 },
+          { k: 'convergence_multiplier', v: convergenceMultiplier },
+          { k: 'convergence_dominance', v: Math.round(dominance * 1000) / 1000 },
+          { k: 'convergence_component_count', v: uniqueComponentCount },
           { k: 'global_mean_expected_return', v: Math.round(globalMeanExpectedReturn * 100000) / 100000 },
           { k: 'p95_scale', v: Math.round(p95Scale * 100000) / 100000 },
           { k: 'uncertainty', v: Math.round(uncertainty * 100000) / 100000 },
