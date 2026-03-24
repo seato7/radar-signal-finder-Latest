@@ -10,7 +10,7 @@ const corsHeaders = {
 };
 
 // SEC-compliant User-Agent with explicit product name + contact
-const SEC_USER_AGENT = "InsiderPulse/1.0 (contact: support@insiderpulse.org)";
+const SEC_USER_AGENT = "InsiderPulse/1.0 contact@insiderpulse.com";
 
 // Track parse errors — increased cap so systemic failures (e.g. SEC schema changes) don't go silent
 let debugErrorCount = 0;
