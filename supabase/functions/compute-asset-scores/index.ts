@@ -659,6 +659,7 @@ Deno.serve(async (req) => {
     interface RawAssetData {
       id: string;
       ticker: string;
+      asset_class: string;
       expectedReturnRaw: number;
       alphaStdPenalty: number;
       posMass: number;
@@ -969,6 +970,7 @@ Deno.serve(async (req) => {
           allRawAssetData.push({
             id: asset.id,
             ticker: asset.ticker,
+            asset_class: asset.asset_class || 'stock',
             expectedReturnRaw,
             alphaStdPenalty,
             posMass,
@@ -1076,6 +1078,7 @@ Deno.serve(async (req) => {
     const updates: {
       id: string;
       ticker: string;
+      asset_class: string;
       score: number;
       expected_return: number;
       expected_return_raw: number;
@@ -1083,12 +1086,13 @@ Deno.serve(async (req) => {
       confidence_score: number;
       confidence_label: string;
       score_explanation: any[];
+      sector_percentile_rank: number;
       cov: typeof allRawAssetData[0]['cov'];
     }[] = [];
 
     for (const data of allRawAssetData) {
       const {
-        id, ticker, expectedReturnRaw, alphaStdPenalty, posMass, negMass,
+        id, ticker, asset_class, expectedReturnRaw, alphaStdPenalty, posMass, negMass,
         scoreExplanation, signalsTotal, signalsWithAlpha, signalsWithoutAlpha,
         usedExact, usedCanonical, usedFamily, usedHorizon3d, usedHorizon7d, usedComponent,
         uniqueComponentCount, cov
@@ -1143,7 +1147,9 @@ Deno.serve(async (req) => {
       updates.push({
         id,
         ticker,
+        asset_class,
         score: Math.round(finalScore * 10) / 10,
+        sector_percentile_rank: 50, // placeholder — overwritten by post-processing step below
         expected_return: Math.round(expectedReturnFinal * 100000) / 100000, // Store post-convergence value
         expected_return_raw: Math.round(expectedReturnRaw * 100000) / 100000,
         expected_return_centered: Math.round(expectedReturnCentered * 100000) / 100000,
@@ -1181,6 +1187,31 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ========================================================================
+    // SECTOR PERCENTILE RANKING
+    // Group scored assets by asset_class, rank within each group 0-100
+    // ========================================================================
+    const groupedByClass = new Map<string, typeof updates>();
+    for (const u of updates) {
+      const grp = groupedByClass.get(u.asset_class) ?? [];
+      grp.push(u);
+      groupedByClass.set(u.asset_class, grp);
+    }
+
+    for (const [, grp] of groupedByClass) {
+      if (grp.length === 1) {
+        grp[0].sector_percentile_rank = 50;
+        continue;
+      }
+      // Sort ascending so index 0 = lowest score
+      grp.sort((a, b) => a.score - b.score);
+      for (let i = 0; i < grp.length; i++) {
+        grp[i].sector_percentile_rank = Math.round((i / (grp.length - 1)) * 1000) / 10; // 1 decimal, 0-100
+      }
+    }
+
+    console.log(`Sector percentile ranks computed for ${updates.length} assets across ${groupedByClass.size} asset classes`);
+
     // Batch update ranked assets
     const CHUNK_SIZE = 50;
 
@@ -1192,6 +1223,7 @@ Deno.serve(async (req) => {
           .from('assets')
           .update({
             computed_score: update.score,
+            sector_percentile_rank: update.sector_percentile_rank,
             expected_return: update.expected_return,
             confidence_score: update.confidence_score,
             confidence_label: update.confidence_label,
