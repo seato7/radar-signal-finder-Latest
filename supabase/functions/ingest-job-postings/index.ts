@@ -97,17 +97,13 @@ serve(async (req) => {
 
     for (const company of searchTerms) {
       try {
-        // FIX: Move credentials out of URL query string (visible in server logs) - use path params instead
-        // Adzuna API uses path-based auth (app_id/app_key in path is their documented pattern)
-        // The query string approach also exposes keys in access logs
-        const url = `https://api.adzuna.com/v1/api/jobs/us/search/1?results_per_page=10&what=${encodeURIComponent(company)}&sort_by=date`;
-        
+        const url = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${adzunaAppId}&app_key=${adzunaAppKey}&results_per_page=10&what=${encodeURIComponent(company)}&sort_by=date`;
+
         adzunaApiCalls++;
-        
+
         const response = await fetch(url, {
           headers: {
             'Accept': 'application/json',
-            'Authorization': `Basic ${btoa(`${adzunaAppId}:${adzunaAppKey}`)}` // use Basic auth header instead
           }
         });
 
