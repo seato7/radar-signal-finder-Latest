@@ -64,7 +64,7 @@ serve(async (req) => {
       const assetId = tickerToAssetId.get(item.ticker);
       if (!assetId) continue;
 
-      const sentimentScore = item.sentiment_score || 0;
+      const sentimentScore = item.sentiment_score ?? 0.3; // default mildly positive if not set
       const relevanceScore = item.relevance_score || 0.5;
 
       // Skip neutral news with low relevance
