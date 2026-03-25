@@ -9,7 +9,7 @@ const corsHeaders = {
 
 const MOMENTUM_SIGNAL_TYPES = ['momentum_breakout', 'momentum_acceleration', 'momentum_continuation'];
 
-async function computeKellySize(supabase: any, sector: string | null, hybridScore: number): Promise<number> {
+async function computeKellySize(supabase: any, sector: string | null, hybridScore: number, confidence: number): Promise<number> {
   // 1. Query model_daily_metrics for the last 30 days
   const { data: metrics } = await supabase
     .from('model_daily_metrics')
@@ -21,23 +21,27 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
 
   // 2. Fall back to conservative sizing if insufficient history
   if (!metrics || metrics.length < 10) {
-    kellyFraction = Math.min(0.05, (hybridScore - 65) / 600);
+    kellyFraction = Math.min(0.10, (hybridScore - 65) / 400 * (confidence / 100));
   } else {
     // 3. Average the values across available rows
     const n = metrics.length;
-    const avgWinRate = metrics.reduce((s: number, r: any) => s + Number(r.hit_rate), 0) / n;
+    const rawWinRate = metrics.reduce((s: number, r: any) => s + Number(r.hit_rate), 0) / n;
+    const avgWinRate = (rawWinRate * 0.4) + ((confidence / 100) * 0.6);
     const avgWin = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
     const avgLoss = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
 
     // 4. Kelly fraction: f = (p*b - q*|l|) / b  where b=avgWin, p=winRate, q=lossRate
     const f = (avgWinRate * avgWin - (1 - avgWinRate) * Math.abs(avgLoss)) / avgWin;
 
-    if (f <= 0) {
+    const confidenceMultiplier = Math.max(0.1, confidence / 100);
+    kellyFraction = f * confidenceMultiplier;
+
+    if (kellyFraction <= 0) {
       kellyFraction = 0.01;
-    } else if (f > 0.20) {
+    } else if (kellyFraction > 0.20) {
       kellyFraction = 0.20;
     } else {
-      kellyFraction = f * 0.5; // half-Kelly for safety
+      kellyFraction = kellyFraction * 0.5; // half-Kelly for safety
     }
   }
 
@@ -216,7 +220,8 @@ serve(async (req) => {
         continue;
       }
 
-      const positionSizePct = await computeKellySize(supabase, (asset as any).sector ?? null, Number(asset.hybrid_score));
+      const positionSizePct = await computeKellySize(supabase, (asset as any).sector ?? null, Number(asset.hybrid_score), aiScore.confidence);
+      console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: confidence=${aiScore.confidence}, kelly=${positionSizePct}`);
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
       toInsert.push({
