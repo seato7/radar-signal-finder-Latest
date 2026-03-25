@@ -47,12 +47,12 @@ const VOLATILITY_THRESHOLD = 0.03; // 3% daily vol threshold
 // HALF-LIFE BY SIGNAL CATEGORY (days)
 // ============================================================================
 const HALF_LIFE_BY_CATEGORY: Record<string, number> = {
-  InsiderPoliticianConfirm: 45,  // Insider signals persist
-  BigMoneyConfirm: 60,           // Institutional positioning slow to change
+  InsiderPoliticianConfirm: 21,  // Reduced: 45d old insider trade barely relevant
+  BigMoneyConfirm: 30,           // Reduced: institutional positioning still relevant but faster
   FlowPressure: 10,              // Flows matter for short periods
-  CapexMomentum: 30,             // Growth signals medium-term
+  CapexMomentum: 21,             // Reduced: growth signals still medium-term but tighter
   TechEdge: 5,                   // Technical signals decay fast
-  PolicyMomentum: 21,            // Policy impacts medium-term
+  PolicyMomentum: 14,            // Reduced: policy impact fades faster than assumed
   MacroEconomic: 14,             // Macro context
   Attention: 2,                  // News/social decays fast
   EarningsMomentum: 14,          // Earnings quarterly
@@ -652,6 +652,7 @@ Deno.serve(async (req) => {
     let totalPosMass = 0;
     let totalNegMass = 0;
     let assetsWithConflict = 0; // pos > 0 && neg > 0
+    let darkPoolBoosts = 0;    // dark_pool_activity signals receiving volume confirmation bonus
     
     // ========================================================================
     // GLOBAL TWO-PASS RECENTERING
@@ -910,7 +911,14 @@ Deno.serve(async (req) => {
 
             // CRITICAL: Direction already baked into alpha by compute-signal-alpha
             // Do NOT apply direction multiplier again
-            const contrib = decay * Math.min(mag, 5) * alpha;
+            let contrib = decay * Math.min(mag, 5) * alpha;
+
+            // DARK POOL VOLUME CONFIRMATION BONUS
+            if (canonType === 'dark_pool_activity' && mag > 0.7) {
+              contrib *= 1.15;
+              darkPoolBoosts++;
+            }
+
             expectedReturnRaw += contrib;
 
             // Track max single contribution for this asset
@@ -1390,6 +1398,7 @@ Deno.serve(async (req) => {
       total_pos_mass: Math.round(totalPosMass * 100000) / 100000,
       total_neg_mass: Math.round(totalNegMass * 100000) / 100000,
       assets_with_conflict: assetsWithConflict,
+      dark_pool_boosts: darkPoolBoosts,
       // Global calibration metrics
       global_mean_expected_return: Math.round(globalMeanExpectedReturn * 100000) / 100000,
       p95_scale: Math.round(p95Scale * 100000) / 100000,
