@@ -613,6 +613,7 @@ export type Database = {
           rank_status: string | null
           score_computed_at: string | null
           score_explanation: Json | null
+          sector: string | null
           sector_percentile_rank: number | null
           spread_typical: number | null
           ticker: string
@@ -642,6 +643,7 @@ export type Database = {
           rank_status?: string | null
           score_computed_at?: string | null
           score_explanation?: Json | null
+          sector?: string | null
           sector_percentile_rank?: number | null
           spread_typical?: number | null
           ticker: string
@@ -671,6 +673,7 @@ export type Database = {
           rank_status?: string | null
           score_computed_at?: string | null
           score_explanation?: Json | null
+          sector?: string | null
           sector_percentile_rank?: number | null
           spread_typical?: number | null
           ticker?: string
