@@ -9,6 +9,69 @@ const corsHeaders = {
 
 const MOMENTUM_SIGNAL_TYPES = ['momentum_breakout', 'momentum_acceleration', 'momentum_continuation'];
 
+async function computeKellySize(supabase: any, sector: string | null, hybridScore: number): Promise<number> {
+  // 1. Query model_daily_metrics for the last 30 days
+  const { data: metrics } = await supabase
+    .from('model_daily_metrics')
+    .select('win_rate, avg_return_winners, avg_return_losers')
+    .order('metric_date', { ascending: false })
+    .limit(30);
+
+  let kellyFraction: number;
+
+  // 2. Fall back to conservative sizing if insufficient history
+  if (!metrics || metrics.length < 10) {
+    kellyFraction = Math.min(0.05, (hybridScore - 65) / 600);
+  } else {
+    // 3. Average the values across available rows
+    const n = metrics.length;
+    const avgWinRate = metrics.reduce((s: number, r: any) => s + Number(r.win_rate), 0) / n;
+    const avgWin = metrics.reduce((s: number, r: any) => s + Number(r.avg_return_winners), 0) / n;
+    const avgLoss = metrics.reduce((s: number, r: any) => s + Number(r.avg_return_losers), 0) / n;
+
+    // 4. Kelly fraction: f = (p*b - q*|l|) / b  where b=avgWin, p=winRate, q=lossRate
+    const f = (avgWinRate * avgWin - (1 - avgWinRate) * Math.abs(avgLoss)) / avgWin;
+
+    if (f <= 0) {
+      kellyFraction = 0.01;
+    } else if (f > 0.20) {
+      kellyFraction = 0.20;
+    } else {
+      kellyFraction = f * 0.5; // half-Kelly for safety
+    }
+  }
+
+  // 5. Sector concentration check — reduce by 50% if sector already >= 35% allocated
+  if (sector) {
+    const { data: sectorAssets } = await supabase
+      .from('assets')
+      .select('ticker')
+      .eq('sector', sector);
+
+    const sectorTickers = (sectorAssets || []).map((a: any) => a.ticker);
+
+    if (sectorTickers.length > 0) {
+      const { data: sectorSignals } = await supabase
+        .from('trade_signals')
+        .select('position_size_pct')
+        .eq('status', 'active')
+        .in('ticker', sectorTickers);
+
+      const totalSectorExposure = (sectorSignals || []).reduce(
+        (sum: number, s: any) => sum + Number(s.position_size_pct ?? 0),
+        0,
+      );
+
+      if (totalSectorExposure >= 0.35) {
+        console.log(`[GENERATE-TRADE-SIGNALS] Sector "${sector}" exposure ${totalSectorExposure.toFixed(3)} >= 0.35 — halving Kelly size`);
+        kellyFraction *= 0.5;
+      }
+    }
+  }
+
+  return Math.round(kellyFraction * 10000) / 10000;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -26,7 +89,7 @@ serve(async (req) => {
     // 1. Fetch top 50 candidates by hybrid_score
     const { data: candidates, error: candidatesError } = await supabase
       .from('assets')
-      .select('id, ticker, hybrid_score')
+      .select('id, ticker, hybrid_score, sector')
       .gt('hybrid_score', 65)
       .order('hybrid_score', { ascending: false })
       .limit(50);
@@ -153,7 +216,7 @@ serve(async (req) => {
         continue;
       }
 
-      const positionSizePct = Math.min(0.15, (Number(asset.hybrid_score) - 65) / 200);
+      const positionSizePct = await computeKellySize(supabase, (asset as any).sector ?? null, Number(asset.hybrid_score));
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
       toInsert.push({
@@ -165,7 +228,7 @@ serve(async (req) => {
         exit_target: Math.round(entryPrice * 1.15 * 100) / 100,
         stop_loss: Math.round(entryPrice * 0.90 * 100) / 100,
         peak_price: entryPrice,
-        position_size_pct: Math.round(positionSizePct * 10000) / 10000,
+        position_size_pct: positionSizePct,
         expires_at: expiresAt,
       });
     }
