@@ -3507,6 +3507,97 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_signals: {
+        Row: {
+          ai_score_at_entry: number | null
+          asset_id: string | null
+          created_at: string | null
+          entry_date: string | null
+          entry_price: number | null
+          exit_date: string | null
+          exit_price: number | null
+          exit_target: number | null
+          expires_at: string | null
+          id: string
+          peak_price: number | null
+          pnl_pct: number | null
+          position_size_pct: number | null
+          reason: string | null
+          score_at_entry: number | null
+          signal_type: string
+          status: string
+          stop_loss: number | null
+          ticker: string
+          updated_at: string | null
+        }
+        Insert: {
+          ai_score_at_entry?: number | null
+          asset_id?: string | null
+          created_at?: string | null
+          entry_date?: string | null
+          entry_price?: number | null
+          exit_date?: string | null
+          exit_price?: number | null
+          exit_target?: number | null
+          expires_at?: string | null
+          id?: string
+          peak_price?: number | null
+          pnl_pct?: number | null
+          position_size_pct?: number | null
+          reason?: string | null
+          score_at_entry?: number | null
+          signal_type: string
+          status?: string
+          stop_loss?: number | null
+          ticker: string
+          updated_at?: string | null
+        }
+        Update: {
+          ai_score_at_entry?: number | null
+          asset_id?: string | null
+          created_at?: string | null
+          entry_date?: string | null
+          entry_price?: number | null
+          exit_date?: string | null
+          exit_price?: number | null
+          exit_target?: number | null
+          expires_at?: string | null
+          id?: string
+          peak_price?: number | null
+          pnl_pct?: number | null
+          position_size_pct?: number | null
+          reason?: string | null
+          score_at_entry?: number | null
+          signal_type?: string
+          status?: string
+          stop_loss?: number | null
+          ticker?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_signals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "trade_signals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_signals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       twelvedata_rate_limits: {
         Row: {
           credits_used: number
