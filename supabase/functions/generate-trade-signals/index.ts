@@ -23,16 +23,24 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
   if (!metrics || metrics.length < 10) {
     kellyFraction = Math.min(0.10, (hybridScore - 65) / 400 * (confidence / 100));
   } else {
-    // 3. Average the values across available rows
     const n = metrics.length;
     const rawWinRate = metrics.reduce((s: number, r: any) => s + Number(r.hit_rate), 0) / n;
-    const avgWinRate = (rawWinRate * 0.4) + ((confidence / 100) * 0.6);
-    const avgWin = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
-    const avgLoss = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
+    const avgReturn = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
 
-    // 4. Kelly fraction: f = (p*b - q*|l|) / b  where b=avgWin, p=winRate, q=lossRate
-    const f = (avgWinRate * avgWin - (1 - avgWinRate) * Math.abs(avgLoss)) / avgWin;
+    // Blend win rate with AI confidence score
+    const blendedWinRate = (rawWinRate * 0.4) + ((confidence / 100) * 0.6);
 
+    // Simplified Kelly using edge/odds ratio approach:
+    // We know avg return across all trades and win rate.
+    // Estimate: avgWin = avgReturn / winRate, avgLoss = avgReturn / (1 - winRate)
+    // This gives us a reasonable win/loss split from what we have.
+    const estimatedAvgWin = Math.abs(avgReturn) / Math.max(blendedWinRate, 0.01);
+    const estimatedAvgLoss = Math.abs(avgReturn) / Math.max(1 - blendedWinRate, 0.01);
+
+    // Kelly: f = (p*b - q*a) / b  where b=avgWin, p=winRate, q=1-winRate, a=avgLoss
+    const f = (blendedWinRate * estimatedAvgWin - (1 - blendedWinRate) * estimatedAvgLoss) / estimatedAvgWin;
+
+    // Apply confidence multiplier
     const confidenceMultiplier = Math.max(0.1, confidence / 100);
     kellyFraction = f * confidenceMultiplier;
 
