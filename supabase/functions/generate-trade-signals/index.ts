@@ -31,7 +31,7 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
   // 2. Fall back to conservative sizing if insufficient history
   if (!metrics || metrics.length < 10) {
     const baseSize = (hybridScore - 65) / 400 * confidence;
-    const minSize = confidence >= 0.80 ? 0.05 : confidence >= 0.65 ? 0.03 : 0.01;
+    const minSize = confidence >= 0.795 ? 0.05 : confidence >= 0.645 ? 0.03 : 0.01;
     kellyFraction = Math.min(0.10, Math.max(minSize, baseSize));
   } else {
     const n = metrics.length;
@@ -57,8 +57,8 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
 
     if (kellyFraction <= 0) {
       // Floor based on confidence tier rather than flat 1%
-      if (confidence >= 0.80) kellyFraction = 0.05;
-      else if (confidence >= 0.65) kellyFraction = 0.03;
+      if (confidence >= 0.795) kellyFraction = 0.05;
+      else if (confidence >= 0.645) kellyFraction = 0.03;
       else kellyFraction = 0.01;
     } else if (kellyFraction > 0.20) {
       kellyFraction = 0.20;
@@ -256,6 +256,8 @@ serve(async (req) => {
         stop_loss: Math.round(entryPrice * 0.90 * 100) / 100,
         peak_price: entryPrice,
         position_size_pct: positionSizePct,
+        score_at_entry: Number(asset.hybrid_score),
+        ai_score_at_entry: aiScore.ai_score,
         expires_at: expiresAt,
       });
     }
