@@ -74,31 +74,35 @@ serve(async (req) => {
       const epsGrowth5Y = fund.eps_growth_5y != null ? Number(fund.eps_growth_5y) : null;
       const observedAt = fund.fetched_at;
 
-      // --- High profitability: netMargin > 15% AND roe > 15% ---
-      if (netMargin != null && roe != null && netMargin > 15 && roe > 15) {
-        const magnitude = Math.min(1, (netMargin / 100 + roe / 100) / 2);
+      // --- High profitability: roe > 15% (net_margin enriches magnitude when available) ---
+      if (roe != null && roe > 15) {
+        const magnitude = netMargin != null
+          ? Math.min(1, (netMargin / 100 + roe / 100) / 2)
+          : Math.min(1, roe / 100);
+        const marginText = netMargin != null ? `, net margin ${netMargin.toFixed(1)}%` : '';
         signals.push({
           asset_id: assetId,
           signal_type: 'profitability_strong',
           direction: 'up',
           magnitude,
           observed_at: observedAt,
-          value_text: `Strong profitability: net margin ${netMargin.toFixed(1)}%, ROE ${roe.toFixed(1)}%`,
+          value_text: `Strong profitability: ROE ${roe.toFixed(1)}%${marginText}`,
           checksum: JSON.stringify({ ticker: fund.ticker, signal_type: 'profitability_strong', date: today }),
           citation: { source: 'Finnhub Fundamentals', timestamp: new Date().toISOString() },
           raw: { net_margin: netMargin, roe, ticker: fund.ticker },
         });
       }
 
-      // --- Poor fundamentals: netMargin < 0 AND roe < 0 ---
-      if (netMargin != null && roe != null && netMargin < 0 && roe < 0) {
+      // --- Poor fundamentals: roe < -10% (net_margin no longer required) ---
+      if (roe != null && roe < -10) {
+        const marginText = netMargin != null ? `, net margin ${netMargin.toFixed(1)}%` : '';
         signals.push({
           asset_id: assetId,
           signal_type: 'profitability_weak',
           direction: 'down',
           magnitude: 0.5,
           observed_at: observedAt,
-          value_text: `Weak profitability: net margin ${netMargin.toFixed(1)}%, ROE ${roe.toFixed(1)}%`,
+          value_text: `Weak profitability: ROE ${roe.toFixed(1)}%${marginText}`,
           checksum: JSON.stringify({ ticker: fund.ticker, signal_type: 'profitability_weak', date: today }),
           citation: { source: 'Finnhub Fundamentals', timestamp: new Date().toISOString() },
           raw: { net_margin: netMargin, roe, ticker: fund.ticker },
