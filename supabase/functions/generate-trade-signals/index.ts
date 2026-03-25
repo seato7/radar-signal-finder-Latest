@@ -102,15 +102,15 @@ serve(async (req) => {
       }
     }
 
-    // 4. Bulk fetch momentum signals in last 48h for eligible assets
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    // 4. Bulk fetch momentum signals in last 7 days for eligible assets
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: momentumSignals } = await supabase
       .from('signals')
       .select('asset_id')
       .in('asset_id', eligibleIds)
       .in('signal_type', MOMENTUM_SIGNAL_TYPES)
       .eq('direction', 'up')
-      .gte('observed_at', fortyEightHoursAgo);
+      .gte('observed_at', sevenDaysAgo);
 
     const momentumAssetIds = new Set((momentumSignals || []).map((s) => s.asset_id));
 
