@@ -13,8 +13,8 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
   // 1. Query model_daily_metrics for the last 30 days
   const { data: metrics } = await supabase
     .from('model_daily_metrics')
-    .select('win_rate, avg_return_winners, avg_return_losers')
-    .order('metric_date', { ascending: false })
+    .select('hit_rate, mean_return')
+    .order('snapshot_date', { ascending: false })
     .limit(30);
 
   let kellyFraction: number;
@@ -25,9 +25,9 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
   } else {
     // 3. Average the values across available rows
     const n = metrics.length;
-    const avgWinRate = metrics.reduce((s: number, r: any) => s + Number(r.win_rate), 0) / n;
-    const avgWin = metrics.reduce((s: number, r: any) => s + Number(r.avg_return_winners), 0) / n;
-    const avgLoss = metrics.reduce((s: number, r: any) => s + Number(r.avg_return_losers), 0) / n;
+    const avgWinRate = metrics.reduce((s: number, r: any) => s + Number(r.hit_rate), 0) / n;
+    const avgWin = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
+    const avgLoss = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
 
     // 4. Kelly fraction: f = (p*b - q*|l|) / b  where b=avgWin, p=winRate, q=lossRate
     const f = (avgWinRate * avgWin - (1 - avgWinRate) * Math.abs(avgLoss)) / avgWin;
