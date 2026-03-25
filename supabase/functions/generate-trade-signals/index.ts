@@ -7,7 +7,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MOMENTUM_SIGNAL_TYPES = ['momentum_breakout', 'momentum_acceleration', 'momentum_continuation'];
+const MOMENTUM_SIGNAL_TYPES = [
+  'momentum_5d_strong_bullish',
+  'momentum_5d_bullish',
+  'momentum_20d_strong_bullish',
+  'momentum_20d_bullish',
+  'momentum_5d_strong_bullish_limited_data',
+  'momentum_5d_bullish_limited_data',
+  'momentum_20d_strong_bullish_limited_data',
+  'momentum_20d_bullish_limited_data',
+];
 
 async function computeKellySize(supabase: any, sector: string | null, hybridScore: number, confidence: number): Promise<number> {
   // 1. Query model_daily_metrics for the last 30 days
