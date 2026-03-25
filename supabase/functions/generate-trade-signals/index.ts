@@ -21,14 +21,14 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
 
   // 2. Fall back to conservative sizing if insufficient history
   if (!metrics || metrics.length < 10) {
-    kellyFraction = Math.min(0.10, (hybridScore - 65) / 400 * (confidence / 100));
+    kellyFraction = Math.min(0.10, (hybridScore - 65) / 400 * confidence);
   } else {
     const n = metrics.length;
     const rawWinRate = metrics.reduce((s: number, r: any) => s + Number(r.hit_rate), 0) / n;
     const avgReturn = metrics.reduce((s: number, r: any) => s + Number(r.mean_return), 0) / n;
 
     // Blend win rate with AI confidence score
-    const blendedWinRate = (rawWinRate * 0.4) + ((confidence / 100) * 0.6);
+    const blendedWinRate = (rawWinRate * 0.4) + (confidence * 0.6);
 
     // Simplified Kelly using edge/odds ratio approach:
     // We know avg return across all trades and win rate.
@@ -41,7 +41,7 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
     const f = (blendedWinRate * estimatedAvgWin - (1 - blendedWinRate) * estimatedAvgLoss) / estimatedAvgWin;
 
     // Apply confidence multiplier
-    const confidenceMultiplier = Math.max(0.1, confidence / 100);
+    const confidenceMultiplier = Math.max(0.1, confidence);
     kellyFraction = f * confidenceMultiplier;
 
     if (kellyFraction <= 0) {
