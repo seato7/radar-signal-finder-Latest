@@ -1,0 +1,224 @@
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { logHeartbeat } from "../_shared/heartbeat.ts";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const MOMENTUM_SIGNAL_TYPES = ['momentum_breakout', 'momentum_acceleration', 'momentum_continuation'];
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const startTime = Date.now();
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  );
+
+  try {
+    console.log('[GENERATE-TRADE-SIGNALS] Starting...');
+
+    // 1. Fetch top 50 candidates by hybrid_score
+    const { data: candidates, error: candidatesError } = await supabase
+      .from('assets')
+      .select('id, ticker, hybrid_score')
+      .gt('hybrid_score', 65)
+      .order('hybrid_score', { ascending: false })
+      .limit(50);
+
+    if (candidatesError) throw candidatesError;
+    if (!candidates || candidates.length === 0) {
+      const duration = Date.now() - startTime;
+      await logHeartbeat(supabase, {
+        function_name: 'generate-trade-signals',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'assets',
+      });
+      return new Response(
+        JSON.stringify({ inserted: 0, skipped_active: 0, skipped_no_condition: 0 }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    console.log(`[GENERATE-TRADE-SIGNALS] ${candidates.length} candidates with hybrid_score > 65`);
+
+    const candidateTickers = candidates.map((c) => c.ticker);
+    const candidateAssetIds = candidates.map((c) => c.id);
+
+    // 2. Bulk fetch active trade signals — skip tickers already active
+    const { data: activeSignals } = await supabase
+      .from('trade_signals')
+      .select('ticker')
+      .eq('status', 'active')
+      .in('ticker', candidateTickers);
+
+    const activeTickers = new Set((activeSignals || []).map((s) => s.ticker));
+    const eligible = candidates.filter((c) => !activeTickers.has(c.ticker));
+    const skippedActive = candidates.length - eligible.length;
+
+    console.log(`[GENERATE-TRADE-SIGNALS] ${skippedActive} skipped (active signal exists), ${eligible.length} eligible`);
+
+    if (eligible.length === 0) {
+      const duration = Date.now() - startTime;
+      await logHeartbeat(supabase, {
+        function_name: 'generate-trade-signals',
+        status: 'success',
+        rows_inserted: 0,
+        duration_ms: duration,
+        source_used: 'assets',
+      });
+      return new Response(
+        JSON.stringify({ inserted: 0, skipped_active: skippedActive, skipped_no_condition: 0 }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const eligibleIds = eligible.map((c) => c.id);
+    const eligibleTickers = eligible.map((c) => c.ticker);
+
+    // 3. Bulk fetch most recent ai_scores for eligible assets
+    const { data: aiScoreRows } = await supabase
+      .from('ai_scores')
+      .select('asset_id, ai_score, confidence, direction, scored_at')
+      .in('asset_id', eligibleIds)
+      .order('scored_at', { ascending: false });
+
+    // Keep only most recent per asset_id
+    const aiScoreMap = new Map<string, { ai_score: number; confidence: number; direction: string }>();
+    for (const row of aiScoreRows || []) {
+      if (!aiScoreMap.has(row.asset_id)) {
+        aiScoreMap.set(row.asset_id, {
+          ai_score: Number(row.ai_score),
+          confidence: Number(row.confidence),
+          direction: String(row.direction),
+        });
+      }
+    }
+
+    // 4. Bulk fetch momentum signals in last 48h for eligible assets
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data: momentumSignals } = await supabase
+      .from('signals')
+      .select('asset_id')
+      .in('asset_id', eligibleIds)
+      .in('signal_type', MOMENTUM_SIGNAL_TYPES)
+      .eq('direction', 'up')
+      .gte('observed_at', fortyEightHoursAgo);
+
+    const momentumAssetIds = new Set((momentumSignals || []).map((s) => s.asset_id));
+
+    // 5. Bulk fetch latest prices for eligible tickers
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const { data: priceRows } = await supabase
+      .from('prices')
+      .select('ticker, date, close')
+      .in('ticker', eligibleTickers)
+      .gte('date', thirtyDaysAgo)
+      .order('ticker')
+      .order('date', { ascending: false });
+
+    // Keep most recent close per ticker
+    const latestPriceMap = new Map<string, number>();
+    for (const row of priceRows || []) {
+      if (!latestPriceMap.has(row.ticker)) {
+        latestPriceMap.set(row.ticker, Number(row.close));
+      }
+    }
+
+    // 6. Evaluate entry conditions and build insert rows
+    const toInsert: any[] = [];
+    let skippedNoCondition = 0;
+
+    for (const asset of eligible) {
+      const aiScore = aiScoreMap.get(asset.id);
+      const hasMomentum = momentumAssetIds.has(asset.id);
+      const entryPrice = latestPriceMap.get(asset.ticker);
+
+      // Entry condition
+      if (
+        !aiScore ||
+        aiScore.ai_score <= 60 ||
+        aiScore.direction !== 'up' ||
+        !hasMomentum ||
+        entryPrice == null
+      ) {
+        skippedNoCondition++;
+        continue;
+      }
+
+      const positionSizePct = Math.min(0.15, (Number(asset.hybrid_score) - 65) / 200);
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      toInsert.push({
+        ticker: asset.ticker,
+        asset_id: asset.id,
+        signal_type: 'entry',
+        status: 'active',
+        entry_price: entryPrice,
+        exit_target: Math.round(entryPrice * 1.15 * 100) / 100,
+        stop_loss: Math.round(entryPrice * 0.90 * 100) / 100,
+        peak_price: entryPrice,
+        position_size_pct: Math.round(positionSizePct * 10000) / 10000,
+        expires_at: expiresAt,
+      });
+    }
+
+    console.log(`[GENERATE-TRADE-SIGNALS] ${toInsert.length} signals to insert, ${skippedNoCondition} skipped (no condition met)`);
+
+    // 7. Insert new trade signals
+    let inserted = 0;
+    if (toInsert.length > 0) {
+      const { data: insertedRows, error: insertError } = await supabase
+        .from('trade_signals')
+        .insert(toInsert)
+        .select('id');
+
+      if (insertError) {
+        console.error('[GENERATE-TRADE-SIGNALS] Insert error:', insertError.message);
+        throw insertError;
+      }
+      inserted = insertedRows?.length ?? 0;
+    }
+
+    console.log(`[GENERATE-TRADE-SIGNALS] ✅ Inserted ${inserted} trade signals`);
+
+    const duration = Date.now() - startTime;
+    await logHeartbeat(supabase, {
+      function_name: 'generate-trade-signals',
+      status: 'success',
+      rows_inserted: inserted,
+      rows_skipped: skippedActive + skippedNoCondition,
+      duration_ms: duration,
+      source_used: 'assets',
+    });
+
+    return new Response(
+      JSON.stringify({ inserted, skipped_active: skippedActive, skipped_no_condition: skippedNoCondition }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+
+  } catch (error) {
+    console.error('[GENERATE-TRADE-SIGNALS] ❌ Error:', error);
+    const duration = Date.now() - startTime;
+    const errMsg = error instanceof Error ? error.message : String(error);
+
+    await logHeartbeat(supabase, {
+      function_name: 'generate-trade-signals',
+      status: 'failure',
+      duration_ms: duration,
+      error_message: errMsg,
+    });
+
+    return new Response(
+      JSON.stringify({ error: errMsg }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+});
