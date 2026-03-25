@@ -8,8 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Finnhub free tier = 60 RPM; 200ms between sequential calls stays well under limit
-const CALL_DELAY_MS = 200;
+// Finnhub free tier = 60 RPM; 350ms between sequential calls avoids 429s at tail end of 200 calls
+const CALL_DELAY_MS = 350;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -70,7 +70,7 @@ serve(async (req) => {
         }
 
         // Extract the metrics we care about — all nullable (free tier may omit some)
-        const netMargin = m.netMarginAnnual ?? m.netMargin ?? null;
+        const netMargin = m.netMarginTTM ?? m.netMarginAnnual ?? m.netMargin ?? null;
         const roa = m.roaRfy ?? m.roa ?? null;
         const roe = m.roeRfy ?? m.roe ?? null;
         const revenueGrowthYoy = m.revenueGrowthTTMYoy ?? null;
