@@ -21,7 +21,9 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
 
   // 2. Fall back to conservative sizing if insufficient history
   if (!metrics || metrics.length < 10) {
-    kellyFraction = Math.min(0.10, (hybridScore - 65) / 400 * confidence);
+    const baseSize = (hybridScore - 65) / 400 * confidence;
+    const minSize = confidence >= 0.80 ? 0.05 : confidence >= 0.65 ? 0.03 : 0.01;
+    kellyFraction = Math.min(0.10, Math.max(minSize, baseSize));
   } else {
     const n = metrics.length;
     const rawWinRate = metrics.reduce((s: number, r: any) => s + Number(r.hit_rate), 0) / n;
@@ -45,7 +47,10 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
     kellyFraction = f * confidenceMultiplier;
 
     if (kellyFraction <= 0) {
-      kellyFraction = 0.01;
+      // Floor based on confidence tier rather than flat 1%
+      if (confidence >= 0.80) kellyFraction = 0.05;
+      else if (confidence >= 0.65) kellyFraction = 0.03;
+      else kellyFraction = 0.01;
     } else if (kellyFraction > 0.20) {
       kellyFraction = 0.20;
     } else {
