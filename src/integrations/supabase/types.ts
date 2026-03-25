@@ -1075,6 +1075,70 @@ export type Database = {
         }
         Relationships: []
       }
+      company_fundamentals: {
+        Row: {
+          asset_id: string | null
+          beta: number | null
+          created_at: string
+          eps_growth_5y: number | null
+          fetched_at: string
+          id: string
+          net_margin: number | null
+          revenue_growth_yoy: number | null
+          roa: number | null
+          roe: number | null
+          ticker: string
+        }
+        Insert: {
+          asset_id?: string | null
+          beta?: number | null
+          created_at?: string
+          eps_growth_5y?: number | null
+          fetched_at?: string
+          id?: string
+          net_margin?: number | null
+          revenue_growth_yoy?: number | null
+          roa?: number | null
+          roe?: number | null
+          ticker: string
+        }
+        Update: {
+          asset_id?: string | null
+          beta?: number | null
+          created_at?: string
+          eps_growth_5y?: number | null
+          fetched_at?: string
+          id?: string
+          net_margin?: number | null
+          revenue_growth_yoy?: number | null
+          roa?: number | null
+          roe?: number | null
+          ticker?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_fundamentals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_signal_summary"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "company_fundamentals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_fundamentals_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets_ticker_commas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       congressional_trades: {
         Row: {
           amount_max: number | null
