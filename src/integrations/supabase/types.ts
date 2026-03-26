@@ -598,6 +598,7 @@ export type Database = {
           contract_size: number | null
           created_at: string | null
           days_stale: number | null
+          effective_score: number | null
           exchange: string
           expected_return: number | null
           hybrid_score: number | null
@@ -628,6 +629,7 @@ export type Database = {
           contract_size?: number | null
           created_at?: string | null
           days_stale?: number | null
+          effective_score?: number | null
           exchange: string
           expected_return?: number | null
           hybrid_score?: number | null
@@ -658,6 +660,7 @@ export type Database = {
           contract_size?: number | null
           created_at?: string | null
           days_stale?: number | null
+          effective_score?: number | null
           exchange?: string
           expected_return?: number | null
           hybrid_score?: number | null
@@ -3966,6 +3969,13 @@ export type Database = {
           points_90d: number
           reason: string
           status: string
+          ticker: string
+        }[]
+      }
+      get_price_changes: {
+        Args: { cutoff_date: string }
+        Returns: {
+          change_pct: number
           ticker: string
         }[]
       }
