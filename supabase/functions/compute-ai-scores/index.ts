@@ -249,8 +249,12 @@ serve(async (req) => {
           const signals = signalsByAsset.get(asset.id) || [];
           const formulaScore = Number(asset.computed_score ?? 50);
 
-          // Fetch Tavily context if asset has signals (best-effort)
-          const tavilyContext = signals.length > 0
+          // Only call Tavily if asset has a breaking news signal in last 24h
+          const hasBreakingNews = signals.some(s =>
+            s.signal_type === 'breaking_news' &&
+            new Date(s.observed_at) > new Date(Date.now() - 24 * 60 * 60 * 1000)
+          );
+          const tavilyContext = hasBreakingNews
             ? await getTavilyContext(asset.ticker, supabase)
             : '';
 
