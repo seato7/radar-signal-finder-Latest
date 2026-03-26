@@ -32,6 +32,7 @@ import Analytics from "./pages/Analytics";
 import Assistant from "./pages/Assistant";
 import DataIngestion from "./pages/DataIngestion";
 import PipelineTests from "./pages/PipelineTests";
+import TradingSignals from "./pages/TradingSignals";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -77,6 +78,7 @@ const App = () => (
                             <Route path="/asset-radar" element={<AssetRadar />} />
                             <Route path="/watchlist" element={<Watchlist />} />
                             <Route path="/backtest" element={<Backtest />} />
+                            <Route path="/trading-signals" element={<TradingSignals />} />
                             <Route path="/asset/*" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
                             

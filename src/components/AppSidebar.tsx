@@ -1,4 +1,4 @@
-import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Download, Activity, DollarSign } from "lucide-react";
+import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Download, Activity, DollarSign, Crosshair } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ const navigationItems = [
   { title: "Asset Radar", url: "/asset-radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },
   { title: "Performance", url: "/backtest", icon: TrendingUp },
+  { title: "Trading Signals", url: "/trading-signals", icon: Crosshair },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
   
