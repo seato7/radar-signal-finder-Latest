@@ -153,10 +153,11 @@ const AssetRadar = () => {
           assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
         }
 
-        // Order by computed_score directly in database
+        // Order by hybrid_score first (nulls last), then computed_score as tiebreaker
         const sortOrder = currentSortBy === "score-desc" ? { ascending: false } : { ascending: true };
-        
+
         const { data: sortedAssets, count, error: assetError } = await assetQuery
+          .order('hybrid_score', { ...sortOrder, nullsFirst: false })
           .order('computed_score', { ...sortOrder, nullsFirst: false })
           .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
@@ -346,6 +347,102 @@ const AssetRadar = () => {
       }
 
       // ═══════════════════════════════════════════════════════════════════
+      // GAINERS / LOSERS: fetch all recent prices, compute change, sort globally
+      // ═══════════════════════════════════════════════════════════════════
+      if (currentSortBy === "gainers" || currentSortBy === "losers") {
+        const twoDaysAgo = new Date();
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 3);
+        const changeCutoff = twoDaysAgo.toISOString().split('T')[0];
+
+        const { data: allRecentPrices } = await supabase
+          .from('prices')
+          .select('ticker, close, date')
+          .gte('date', changeCutoff)
+          .order('ticker')
+          .order('date', { ascending: false });
+
+        // Group by ticker: latest and previous close
+        const tickerPriceMap = new Map<string, { latest: number; previous: number | null }>();
+        const seenTickerDates = new Map<string, string>();
+
+        (allRecentPrices || []).forEach(p => {
+          if (!seenTickerDates.has(p.ticker)) {
+            seenTickerDates.set(p.ticker, p.date);
+            tickerPriceMap.set(p.ticker, { latest: p.close, previous: null });
+          } else if (tickerPriceMap.get(p.ticker)?.previous === null) {
+            tickerPriceMap.get(p.ticker)!.previous = p.close;
+          }
+        });
+
+        // Compute price change per ticker
+        const changeArr: { ticker: string; change: number }[] = [];
+        tickerPriceMap.forEach((prices, ticker) => {
+          if (prices.previous && prices.previous !== 0) {
+            const change = ((prices.latest - prices.previous) / prices.previous) * 100;
+            changeArr.push({ ticker, change });
+          }
+        });
+
+        changeArr.sort((a, b) =>
+          currentSortBy === "gainers" ? b.change - a.change : a.change - b.change
+        );
+
+        const pageSlice = changeArr.slice(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE);
+        const tickersInOrder = pageSlice.map(c => c.ticker);
+        totalCount = changeArr.length;
+
+        if (tickersInOrder.length === 0) {
+          setAssets([]);
+          setTotal(0);
+          setLoading(false);
+          return;
+        }
+
+        let assetQuery = supabase
+          .from('assets')
+          .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_explanation')
+          .in('ticker', tickersInOrder);
+
+        if (tabConfig?.filter) {
+          assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
+        }
+
+        const { data: matchingAssets } = await assetQuery;
+
+        const tickerOrder = new Map(tickersInOrder.map((t, i) => [t, i]));
+        const sortedList = (matchingAssets || [])
+          .filter(a => tickerOrder.has(a.ticker))
+          .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
+
+        const priceChangeMap = new Map(pageSlice.map(c => [c.ticker, Math.round(c.change * 100) / 100]));
+
+        const enhancedAssets: AssetWithScore[] = sortedList.map((asset) => {
+          const score = asset.hybrid_score ?? asset.computed_score ?? 50;
+          const sentiment = getSentiment(score);
+          const signalMass = extractSignalMass(asset.score_explanation);
+          const signalStrengthInfo = getSignalStrength(signalMass);
+          return {
+            id: asset.id,
+            ticker: asset.ticker,
+            name: asset.name,
+            exchange: asset.exchange,
+            asset_class: asset.asset_class,
+            score,
+            sentiment: sentiment.label,
+            lastUpdated: null,
+            priceChange: priceChangeMap.get(asset.ticker) ?? null,
+            signalStrength: signalStrengthInfo.level,
+            signalMass,
+          };
+        });
+
+        setAssets(enhancedAssets);
+        setTotal(totalCount);
+        setLoading(false);
+        return;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
       // Default mode: fetch assets first, then enrich with prices
       // ═══════════════════════════════════════════════════════════════════
       let query = supabase
@@ -360,8 +457,13 @@ const AssetRadar = () => {
         query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
       }
 
+      if (currentSortBy === "alpha-desc") {
+        query = query.order('ticker', { ascending: false });
+      } else {
+        query = query.order('ticker', { ascending: true });
+      }
+
       const { data, error, count } = await query
-        .order('ticker')
         .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
       if (error) throw error;
@@ -461,19 +563,8 @@ const AssetRadar = () => {
       case "alpha-desc":
         return sorted.sort((a, b) => b.ticker.localeCompare(a.ticker));
       case "gainers":
-        return sorted.sort((a, b) => {
-          if (a.priceChange === null && b.priceChange === null) return 0;
-          if (a.priceChange === null) return 1;
-          if (b.priceChange === null) return -1;
-          return b.priceChange - a.priceChange;
-        });
       case "losers":
-        return sorted.sort((a, b) => {
-          if (a.priceChange === null && b.priceChange === null) return 0;
-          if (a.priceChange === null) return 1;
-          if (b.priceChange === null) return -1;
-          return a.priceChange - b.priceChange;
-        });
+        return sorted; // handled server-side
       default:
         return sorted;
     }
