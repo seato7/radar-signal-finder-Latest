@@ -249,7 +249,10 @@ serve(async (req) => {
           const signals = signalsByAsset.get(asset.id) || [];
           const formulaScore = Number(asset.computed_score ?? 50);
 
-          const tavilyContext = ''; // PAUSED — re-enable at launch with 20-asset daily cap
+          // Fetch Tavily context if asset has signals (best-effort)
+          const tavilyContext = signals.length > 0
+            ? await getTavilyContext(asset.ticker, supabase)
+            : '';
 
           const prompt = buildPrompt(asset.ticker, formulaScore, signals, tavilyContext);
           const llmContent = await callGemini(prompt, 1000, 'json');
