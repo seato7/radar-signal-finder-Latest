@@ -186,7 +186,18 @@ serve(async (req) => {
     // =========================================================================
     // 3. BULK FETCH PRICES FOR ALL RELEVANT TICKERS + WIDE DATE RANGE
     // =========================================================================
-    const tickers = [...new Set(qualifying.map((r) => assetMap.get(r.asset_id)!.ticker))];
+
+    // Fetch top-20 baseline assets here so their tickers can be included in the price fetch
+    const { data: allAssets } = await supabase
+      .from('assets')
+      .select('id, ticker, hybrid_score')
+      .order('hybrid_score', { ascending: false })
+      .limit(200);
+
+    const top20Tickers = (allAssets || []).slice(0, 20).map((a) => a.ticker);
+
+    const qualifyingTickers = [...new Set(qualifying.map((r) => assetMap.get(r.asset_id)!.ticker))];
+    const tickers = [...new Set([...qualifyingTickers, ...top20Tickers])];
 
     // Fetch prices from startDate through endDate + 14 days (for forward walk)
     const priceEndDate = new Date(new Date(endDate).getTime() + 14 * 24 * 60 * 60 * 1000)
@@ -318,15 +329,6 @@ serve(async (req) => {
     const allDates = [...new Set(
       (priceRows || []).map((r) => r.date).filter((d) => d >= startDate && d <= endDate),
     )].sort();
-
-    // Fetch all assets ordered by hybrid_score for the baseline
-    const { data: allAssets } = await supabase
-      .from('assets')
-      .select('id, ticker, hybrid_score')
-      .order('hybrid_score', { ascending: false })
-      .limit(200);
-
-    const top20Tickers = (allAssets || []).slice(0, 20).map((a) => a.ticker);
 
     const baselineTrades: TradeResult[] = [];
 
