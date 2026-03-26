@@ -56,15 +56,17 @@ async function computeKellySize(supabase: any, sector: string | null, hybridScor
     kellyFraction = f * confidenceMultiplier;
 
     if (kellyFraction <= 0) {
-      // Floor based on confidence tier rather than flat 1%
-      if (confidence >= 0.795) kellyFraction = 0.05;
-      else if (confidence >= 0.645) kellyFraction = 0.03;
-      else kellyFraction = 0.01;
+      kellyFraction = 0;
     } else if (kellyFraction > 0.20) {
       kellyFraction = 0.20;
     } else {
       kellyFraction = kellyFraction * 0.5; // half-Kelly for safety
     }
+
+    // Apply confidence-tiered minimum AFTER half-Kelly
+    // This ensures high-confidence assets always get a meaningful position
+    const minSize = confidence >= 0.795 ? 0.05 : confidence >= 0.645 ? 0.03 : 0.01;
+    kellyFraction = Math.max(minSize, kellyFraction);
   }
 
   // 5. Sector concentration check — reduce by 50% if sector already >= 35% allocated
