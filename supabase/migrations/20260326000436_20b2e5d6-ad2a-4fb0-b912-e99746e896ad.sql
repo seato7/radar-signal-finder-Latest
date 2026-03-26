@@ -1,0 +1,1 @@
+DELETE FROM trade_signals WHERE status = 'active';
