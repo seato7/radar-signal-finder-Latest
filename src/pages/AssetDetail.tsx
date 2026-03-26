@@ -4,12 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Star, ExternalLink, TrendingUp, TrendingDown, Info, Activity, BarChart3, Database, Clock } from "lucide-react";
+import { Star, ExternalLink, TrendingUp, TrendingDown, Info, Activity, BarChart3, Database, Clock, Target, ShieldAlert, Crosshair } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssetScore } from "@/hooks/useAssetScore";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, differenceInDays, format } from "date-fns";
 
 const formatLabel = (str: string): string => {
   return str
@@ -26,6 +26,15 @@ interface Theme { id: string; name: string; }
 interface WhereToBuy { name: string; url: string; }
 interface AssetData { id: string; ticker: string; exchange: string; name: string; asset_class: string | null; }
 interface PriceData { close: number; last_updated_at: string | null; updated_at: string | null; }
+interface ActiveTradeSignal {
+  id: string;
+  entry_price: number | null;
+  exit_target: number | null;
+  stop_loss: number | null;
+  position_size_pct: number | null;
+  expires_at: string | null;
+  created_at: string;
+}
 
 const AU_BROKERS: WhereToBuy[] = [
   { name: "Stake", url: "https://stake.com.au" },
@@ -64,6 +73,7 @@ const AssetDetail = () => {
   const [totalAssets, setTotalAssets] = useState<number>(navState?.totalLoaded || 0);
   const [batchScore, setBatchScore] = useState<number | null>(navState?.score || null);
   const [rankContext, setRankContext] = useState<string>(navState?.rank ? "in current view" : "");
+  const [activeSignal, setActiveSignal] = useState<ActiveTradeSignal | null>(null);
   const { toast } = useToast();
 
   // Comprehensive scoring from ALL 22 data sources (for breakdown display)
@@ -86,7 +96,17 @@ const AssetDetail = () => {
         
         if (!assetData) { setLoading(false); return; }
         setAsset(assetData);
-        
+
+        // Fetch active trade signal for this ticker
+        const { data: signalData } = await supabase
+          .from('trade_signals')
+          .select('id, entry_price, exit_target, stop_loss, position_size_pct, expires_at, created_at')
+          .eq('ticker', assetData.ticker)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        setActiveSignal(signalData ?? null);
+
         // Fetch latest price data for "last updated" display
         const { data: latestPrice } = await supabase
           .from('prices')
@@ -263,6 +283,56 @@ const AssetDetail = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Active Trade Signal */}
+      {activeSignal && (
+        <Card className="border-success/40 bg-success/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2 text-success">
+              <Crosshair className="h-4 w-4" />
+              Active Trade Signal
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-3">
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Entry Price</p>
+                <p className="font-semibold tabular-nums">
+                  {activeSignal.entry_price != null ? `$${activeSignal.entry_price.toFixed(2)}` : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5 flex items-center gap-1">
+                  <Target className="h-3 w-3" /> Target (+15%)
+                </p>
+                <p className="font-semibold tabular-nums text-success">
+                  {activeSignal.exit_target != null ? `$${activeSignal.exit_target.toFixed(2)}` : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5 flex items-center gap-1">
+                  <ShieldAlert className="h-3 w-3" /> Stop Loss (-10%)
+                </p>
+                <p className="font-semibold tabular-nums text-destructive">
+                  {activeSignal.stop_loss != null ? `$${activeSignal.stop_loss.toFixed(2)}` : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Position Size</p>
+                <p className="font-semibold tabular-nums">
+                  {activeSignal.position_size_pct != null
+                    ? `${(activeSignal.position_size_pct * 100).toFixed(1)}%`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Signal entered {differenceInDays(new Date(), new Date(activeSignal.created_at))}d ago
+              {activeSignal.expires_at && ` · Expires ${format(new Date(activeSignal.expires_at), 'MMM d')}`}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Score Breakdown */}
       <Card>

@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -124,6 +124,7 @@ const AssetRadar = () => {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [activeSignalTickers, setActiveSignalTickers] = useState<Set<string>>(new Set());
   
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -493,6 +494,17 @@ const AssetRadar = () => {
     return () => clearInterval(interval);
   }, [page, activeTab, sortBy]);
 
+  // Fetch active trade signal tickers once on mount for Top Pick badges
+  useEffect(() => {
+    supabase
+      .from('trade_signals')
+      .select('ticker')
+      .eq('status', 'active')
+      .then(({ data }) => {
+        setActiveSignalTickers(new Set((data ?? []).map((r: any) => r.ticker)));
+      });
+  }, []);
+
   const handleTabChange = (value: string) => {
     setActiveTab(value as AssetClassTab);
     setPage(0);
@@ -604,7 +616,15 @@ const AssetRadar = () => {
                     >
                       <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
                         <div className="flex items-start justify-between mb-1">
-                          <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                            {activeSignalTickers.has(asset.ticker) && (
+                              <Badge className="bg-success/20 text-success border-success/30 border text-[10px] px-1.5 py-0 flex items-center gap-0.5">
+                                <Crosshair className="h-2.5 w-2.5" />
+                                Top Pick
+                              </Badge>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2">
                             {/* Signal strength badge */}
                             {asset.signalStrength !== "none" && (

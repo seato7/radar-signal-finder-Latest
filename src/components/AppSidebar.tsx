@@ -24,7 +24,7 @@ const navigationItems = [
   { title: "Asset Radar", url: "/asset-radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },
   { title: "Performance", url: "/backtest", icon: TrendingUp },
-  { title: "Trading Signals", url: "/trading-signals", icon: Crosshair },
+  { title: "Top Picks", url: "/trading-signals", icon: Crosshair },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
   
