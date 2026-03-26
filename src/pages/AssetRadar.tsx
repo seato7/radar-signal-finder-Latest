@@ -153,12 +153,11 @@ const AssetRadar = () => {
           assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
         }
 
-        // Order by hybrid_score first (nulls last), then computed_score as tiebreaker
+        // Order by effective_score (COALESCE(hybrid_score, computed_score) generated column)
         const sortOrder = currentSortBy === "score-desc" ? { ascending: false } : { ascending: true };
 
         const { data: sortedAssets, count, error: assetError } = await assetQuery
-          .order('hybrid_score', { ...sortOrder, nullsFirst: false })
-          .order('computed_score', { ...sortOrder, nullsFirst: false })
+          .order('effective_score', { ...sortOrder, nullsFirst: false })
           .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
         if (assetError) throw assetError;
@@ -347,44 +346,24 @@ const AssetRadar = () => {
       }
 
       // ═══════════════════════════════════════════════════════════════════
-      // GAINERS / LOSERS: fetch all recent prices, compute change, sort globally
+      // GAINERS / LOSERS: use RPC to avoid 1000-row fetch limit
       // ═══════════════════════════════════════════════════════════════════
       if (currentSortBy === "gainers" || currentSortBy === "losers") {
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 3);
-        const changeCutoff = twoDaysAgo.toISOString().split('T')[0];
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - 3);
+        const cutoff = cutoffDate.toISOString().split('T')[0];
 
-        const { data: allRecentPrices } = await supabase
-          .from('prices')
-          .select('ticker, close, date')
-          .gte('date', changeCutoff)
-          .order('ticker')
-          .order('date', { ascending: false });
+        const { data: changeData, error: changeError } = await supabase
+          .rpc('get_price_changes', { cutoff_date: cutoff });
 
-        // Group by ticker: latest and previous close
-        const tickerPriceMap = new Map<string, { latest: number; previous: number | null }>();
-        const seenTickerDates = new Map<string, string>();
+        if (changeError) throw changeError;
 
-        (allRecentPrices || []).forEach(p => {
-          if (!seenTickerDates.has(p.ticker)) {
-            seenTickerDates.set(p.ticker, p.date);
-            tickerPriceMap.set(p.ticker, { latest: p.close, previous: null });
-          } else if (tickerPriceMap.get(p.ticker)?.previous === null) {
-            tickerPriceMap.get(p.ticker)!.previous = p.close;
-          }
-        });
-
-        // Compute price change per ticker
-        const changeArr: { ticker: string; change: number }[] = [];
-        tickerPriceMap.forEach((prices, ticker) => {
-          if (prices.previous && prices.previous !== 0) {
-            const change = ((prices.latest - prices.previous) / prices.previous) * 100;
-            changeArr.push({ ticker, change });
-          }
-        });
+        const changeArr = (changeData || []) as { ticker: string; change_pct: number }[];
 
         changeArr.sort((a, b) =>
-          currentSortBy === "gainers" ? b.change - a.change : a.change - b.change
+          currentSortBy === "gainers"
+            ? b.change_pct - a.change_pct
+            : a.change_pct - b.change_pct
         );
 
         const pageSlice = changeArr.slice(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE);
@@ -414,7 +393,9 @@ const AssetRadar = () => {
           .filter(a => tickerOrder.has(a.ticker))
           .sort((a, b) => (tickerOrder.get(a.ticker) ?? 999) - (tickerOrder.get(b.ticker) ?? 999));
 
-        const priceChangeMap = new Map(pageSlice.map(c => [c.ticker, Math.round(c.change * 100) / 100]));
+        const priceChangeMap = new Map(
+          pageSlice.map(c => [c.ticker, Math.round(c.change_pct * 100) / 100])
+        );
 
         const enhancedAssets: AssetWithScore[] = sortedList.map((asset) => {
           const score = asset.hybrid_score ?? asset.computed_score ?? 50;
