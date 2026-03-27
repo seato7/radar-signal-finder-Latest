@@ -388,6 +388,20 @@ const AssetRadar = () => {
 
         const { data: matchingAssets } = await assetQuery;
 
+        // Fetch latest price date for timestamp display
+        const { data: latestPriceDates } = await supabase
+          .from('prices')
+          .select('ticker, date')
+          .in('ticker', tickersInOrder)
+          .order('date', { ascending: false });
+
+        const latestDateMap = new Map<string, string>();
+        (latestPriceDates || []).forEach(p => {
+          if (!latestDateMap.has(p.ticker)) {
+            latestDateMap.set(p.ticker, p.date + 'T00:00:00.000Z');
+          }
+        });
+
         const tickerOrder = new Map(tickersInOrder.map((t, i) => [t, i]));
         const sortedList = (matchingAssets || [])
           .filter(a => tickerOrder.has(a.ticker))
@@ -410,7 +424,7 @@ const AssetRadar = () => {
             asset_class: asset.asset_class,
             score,
             sentiment: sentiment.label,
-            lastUpdated: null,
+            lastUpdated: latestDateMap.get(asset.ticker) || null,
             priceChange: priceChangeMap.get(asset.ticker) ?? null,
             signalStrength: signalStrengthInfo.level,
             signalMass,
