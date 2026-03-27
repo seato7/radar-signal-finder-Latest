@@ -52,10 +52,11 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { period = 'ALL' } = await req.json().catch(() => ({}));
 
-    // Get all snapshots
+    // Get all predictions (top 10 per day)
     const { data: snapshots, error: snapError } = await supabase
-      .from('asset_score_snapshots')
-      .select('*')
+      .from('asset_predictions')
+      .select('snapshot_date, ticker, rank, confidence_score')
+      .lte('rank', 10)
       .order('snapshot_date', { ascending: true });
 
     if (snapError) throw snapError;
@@ -158,7 +159,7 @@ serve(async (req) => {
 
     // Get the TOP 10 assets from the FIRST day (buy-and-hold strategy)
     const firstDaySnapshots = (snapshotsByDate[firstDate] || [])
-      .sort((a, b) => (b.computed_score || 0) - (a.computed_score || 0))
+      .sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0))
       .slice(0, 10);
 
     const portfolioTickers = firstDaySnapshots.map(s => s.ticker);
@@ -285,8 +286,8 @@ serve(async (req) => {
       const ar = assetReturns[s.ticker] || { returnPct: 0, startPrice: null, endPrice: null, hasData: false };
       return {
         ticker: s.ticker,
-        name: s.asset_name || s.ticker,
-        score: s.computed_score || 0,
+        name: s.ticker,
+        score: Math.round((s.confidence_score || 0) * 100),
         return_pct: Math.round(ar.returnPct * 100) / 100,
         contribution: Math.round((ar.returnPct / 10) * 100) / 100,
         first_price: ar.startPrice || null,

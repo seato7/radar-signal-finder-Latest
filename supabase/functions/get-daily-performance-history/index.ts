@@ -50,10 +50,11 @@ serve(async (req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
-    // Get all snapshots ordered by date
+    // Get all predictions ordered by date (top 10 per day)
     const { data: snapshots, error: snapError } = await supabase
-      .from('asset_score_snapshots')
-      .select('*')
+      .from('asset_predictions')
+      .select('snapshot_date, ticker, rank, confidence_score')
+      .lte('rank', 10)
       .order('snapshot_date', { ascending: true })
       .order('rank', { ascending: true });
 
@@ -201,8 +202,8 @@ serve(async (req) => {
         portfolioReturns.push(dailyReturn);
         topAssets.push({
           ticker: snapshot.ticker,
-          name: snapshot.asset_name || snapshot.ticker,
-          score: snapshot.computed_score || 0,
+          name: snapshot.ticker,
+          score: Math.round((snapshot.confidence_score || 0) * 100),
           daily_return_pct: Math.round(dailyReturn * 100) / 100,
           rank: snapshot.rank || 0
         });
