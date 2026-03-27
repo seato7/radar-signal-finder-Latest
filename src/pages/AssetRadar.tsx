@@ -194,7 +194,7 @@ const AssetRadar = () => {
 
         priceData.forEach(p => {
           if (!priceMap.has(p.ticker)) {
-            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
             seenDates.set(p.ticker, p.date);
           } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
             previousPriceMap.set(p.ticker, p.close);
@@ -246,7 +246,7 @@ const AssetRadar = () => {
       if (currentSortBy === "recent" && !searchTerm) {
         let priceQuery = supabase
           .from('prices')
-          .select('ticker, close, last_updated_at', { count: 'exact' })
+          .select('ticker, close, date, last_updated_at', { count: 'exact' })
           .gte('last_updated_at', cutoffTime)
           .order('last_updated_at', { ascending: false });
 
@@ -279,7 +279,7 @@ const AssetRadar = () => {
         const priceMap = new Map<string, { lastUpdated: string; close: number }>();
         (recentPrices || []).forEach(p => {
           if (!priceMap.has(p.ticker)) {
-            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
           }
         });
 
@@ -474,7 +474,7 @@ const AssetRadar = () => {
       
       priceData.forEach(p => {
         if (!priceMap.has(p.ticker)) {
-          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
           seenDates.set(p.ticker, p.date);
         } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
           previousPriceMap.set(p.ticker, p.close);
