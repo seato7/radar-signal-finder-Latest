@@ -56,7 +56,7 @@ serve(async (req) => {
     // ── 1. Query asset_predictions (service role bypasses 1000-row REST limit) ──
     let predictionsQuery = supabase
       .from('asset_predictions')
-      .select('snapshot_date, ticker, rank, confidence_score')
+      .select('snapshot_date, ticker, rank, confidence_score, feature_snapshot')
       .lte('rank', 10)
       .order('snapshot_date', { ascending: true })
       .order('rank', { ascending: true });
@@ -270,7 +270,10 @@ serve(async (req) => {
         topAssets.push({
           ticker: snapshot.ticker,
           name: snapshot.ticker,
-          score: Math.round((snapshot.confidence_score || 0) * 100),
+          score: Math.round(
+            Number(snapshot.feature_snapshot?.hybrid_score) ||
+            Number(snapshot.confidence_score || 0) * 100
+          ),
           daily_return_pct: Math.round(dailyReturn * 100) / 100,
           rank: snapshot.rank || 0,
         });
@@ -315,7 +318,10 @@ serve(async (req) => {
       return {
         ticker: s.ticker,
         name: s.ticker,
-        score: Math.round((s.confidence_score || 0) * 100),
+        score: Math.round(
+          Number(s.feature_snapshot?.hybrid_score) ||
+          Number(s.confidence_score || 0) * 100
+        ),
         return_pct: Math.round(ar.returnPct * 100) / 100,
         contribution: Math.round((ar.returnPct / 10) * 100) / 100,
         first_price: ar.startPrice || null,
