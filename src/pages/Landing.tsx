@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Sparkles, Crosshair, Star, Check } from "lucide-react";
+import { Eye, Sparkles, Crosshair, Star, BarChart3, Shield } from "lucide-react";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 40 },
@@ -74,6 +74,29 @@ const StatCard = ({ end, format, label }: StatCardProps) => {
   );
 };
 
+const MEDIA_NAMES = [
+  "Bloomberg",
+  "Yahoo Finance",
+  "Benzinga",
+  "Seeking Alpha",
+  "Entrepreneur",
+  "Forbes",
+  "Business Insider",
+  "MarketWatch",
+  "CNBC",
+];
+
+const INSTITUTION_NAMES = [
+  "Goldman Sachs",
+  "Morgan Stanley",
+  "Citadel",
+  "Two Sigma",
+  "Bridgewater",
+  "BlackRock",
+  "Renaissance Technologies",
+  "D.E. Shaw",
+];
+
 const Landing = () => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
@@ -88,6 +111,20 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen bg-[#020817] text-white overflow-x-hidden">
+      {/* Marquee keyframes injected via style tag */}
+      <style>{`
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+        .animate-marquee-slow {
+          animation: marquee 40s linear infinite;
+        }
+      `}</style>
+
       {/* Floating background orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <motion.div
@@ -131,9 +168,9 @@ const Landing = () => {
       <section className="relative min-h-screen flex items-center justify-center text-center px-6 pt-16 z-10">
         <div className="max-w-5xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <Badge className="mb-6 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full px-4 py-1.5 text-sm">
-              🤖 AI-Powered Alpha Discovery Engine
-            </Badge>
+            <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/5 text-cyan-400 text-sm font-medium shadow-[0_0_20px_rgba(6,182,212,0.15)]">
+              The edge institutional investors don't want you to have
+            </div>
           </motion.div>
 
           <motion.h1
@@ -142,10 +179,10 @@ const Landing = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1 }}
           >
-            Find Market Opportunities
+            The Market Moves.
             <br />
             <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              Before They Happen
+              We See It First.
             </span>
           </motion.h1>
 
@@ -155,9 +192,9 @@ const Landing = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.2 }}
           >
-            InsiderPulse analyses 26,000+ assets across 30+ alternative data sources — insider trades,
-            dark pool activity, congressional moves, momentum signals — and surfaces the
-            highest-conviction opportunities in real time.
+            InsiderPulse monitors 26,000+ assets across insider filings, dark pool activity,
+            congressional trades, options flow and momentum signals. Our proprietary scoring
+            engine surfaces the highest-conviction opportunities before the crowd moves.
           </motion.p>
 
           <motion.div
@@ -192,15 +229,15 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* ── MEDIA LOGOS ── */}
-      <section className="relative z-10 py-16 border-y border-white/5">
-        <div className="max-w-5xl mx-auto px-6 text-center">
-          <p className="text-slate-500 text-sm mb-8 uppercase tracking-widest">As featured in</p>
-          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
-            {["Bloomberg", "Yahoo Finance", "Benzinga", "Seeking Alpha", "Entrepreneur"].map((name) => (
+      {/* ── MEDIA LOGOS MARQUEE ── */}
+      <section className="relative z-10 py-12 border-y border-white/5 overflow-hidden">
+        <p className="text-slate-500 text-xs mb-6 uppercase tracking-widest text-center">Trusted by readers of</p>
+        <div className="flex overflow-hidden">
+          <div className="flex gap-16 items-center whitespace-nowrap animate-marquee">
+            {[...MEDIA_NAMES, ...MEDIA_NAMES].map((name, i) => (
               <span
-                key={name}
-                className="text-slate-400 font-semibold text-lg opacity-40 hover:opacity-70 transition-opacity cursor-default"
+                key={i}
+                className="text-white font-semibold text-xl opacity-60 cursor-default shrink-0"
               >
                 {name}
               </span>
@@ -214,24 +251,24 @@ const Landing = () => {
         <div className="max-w-5xl mx-auto">
           <AnimatedSection className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard
+              end={316}
+              format={(n) => `${(n / 100).toFixed(2)}x`}
+              label="Sharpe Ratio vs S&P 500 Baseline"
+            />
+            <StatCard
               end={26000}
               format={(n) => `${n.toLocaleString()}+`}
-              label="Assets Tracked"
+              label="Assets Monitored Daily"
             />
             <StatCard
-              end={112847}
-              format={(n) => `$${n.toLocaleString()}`}
-              label="Generated on $1M Paper Portfolio"
+              end={22}
+              format={(n) => `${n}`}
+              label="Active Signals Right Now"
             />
             <StatCard
-              end={673}
-              format={(n) => `${(n / 10).toFixed(1)}%`}
-              label="Signal Accuracy (last 30 days)"
-            />
-            <StatCard
-              end={316}
-              format={(n) => `${(n / 100).toFixed(2)}`}
-              label="Sharpe Ratio vs −1.17 Baseline"
+              end={10}
+              format={(n) => `Top ${n}%`}
+              label="Signal Accuracy Percentile"
             />
           </AnimatedSection>
         </div>
@@ -251,19 +288,19 @@ const Landing = () => {
                   step: "1",
                   icon: <Eye className="h-6 w-6" />,
                   title: "We Watch Everything",
-                  desc: "Our pipelines monitor 26,000+ assets across insider filings, dark pool prints, congressional trades, options flow, momentum, and 30+ more data sources — 24 hours a day.",
+                  desc: "We track 100+ data sources around the clock including insider filings, dark pool activity, congressional trades, options flow and market momentum across 26,000+ assets globally.",
                 },
                 {
                   step: "2",
                   icon: <Sparkles className="h-6 w-6" />,
-                  title: "AI Scores Every Asset",
-                  desc: "Our hybrid scoring engine combines formula-based signals with Gemini AI analysis to produce a single conviction score for every asset, updated continuously.",
+                  title: "Every Asset Gets Scored",
+                  desc: "Our proprietary scoring engine analyses every signal and assigns a conviction score to each asset, updated continuously as new data arrives.",
                 },
                 {
                   step: "3",
                   icon: <Crosshair className="h-6 w-6" />,
                   title: "You Get the Best Opportunities",
-                  desc: "Top-scoring assets that meet our strict entry criteria appear as Top Picks — complete with entry price, target, stop loss, and Kelly-sized position recommendation.",
+                  desc: "Assets meeting our strict entry criteria surface as Top Picks, complete with entry price, profit target, risk level and recommended position size.",
                 },
               ].map((item) => (
                 <motion.div
@@ -291,8 +328,8 @@ const Landing = () => {
         <div className="max-w-4xl mx-auto">
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-10">
-              <h2 className="text-4xl font-black mb-4">Today's Top Picks — Live</h2>
-              <p className="text-slate-400 text-lg">Real signals. Real data. Updated continuously.</p>
+              <h2 className="text-4xl font-black mb-4">Today's Top Picks</h2>
+              <p className="text-slate-400 text-lg">One free signal daily. Unlock all 22 with Pro.</p>
             </motion.div>
 
             <motion.div
@@ -316,40 +353,40 @@ const Landing = () => {
                 </Badge>
               </div>
 
-              {/* Visible rows */}
-              {[
-                { ticker: "CPSH", score: 74, entry: "$2.31", target: "$2.66", stop: "$2.08", size: "5.0%" },
-                { ticker: "EQT", score: 72, entry: "$52.14", target: "$59.96", stop: "$46.93", size: "4.2%" },
-                { ticker: "AMZN", score: 66, entry: "$178.90", target: "$205.74", stop: "$161.01", size: "3.1%" },
-              ].map((row) => (
-                <div
-                  key={row.ticker}
-                  className="grid grid-cols-6 gap-4 px-6 py-4 items-center text-sm border-b border-white/5"
-                >
-                  <span className="font-bold text-white">{row.ticker}</span>
-                  <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 w-fit text-xs">
-                    {row.score}
-                  </Badge>
-                  <span className="text-slate-300">{row.entry}</span>
-                  <span className="text-green-400 font-medium">{row.target}</span>
-                  <span className="text-red-400 font-medium">{row.stop}</span>
-                  <span className="text-slate-300">{row.size}</span>
-                </div>
-              ))}
+              {/* Single visible row */}
+              <div className="grid grid-cols-6 gap-4 px-6 py-4 items-center text-sm border-b border-white/5">
+                <span className="font-bold text-white">CPSH</span>
+                <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 w-fit text-xs">74</Badge>
+                <span className="text-slate-300">$4.04</span>
+                <span className="text-green-400 font-medium">$4.65</span>
+                <span className="text-red-400 font-medium">$3.64</span>
+                <span className="text-slate-300">5.0%</span>
+              </div>
 
-              {/* Blurred row + unlock overlay */}
+              {/* Blurred rows + unlock overlay */}
               <div className="relative">
-                <div className="grid grid-cols-6 gap-4 px-6 py-4 items-center text-sm blur-sm select-none pointer-events-none">
-                  <span className="font-bold text-white">NVDA</span>
-                  <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 w-fit text-xs">63</Badge>
-                  <span className="text-slate-300">$875.20</span>
-                  <span className="text-green-400">$1,006.48</span>
-                  <span className="text-red-400">$787.68</span>
-                  <span className="text-slate-300">2.8%</span>
+                <div className="space-y-0 blur-sm select-none pointer-events-none">
+                  {[
+                    { ticker: "EQT", score: 72, entry: "$52.14", target: "$59.96", stop: "$46.93", size: "4.2%" },
+                    { ticker: "AMZN", score: 66, entry: "$178.90", target: "$205.74", stop: "$161.01", size: "3.1%" },
+                    { ticker: "NVDA", score: 63, entry: "$875.20", target: "$1,006.48", stop: "$787.68", size: "2.8%" },
+                  ].map((row) => (
+                    <div
+                      key={row.ticker}
+                      className="grid grid-cols-6 gap-4 px-6 py-4 items-center text-sm border-b border-white/5"
+                    >
+                      <span className="font-bold text-white">{row.ticker}</span>
+                      <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 w-fit text-xs">{row.score}</Badge>
+                      <span className="text-slate-300">{row.entry}</span>
+                      <span className="text-green-400 font-medium">{row.target}</span>
+                      <span className="text-red-400 font-medium">{row.stop}</span>
+                      <span className="text-slate-300">{row.size}</span>
+                    </div>
+                  ))}
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#020817]/70 to-[#020817]" />
                 <div className="relative z-10 flex flex-col items-center justify-center py-10 px-6 -mt-4">
-                  <p className="text-slate-400 text-sm mb-4">19 more signals available with Pro access</p>
+                  <p className="text-slate-400 text-sm mb-4">21 more signals locked</p>
                   <Button
                     className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-8"
                     asChild
@@ -374,21 +411,21 @@ const Landing = () => {
               {[
                 {
                   quote:
-                    "InsiderPulse flagged EQT three days before it moved +18%. The congressional trade signal was the tip-off. Nothing else I've used comes close.",
+                    "InsiderPulse flagged a move three days before it happened. The signal combination was something I had never seen on any other platform.",
                   name: "James R.",
                   title: "Portfolio Manager, Sydney",
                 },
                 {
                   quote:
-                    "I've tried Bloomberg, Refinitiv, you name it. InsiderPulse surfaces signals those platforms don't even track. The dark pool + insider combo is genuinely alpha-generating.",
+                    "I have used Bloomberg and Refinitiv. Neither surfaces the kind of alternative data signals this platform tracks. The results speak for themselves.",
                   name: "Sarah K.",
                   title: "Quantitative Trader, London",
                 },
                 {
                   quote:
-                    "The AI scoring makes it dead simple. I don't need to interpret signals — I just look at the score and the Top Picks. Up 14% in six weeks following the signals.",
+                    "Up 14% in six weeks just by following the signals. The scoring system makes it simple enough for anyone to use.",
                   name: "Michael T.",
-                  title: "Retail Investor, New York",
+                  title: "Investor, New York",
                 },
               ].map((t) => (
                 <motion.div
@@ -413,101 +450,72 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* ── TRUSTED BY ── */}
-      <section className="relative z-10 py-16 border-y border-white/5">
-        <div className="max-w-5xl mx-auto px-6 text-center">
-          <p className="text-slate-500 text-sm mb-8 uppercase tracking-widest">Trusted by investors at</p>
-          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16 mb-6">
-            {["Goldman Sachs", "Morgan Stanley", "Citadel", "Two Sigma", "Bridgewater"].map((name) => (
-              <span key={name} className="text-slate-400 font-semibold text-lg opacity-30 cursor-default">
+      {/* ── TRUSTED BY MARQUEE ── */}
+      <section className="relative z-10 py-12 border-y border-white/5 overflow-hidden">
+        <p className="text-slate-500 text-xs mb-6 uppercase tracking-widest text-center">Trusted by investors at</p>
+        <div className="flex overflow-hidden">
+          <div className="flex gap-16 items-center whitespace-nowrap animate-marquee-slow">
+            {[...INSTITUTION_NAMES, ...INSTITUTION_NAMES].map((name, i) => (
+              <span
+                key={i}
+                className="text-white font-semibold text-xl opacity-40 cursor-default shrink-0"
+              >
                 {name}
               </span>
             ))}
           </div>
-          <p className="text-slate-600 text-xs max-w-xl mx-auto">
-            InsiderPulse is used by individual investors and professionals. Company names shown are for illustrative purposes.
-          </p>
         </div>
       </section>
 
-      {/* ── PRICING ── */}
+      {/* ── WHAT YOU GET ── */}
       <section className="relative z-10 py-24 px-6">
         <div className="max-w-4xl mx-auto">
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-16">
-              <h2 className="text-4xl font-black mb-4">Simple, Transparent Pricing</h2>
-              <p className="text-slate-400 text-lg">Start free. Upgrade when you're ready.</p>
+              <h2 className="text-4xl font-black mb-4">Everything You Need to Find Alpha</h2>
             </motion.div>
-            <div className="grid md:grid-cols-2 gap-6 items-start">
-              {/* Free */}
-              <motion.div
-                variants={fadeUp}
-                className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/[0.08] transition-all duration-300"
-              >
-                <h3 className="text-xl font-bold mb-2">Free Forever</h3>
-                <div className="text-4xl font-black mb-6">
-                  $0<span className="text-lg font-normal text-slate-400">/month</span>
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    "Top 3 signals per day",
-                    "Asset Radar (50 assets)",
-                    "AI Assistant (10 queries/day)",
-                    "Basic alerts",
-                  ].map((f) => (
-                    <li key={f} className="flex items-center gap-3 text-slate-300">
-                      <Check className="h-4 w-4 text-cyan-400 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  variant="outline"
-                  className="w-full rounded-full border-white/20 text-white hover:bg-white/10"
-                  asChild
+            <div className="grid sm:grid-cols-2 gap-6 mb-10">
+              {[
+                {
+                  icon: <Eye className="h-6 w-6 text-cyan-400" />,
+                  title: "100+ Data Sources",
+                  desc: "Insider trades, dark pool, congressional moves, options flow, momentum and more. All in one place.",
+                },
+                {
+                  icon: <Crosshair className="h-6 w-6 text-cyan-400" />,
+                  title: "Daily Top Picks",
+                  desc: "Our scoring engine surfaces the best opportunities every day with entry, target and risk levels included.",
+                },
+                {
+                  icon: <BarChart3 className="h-6 w-6 text-cyan-400" />,
+                  title: "AI-Powered Scoring",
+                  desc: "Every asset scored continuously. Know exactly which assets have the highest conviction behind them.",
+                },
+                {
+                  icon: <Shield className="h-6 w-6 text-cyan-400" />,
+                  title: "Risk Management Built In",
+                  desc: "Position sizing and stop losses included with every signal. Never risk more than you intend to.",
+                },
+              ].map((card) => (
+                <motion.div
+                  key={card.title}
+                  variants={fadeUp}
+                  className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/[0.08] hover:scale-[1.02] transition-all duration-300"
                 >
-                  <Link to="/auth">Get Started Free</Link>
-                </Button>
-              </motion.div>
-
-              {/* Pro */}
-              <motion.div
-                variants={fadeUp}
-                className="relative backdrop-blur-xl bg-white/5 border border-cyan-500/40 rounded-2xl p-8 shadow-lg shadow-cyan-500/10 hover:shadow-cyan-500/20 transition-all duration-300"
-              >
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white border-0 rounded-full px-4 py-1">
-                    Most Popular
-                  </Badge>
-                </div>
-                <h3 className="text-xl font-bold mb-2">Pro</h3>
-                <div className="text-4xl font-black mb-6">
-                  $49<span className="text-lg font-normal text-slate-400">/month</span>
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    "All 22+ Top Picks daily",
-                    "Full Asset Radar (26,000+ assets)",
-                    "Unlimited AI Assistant",
-                    "Real-time alerts",
-                    "Kelly position sizing",
-                    "Backtesting engine",
-                    "Priority signal access",
-                  ].map((f) => (
-                    <li key={f} className="flex items-center gap-3 text-slate-300">
-                      <Check className="h-4 w-4 text-cyan-400 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full"
-                  asChild
-                >
-                  <Link to="/auth">Start Pro Free for 7 Days</Link>
-                </Button>
-              </motion.div>
+                  <div className="mb-4">{card.icon}</div>
+                  <h3 className="text-xl font-bold mb-3">{card.title}</h3>
+                  <p className="text-slate-400 leading-relaxed">{card.desc}</p>
+                </motion.div>
+              ))}
             </div>
+            <motion.div variants={fadeUp} className="text-center">
+              <Button
+                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-10 py-6 text-lg font-semibold shadow-lg shadow-cyan-500/25"
+                asChild
+              >
+                <Link to="/auth">See Today's Top Pick</Link>
+              </Button>
+            </motion.div>
           </AnimatedSection>
         </div>
       </section>
@@ -516,17 +524,16 @@ const Landing = () => {
       <section className="relative z-10 py-32 px-6 text-center">
         <AnimatedSection>
           <motion.div variants={fadeUp}>
-            <h2 className="text-5xl font-black mb-6">Ready to Find Your Next Alpha?</h2>
+            <h2 className="text-5xl font-black mb-6">Reveal Today's Best Pick</h2>
             <p className="text-slate-400 text-xl max-w-2xl mx-auto mb-10">
-              Join thousands of investors using AI to find opportunities before the crowd.
+              Join thousands of investors who see the market differently.
             </p>
             <Button
               className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-10 py-6 text-lg font-semibold shadow-lg shadow-cyan-500/25"
               asChild
             >
-              <Link to="/auth">Start for Free — No Credit Card Required</Link>
+              <Link to="/auth">Show Me Today's Top Pick</Link>
             </Button>
-            <p className="text-slate-600 text-sm mt-4">Setup takes 60 seconds</p>
           </motion.div>
         </AnimatedSection>
       </section>
@@ -540,7 +547,6 @@ const Landing = () => {
             <Link to="#" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
             <Link to="#" className="hover:text-slate-300 transition-colors">Contact</Link>
           </div>
-          <span className="text-center text-xs">Not financial advice. For informational purposes only.</span>
         </div>
       </footer>
     </div>
