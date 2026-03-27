@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const navigationItems = [
-  { title: "Dashboard", url: "/", icon: Home },
+  { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "AI Assistant", url: "/assistant", icon: Sparkles },
   { title: "Alerts", url: "/alerts", icon: Bell },
   { title: "Asset Radar", url: "/asset-radar", icon: Radar },
