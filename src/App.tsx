@@ -14,7 +14,6 @@ import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
 import AssetRadar from "./pages/AssetRadar";
 import Watchlist from "./pages/Watchlist";
-import Backtest from "./pages/Backtest";
 import AssetDetail from "./pages/AssetDetail";
 import Themes from "./pages/Themes";
 
@@ -79,7 +78,6 @@ const App = () => (
                             <Route path="/alerts" element={<Alerts />} />
                             <Route path="/asset-radar" element={<AssetRadar />} />
                             <Route path="/watchlist" element={<Watchlist />} />
-                            <Route path="/backtest" element={<Backtest />} />
                             <Route path="/trading-signals" element={<TradingSignals />} />
                             <Route path="/asset/*" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />
