@@ -328,13 +328,15 @@ serve(async (req) => {
     console.log(`get-performance-summary completed in ${duration}ms — days=${days}, predictions=${predictions.length}, dates=${dates.length}`);
 
     // ── 7. Log to function_status ──
-    await supabase.from('function_status').upsert({
-      function_name: 'get-performance-summary',
-      last_run_at: new Date().toISOString(),
-      last_run_status: 'success',
-      last_run_duration_ms: duration,
-      last_error: null,
-    }, { onConflict: 'function_name' }).catch(() => {});
+    try {
+      await supabase.from('function_status').upsert({
+        function_name: 'get-performance-summary',
+        last_run_at: new Date().toISOString(),
+        last_run_status: 'success',
+        last_run_duration_ms: duration,
+        last_error: null,
+      }, { onConflict: 'function_name' });
+    } catch (_) {}
 
     return new Response(JSON.stringify({
       portfolio_value: finalPortfolioValue,
@@ -363,13 +365,15 @@ serve(async (req) => {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
     console.error('get-performance-summary error:', errMsg);
 
-    await supabase.from('function_status').upsert({
-      function_name: 'get-performance-summary',
-      last_run_at: new Date().toISOString(),
-      last_run_status: 'error',
-      last_run_duration_ms: duration,
-      last_error: errMsg,
-    }, { onConflict: 'function_name' }).catch(() => {});
+    try {
+      await supabase.from('function_status').upsert({
+        function_name: 'get-performance-summary',
+        last_run_at: new Date().toISOString(),
+        last_run_status: 'error',
+        last_run_duration_ms: duration,
+        last_error: errMsg,
+      }, { onConflict: 'function_name' });
+    } catch (_) {}
 
     return new Response(JSON.stringify({ error: errMsg }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
