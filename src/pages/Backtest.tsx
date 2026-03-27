@@ -111,7 +111,9 @@ const Performance = () => {
         .select('snapshot_date, ticker, rank, confidence_score, expected_return')
         .lte('rank', 10)
         .order('snapshot_date', { ascending: true })
-        .order('rank', { ascending: true });
+        .order('rank', { ascending: true })
+        .limit(50000);
+      console.log('Predictions loaded:', data?.length, error);
       if (error) throw error;
       return (data || []) as Array<{
         snapshot_date: string;
