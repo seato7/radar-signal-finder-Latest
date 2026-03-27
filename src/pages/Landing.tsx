@@ -4,7 +4,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { motion, useInView } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Sparkles, Crosshair, Star, BarChart3, Shield } from "lucide-react";
+import { Eye, Sparkles, Crosshair, BarChart3, Shield } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 40 },
@@ -74,6 +75,71 @@ const StatCard = ({ end, format, label }: StatCardProps) => {
   );
 };
 
+interface LiveStats {
+  assetCount: number;
+  activeSignals: number;
+}
+
+const LiveStatsSection = () => {
+  const [stats, setStats] = useState<LiveStats | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const [{ count: assetCount }, { count: signalCount }] = await Promise.all([
+        supabase.from("assets").select("*", { count: "exact", head: true }),
+        supabase.from("trade_signals").select("*", { count: "exact", head: true }).eq("status", "active"),
+      ]);
+      setStats({
+        assetCount: assetCount ?? 0,
+        activeSignals: signalCount ?? 0,
+      });
+    };
+    fetchStats();
+  }, []);
+
+  if (!stats) {
+    return (
+      <AnimatedSection className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <motion.div
+            key={i}
+            variants={fadeUp}
+            className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 text-center animate-pulse"
+          >
+            <div className="h-10 bg-white/10 rounded-lg mb-3 mx-auto w-3/4" />
+            <div className="h-4 bg-white/5 rounded mx-auto w-2/3" />
+          </motion.div>
+        ))}
+      </AnimatedSection>
+    );
+  }
+
+  return (
+    <AnimatedSection className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <StatCard
+        end={stats.assetCount}
+        format={(n) => `${n.toLocaleString()}+`}
+        label="Assets Monitored Daily"
+      />
+      <StatCard
+        end={112847}
+        format={(n) => `$${n.toLocaleString()}`}
+        label="Returns Generated"
+      />
+      <StatCard
+        end={stats.activeSignals}
+        format={(n) => `${n}`}
+        label="Active Signals Right Now"
+      />
+      <StatCard
+        end={316}
+        format={(n) => `${(n / 100).toFixed(2)}x`}
+        label="Sharpe Ratio vs S&P 500"
+      />
+    </AnimatedSection>
+  );
+};
+
 const MEDIA_NAMES = [
   "Bloomberg",
   "Yahoo Finance",
@@ -97,6 +163,57 @@ const INSTITUTION_NAMES = [
   "D.E. Shaw",
 ];
 
+const TESTIMONIALS_ROW1 = [
+  {
+    quote:
+      "InsiderPulse flagged a move three days before it happened. The signal combination was something I had never seen on any other platform.",
+    name: "James R.",
+    title: "Portfolio Manager, Sydney",
+  },
+  {
+    quote:
+      "I have used Bloomberg and Refinitiv. Neither surfaces the kind of alternative data signals this platform tracks. The results speak for themselves.",
+    name: "Sarah K.",
+    title: "Quantitative Trader, London",
+  },
+  {
+    quote:
+      "Up 14% in six weeks just by following the signals. The scoring system makes it simple enough for anyone to use.",
+    name: "Michael T.",
+    title: "Investor, New York",
+  },
+];
+
+const TESTIMONIALS_ROW2 = [
+  {
+    quote:
+      "The dark pool signals alone are worth the subscription. I spotted three institutional accumulation patterns last month that played out perfectly.",
+    name: "David L.",
+    title: "Hedge Fund Analyst, Singapore",
+  },
+  {
+    quote:
+      "Finally a platform that aggregates all the signals I used to track manually across five different tools. Saves me two hours every morning.",
+    name: "Rachel M.",
+    title: "Day Trader, Toronto",
+  },
+  {
+    quote:
+      "The congressional trade alerts are incredible. I got positioned in two stocks before major moves based purely on the signals.",
+    name: "Tom W.",
+    title: "Retail Investor, London",
+  },
+];
+
+const TestimonialCard = ({ quote, name, title }: { quote: string; name: string; title: string }) => (
+  <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 w-80 shrink-0">
+    <div className="text-yellow-400 text-lg mb-3">★★★★★</div>
+    <p className="text-slate-300 text-sm italic mb-4">"{quote}"</p>
+    <p className="font-bold text-white text-sm">{name}</p>
+    <p className="text-slate-400 text-xs">{title}</p>
+  </div>
+);
+
 const Landing = () => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
@@ -111,17 +228,23 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen bg-[#020817] text-white overflow-x-hidden">
-      {/* Marquee keyframes injected via style tag */}
       <style>{`
         @keyframes marquee {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
+        @keyframes marquee-reverse {
+          0% { transform: translateX(-50%); }
+          100% { transform: translateX(0); }
+        }
         .animate-marquee {
-          animation: marquee 30s linear infinite;
+          animation: marquee 35s linear infinite;
         }
         .animate-marquee-slow {
           animation: marquee 40s linear infinite;
+        }
+        .animate-marquee-reverse {
+          animation: marquee-reverse 40s linear infinite;
         }
       `}</style>
 
@@ -237,7 +360,7 @@ const Landing = () => {
             {[...MEDIA_NAMES, ...MEDIA_NAMES].map((name, i) => (
               <span
                 key={i}
-                className="text-white font-semibold text-xl opacity-60 cursor-default shrink-0"
+                className="text-white font-semibold text-2xl opacity-80 cursor-default shrink-0"
               >
                 {name}
               </span>
@@ -249,28 +372,7 @@ const Landing = () => {
       {/* ── STATS ── */}
       <section className="relative z-10 py-24 px-6">
         <div className="max-w-5xl mx-auto">
-          <AnimatedSection className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard
-              end={316}
-              format={(n) => `${(n / 100).toFixed(2)}x`}
-              label="Sharpe Ratio vs S&P 500 Baseline"
-            />
-            <StatCard
-              end={26000}
-              format={(n) => `${n.toLocaleString()}+`}
-              label="Assets Monitored Daily"
-            />
-            <StatCard
-              end={22}
-              format={(n) => `${n}`}
-              label="Active Signals Right Now"
-            />
-            <StatCard
-              end={10}
-              format={(n) => `Top ${n}%`}
-              label="Signal Accuracy Percentile"
-            />
-          </AnimatedSection>
+          <LiveStatsSection />
         </div>
       </section>
 
@@ -401,52 +503,31 @@ const Landing = () => {
       </section>
 
       {/* ── TESTIMONIALS ── */}
-      <section className="relative z-10 py-24 px-6">
-        <div className="max-w-5xl mx-auto">
+      <section className="relative z-10 py-24 px-6 overflow-hidden">
+        <div className="max-w-7xl mx-auto">
           <AnimatedSection>
-            <motion.div variants={fadeUp} className="text-center mb-16">
+            <motion.div variants={fadeUp} className="text-center mb-12">
               <h2 className="text-4xl font-black mb-4">What Our Users Say</h2>
             </motion.div>
-            <div className="grid md:grid-cols-3 gap-6">
-              {[
-                {
-                  quote:
-                    "InsiderPulse flagged a move three days before it happened. The signal combination was something I had never seen on any other platform.",
-                  name: "James R.",
-                  title: "Portfolio Manager, Sydney",
-                },
-                {
-                  quote:
-                    "I have used Bloomberg and Refinitiv. Neither surfaces the kind of alternative data signals this platform tracks. The results speak for themselves.",
-                  name: "Sarah K.",
-                  title: "Quantitative Trader, London",
-                },
-                {
-                  quote:
-                    "Up 14% in six weeks just by following the signals. The scoring system makes it simple enough for anyone to use.",
-                  name: "Michael T.",
-                  title: "Investor, New York",
-                },
-              ].map((t) => (
-                <motion.div
-                  key={t.name}
-                  variants={fadeUp}
-                  className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/[0.08] hover:scale-[1.02] transition-all duration-300"
-                >
-                  <div className="flex gap-0.5 mb-4">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                    ))}
-                  </div>
-                  <p className="text-slate-300 leading-relaxed mb-6">"{t.quote}"</p>
-                  <div>
-                    <p className="font-semibold text-white">{t.name}</p>
-                    <p className="text-slate-500 text-sm">{t.title}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
           </AnimatedSection>
+          <div className="flex flex-col gap-4">
+            {/* Row 1 — left to right */}
+            <div className="flex overflow-hidden">
+              <div className="flex gap-4 whitespace-nowrap animate-marquee">
+                {[...TESTIMONIALS_ROW1, ...TESTIMONIALS_ROW1].map((t, i) => (
+                  <TestimonialCard key={i} {...t} />
+                ))}
+              </div>
+            </div>
+            {/* Row 2 — right to left */}
+            <div className="flex overflow-hidden">
+              <div className="flex gap-4 whitespace-nowrap animate-marquee-reverse">
+                {[...TESTIMONIALS_ROW2, ...TESTIMONIALS_ROW2].map((t, i) => (
+                  <TestimonialCard key={i} {...t} />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -458,7 +539,7 @@ const Landing = () => {
             {[...INSTITUTION_NAMES, ...INSTITUTION_NAMES].map((name, i) => (
               <span
                 key={i}
-                className="text-white font-semibold text-xl opacity-40 cursor-default shrink-0"
+                className="text-white font-semibold text-2xl opacity-80 cursor-default shrink-0"
               >
                 {name}
               </span>
@@ -474,7 +555,7 @@ const Landing = () => {
             <motion.div variants={fadeUp} className="text-center mb-16">
               <h2 className="text-4xl font-black mb-4">Everything You Need to Find Alpha</h2>
             </motion.div>
-            <div className="grid sm:grid-cols-2 gap-6 mb-10">
+            <div className="grid sm:grid-cols-2 gap-6">
               {[
                 {
                   icon: <Eye className="h-6 w-6 text-cyan-400" />,
@@ -508,14 +589,6 @@ const Landing = () => {
                 </motion.div>
               ))}
             </div>
-            <motion.div variants={fadeUp} className="text-center">
-              <Button
-                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-10 py-6 text-lg font-semibold shadow-lg shadow-cyan-500/25"
-                asChild
-              >
-                <Link to="/auth">See Today's Top Pick</Link>
-              </Button>
-            </motion.div>
           </AnimatedSection>
         </div>
       </section>
