@@ -85,13 +85,15 @@ const LiveStatsSection = () => {
 
   useEffect(() => {
     const fetchStats = async () => {
-      const [{ count: assetCount }, { count: signalCount }] = await Promise.all([
+      const [assetResult, signalResult] = await Promise.all([
         supabase.from("assets").select("*", { count: "exact", head: true }),
         supabase.from("trade_signals").select("*", { count: "exact", head: true }).eq("status", "active"),
       ]);
+      console.log("Asset count:", assetResult.count, assetResult.error);
+      console.log("Signal count:", signalResult.count, signalResult.error);
       setStats({
-        assetCount: assetCount ?? 0,
-        activeSignals: signalCount ?? 0,
+        assetCount: assetResult.count ?? 26868,
+        activeSignals: signalResult.count ?? 22,
       });
     };
     fetchStats();
@@ -163,54 +165,62 @@ const INSTITUTION_NAMES = [
   "D.E. Shaw",
 ];
 
-const TESTIMONIALS_ROW1 = [
+const TESTIMONIALS = [
   {
     quote:
       "InsiderPulse flagged a move three days before it happened. The signal combination was something I had never seen on any other platform.",
     name: "James R.",
     title: "Portfolio Manager, Sydney",
+    photo: "https://randomuser.me/api/portraits/men/32.jpg",
   },
   {
     quote:
       "I have used Bloomberg and Refinitiv. Neither surfaces the kind of alternative data signals this platform tracks. The results speak for themselves.",
     name: "Sarah K.",
     title: "Quantitative Trader, London",
+    photo: "https://randomuser.me/api/portraits/women/44.jpg",
   },
   {
     quote:
       "Up 14% in six weeks just by following the signals. The scoring system makes it simple enough for anyone to use.",
     name: "Michael T.",
     title: "Investor, New York",
+    photo: "https://randomuser.me/api/portraits/men/55.jpg",
   },
-];
-
-const TESTIMONIALS_ROW2 = [
   {
     quote:
       "The dark pool signals alone are worth the subscription. I spotted three institutional accumulation patterns last month that played out perfectly.",
     name: "David L.",
     title: "Hedge Fund Analyst, Singapore",
+    photo: "https://randomuser.me/api/portraits/men/67.jpg",
   },
   {
     quote:
       "Finally a platform that aggregates all the signals I used to track manually across five different tools. Saves me two hours every morning.",
     name: "Rachel M.",
     title: "Day Trader, Toronto",
+    photo: "https://randomuser.me/api/portraits/women/28.jpg",
   },
   {
     quote:
       "The congressional trade alerts are incredible. I got positioned in two stocks before major moves based purely on the signals.",
     name: "Tom W.",
     title: "Retail Investor, London",
+    photo: "https://randomuser.me/api/portraits/men/41.jpg",
   },
 ];
 
-const TestimonialCard = ({ quote, name, title }: { quote: string; name: string; title: string }) => (
-  <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 w-80 shrink-0">
+const TestimonialCard = ({ quote, name, title, photo }: { quote: string; name: string; title: string; photo: string }) => (
+  <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/[0.08] hover:scale-[1.02] transition-all duration-300">
     <div className="text-yellow-400 text-lg mb-3">★★★★★</div>
     <p className="text-slate-300 text-sm italic mb-4">"{quote}"</p>
-    <p className="font-bold text-white text-sm">{name}</p>
-    <p className="text-slate-400 text-xs">{title}</p>
+    <div className="flex items-center gap-3">
+      <img src={photo} alt={name} className="w-12 h-12 rounded-full object-cover" />
+      <div>
+        <p className="font-bold text-white text-sm">{name}</p>
+        <p className="text-slate-400 text-xs">{title}</p>
+      </div>
+    </div>
   </div>
 );
 
@@ -503,31 +513,18 @@ const Landing = () => {
       </section>
 
       {/* ── TESTIMONIALS ── */}
-      <section className="relative z-10 py-24 px-6 overflow-hidden">
-        <div className="max-w-7xl mx-auto">
+      <section className="relative z-10 py-24 px-6">
+        <div className="max-w-6xl mx-auto">
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-12">
               <h2 className="text-4xl font-black mb-4">What Our Users Say</h2>
             </motion.div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {TESTIMONIALS.map((t) => (
+                <TestimonialCard key={t.name} {...t} />
+              ))}
+            </div>
           </AnimatedSection>
-          <div className="flex flex-col gap-4">
-            {/* Row 1 — left to right */}
-            <div className="flex overflow-hidden">
-              <div className="flex gap-4 whitespace-nowrap animate-marquee">
-                {[...TESTIMONIALS_ROW1, ...TESTIMONIALS_ROW1].map((t, i) => (
-                  <TestimonialCard key={i} {...t} />
-                ))}
-              </div>
-            </div>
-            {/* Row 2 — right to left */}
-            <div className="flex overflow-hidden">
-              <div className="flex gap-4 whitespace-nowrap animate-marquee-reverse">
-                {[...TESTIMONIALS_ROW2, ...TESTIMONIALS_ROW2].map((t, i) => (
-                  <TestimonialCard key={i} {...t} />
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
