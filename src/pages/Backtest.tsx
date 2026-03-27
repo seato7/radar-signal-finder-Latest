@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
@@ -60,384 +60,38 @@ interface DailyHistoryData {
   last_updated_at?: string | null;
 }
 
-type PriceRow = { ticker: string; date: string; close: number };
-
-// Find nearest price within a window (ported from edge function)
-function findNearestPrice(
-  ticker: string,
-  targetDate: string,
-  pricesByTicker: Record<string, PriceRow[]>,
-  direction: 'before' | 'after' | 'any' = 'any',
-  maxDays = 7
-): { date: string; price: number } | null {
-  const prices = pricesByTicker[ticker];
-  if (!prices || prices.length === 0) return null;
-
-  const target = new Date(targetDate).getTime();
-  let best: { date: string; price: number; diff: number } | null = null;
-
-  for (const p of prices) {
-    const pDate = new Date(p.date).getTime();
-    const diff = pDate - target;
-    const absDiff = Math.abs(diff);
-    const daysDiff = absDiff / (1000 * 60 * 60 * 24);
-
-    if (daysDiff > maxDays) continue;
-    if (direction === 'before' && diff > 0) continue;
-    if (direction === 'after' && diff < 0) continue;
-
-    if (!best || absDiff < best.diff) {
-      best = { date: p.date, price: p.close, diff: absDiff };
-    }
-  }
-
-  return best ? { date: best.date, price: best.price } : null;
-}
-
 const Performance = () => {
   const [period, setPeriod] = useState<Period>('ALL');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
-  // ── Query 1: fetch all asset_predictions (top 10 per day) ──
-  const {
-    data: rawPredictions,
-    isLoading: isLoadingPredictions,
-    error: predictionsError,
-  } = useQuery({
-    queryKey: ['asset-predictions-performance'],
+  // Single edge function call — all computation happens server-side
+  const { data: summaryData, isLoading, error } = useQuery({
+    queryKey: ['performance-summary', period],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('asset_predictions')
-        .select('snapshot_date, ticker, rank, confidence_score, expected_return')
-        .lte('rank', 10)
-        .order('snapshot_date', { ascending: true })
-        .order('rank', { ascending: true })
-        .limit(50000);
-      console.log('Predictions loaded:', data?.length, error);
-      if (error) throw error;
-      return (data || []) as Array<{
-        snapshot_date: string;
-        ticker: string;
-        rank: number;
-        confidence_score: number;
-        expected_return: number | null;
-      }>;
-    },
-  });
-
-  // ── Derive date range + unique tickers from predictions ──
-  const predictionsMeta = useMemo(() => {
-    if (!rawPredictions || rawPredictions.length === 0) return null;
-    const dates = [...new Set(rawPredictions.map(p => p.snapshot_date))].sort();
-    const tickers = [...new Set(rawPredictions.map(p => p.ticker))];
-    const MS_PER_DAY = 86400000;
-    const firstDate = dates[0];
-    const lastDate = dates[dates.length - 1];
-    const startWithBuffer = new Date(new Date(firstDate).getTime() - 7 * MS_PER_DAY)
-      .toISOString().slice(0, 10);
-    const endWithBuffer = new Date(new Date(lastDate).getTime() + 7 * MS_PER_DAY)
-      .toISOString().slice(0, 10);
-    return { dates, tickers, firstDate, lastDate, startWithBuffer, endWithBuffer };
-  }, [rawPredictions]);
-
-  // ── Query 2: fetch prices for all tickers + SPY (batched) ──
-  const { data: rawPrices, isLoading: isLoadingPrices } = useQuery({
-    queryKey: [
-      'performance-prices',
-      predictionsMeta?.firstDate,
-      predictionsMeta?.lastDate,
-    ],
-    enabled: !!predictionsMeta,
-    queryFn: async () => {
-      if (!predictionsMeta) return [] as PriceRow[];
-      const { tickers, startWithBuffer, endWithBuffer } = predictionsMeta;
-
-      // Batch 20 tickers at a time to stay well under row limits
-      const BATCH_SIZE = 20;
-      const batches: string[][] = [];
-      for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
-        batches.push(tickers.slice(i, i + BATCH_SIZE));
-      }
-
-      const batchResults = await Promise.all(
-        batches.map(batch =>
-          supabase
-            .from('prices')
-            .select('ticker, date, close')
-            .in('ticker', batch)
-            .gte('date', startWithBuffer)
-            .lte('date', endWithBuffer)
-            .order('date', { ascending: true })
-            .limit(5000)
-        )
+      const days = period === '1W' ? 7 : period === '30D' ? 30 : 'all';
+      const { data, error } = await supabase.functions.invoke(
+        'get-performance-summary',
+        { body: { days } }
       );
-
-      const { data: spyPrices } = await supabase
-        .from('prices')
-        .select('ticker, date, close')
-        .eq('ticker', 'SPY')
-        .gte('date', startWithBuffer)
-        .lte('date', endWithBuffer)
-        .order('date', { ascending: true });
-
-      return [
-        ...batchResults.flatMap(r => (r.data || []) as PriceRow[]),
-        ...((spyPrices || []) as PriceRow[]),
-      ];
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
     },
+    staleTime: 5 * 60 * 1000,
   });
 
-  // ── Build pricesByTicker lookup (shared by both computations) ──
-  const pricesByTicker = useMemo((): Record<string, PriceRow[]> => {
-    const map: Record<string, PriceRow[]> = {};
-    for (const p of rawPrices || []) {
-      if (!map[p.ticker]) map[p.ticker] = [];
-      map[p.ticker].push({ ticker: p.ticker, date: p.date, close: Number(p.close) });
-    }
-    for (const ticker of Object.keys(map)) {
-      map[ticker].sort((a, b) => a.date.localeCompare(b.date));
-    }
-    return map;
-  }, [rawPrices]);
+  const performanceData = summaryData as PerformanceData | null;
+  const dailyHistory: DailyHistoryData | null = summaryData ? {
+    daily_history: summaryData.daily_history,
+    start_date: summaryData.start_date,
+    starting_investment: summaryData.starting_investment,
+    total_days: summaryData.period_days,
+    last_updated_at: summaryData.last_updated_at,
+  } : null;
 
-  // ── Compute PerformanceData (replaces calculate-performance edge function) ──
-  const performanceData = useMemo((): PerformanceData | null => {
-    if (!rawPredictions || !predictionsMeta || Object.keys(pricesByTicker).length === 0) return null;
-
-    const { dates: allDates } = predictionsMeta;
-    if (allDates.length === 0) return null;
-
-    // Filter dates by selected period
-    let dates = allDates;
-    if (period === '1W') dates = allDates.slice(-7);
-    else if (period === '30D') dates = allDates.slice(-30);
-
-    const firstDate = dates[0];
-    const lastDate = dates[dates.length - 1];
-
-    // Group predictions by date
-    const snapshotsByDate: Record<string, typeof rawPredictions> = {};
-    for (const p of rawPredictions) {
-      if (!snapshotsByDate[p.snapshot_date]) snapshotsByDate[p.snapshot_date] = [];
-      snapshotsByDate[p.snapshot_date].push(p);
-    }
-
-    // First day's top 10 (already sorted by rank, re-sort by confidence_score desc to be safe)
-    const firstDaySnapshots = (snapshotsByDate[firstDate] || [])
-      .sort((a, b) => (b.confidence_score || 0) - (a.confidence_score || 0))
-      .slice(0, 10);
-
-    const portfolioTickers = firstDaySnapshots.map(s => s.ticker);
-
-    // Buy-and-hold returns for first day's top 10
-    const assetReturns: Record<string, {
-      startPrice: number; endPrice: number; returnPct: number;
-      startDate: string; endDate: string; hasData: boolean;
-    }> = {};
-    let validAssets = 0;
-    let totalReturn = 0;
-
-    for (const ticker of portfolioTickers) {
-      const startPriceData = findNearestPrice(ticker, firstDate, pricesByTicker, 'before');
-      const endPriceData = findNearestPrice(ticker, lastDate, pricesByTicker, 'after');
-      if (startPriceData && endPriceData && startPriceData.price > 0) {
-        const returnPct = ((endPriceData.price - startPriceData.price) / startPriceData.price) * 100;
-        assetReturns[ticker] = {
-          startPrice: startPriceData.price, endPrice: endPriceData.price,
-          returnPct, startDate: startPriceData.date, endDate: endPriceData.date, hasData: true,
-        };
-        totalReturn += returnPct;
-        validAssets++;
-      } else {
-        assetReturns[ticker] = {
-          startPrice: 0, endPrice: 0, returnPct: 0,
-          startDate: '', endDate: '', hasData: false,
-        };
-      }
-    }
-
-    const portfolioReturnPct = validAssets > 0 ? totalReturn / validAssets : 0;
-
-    // SPY return
-    const spyStartData = findNearestPrice('SPY', firstDate, pricesByTicker, 'before');
-    const spyEndData = findNearestPrice('SPY', lastDate, pricesByTicker, 'after');
-    const spyReturn = spyStartData && spyEndData && spyStartData.price > 0
-      ? ((spyEndData.price - spyStartData.price) / spyStartData.price) * 100
-      : 0;
-
-    // Chart data — track daily buy-and-hold value
-    const startingValue = 10000;
-    const perAssetAllocation = validAssets > 0 ? startingValue / validAssets : 0;
-    const shares: Record<string, number> = {};
-    for (const ticker of portfolioTickers) {
-      const ar = assetReturns[ticker];
-      if (ar.hasData && ar.startPrice > 0) {
-        shares[ticker] = perAssetAllocation / ar.startPrice;
-      }
-    }
-    const spyShares = spyStartData && spyStartData.price > 0 ? startingValue / spyStartData.price : 0;
-
-    const lastKnownPrice: Record<string, number> = {};
-    for (const ticker of portfolioTickers) {
-      if (assetReturns[ticker].hasData) lastKnownPrice[ticker] = assetReturns[ticker].startPrice;
-    }
-    let lastKnownSpyPrice = spyStartData?.price || 0;
-
-    const chartData: { date: string; portfolio: number; spy: number }[] = [];
-    for (const date of dates) {
-      for (const ticker of portfolioTickers) {
-        const p = pricesByTicker[ticker]?.find(px => px.date === date);
-        if (p) lastKnownPrice[ticker] = p.close;
-      }
-      const spyP = pricesByTicker['SPY']?.find(px => px.date === date);
-      if (spyP) lastKnownSpyPrice = spyP.close;
-
-      let portfolioValue = 0;
-      for (const ticker of portfolioTickers) {
-        if (shares[ticker] && lastKnownPrice[ticker]) {
-          portfolioValue += shares[ticker] * lastKnownPrice[ticker];
-        }
-      }
-      chartData.push({
-        date,
-        portfolio: Math.round(portfolioValue),
-        spy: Math.round(spyShares * lastKnownSpyPrice),
-      });
-    }
-
-    const finalPortfolioValue = chartData.length > 0 ? chartData[chartData.length - 1].portfolio : startingValue;
-
-    const assetBreakdown = firstDaySnapshots.map(s => {
-      const ar = assetReturns[s.ticker] || { returnPct: 0, startPrice: null, endPrice: null, hasData: false };
-      return {
-        ticker: s.ticker,
-        name: s.ticker,
-        score: Math.round((s.confidence_score || 0) * 100),
-        return_pct: Math.round(ar.returnPct * 100) / 100,
-        contribution: Math.round((ar.returnPct / 10) * 100) / 100,
-        first_price: ar.startPrice || null,
-        last_price: ar.endPrice || null,
-        has_data: ar.hasData,
-      };
-    });
-
-    return {
-      portfolio_value: finalPortfolioValue,
-      portfolio_return_pct: Math.round(portfolioReturnPct * 100) / 100,
-      spy_return_pct: Math.round(spyReturn * 100) / 100,
-      outperformance: Math.round((portfolioReturnPct - spyReturn) * 100) / 100,
-      period_days: dates.length,
-      start_date: firstDate,
-      end_date: lastDate,
-      chart_data: chartData,
-      asset_breakdown: assetBreakdown,
-      starting_investment: startingValue,
-      data_quality: {
-        assets_with_prices: validAssets,
-        total_assets: portfolioTickers.length,
-        coverage_pct: portfolioTickers.length > 0
-          ? Math.round((validAssets / portfolioTickers.length) * 100)
-          : 0,
-      },
-      last_updated_at: new Date().toISOString(),
-    };
-  }, [rawPredictions, pricesByTicker, predictionsMeta, period]);
-
-  // ── Compute DailyHistoryData (replaces get-daily-performance-history edge function) ──
-  const dailyHistory = useMemo((): DailyHistoryData | null => {
-    if (!rawPredictions || !predictionsMeta || Object.keys(pricesByTicker).length === 0) return null;
-
-    const { dates } = predictionsMeta;
-    if (dates.length === 0) return null;
-
-    // Group predictions by date
-    const snapshotsByDate: Record<string, typeof rawPredictions> = {};
-    for (const p of rawPredictions) {
-      if (!snapshotsByDate[p.snapshot_date]) snapshotsByDate[p.snapshot_date] = [];
-      snapshotsByDate[p.snapshot_date].push(p);
-    }
-
-    let cumulativeValue = 1000;
-    let spyCumulativeValue = 1000;
-    const history: DailyHistoryData['daily_history'] = [];
-
-    for (let i = 0; i < dates.length; i++) {
-      const date = dates[i];
-      const daySnapshots = (snapshotsByDate[date] || []).slice(0, 10);
-      const prevDate = i > 0 ? dates[i - 1] : null;
-
-      const portfolioReturns: number[] = [];
-      const topAssets: Array<{ ticker: string; name: string; score: number; daily_return_pct: number; rank: number }> = [];
-      let assetsWithData = 0;
-
-      for (const snapshot of daySnapshots) {
-        const currentPriceData = findNearestPrice(snapshot.ticker, date, pricesByTicker, 'before');
-        const prevPriceData = prevDate
-          ? findNearestPrice(snapshot.ticker, prevDate, pricesByTicker, 'before')
-          : currentPriceData;
-
-        let dailyReturn = 0;
-        if (prevPriceData && currentPriceData && prevPriceData.price > 0) {
-          dailyReturn = ((currentPriceData.price - prevPriceData.price) / prevPriceData.price) * 100;
-          assetsWithData++;
-        }
-        portfolioReturns.push(dailyReturn);
-        topAssets.push({
-          ticker: snapshot.ticker,
-          name: snapshot.ticker,
-          score: Math.round((snapshot.confidence_score || 0) * 100),
-          daily_return_pct: Math.round(dailyReturn * 100) / 100,
-          rank: snapshot.rank || 0,
-        });
-      }
-
-      const coverageRatio = topAssets.length > 0 ? assetsWithData / topAssets.length : 0;
-      const avgDailyReturn = portfolioReturns.length > 0 && assetsWithData > 0
-        ? portfolioReturns.reduce((a, b) => a + b, 0) / assetsWithData
-        : 0;
-
-      const spyCurrentData = findNearestPrice('SPY', date, pricesByTicker, 'before');
-      const spyPrevData = prevDate
-        ? findNearestPrice('SPY', prevDate, pricesByTicker, 'before')
-        : spyCurrentData;
-      const spyDailyReturn = spyPrevData && spyCurrentData && spyPrevData.price > 0
-        ? ((spyCurrentData.price - spyPrevData.price) / spyPrevData.price) * 100
-        : 0;
-
-      if (i > 0) {
-        cumulativeValue = cumulativeValue * (1 + avgDailyReturn / 100);
-        spyCumulativeValue = spyCumulativeValue * (1 + spyDailyReturn / 100);
-      }
-
-      if (coverageRatio >= 0.5 || i === 0) {
-        history.push({
-          date,
-          top_assets: topAssets,
-          daily_return_pct: Math.round(avgDailyReturn * 100) / 100,
-          spy_daily_return_pct: Math.round(spyDailyReturn * 100) / 100,
-          cumulative_value: Math.round(cumulativeValue * 100) / 100,
-          spy_cumulative_value: Math.round(spyCumulativeValue * 100) / 100,
-          is_negative_day: avgDailyReturn < 0,
-          assets_with_data: assetsWithData,
-        });
-      }
-    }
-
-    history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    return {
-      daily_history: history,
-      start_date: dates[0],
-      starting_investment: 1000,
-      total_days: dates.length,
-      last_updated_at: new Date().toISOString(),
-    };
-  }, [rawPredictions, pricesByTicker, predictionsMeta]);
-
-  // ── Loading / error aliases to keep UI unchanged ──
-  const isLoadingPerformance = isLoadingPredictions || isLoadingPrices;
-  const isLoadingHistory = isLoadingPredictions || isLoadingPrices;
-  const performanceError = predictionsError as Error | null;
+  const isLoadingPerformance = isLoading;
+  const isLoadingHistory = isLoading;
+  const performanceError = error as Error | null;
 
   const toggleDayExpanded = (date: string) => {
     const newExpanded = new Set(expandedDays);
