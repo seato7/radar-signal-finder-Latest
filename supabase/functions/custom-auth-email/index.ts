@@ -37,56 +37,42 @@ const getSignupEmailHtml = (verifyLink: string) => `
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Verify Your InsiderPulse Account</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+<body style="margin: 0; padding: 0; background-color: #020817; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
-      <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #1a1a1a; border-radius: 12px; overflow: hidden;">
-          <!-- Header with Logo -->
+      <td style="padding: 40px 16px;">
+        <table role="presentation" style="max-width: 560px; width: 100%; margin: 0 auto; border-collapse: collapse; background-color: #020817; border: 1px solid rgba(6,182,212,0.15); border-radius: 12px; overflow: hidden;">
+          <!-- Header -->
           <tr>
-            <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
-              <a href="https://insiderpulse.org" target="_blank" rel="noopener" style="display: block; width: 360px; height: 240px; margin: 0 auto 16px; text-decoration: none;"><img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" style="width: 360px; height: 240px; display: block; object-fit: contain; border: 0;"></a>
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
-              <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Market Intelligence Platform</p>
+            <td style="background-color: #0F1729; padding: 36px 32px; text-align: center; border-bottom: 1px solid rgba(6,182,212,0.2);">
+              <img src="${LOGO_URL}" width="200" style="display: block; margin: 0 auto;" alt="InsiderPulse" />
             </td>
           </tr>
-          
+
           <!-- Body -->
           <tr>
-            <td style="padding: 40px;">
-              <h2 style="margin: 0 0 20px; color: #ffffff; font-size: 22px; font-weight: 600;">Verify Your Email</h2>
-              <p style="margin: 0 0 30px; color: #a1a1a1; font-size: 16px; line-height: 1.6;">
+            <td style="padding: 36px 32px; background-color: #020817;">
+              <h2 style="color: #F1F5F9; font-size: 22px; font-weight: 700; margin: 0 0 16px 0;">Verify Your Email</h2>
+              <p style="color: #94A3B8; font-size: 15px; line-height: 1.7; margin: 0 0 24px 0;">
                 Welcome to InsiderPulse! Click the button below to verify your email address and activate your account.
               </p>
-              
-              <!-- Table-based button for better email client compatibility -->
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto;">
-                <tr>
-                  <td style="border-radius: 8px; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);">
-                    <a href="${verifyLink}" target="_blank" rel="noopener" style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
-                      Verify Email Address
-                    </a>
-                  </td>
-                </tr>
-              </table>
-              
-              <p style="margin: 30px 0 0; color: #666666; font-size: 14px; line-height: 1.6;">
-                If you didn't create an account with InsiderPulse, you can safely ignore this email.
-              </p>
-              
-              <p style="margin: 20px 0 0; color: #666666; font-size: 12px; line-height: 1.6;">
-                Having trouble with the button? <a href="${verifyLink}" target="_blank" rel="noopener" style="color: #3b82f6;">Click here to verify your email</a>
+              <div style="text-align: center; margin: 8px 0 28px 0;">
+                <a href="${verifyLink}" target="_blank" rel="noopener" style="display: inline-block; background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%); color: #ffffff; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; letter-spacing: 0.3px;">
+                  Verify Email Address
+                </a>
+              </div>
+              <p style="color: #64748B; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+                Having trouble with the button? <a href="${verifyLink}" target="_blank" rel="noopener" style="color: #06B6D4; text-decoration: none;">Click here to verify your email</a>
               </p>
             </td>
           </tr>
-          
+
           <!-- Footer -->
           <tr>
-            <td style="padding: 20px 40px; background-color: #0f0f0f; border-top: 1px solid #2a2a2a;">
-              <p style="margin: 0; color: #666666; font-size: 12px; text-align: center;">
-                © ${new Date().getFullYear()} InsiderPulse. All rights reserved.<br>
-                <a href="https://insiderpulse.org" style="color: #3b82f6; text-decoration: none;">insiderpulse.org</a>
-              </p>
+            <td style="background-color: #0F1729; border-top: 1px solid rgba(255,255,255,0.06); padding: 24px 32px; text-align: center; color: #475569; font-size: 12px; line-height: 1.7;">
+              <p style="margin: 0 0 6px 0;">InsiderPulse | <a href="mailto:support@insiderpulse.org" style="color: #475569; text-decoration: none;">support@insiderpulse.org</a></p>
+              <p style="margin: 0 0 6px 0;">If you didn't create an account with InsiderPulse, you can safely ignore this email.</p>
+              <p style="margin: 0;">© ${new Date().getFullYear()} InsiderPulse. All rights reserved.</p>
             </td>
           </tr>
         </table>
@@ -105,58 +91,44 @@ const getRecoveryEmailHtml = (resetLink: string) => `
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reset Your InsiderPulse Password</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+<body style="margin: 0; padding: 0; background-color: #020817; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
-      <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #1a1a1a; border-radius: 12px; overflow: hidden;">
-          <!-- Header with Logo -->
+      <td style="padding: 40px 16px;">
+        <table role="presentation" style="max-width: 560px; width: 100%; margin: 0 auto; border-collapse: collapse; background-color: #020817; border: 1px solid rgba(6,182,212,0.15); border-radius: 12px; overflow: hidden;">
+          <!-- Header -->
           <tr>
-            <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
-              <a href="https://insiderpulse.org" target="_blank" rel="noopener" style="display: block; width: 360px; height: 240px; margin: 0 auto 16px; text-decoration: none;"><img src="${LOGO_URL}" alt="InsiderPulse" width="360" height="240" style="width: 360px; height: 240px; display: block; object-fit: contain; border: 0;"></a>
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">InsiderPulse</h1>
-              <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Password Reset Request</p>
+            <td style="background-color: #0F1729; padding: 36px 32px; text-align: center; border-bottom: 1px solid rgba(6,182,212,0.2);">
+              <img src="${LOGO_URL}" width="200" style="display: block; margin: 0 auto;" alt="InsiderPulse" />
             </td>
           </tr>
-          
+
           <!-- Body -->
           <tr>
-            <td style="padding: 40px;">
-              <h2 style="margin: 0 0 20px; color: #ffffff; font-size: 22px; font-weight: 600;">Reset Your Password</h2>
-              <p style="margin: 0 0 30px; color: #a1a1a1; font-size: 16px; line-height: 1.6;">
+            <td style="padding: 36px 32px; background-color: #020817;">
+              <h2 style="color: #F1F5F9; font-size: 22px; font-weight: 700; margin: 0 0 16px 0;">Reset Your Password</h2>
+              <p style="color: #94A3B8; font-size: 15px; line-height: 1.7; margin: 0 0 24px 0;">
                 We received a request to reset your password. Click the button below to choose a new password.
               </p>
-              
-              <!-- Table-based button for better email client compatibility -->
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto;">
-                <tr>
-                  <td style="border-radius: 8px; background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);">
-                    <a href="${resetLink}" target="_blank" rel="noopener" style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
-                      Reset Password
-                    </a>
-                  </td>
-                </tr>
-              </table>
-              
-              <div style="margin: 30px 0 0; padding: 16px; background-color: #2a2a2a; border-radius: 8px; border-left: 4px solid #f59e0b;">
-                <p style="margin: 0; color: #a1a1a1; font-size: 14px; line-height: 1.6;">
-                  <strong style="color: #f59e0b;">Security Notice:</strong> This link will expire in 1 hour. If you didn't request a password reset, please ignore this email or contact support if you have concerns.
-                </p>
+              <div style="text-align: center; margin: 8px 0 28px 0;">
+                <a href="${resetLink}" target="_blank" rel="noopener" style="display: inline-block; background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%); color: #ffffff; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600; text-decoration: none; letter-spacing: 0.3px;">
+                  Reset Password
+                </a>
               </div>
-              
-              <p style="margin: 20px 0 0; color: #666666; font-size: 12px; line-height: 1.6;">
-                Having trouble with the button? <a href="${resetLink}" target="_blank" rel="noopener" style="color: #f59e0b;">Click here to reset your password</a>
+              <div style="background-color: #0F1729; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 16px 20px; color: #64748B; font-size: 13px; line-height: 1.6; margin: 0 0 20px 0;">
+                <strong style="color: #94A3B8;">Security Notice:</strong> This link will expire in 1 hour. If you didn't request a password reset, please ignore this email or contact support if you have concerns.
+              </div>
+              <p style="color: #64748B; font-size: 13px; line-height: 1.6; margin: 0; text-align: center;">
+                Having trouble with the button? <a href="${resetLink}" target="_blank" rel="noopener" style="color: #06B6D4; text-decoration: none;">Click here to reset your password</a>
               </p>
             </td>
           </tr>
-          
+
           <!-- Footer -->
           <tr>
-            <td style="padding: 20px 40px; background-color: #0f0f0f; border-top: 1px solid #2a2a2a;">
-              <p style="margin: 0; color: #666666; font-size: 12px; text-align: center;">
-                © ${new Date().getFullYear()} InsiderPulse. All rights reserved.<br>
-                <a href="https://insiderpulse.org" style="color: #3b82f6; text-decoration: none;">insiderpulse.org</a>
-              </p>
+            <td style="background-color: #0F1729; border-top: 1px solid rgba(255,255,255,0.06); padding: 24px 32px; text-align: center; color: #475569; font-size: 12px; line-height: 1.7;">
+              <p style="margin: 0 0 6px 0;">InsiderPulse | <a href="mailto:support@insiderpulse.org" style="color: #475569; text-decoration: none;">support@insiderpulse.org</a></p>
+              <p style="margin: 0;">© ${new Date().getFullYear()} InsiderPulse. All rights reserved.</p>
             </td>
           </tr>
         </table>
@@ -168,7 +140,7 @@ const getRecoveryEmailHtml = (resetLink: string) => `
 `;
 
 // Send email via Brevo
-async function sendViaBravo(to: string, subject: string, htmlContent: string): Promise<void> {
+async function sendViaBrevo(to: string, subject: string, htmlContent: string): Promise<void> {
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
@@ -263,7 +235,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.log("Generated verification link for: [redacted]"); // don't log email in plaintext
 
       // 3. Send branded email via Brevo
-      await sendViaBravo(
+      await sendViaBrevo(
         email,
         "Verify your InsiderPulse account",
         getSignupEmailHtml(actionLink)
@@ -311,7 +283,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.log("Generated recovery link for: [redacted]");
 
       // 2. Send branded email via Brevo
-      await sendViaBravo(
+      await sendViaBrevo(
         email,
         "Reset your InsiderPulse password",
         getRecoveryEmailHtml(actionLink)
@@ -348,7 +320,7 @@ const handler = async (req: Request): Promise<Response> => {
       const actionLink = linkData.properties.action_link;
       console.log("Generated resend verification link for: [redacted]");
 
-      await sendViaBravo(
+      await sendViaBrevo(
         email,
         "Verify your InsiderPulse account",
         getSignupEmailHtml(actionLink)
