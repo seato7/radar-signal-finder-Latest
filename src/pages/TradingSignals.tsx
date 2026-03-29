@@ -58,10 +58,11 @@ const PnlCell = ({ pnl }: { pnl: number | null }) => {
 };
 
 export default function TradingSignals() {
-  const { hasPaidPlan, planLoading } = useAuth();
+  const { planLoading, limits } = useAuth();
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false);
-  const isPro = !planLoading && hasPaidPlan();
+  const signalLimit = planLoading ? 0 : limits().active_signals;
+  const hasUnlimited = signalLimit === -1;
 
   const { data: signals, isLoading, error } = useQuery({
     queryKey: ['trade-signals'],
@@ -91,15 +92,15 @@ export default function TradingSignals() {
     ? (exits.filter((s) => (s.pnl_pct ?? 0) > 0).length / exits.length) * 100
     : null;
 
-  const visibleActive = isPro ? active : active.slice(0, FREE_ROW_LIMIT);
-  const visibleExits = isPro ? exits : exits.slice(0, FREE_ROW_LIMIT);
-  const activeBlurred = !isPro && active.length > FREE_ROW_LIMIT;
-  const exitsBlurred = !isPro && exits.length > FREE_ROW_LIMIT;
+  const visibleActive = hasUnlimited ? active : active.slice(0, signalLimit);
+  const visibleExits = hasUnlimited ? exits : exits.slice(0, signalLimit);
+  const activeBlurred = !hasUnlimited && active.length > signalLimit;
+  const exitsBlurred = !hasUnlimited && exits.length > signalLimit;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Top Picks"
+        title="Active Signals"
         description="Our highest-conviction opportunities — entry price, target, stop loss and position sizing powered by the InsiderPulse scoring engine"
       />
 
@@ -269,7 +270,7 @@ export default function TradingSignals() {
                   <div className="bg-background border border-border rounded-lg p-4 mx-4 mb-2 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Lock className="h-4 w-4 text-primary" />
-                      <span>{active.length - FREE_ROW_LIMIT} more positions hidden — upgrade to Pro</span>
+                      <span>{active.length - visibleActive.length} more positions hidden — upgrade to unlock</span>
                     </div>
                     <Button size="sm" onClick={() => setPaywallOpen(true)}>
                       Upgrade
@@ -358,7 +359,7 @@ export default function TradingSignals() {
                   <div className="bg-background border border-border rounded-lg p-4 mx-4 mb-2 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Lock className="h-4 w-4 text-primary" />
-                      <span>{exits.length - FREE_ROW_LIMIT} more exits hidden — upgrade to Pro</span>
+                      <span>{exits.length - visibleExits.length} more exits hidden — upgrade to unlock</span>
                     </div>
                     <Button size="sm" onClick={() => setPaywallOpen(true)}>
                       Upgrade
@@ -380,7 +381,7 @@ export default function TradingSignals() {
       <PaywallModal
         open={paywallOpen}
         onOpenChange={setPaywallOpen}
-        feature="Full Top Picks History"
+        feature="Full Active Signals History"
         requiredPlan="Pro"
       />
     </div>

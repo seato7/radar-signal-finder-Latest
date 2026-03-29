@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Alert {
   id: string;
@@ -16,6 +17,8 @@ interface Alert {
 
 const RecentAlertsCard = () => {
   const navigate = useNavigate();
+  const { limits } = useAuth();
+  const alertsAllowed = limits().alerts !== 0;
   
   const { data: alerts = [], isLoading } = useQuery({
     queryKey: ['recent-alerts-dashboard'],
@@ -68,7 +71,19 @@ const RecentAlertsCard = () => {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {!alertsAllowed ? (
+          <div className="text-center py-6 space-y-3">
+            <div className="h-12 w-12 mx-auto rounded-full bg-muted/50 flex items-center justify-center">
+              <AlertCircle className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Alerts require a paid plan</p>
+              <Button variant="outline" size="sm" onClick={() => navigate('/pricing')}>
+                View Plans
+              </Button>
+            </div>
+          </div>
+        ) : isLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="p-3 rounded-lg bg-muted/30 flex items-center justify-between">

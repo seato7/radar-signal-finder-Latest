@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, TrendingUp, TrendingDown, ChevronRight, Plus } from "lucide-react";
+import { Eye, ChevronRight, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,8 @@ const FollowedThemesCard = () => {
           id: t.id,
           name: t.name,
           currentScore: t.score || 0,
-          previousScore: (t.score || 0) - (Math.random() * 10 - 5),
-          change: Math.random() * 10 - 5
+          previousScore: t.score || 0,
+          change: 0
         }));
       }
       
@@ -56,16 +56,13 @@ const FollowedThemesCard = () => {
           .single();
         
         if (!theme) return null;
-        
-        // Simulate score change (in real app, compare with historical scores)
-        const change = Math.random() * 10 - 5;
-        
+
         return {
           id: theme.id,
           name: theme.name,
           currentScore: theme.score || 0,
-          previousScore: (theme.score || 0) - change,
-          change
+          previousScore: theme.score || 0,
+          change: 0
         };
       });
       
@@ -118,7 +115,6 @@ const FollowedThemesCard = () => {
         ) : (
           <div className="grid grid-cols-3 gap-3">
             {themes.map((theme, index) => {
-              const isUp = theme.change > 0;
               return (
                 <div
                   key={theme.id}
@@ -132,16 +128,8 @@ const FollowedThemesCard = () => {
                   <div className="text-2xl font-bold tabular-nums mb-1">
                     {theme.currentScore.toFixed(0)}
                   </div>
-                  <Badge 
-                    variant="outline" 
-                    className={`text-xs ${isUp ? 'border-success/30 text-success' : 'border-destructive/30 text-destructive'}`}
-                  >
-                    {isUp ? (
-                      <TrendingUp className="h-3 w-3 mr-1" />
-                    ) : (
-                      <TrendingDown className="h-3 w-3 mr-1" />
-                    )}
-                    {isUp ? '+' : ''}{theme.change.toFixed(1)}
+                  <Badge variant="outline" className="text-xs text-muted-foreground border-border/50">
+                    —
                   </Badge>
                 </div>
               );

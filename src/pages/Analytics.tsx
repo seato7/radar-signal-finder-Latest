@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
+import { isPremiumOrAbove } from '@/lib/planLimits';
 import { TrendingUp, TrendingDown, Activity, DollarSign, Target, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -12,7 +13,7 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (userPlan !== 'premium' && userPlan !== 'enterprise' && userPlan !== 'admin') {
+    if (!isPremiumOrAbove(userPlan)) {
       setLoading(false);
       return;
     }
@@ -34,7 +35,7 @@ export default function Analytics() {
     }
   };
 
-  if (userPlan !== 'premium' && userPlan !== 'enterprise' && userPlan !== 'admin') {
+  if (!isPremiumOrAbove(userPlan)) {
     return (
       <div className="container mx-auto p-6">
         <PageHeader

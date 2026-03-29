@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TrendingUp, Info, Bell, ArrowRight, Lock, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { PLAN_LIMITS, checkPlanLimit } from "@/lib/planLimits";
+import { getPlanLimits } from "@/lib/planLimits";
 import { useAuth } from "@/hooks/useAuth";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,7 +26,7 @@ const Themes = () => {
   const { toast } = useToast();
   const { token, isAuthenticated, userPlan } = useAuth();
 
-  const userThemeLimit = PLAN_LIMITS[userPlan]?.max_themes || 1;
+  const userThemeLimit = getPlanLimits(userPlan).themes;
   const hasUnlimitedThemes = userThemeLimit === -1;
 
   useEffect(() => {

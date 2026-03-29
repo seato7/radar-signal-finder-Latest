@@ -8,6 +8,7 @@ import { AlertCircle, AlertTriangle, Info, CheckCircle2, Settings, Loader2 } fro
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { getPlanLimits } from "@/lib/planLimits";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 
@@ -46,7 +47,8 @@ const severityConfig = {
 
 const Alerts = () => {
   const { toast } = useToast();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, userPlan } = useAuth();
+  const alertsLimit = getPlanLimits(userPlan).alerts;
   const [scoreThreshold, setScoreThreshold] = useState("60");
   const [minPositives, setMinPositives] = useState("3");
   const [isSaving, setIsSaving] = useState(false);
@@ -193,6 +195,30 @@ const Alerts = () => {
             <p className="text-muted-foreground">Please log in to view your alerts.</p>
             <Button asChild className="mt-4">
               <Link to="/auth">Log In</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (alertsLimit === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Alert Center"
+          description="Real-time notifications for high-priority opportunities"
+        />
+        <Card className="border-primary/50 bg-gradient-to-r from-primary/5 to-accent/5">
+          <CardHeader>
+            <CardTitle>Alerts require a paid plan</CardTitle>
+            <CardDescription>
+              Upgrade to Starter or higher to receive alerts when investment themes reach your thresholds.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link to="/pricing">View Plans</Link>
             </Button>
           </CardContent>
         </Card>

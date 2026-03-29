@@ -9,8 +9,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, TrendingUp, Users, FileText, Search, Shield, Newspaper, RefreshCw, Info, DollarSign, Briefcase, Package } from "lucide-react";
 import { toast } from "sonner";
 import { SystemValidationCard } from "@/components/SystemValidationCard";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function DataSources() {
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("social");
   const [ingesting, setIngesting] = useState<Record<string, boolean>>({});
@@ -26,6 +28,7 @@ export default function DataSources() {
   const [supplyChain, setSupplyChain] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isAdmin()) return;
     fetchAllData();
     // Removed auto-populate to prevent refresh interruptions during pipeline runs
   }, []);
@@ -130,6 +133,23 @@ export default function DataSources() {
     
     toast.success("All ingestions completed!");
   };
+
+  if (!isAdmin()) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Data Sources" description="Internal data ingestion and monitoring" />
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Shield className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Admin Only</h3>
+            <p className="text-muted-foreground text-center max-w-md">
+              Data Sources is restricted to administrators.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">

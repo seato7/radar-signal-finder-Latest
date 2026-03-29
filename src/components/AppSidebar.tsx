@@ -1,4 +1,5 @@
 import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Download, Activity, DollarSign, Crosshair } from "lucide-react";
+import { isPremiumOrAbove } from "@/lib/planLimits";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -23,23 +24,17 @@ const navigationItems = [
   { title: "Alerts", url: "/alerts", icon: Bell },
   { title: "Asset Radar", url: "/asset-radar", icon: Radar },
   { title: "Watchlist", url: "/watchlist", icon: Star },
-  { title: "Top Picks", url: "/trading-signals", icon: Crosshair },
+  { title: "Active Signals", url: "/trading-signals", icon: Crosshair },
   { title: "Trading Bots", url: "/bots", icon: Bot },
   { title: "Themes", url: "/themes", icon: Tag },
-  
-  { title: "Data Sources", url: "/data-sources", icon: Database },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "Data Ingestion", url: "/data-ingestion", icon: Download },
-  { title: "API Usage", url: "/api-usage", icon: Activity },
-  { title: "Admin", url: "/admin", icon: Shield },
   { title: "Help", url: "/help", icon: HelpCircle },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const { user, logout, userPlan, isAdmin } = useAuth();
+  const { user, logout, userPlan, isAdmin, isPremium } = useAuth();
   const isCollapsed = state === "collapsed";
 
   const getPlanBadgeVariant = (plan: string) => {
@@ -93,6 +88,24 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         
+        {isPremium() && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Premium</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink to="/analytics">
+                      <BarChart3 className="h-4 w-4" />
+                      {!isCollapsed && <span>Analytics</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         {isAdmin() && (
           <SidebarGroup>
             <SidebarGroupLabel>Admin</SidebarGroupLabel>
@@ -103,6 +116,22 @@ export function AppSidebar() {
                     <NavLink to="/admin">
                       <Shield className="h-4 w-4" />
                       {!isCollapsed && <span>Admin Panel</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink to="/data-sources">
+                      <Database className="h-4 w-4" />
+                      {!isCollapsed && <span>Data Sources</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink to="/data-ingestion">
+                      <Download className="h-4 w-4" />
+                      {!isCollapsed && <span>Data Ingestion</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

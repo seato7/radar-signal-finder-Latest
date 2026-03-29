@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface ThemeScore {
   id: string;
@@ -15,6 +16,8 @@ interface ThemeScore {
 
 const TopThemesCard = () => {
   const navigate = useNavigate();
+  const { limits } = useAuth();
+  const themesLimit = limits().themes;
   
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['top-themes-dashboard'],
@@ -106,12 +109,19 @@ const TopThemesCard = () => {
               </div>
             ))}
           </div>
+        ) : themesLimit === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p className="text-sm mb-3">Themes require a paid plan</p>
+            <Button variant="outline" size="sm" onClick={() => navigate('/pricing')}>
+              View Plans
+            </Button>
+          </div>
         ) : themes.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p className="text-sm">Theme scores are being computed...</p>
           </div>
         ) : (
-          themes.map((theme, index) => {
+          (themesLimit === -1 ? themes : themes.slice(0, themesLimit)).map((theme, index) => {
             const topSignals = getTopSignals(theme.components);
             return (
               <div
