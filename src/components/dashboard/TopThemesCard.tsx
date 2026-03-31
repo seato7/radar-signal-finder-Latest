@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 
 interface ThemeScore {
   id: string;
@@ -110,12 +111,33 @@ const TopThemesCard = () => {
             ))}
           </div>
         ) : themesLimit === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm mb-3">Themes require a paid plan</p>
-            <Button variant="outline" size="sm" onClick={() => navigate('/pricing')}>
-              View Plans
-            </Button>
-          </div>
+          <BlurredUpgradeOverlay
+            feature="Investment Themes"
+            description="Themes require a paid plan. Upgrade to track macro trends."
+          >
+            <div className="space-y-3">
+              {[
+                { name: "AI Infrastructure Boom", score: 82 },
+                { name: "Clean Energy Transition", score: 74 },
+                { name: "Defence Spending Surge", score: 67 },
+              ].map((t, i) => (
+                <div key={i} className="p-4 rounded-lg bg-surface-1 border border-border/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-gradient-chrome flex items-center justify-center text-xs font-bold text-primary-foreground">
+                        {i + 1}
+                      </div>
+                      <span className="font-semibold">{t.name}</span>
+                    </div>
+                    <span className="text-2xl font-bold tabular-nums text-success">{t.score}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-muted/50 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-bull" style={{ width: `${t.score}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </BlurredUpgradeOverlay>
         ) : themes.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p className="text-sm">Theme scores are being computed...</p>

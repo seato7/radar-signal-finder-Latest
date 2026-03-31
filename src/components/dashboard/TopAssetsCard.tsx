@@ -99,7 +99,7 @@ const TopAssetsCard = () => {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-lg">
             <BarChart3 className="h-5 w-5 text-primary" />
-            Top Scored Assets
+            Top Assets
           </div>
           <Button 
             variant="ghost" 

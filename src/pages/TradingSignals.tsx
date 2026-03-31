@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaywallModal } from "@/components/PaywallModal";
+import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { TrendingUp, Clock, Lock, Target, BarChart3, Percent, X, AlertTriangle } from "lucide-react";
+import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 
 interface TradeSignal {
@@ -265,18 +266,34 @@ export default function TradingSignals() {
               </div>
 
               {activeBlurred && (
-                <div className="absolute bottom-0 left-0 right-0">
-                  <div className="h-16 bg-gradient-to-t from-background to-transparent" />
-                  <div className="bg-background border border-border rounded-lg p-4 mx-4 mb-2 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Lock className="h-4 w-4 text-primary" />
-                      <span>{active.length - visibleActive.length} more positions hidden — upgrade to unlock</span>
-                    </div>
-                    <Button size="sm" onClick={() => setPaywallOpen(true)}>
-                      Upgrade
-                    </Button>
-                  </div>
-                </div>
+                <BlurredUpgradeOverlay
+                  feature={`${active.length - visibleActive.length} more active signals`}
+                  description="Upgrade your plan to unlock all active signals."
+                >
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {active.slice(signalLimit, Math.min(signalLimit + 3, active.length)).map((s) => (
+                        <tr key={s.id} className="border-b border-border/50">
+                          <td className="py-2.5 pr-4 font-semibold">{s.ticker}</td>
+                          <td className="text-right py-2.5 px-4 tabular-nums">
+                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "—"}
+                          </td>
+                          <td className="text-right py-2.5 px-4 tabular-nums text-success">
+                            {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "—"}
+                          </td>
+                          <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
+                            {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "—"}
+                          </td>
+                          <td className="text-right py-2.5 px-4 tabular-nums">—</td>
+                          <td className="text-right py-2.5 px-4 tabular-nums">—</td>
+                          <td className="text-right py-2.5 px-4 tabular-nums">—</td>
+                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">—</td>
+                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">—</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </BlurredUpgradeOverlay>
               )}
             </div>
           )}
@@ -354,18 +371,27 @@ export default function TradingSignals() {
               </div>
 
               {exitsBlurred && (
-                <div className="absolute bottom-0 left-0 right-0">
-                  <div className="h-16 bg-gradient-to-t from-background to-transparent" />
-                  <div className="bg-background border border-border rounded-lg p-4 mx-4 mb-2 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Lock className="h-4 w-4 text-primary" />
-                      <span>{exits.length - visibleExits.length} more exits hidden — upgrade to unlock</span>
-                    </div>
-                    <Button size="sm" onClick={() => setPaywallOpen(true)}>
-                      Upgrade
-                    </Button>
-                  </div>
-                </div>
+                <BlurredUpgradeOverlay
+                  feature={`${exits.length - visibleExits.length} more closed signals`}
+                  description="Upgrade your plan to unlock the full trade history."
+                >
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {exits.slice(signalLimit, Math.min(signalLimit + 3, exits.length)).map((s) => (
+                        <tr key={s.id} className="border-b border-border/50">
+                          <td className="py-2.5 pr-4 font-semibold">{s.ticker}</td>
+                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
+                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "—"}
+                          </td>
+                          <td className="text-right py-2.5 px-4 tabular-nums">—</td>
+                          <td className="text-right py-2.5 px-4">—</td>
+                          <td className="text-right py-2.5 px-4">—</td>
+                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">—</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </BlurredUpgradeOverlay>
               )}
             </div>
           )}
