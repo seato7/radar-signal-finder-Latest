@@ -1,100 +1,109 @@
-// Plan limits matching backend/services/payments.py
-export interface PlanFeatures {
-  max_bots: number;
-  max_alerts: number;
-  max_themes: number;
-  paper_bots: number;
-  live_eligible?: boolean;
-  exports: string[];
-  backtest_days: number;
-}
+export type PlanName = 'free' | 'starter' | 'pro' | 'premium' | 'enterprise' | 'admin';
 
 export interface PlanLimits {
-  [key: string]: PlanFeatures;
+  active_signals: number;
+  ai_messages_per_day: number;
+  alerts: number;
+  watchlist_slots: number;
+  themes: number;
+  asset_radar_classes: string[];
+  show_scores: boolean;
+  show_sentiment: boolean;
+  analytics_access: boolean;
+  full_dashboard: boolean;
 }
 
-export const PLAN_LIMITS: PlanLimits = {
+export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
   free: {
-    max_bots: 0,
-    max_alerts: 1,
-    max_themes: 1,
-    paper_bots: 1,
-    exports: ["csv"],
-    backtest_days: 30
-  },
-  lite: {
-    max_bots: 0,
-    max_alerts: 10,
-    max_themes: 2,
-    paper_bots: 3,
-    exports: ["csv"],
-    backtest_days: 90
+    active_signals: 0,
+    ai_messages_per_day: 0,
+    alerts: 0,
+    watchlist_slots: 0,
+    themes: 0,
+    asset_radar_classes: [],
+    show_scores: false,
+    show_sentiment: false,
+    analytics_access: false,
+    full_dashboard: false,
   },
   starter: {
-    max_bots: 3,
-    max_alerts: 25,
-    max_themes: 3,
-    paper_bots: -1,
-    live_eligible: true,
-    exports: ["csv", "parquet"],
-    backtest_days: -1
+    active_signals: 1,
+    ai_messages_per_day: 5,
+    alerts: 1,
+    watchlist_slots: 3,
+    themes: 1,
+    asset_radar_classes: ['stock'],
+    show_scores: false,
+    show_sentiment: false,
+    analytics_access: false,
+    full_dashboard: false,
   },
   pro: {
-    max_bots: 10,
-    max_alerts: -1,
-    max_themes: -1,
-    paper_bots: -1,
-    live_eligible: true,
-    exports: ["csv", "parquet"],
-    backtest_days: -1
+    active_signals: 3,
+    ai_messages_per_day: 20,
+    alerts: 5,
+    watchlist_slots: 10,
+    themes: 3,
+    asset_radar_classes: ['stock', 'etf', 'forex'],
+    show_scores: false,
+    show_sentiment: false,
+    analytics_access: false,
+    full_dashboard: false,
   },
   premium: {
-    max_bots: -1,
-    max_alerts: -1,
-    max_themes: -1,
-    paper_bots: -1,
-    live_eligible: true,
-    exports: ["csv", "parquet"],
-    backtest_days: -1
+    active_signals: -1,
+    ai_messages_per_day: -1,
+    alerts: -1,
+    watchlist_slots: -1,
+    themes: -1,
+    asset_radar_classes: ['stock', 'etf', 'forex', 'crypto', 'commodity'],
+    show_scores: true,
+    show_sentiment: true,
+    analytics_access: true,
+    full_dashboard: true,
   },
   enterprise: {
-    max_bots: -1,
-    max_alerts: -1,
-    max_themes: -1,
-    paper_bots: -1,
-    live_eligible: true,
-    exports: ["csv", "parquet"],
-    backtest_days: -1
+    active_signals: -1,
+    ai_messages_per_day: -1,
+    alerts: -1,
+    watchlist_slots: -1,
+    themes: -1,
+    asset_radar_classes: ['stock', 'etf', 'forex', 'crypto', 'commodity'],
+    show_scores: true,
+    show_sentiment: true,
+    analytics_access: true,
+    full_dashboard: true,
   },
   admin: {
-    max_bots: -1,
-    max_alerts: -1,
-    max_themes: -1,
-    paper_bots: -1,
-    live_eligible: true,
-    exports: ["csv", "parquet"],
-    backtest_days: -1
-  }
+    active_signals: -1,
+    ai_messages_per_day: -1,
+    alerts: -1,
+    watchlist_slots: -1,
+    themes: -1,
+    asset_radar_classes: ['stock', 'etf', 'forex', 'crypto', 'commodity'],
+    show_scores: true,
+    show_sentiment: true,
+    analytics_access: true,
+    full_dashboard: true,
+  },
 };
 
-// Helper function to check if user can perform an action
-export const checkPlanLimit = (
-  userPlan: string,
-  feature: keyof PlanFeatures,
-  currentCount: number
-): boolean => {
-  const plan = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
-  const limit = plan[feature] as number;
-  
-  if (limit === -1) return true; // unlimited
-  return currentCount < limit;
-};
+export function getPlanLimits(plan: string): PlanLimits {
+  return PLAN_LIMITS[plan as PlanName] ?? PLAN_LIMITS.free;
+}
 
-// Helper to get plan limit value
-export const getPlanLimit = (
-  userPlan: string,
-  feature: keyof PlanFeatures
-): number => {
-  const plan = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
-  return plan[feature] as number;
-};
+export function isUnlimited(value: number): boolean {
+  return value === -1;
+}
+
+export function isPremiumOrAbove(plan: string): boolean {
+  return ['premium', 'enterprise', 'admin'].includes(plan);
+}
+
+export function isProOrAbove(plan: string): boolean {
+  return ['pro', 'premium', 'enterprise', 'admin'].includes(plan);
+}
+
+export function isStarterOrAbove(plan: string): boolean {
+  return ['starter', 'pro', 'premium', 'enterprise', 'admin'].includes(plan);
+}

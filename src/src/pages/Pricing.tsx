@@ -1,188 +1,295 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check } from "lucide-react";
+import { Check, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-const Pricing = () => {
-  const { userPlan, refreshSubscription } = useAuth();
+interface Plan {
+  name: string;
+  monthly: number | null;
+  annual: number | null;
+  annualSaving: string | null;
+  plan_id: string;
+  description: string;
+  features: string[];
+  popular: boolean;
+}
 
-  // Refresh subscription status when returning from checkout
+const plans: Plan[] = [
+  {
+    name: "Starter",
+    monthly: 9.99,
+    annual: 89,
+    annualSaving: "26%",
+    plan_id: "starter",
+    description: "Everything you need to start investing smarter",
+    features: [
+      "1 Active Signal",
+      "Asset Radar — Stocks only",
+      "1 Theme",
+      "AI Assistant — 5 messages/day",
+      "1 Alert",
+      "3 Watchlist slots",
+    ],
+    popular: false,
+  },
+  {
+    name: "Pro",
+    monthly: 34.99,
+    annual: 299,
+    annualSaving: "29%",
+    plan_id: "pro",
+    description: "For active investors tracking multiple opportunities",
+    features: [
+      "3 Active Signals",
+      "Asset Radar — Stocks, ETFs & Forex",
+      "3 Themes",
+      "AI Assistant — 20 messages/day",
+      "5 Alerts",
+      "10 Watchlist slots",
+    ],
+    popular: false,
+  },
+  {
+    name: "Premium",
+    monthly: 89.99,
+    annual: 799,
+    annualSaving: "26%",
+    plan_id: "premium",
+    description: "Unlimited access to every InsiderPulse feature",
+    features: [
+      "Unlimited Active Signals",
+      "Full Asset Radar — All asset classes + scores",
+      "Unlimited Themes",
+      "AI Assistant — Unlimited",
+      "Unlimited Alerts",
+      "Unlimited Watchlist slots",
+      "Analytics dashboard",
+      "First access to Trading Bots",
+    ],
+    popular: true,
+  },
+  {
+    name: "Enterprise",
+    monthly: null,
+    annual: null,
+    annualSaving: null,
+    plan_id: "enterprise",
+    description: "Custom solutions for teams and institutions",
+    features: [
+      "Everything in Premium",
+      "Priority support",
+      "Custom integrations",
+      "API access",
+    ],
+    popular: false,
+  },
+];
+
+const Pricing = () => {
+  const [isAnnual, setIsAnnual] = useState(false);
+  const navigate = useNavigate();
+  const { userPlan, isAuthenticated, refreshSubscription } = useAuth();
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('success') === 'true') {
-      // Wait a moment for Stripe to process, then refresh
+    if (params.get("success") === "true") {
       setTimeout(() => {
         refreshSubscription?.();
       }, 2000);
     }
   }, [refreshSubscription]);
 
-  const plans = [
-    {
-      name: "Free",
-      price: "$0",
-      period: "",
-      description: "Get started with basic features",
-      features: [
-        "1 paper trading bot",
-        "1 alert",
-        "CSV exports only",
-        "30-day backtest horizon"
-      ],
-      cta: "Current Plan",
-      plan_id: "free"
-    },
-    {
-      name: "Lite",
-      price: "$7.99",
-      period: "/mo",
-      description: "Perfect for beginners",
-      features: [
-        "3 paper trading bots",
-        "10 alerts",
-        "CSV exports",
-        "90-day backtest horizon"
-      ],
-      cta: "Start Lite",
-      plan_id: "lite",
-      popular: true
-    },
-    {
-      name: "Starter",
-      price: "$19.99",
-      period: "/mo",
-      description: "For serious traders",
-      features: [
-        "3 live-eligible bots",
-        "25 alerts",
-        "CSV & Parquet exports",
-        "Unlimited backtest horizon"
-      ],
-      cta: "Start Starter",
-      plan_id: "starter"
-    },
-    {
-      name: "Pro",
-      price: "$32.99",
-      period: "/mo",
-      description: "Advanced trading",
-      features: [
-        "10 live-eligible bots",
-        "Unlimited alerts",
-        "Priority support",
-        "CSV & Parquet exports",
-        "Unlimited backtest horizon"
-      ],
-      cta: "Start Pro",
-      plan_id: "pro"
-    },
-    {
-      name: "Premium",
-      price: "$59.99",
-      period: "/mo",
-      description: "Maximum power",
-      features: [
-        "Unlimited live-eligible bots",
-        "Unlimited alerts",
-        "Priority support",
-        "Advanced analytics",
-        "CSV & Parquet exports",
-        "Unlimited backtest horizon"
-      ],
-      cta: "Start Premium",
-      plan_id: "premium"
-    },
-    {
-      name: "Enterprise",
-      price: "Contact",
-      period: "",
-      description: "Custom solutions for teams",
-      features: [
-        "Unlimited bots & alerts",
-        "Dedicated support",
-        "Custom integrations",
-        "API access",
-        "All export formats"
-      ],
-      cta: "Contact Sales",
-      plan_id: "enterprise"
-    }
-  ];
+  const getDisplayPrice = (plan: Plan) => {
+    if (plan.monthly === null) return null;
+    if (isAnnual) return (plan.annual! / 12).toFixed(2);
+    return plan.monthly.toFixed(2);
+  };
 
   const handleCheckout = async (planId: string) => {
-    if (planId === "free") return;
-    
     if (planId === "enterprise") {
-      window.location.href = "mailto:sales@opportunityradar.com";
+      window.location.href = "mailto:support@insiderpulse.org";
+      return;
+    }
+
+    if (!isAuthenticated) {
+      navigate("/auth");
       return;
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke('manage-payments', {
+      const { data, error } = await supabase.functions.invoke("manage-payments", {
         body: {
-          action: 'checkout',
+          action: "checkout",
           plan: planId,
+          period: isAnnual ? "annual" : "monthly",
           success_url: window.location.origin + "/pricing?success=true",
-          cancel_url: window.location.origin + "/pricing?canceled=true"
-        }
+          cancel_url: window.location.origin + "/pricing?canceled=true",
+        },
       });
 
       if (!error && data?.url) {
         window.location.href = data.url;
       }
-    } catch (error) {
-      // Checkout error - silently fail
+    } catch {
+      // Checkout error — silently fail
     }
   };
 
+  const isCurrentPlan = (planId: string) =>
+    userPlan === planId || (planId === "premium" && userPlan === "admin");
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <PageHeader
-        title="Pricing Plans"
-        description="Choose the perfect plan for your trading needs"
+        title="Simple, Transparent Pricing"
+        description="Start with a 7-day free trial. No credit card required."
       />
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {plans.map((plan) => (
-          <Card key={plan.name} className={`shadow-data relative ${plan.popular ? 'border-primary' : ''}`}>
-            {plan.popular && (
-              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
-                Most Popular
-              </Badge>
-            )}
-            <CardHeader>
-              <CardTitle className="text-2xl">{plan.name}</CardTitle>
-              <CardDescription>{plan.description}</CardDescription>
-              <div className="pt-4">
-                <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                <span className="text-muted-foreground">{plan.period}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ul className="space-y-2">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-sm">
-                    <Check className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <span className="text-muted-foreground">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <Button 
-                className="w-full" 
-                variant={plan.plan_id === userPlan || userPlan === 'admin' ? "outline" : "default"}
-                onClick={() => handleCheckout(plan.plan_id)}
-                disabled={plan.plan_id === userPlan || userPlan === 'admin'}
-              >
-                {plan.plan_id === userPlan || userPlan === 'admin' ? "Current Plan" : plan.cta}
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Billing toggle */}
+      <div className="flex flex-col items-center gap-2">
+        <div className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 backdrop-blur p-1">
+          <button
+            onClick={() => setIsAnnual(false)}
+            className={`rounded-full px-5 py-1.5 text-sm font-medium transition-all ${
+              !isAnnual
+                ? "bg-primary text-primary-foreground shadow"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setIsAnnual(true)}
+            className={`rounded-full px-5 py-1.5 text-sm font-medium transition-all flex items-center gap-2 ${
+              isAnnual
+                ? "bg-primary text-primary-foreground shadow"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Annual
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isAnnual
+                  ? "bg-primary-foreground/20 text-primary-foreground"
+                  : "bg-success/20 text-success"
+              }`}
+            >
+              Save up to 29%
+            </span>
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">All prices in USD</p>
       </div>
+
+      {/* Plan cards */}
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        {plans.map((plan) => {
+          const displayPrice = getDisplayPrice(plan);
+          const current = isCurrentPlan(plan.plan_id);
+
+          return (
+            <Card
+              key={plan.plan_id}
+              className={`relative flex flex-col shadow-data transition-all ${
+                plan.popular
+                  ? "border-primary bg-card/90 backdrop-blur ring-1 ring-primary/30"
+                  : "border-border/50 bg-card/80 backdrop-blur"
+              }`}
+            >
+              {plan.popular && (
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
+                  <Badge className="bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold flex items-center gap-1 shadow-lg">
+                    <Zap className="h-3 w-3" />
+                    Most Popular
+                  </Badge>
+                </div>
+              )}
+
+              <CardHeader className="pb-4 pt-8">
+                <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
+                <CardDescription className="text-sm leading-snug">
+                  {plan.description}
+                </CardDescription>
+
+                <div className="pt-4">
+                  {displayPrice !== null ? (
+                    <div>
+                      <div className="flex items-end gap-1">
+                        <span className="text-4xl font-extrabold text-foreground">
+                          ${displayPrice}
+                        </span>
+                        <span className="text-muted-foreground pb-1">/mo</span>
+                      </div>
+                      {isAnnual && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          ${plan.annual}/yr
+                          {plan.annualSaving && (
+                            <span className="ml-1.5 text-success font-medium">
+                              — save {plan.annualSaving}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-end gap-1">
+                      <span className="text-4xl font-extrabold text-foreground">
+                        Custom
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+
+              <CardContent className="flex flex-col flex-1 gap-6">
+                <ul className="space-y-2.5 flex-1">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2.5 text-sm">
+                      <Check
+                        className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+                          plan.popular ? "text-primary" : "text-success"
+                        }`}
+                      />
+                      <span className="text-muted-foreground leading-snug">
+                        {feature}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Button
+                  className={`w-full font-semibold ${
+                    plan.popular && !current
+                      ? "bg-gradient-to-r from-primary to-accent hover:opacity-90"
+                      : ""
+                  }`}
+                  variant={current ? "outline" : plan.popular ? "default" : "outline"}
+                  onClick={() => handleCheckout(plan.plan_id)}
+                  disabled={current}
+                >
+                  {current
+                    ? "Current Plan"
+                    : plan.plan_id === "enterprise"
+                    ? "Contact Us"
+                    : plan.plan_id === "starter"
+                    ? "Start 7-Day Free Trial"
+                    : "Get Started"}
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Footer note */}
+      <p className="text-center text-sm text-muted-foreground">
+        Starter plan includes a 7-day free trial. No credit card required.
+      </p>
     </div>
   );
 };

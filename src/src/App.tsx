@@ -14,7 +14,6 @@ import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
 import AssetRadar from "./pages/AssetRadar";
 import Watchlist from "./pages/Watchlist";
-import Backtest from "./pages/Backtest";
 import AssetDetail from "./pages/AssetDetail";
 import Themes from "./pages/Themes";
 
@@ -33,6 +32,7 @@ import Assistant from "./pages/Assistant";
 import DataIngestion from "./pages/DataIngestion";
 import PipelineTests from "./pages/PipelineTests";
 import TradingSignals from "./pages/TradingSignals";
+import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -60,6 +60,7 @@ const App = () => (
             <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/" element={<Landing />} />
             <Route
               path="/*"
               element={
@@ -73,11 +74,10 @@ const App = () => (
                         </header>
                         <main className="flex-1 p-6">
                           <Routes>
-                            <Route path="/" element={<Home />} />
+                            <Route path="/dashboard" element={<Home />} />
                             <Route path="/alerts" element={<Alerts />} />
                             <Route path="/asset-radar" element={<AssetRadar />} />
                             <Route path="/watchlist" element={<Watchlist />} />
-                            <Route path="/backtest" element={<Backtest />} />
                             <Route path="/trading-signals" element={<TradingSignals />} />
                             <Route path="/asset/*" element={<AssetDetail />} />
                             <Route path="/themes" element={<Themes />} />

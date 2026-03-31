@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface TopAsset {
   ticker: string;
@@ -32,6 +33,8 @@ const extractFromExplanation = (scoreExplanation: any, key: string): number => {
 
 const TopAssetsCard = () => {
   const navigate = useNavigate();
+  const { limits } = useAuth();
+  const planLimits = limits();
   
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['top-assets-dashboard-scored'],
@@ -96,7 +99,7 @@ const TopAssetsCard = () => {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-lg">
             <BarChart3 className="h-5 w-5 text-primary" />
-            Top Scored Assets
+            Top Assets
           </div>
           <Button 
             variant="ghost" 
@@ -126,7 +129,7 @@ const TopAssetsCard = () => {
             <p className="text-sm">No scored assets available yet</p>
           </div>
         ) : (
-          assets.map((asset, index) => {
+          (planLimits.full_dashboard ? assets : assets.slice(0, 1)).map((asset, index) => {
             const isUp = asset.expectedReturn > 0;
             const strengthInfo = getSignalStrength(
               asset.signalStrength === "high" ? 0.015 : 
@@ -152,17 +155,19 @@ const TopAssetsCard = () => {
                         <Zap className="h-2.5 w-2.5 mr-0.5" />
                         {strengthInfo.label}
                       </Badge>
-                      <Badge 
-                        variant="outline" 
-                        className={`text-xs ${isUp ? 'border-success/30 text-success' : 'border-destructive/30 text-destructive'}`}
-                      >
-                        {isUp ? (
-                          <ArrowUpRight className="h-3 w-3 mr-1" />
-                        ) : (
-                          <ArrowDownRight className="h-3 w-3 mr-1" />
-                        )}
-                        {asset.score}
-                      </Badge>
+                      {planLimits.show_scores && (
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${isUp ? 'border-success/30 text-success' : 'border-destructive/30 text-destructive'}`}
+                        >
+                          {isUp ? (
+                            <ArrowUpRight className="h-3 w-3 mr-1" />
+                          ) : (
+                            <ArrowDownRight className="h-3 w-3 mr-1" />
+                          )}
+                          {asset.score}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span>
