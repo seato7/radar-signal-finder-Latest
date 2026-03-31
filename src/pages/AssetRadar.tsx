@@ -119,7 +119,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 const AssetRadar = () => {
-  const { userPlan } = useAuth();
+  const { userPlan, planLoading } = useAuth();
   const planLimits = getPlanLimits(userPlan);
 
   const visibleTabs = ASSET_CLASS_TABS.filter((tab) =>
@@ -580,19 +580,21 @@ const AssetRadar = () => {
   }, [assets, sortBy]);
 
   useEffect(() => {
+    if (planLoading || planLimits.asset_radar_classes.length === 0) return;
     setPage(0);
     const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy]);
+  }, [searchTerm, activeTab, sortBy, userPlan]);
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
+    if (planLoading || planLimits.asset_radar_classes.length === 0) return;
     const interval = setInterval(() => {
       fetchAssets(page, activeTab, sortBy);
     }, REFRESH_INTERVAL);
-    
+
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy]);
+  }, [page, activeTab, sortBy, userPlan]);
 
   // Fetch active trade signal tickers once on mount for Top Pick badges
   useEffect(() => {
@@ -638,6 +640,23 @@ const AssetRadar = () => {
     const tabLabel = ASSET_CLASS_TABS.find(t => t.value === activeTab)?.label || "assets";
     return `Browse ${total.toLocaleString()} ${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
   };
+
+  if (planLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Asset Radar" description="Loading…" />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="p-4 rounded-lg border border-border">
+              <Skeleton className="h-6 w-20 mb-2" />
+              <Skeleton className="h-4 w-32 mb-3" />
+              <Skeleton className="h-5 w-16" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (planLimits.asset_radar_classes.length === 0) {
     return (
