@@ -3,8 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Sparkles, Mic, Volume2 } from 'lucide-react';
+import { Send, Sparkles, Volume2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { getPlanLimits } from '@/lib/planLimits';
+import { Link } from 'react-router-dom';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -20,14 +23,31 @@ interface AIAssistantChatProps {
 
 export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantChatProps) => {
   const hasProcessedInitialQuery = useRef(false);
+  const { user, userPlan } = useAuth();
+  const planLimits = getPlanLimits(userPlan);
+  const dailyLimit = planLimits.ai_messages_per_day;
+
+  const getTodayKey = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return `ip_ai_messages_${user?.id ?? 'anon'}_${today}`;
+  };
+
+  const getMessageCount = () => parseInt(localStorage.getItem(getTodayKey()) || '0', 10);
+
+  const incrementMessageCount = () => {
+    const key = getTodayKey();
+    localStorage.setItem(key, String(getMessageCount() + 1));
+    setTodayCount((c) => c + 1);
+  };
+
   const [messages, setMessages] = useState<Message[]>(() => {
-    // Load conversation history from localStorage on mount
     const saved = localStorage.getItem('ai-chat-history');
     return saved ? JSON.parse(saved) : [];
   });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [todayCount, setTodayCount] = useState(() => getMessageCount());
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -46,11 +66,31 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   useEffect(() => {
     if (initialQuery && !hasProcessedInitialQuery.current && messages.length === 0) {
       hasProcessedInitialQuery.current = true;
-      streamChat(initialQuery);
+      streamChat(initialQuery, false);
     }
   }, [initialQuery]);
 
-  const streamChat = async (userMessage: string) => {
+  const streamChat = async (userMessage: string, countAgainstLimit = true) => {
+    if (countAgainstLimit) {
+      if (dailyLimit === 0) {
+        toast({
+          title: 'Upgrade required',
+          description: 'AI Assistant requires a paid plan.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (dailyLimit !== -1 && getMessageCount() >= dailyLimit) {
+        toast({
+          title: 'Daily message limit reached',
+          description: 'Upgrade to send more messages.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      incrementMessageCount();
+    }
+
     const newMessages = [...messages, { role: 'user' as const, content: userMessage }];
     setMessages(newMessages);
     setInput('');
@@ -285,12 +325,25 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSend()}
               placeholder="Ask about themes, signals, or opportunities..."
-              disabled={isLoading}
+              disabled={isLoading || (dailyLimit !== -1 && dailyLimit > 0 && todayCount >= dailyLimit) || dailyLimit === 0}
             />
             <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
+          {dailyLimit > 0 && dailyLimit !== -1 && (
+            <p className="text-xs text-muted-foreground mt-2 text-right">
+              {todayCount} of {dailyLimit} messages used today
+              {todayCount >= dailyLimit && (
+                <> — <Link to="/pricing" className="text-primary underline underline-offset-2">Upgrade</Link> for more</>
+              )}
+            </p>
+          )}
+          {dailyLimit === 0 && (
+            <p className="text-xs text-muted-foreground mt-2 text-right">
+              <Link to="/pricing" className="text-primary underline underline-offset-2">Upgrade</Link> to use the AI Assistant
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

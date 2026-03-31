@@ -1,7 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
 
 const Help = () => {
   return (
@@ -79,35 +78,6 @@ const Help = () => {
         </CardContent>
       </Card>
 
-      <Card className="shadow-data">
-        <CardHeader>
-          <CardTitle>API Endpoints</CardTitle>
-          <CardDescription>Available endpoints for the backend API</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[
-              { method: "GET", path: "/api/healthz/weights", desc: "Scoring component weights" },
-              { method: "GET", path: "/api/opportunities", desc: "List all opportunities" },
-              { method: "GET", path: "/api/opportunities/:id", desc: "Get opportunity details" },
-              { method: "GET", path: "/api/alerts", desc: "List alerts" },
-              { method: "POST", path: "/api/backtest", desc: "Run backtest analysis" },
-              { method: "GET", path: "/api/watchlist", desc: "Get watchlist items" },
-              { method: "POST", path: "/api/watchlist", desc: "Add to watchlist" },
-              { method: "GET", path: "/api/themes", desc: "List active themes" },
-              { method: "GET", path: "/api/export", desc: "Export data (CSV/Parquet)" },
-            ].map((endpoint, idx) => (
-              <div key={`${endpoint.method}-${endpoint.path}-${idx}`} className="flex items-center gap-3 p-3 rounded-md bg-muted/50 border border-border">
-                <Badge variant={endpoint.method === "GET" ? "secondary" : "outline"}>
-                  {endpoint.method}
-                </Badge>
-                <code className="flex-1 text-sm font-mono text-primary">{endpoint.path}</code>
-                <span className="text-sm text-muted-foreground">{endpoint.desc}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };

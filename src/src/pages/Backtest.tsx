@@ -64,29 +64,34 @@ const Performance = () => {
   const [period, setPeriod] = useState<Period>('ALL');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
-  const { data: performanceData, isLoading: isLoadingPerformance, error: performanceError } = useQuery({
-    queryKey: ['performance', period],
+  // Single edge function call — all computation happens server-side
+  const { data: summaryData, isLoading, error } = useQuery({
+    queryKey: ['performance-summary', period],
     queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('calculate-performance', {
-        body: { period },
-      });
+      const days = period === '1W' ? 7 : period === '30D' ? 30 : 'all';
+      const { data, error } = await supabase.functions.invoke(
+        'get-performance-summary',
+        { body: { days } }
+      );
       if (error) throw error;
-      if (data.error) throw new Error(data.error);
-      return data as PerformanceData;
+      if (data?.error) throw new Error(data.error);
+      return data;
     },
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: dailyHistory, isLoading: isLoadingHistory } = useQuery({
-    queryKey: ['daily-performance-history'],
-    queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke('get-daily-performance-history', {
-        body: {},
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-      return data as DailyHistoryData;
-    },
-  });
+  const performanceData = summaryData as PerformanceData | null;
+  const dailyHistory: DailyHistoryData | null = summaryData ? {
+    daily_history: summaryData.daily_history,
+    start_date: summaryData.start_date,
+    starting_investment: summaryData.starting_investment,
+    total_days: summaryData.period_days,
+    last_updated_at: summaryData.last_updated_at,
+  } : null;
+
+  const isLoadingPerformance = isLoading;
+  const isLoadingHistory = isLoading;
+  const performanceError = error as Error | null;
 
   const toggleDayExpanded = (date: string) => {
     const newExpanded = new Set(expandedDays);
@@ -193,7 +198,7 @@ const Performance = () => {
                   {Math.abs(performanceData.outperformance).toFixed(2)}%
                 </p>
               )}
-              
+
               {/* Data Quality Indicator */}
               {performanceData.data_quality && (
                 <div className="flex items-center justify-center gap-2 mt-3">
@@ -209,7 +214,7 @@ const Performance = () => {
                   )}
                 </div>
               )}
-              
+
               <p className="text-xs text-muted-foreground mt-4">
                 {performanceData.period_days} days tracked ({formatDate(performanceData.start_date)} - {formatDate(performanceData.end_date)})
               </p>
@@ -309,8 +314,8 @@ const Performance = () => {
                   key={asset.ticker}
                   className={cn(
                     "flex items-center justify-between p-3 rounded-lg transition-colors",
-                    asset.has_data === false 
-                      ? "bg-muted/30 opacity-60" 
+                    asset.has_data === false
+                      ? "bg-muted/30 opacity-60"
                       : "bg-muted/50 hover:bg-muted"
                   )}
                 >
@@ -385,8 +390,8 @@ const Performance = () => {
                   <CollapsibleTrigger asChild>
                     <div className={cn(
                       "flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors",
-                      day.is_negative_day 
-                        ? "bg-red-500/10 hover:bg-red-500/20" 
+                      day.is_negative_day
+                        ? "bg-red-500/10 hover:bg-red-500/20"
                         : "bg-muted/30 hover:bg-muted/50"
                     )}>
                       <div className="flex items-center gap-4">
@@ -478,9 +483,9 @@ const Performance = () => {
       <Card className="bg-muted/30 border-muted">
         <CardContent className="py-4">
           <p className="text-xs text-muted-foreground text-center">
-            <strong>Disclaimer:</strong> Past performance does not guarantee future results. 
-            This tracker shows hypothetical returns based on our rating system and real historical price data. 
-            No actual trades are executed. Returns shown are before any fees, taxes, or slippage. 
+            <strong>Disclaimer:</strong> Past performance does not guarantee future results.
+            This tracker shows hypothetical returns based on our rating system and real historical price data.
+            No actual trades are executed. Returns shown are before any fees, taxes, or slippage.
             This is for informational purposes only and not investment advice.
           </p>
         </CardContent>

@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 
 interface Alert {
   id: string;
@@ -16,6 +18,8 @@ interface Alert {
 
 const RecentAlertsCard = () => {
   const navigate = useNavigate();
+  const { limits } = useAuth();
+  const alertsAllowed = limits().alerts !== 0;
   
   const { data: alerts = [], isLoading } = useQuery({
     queryKey: ['recent-alerts-dashboard'],
@@ -68,7 +72,31 @@ const RecentAlertsCard = () => {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {!alertsAllowed ? (
+          <BlurredUpgradeOverlay
+            feature="Alerts"
+            description="Receive notifications when investment themes reach your thresholds."
+          >
+            <div className="space-y-2">
+              {[
+                { name: "AI Infrastructure Boom", score: 84, time: "2h ago" },
+                { name: "Clean Energy Transition", score: 71, time: "5h ago" },
+                { name: "Defence Spending Surge", score: 63, time: "1d ago" },
+              ].map((a, i) => (
+                <div key={i} className="p-3 rounded-lg bg-surface-1 border border-border/50 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-2 w-2 rounded-full bg-warning" />
+                    <span className="font-medium text-sm">{a.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs">Score: {a.score}</Badge>
+                    <span className="text-xs text-muted-foreground">{a.time}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </BlurredUpgradeOverlay>
+        ) : isLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="p-3 rounded-lg bg-muted/30 flex items-center justify-between">

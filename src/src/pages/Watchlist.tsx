@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { getPlanLimits } from "@/lib/planLimits";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +36,8 @@ const Watchlist = () => {
   const [newTicker, setNewTicker] = useState("");
   const [adding, setAdding] = useState(false);
   const { toast } = useToast();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, userPlan } = useAuth();
+  const slotsLimit = getPlanLimits(userPlan).watchlist_slots;
 
   // Fetch watchlist from database
   useEffect(() => {
@@ -93,7 +95,18 @@ const Watchlist = () => {
     }
 
     const tickerToAdd = newTicker.toUpperCase().trim();
-    
+
+    if (slotsLimit !== -1 && tickers.length >= slotsLimit) {
+      toast({
+        title: "Watchlist limit reached",
+        description: slotsLimit === 0
+          ? "Upgrade to a paid plan to use the watchlist."
+          : `Your plan allows ${slotsLimit} assets. Upgrade to add more.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (tickers.includes(tickerToAdd)) {
       toast({
         title: "Already added",
@@ -199,7 +212,12 @@ const Watchlist = () => {
     <div className="space-y-6">
       <PageHeader
         title="Watchlist"
-        description="Track your selected opportunities"
+        description={slotsLimit === -1
+          ? "Track your selected opportunities"
+          : slotsLimit === 0
+            ? "Track your selected opportunities — upgrade to add assets"
+            : `Track your selected opportunities (${tickers.length} / ${slotsLimit} slots used)`
+        }
         action={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>

@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
+import { getPlanLimits } from "@/lib/planLimits";
+import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
@@ -117,15 +119,27 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 const AssetRadar = () => {
+  const { userPlan, planLoading } = useAuth();
+  const planLimits = getPlanLimits(userPlan);
+
+  const visibleTabs = ASSET_CLASS_TABS.filter((tab) =>
+    tab.filter === null
+      ? planLimits.asset_radar_classes.length > 0
+      : planLimits.asset_radar_classes.includes(tab.filter)
+  );
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState<AssetClassTab>("all");
+  const [activeTab, setActiveTab] = useState<AssetClassTab>(() => {
+    if (planLimits.asset_radar_classes.length === 0) return "all";
+    return planLimits.asset_radar_classes.length > 1 ? "all" : planLimits.asset_radar_classes[0] as AssetClassTab;
+  });
   const [sortBy, setSortBy] = useState<SortOption>("score-desc");
   const [assets, setAssets] = useState<AssetWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [activeSignalTickers, setActiveSignalTickers] = useState<Set<string>>(new Set());
-  
+
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -194,7 +208,7 @@ const AssetRadar = () => {
 
         priceData.forEach(p => {
           if (!priceMap.has(p.ticker)) {
-            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
             seenDates.set(p.ticker, p.date);
           } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
             previousPriceMap.set(p.ticker, p.close);
@@ -246,7 +260,7 @@ const AssetRadar = () => {
       if (currentSortBy === "recent" && !searchTerm) {
         let priceQuery = supabase
           .from('prices')
-          .select('ticker, close, last_updated_at', { count: 'exact' })
+          .select('ticker, close, date, last_updated_at', { count: 'exact' })
           .gte('last_updated_at', cutoffTime)
           .order('last_updated_at', { ascending: false });
 
@@ -279,7 +293,7 @@ const AssetRadar = () => {
         const priceMap = new Map<string, { lastUpdated: string; close: number }>();
         (recentPrices || []).forEach(p => {
           if (!priceMap.has(p.ticker)) {
-            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
           }
         });
 
@@ -388,6 +402,20 @@ const AssetRadar = () => {
 
         const { data: matchingAssets } = await assetQuery;
 
+        // Fetch latest price date for timestamp display
+        const { data: latestPriceDates } = await supabase
+          .from('prices')
+          .select('ticker, date')
+          .in('ticker', tickersInOrder)
+          .order('date', { ascending: false });
+
+        const latestDateMap = new Map<string, string>();
+        (latestPriceDates || []).forEach(p => {
+          if (!latestDateMap.has(p.ticker)) {
+            latestDateMap.set(p.ticker, p.date + 'T00:00:00.000Z');
+          }
+        });
+
         const tickerOrder = new Map(tickersInOrder.map((t, i) => [t, i]));
         const sortedList = (matchingAssets || [])
           .filter(a => tickerOrder.has(a.ticker))
@@ -410,7 +438,7 @@ const AssetRadar = () => {
             asset_class: asset.asset_class,
             score,
             sentiment: sentiment.label,
-            lastUpdated: null,
+            lastUpdated: latestDateMap.get(asset.ticker) || null,
             priceChange: priceChangeMap.get(asset.ticker) ?? null,
             signalStrength: signalStrengthInfo.level,
             signalMass,
@@ -474,7 +502,7 @@ const AssetRadar = () => {
       
       priceData.forEach(p => {
         if (!priceMap.has(p.ticker)) {
-          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || '', close: p.close });
+          priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
           seenDates.set(p.ticker, p.date);
         } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
           previousPriceMap.set(p.ticker, p.close);
@@ -552,19 +580,21 @@ const AssetRadar = () => {
   }, [assets, sortBy]);
 
   useEffect(() => {
+    if (planLoading || planLimits.asset_radar_classes.length === 0) return;
     setPage(0);
     const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy]);
+  }, [searchTerm, activeTab, sortBy, userPlan]);
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
+    if (planLoading || planLimits.asset_radar_classes.length === 0) return;
     const interval = setInterval(() => {
       fetchAssets(page, activeTab, sortBy);
     }, REFRESH_INTERVAL);
-    
+
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy]);
+  }, [page, activeTab, sortBy, userPlan]);
 
   // Fetch active trade signal tickers once on mount for Top Pick badges
   useEffect(() => {
@@ -611,6 +641,48 @@ const AssetRadar = () => {
     return `Browse ${total.toLocaleString()} ${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
   };
 
+  if (planLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Asset Radar" description="Loading…" />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="p-4 rounded-lg border border-border">
+              <Skeleton className="h-6 w-20 mb-2" />
+              <Skeleton className="h-4 w-32 mb-3" />
+              <Skeleton className="h-5 w-16" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (planLimits.asset_radar_classes.length === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Asset Radar"
+          description="Browse scored assets across all asset classes"
+        />
+        <BlurredUpgradeOverlay
+          feature="Asset Radar"
+          description="Upgrade to a paid plan to access Asset Radar and browse scored assets."
+        >
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="p-4 rounded-lg border border-border bg-card">
+                <div className="h-6 w-20 mb-2 bg-muted rounded" />
+                <div className="h-4 w-32 mb-3 bg-muted rounded" />
+                <div className="h-5 w-16 bg-muted rounded" />
+              </div>
+            ))}
+          </div>
+        </BlurredUpgradeOverlay>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -619,8 +691,8 @@ const AssetRadar = () => {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 mb-4">
-          {ASSET_CLASS_TABS.map((tab) => (
+        <TabsList className={`grid w-full mb-4`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
+          {visibleTabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-1 px-2 text-xs sm:text-sm">
               {tab.icon}
               <span className="hidden sm:inline">{tab.label}</span>
@@ -709,9 +781,13 @@ const AssetRadar = () => {
                                 {signalStrengthInfo.label}
                               </Badge>
                             )}
-                            <Badge variant={sentiment.variant} className="text-xs">
-                              {asset.score}
-                            </Badge>
+                            {planLimits.show_scores ? (
+                              <Badge variant={sentiment.variant} className="text-xs">
+                                {asset.score}
+                              </Badge>
+                            ) : (
+                              <span style={{ filter: "blur(3px)", userSelect: "none" }} className="text-xs text-muted-foreground select-none">—</span>
+                            )}
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
