@@ -2,8 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Info, Bell, ArrowRight, Sparkles } from "lucide-react";
-import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { TrendingUp, Info, Bell, ArrowRight, Lock, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { getPlanLimits } from "@/lib/planLimits";
@@ -27,7 +26,7 @@ const Themes = () => {
   const { toast } = useToast();
   const { token, isAuthenticated, userPlan } = useAuth();
 
-  const userThemeLimit = getPlanLimits(userPlan).themes;
+  const userThemeLimit = getPlanLimits(userPlan).themes || 1;
   const hasUnlimitedThemes = userThemeLimit === -1;
 
   useEffect(() => {
@@ -170,9 +169,27 @@ const Themes = () => {
         {themes.map((theme, index) => {
           const isLocked = isThemeLocked(index);
           const topComponents = getTopComponents(theme.components);
-
-          const cardContent = (
-            <Card className="shadow-data">
+          
+          return (
+            <Card 
+              key={theme.id} 
+              className={`shadow-data relative ${isLocked ? 'opacity-60' : ''}`}
+            >
+              {isLocked && (
+                <div className="absolute inset-0 bg-background/80 backdrop-blur-sm rounded-lg flex items-center justify-center z-10">
+                  <div className="text-center p-6">
+                    <Lock className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                    <h3 className="font-semibold text-lg mb-2">Theme Locked</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Upgrade to access this theme
+                    </p>
+                    <Button asChild size="sm">
+                      <Link to="/pricing">View Plans</Link>
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
@@ -181,8 +198,8 @@ const Themes = () => {
                       Score: {theme.score.toFixed(1)}
                     </CardDescription>
                   </div>
-                  <Badge
-                    variant="outline"
+                  <Badge 
+                    variant="outline" 
                     className={`${
                       theme.score >= 80 ? 'border-success text-success' :
                       theme.score >= 60 ? 'border-accent text-accent' :
@@ -194,71 +211,69 @@ const Themes = () => {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {whyNowData[theme.name]?.summary && (
-                  <div className="p-3 rounded-md bg-muted/30 border border-border">
-                    <div className="flex items-start gap-2 mb-2">
-                      <Info className="h-4 w-4 text-primary mt-0.5" />
-                      <span className="text-sm font-medium text-foreground">Why now?</span>
+              
+              {!isLocked && (
+                <CardContent className="space-y-4">
+                  {whyNowData[theme.name]?.summary && (
+                    <div className="p-3 rounded-md bg-muted/30 border border-border">
+                      <div className="flex items-start gap-2 mb-2">
+                        <Info className="h-4 w-4 text-primary mt-0.5" />
+                        <span className="text-sm font-medium text-foreground">Why now?</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {whyNowData[theme.name].summary}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {whyNowData[theme.name].summary}
-                    </p>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Theme Strength</span>
+                      <span className="font-bold text-primary">{theme.score.toFixed(1)}</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-chrome"
+                        style={{ width: `${Math.min(theme.score, 100)}%` }}
+                      />
+                    </div>
                   </div>
-                )}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Theme Strength</span>
-                    <span className="font-bold text-primary">{theme.score.toFixed(1)}</span>
+                  
+                  <div>
+                    <div className="text-sm text-muted-foreground mb-2">Top Signals</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {topComponents.map((component) => (
+                        <Badge key={component} variant="secondary" className="text-xs">
+                          {component}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-chrome"
-                      style={{ width: `${Math.min(theme.score, 100)}%` }}
-                    />
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      asChild
+                      className="flex-1"
+                      variant="outline"
+                    >
+                      <Link to="/asset-radar">
+                        View Opportunities
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
+                    <Button 
+                      onClick={() => handleSubscribe(theme.id, theme.name)}
+                      disabled={subscribing === theme.id}
+                      className="flex-1"
+                      variant="outline"
+                    >
+                      <Bell className="mr-2 h-4 w-4" />
+                      {subscribing === theme.id ? "Subscribing..." : "Alerts"}
+                    </Button>
                   </div>
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground mb-2">Top Signals</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {topComponents.map((component) => (
-                      <Badge key={component} variant="secondary" className="text-xs">
-                        {component}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button asChild className="flex-1" variant="outline">
-                    <Link to="/asset-radar">
-                      View Opportunities
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button
-                    onClick={() => handleSubscribe(theme.id, theme.name)}
-                    disabled={subscribing === theme.id}
-                    className="flex-1"
-                    variant="outline"
-                  >
-                    <Bell className="mr-2 h-4 w-4" />
-                    {subscribing === theme.id ? "Subscribing..." : "Alerts"}
-                  </Button>
-                </div>
-              </CardContent>
+                </CardContent>
+              )}
             </Card>
-          );
-
-          return isLocked ? (
-            <BlurredUpgradeOverlay
-              key={theme.id}
-              feature="Theme Locked"
-              description="Upgrade your plan to access this investment theme."
-            >
-              {cardContent}
-            </BlurredUpgradeOverlay>
-          ) : (
-            <div key={theme.id}>{cardContent}</div>
           );
         })}
       </div>
