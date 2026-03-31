@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { useAuth } from "@/hooks/useAuth";
+import { getPlanLimits } from "@/lib/planLimits";
+import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
@@ -117,15 +119,27 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 const AssetRadar = () => {
+  const { userPlan } = useAuth();
+  const planLimits = getPlanLimits(userPlan);
+
+  const visibleTabs = ASSET_CLASS_TABS.filter((tab) =>
+    tab.filter === null
+      ? planLimits.asset_radar_classes.length > 0
+      : planLimits.asset_radar_classes.includes(tab.filter)
+  );
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState<AssetClassTab>("all");
+  const [activeTab, setActiveTab] = useState<AssetClassTab>(() => {
+    if (planLimits.asset_radar_classes.length === 0) return "all";
+    return planLimits.asset_radar_classes.length > 1 ? "all" : planLimits.asset_radar_classes[0] as AssetClassTab;
+  });
   const [sortBy, setSortBy] = useState<SortOption>("score-desc");
   const [assets, setAssets] = useState<AssetWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [activeSignalTickers, setActiveSignalTickers] = useState<Set<string>>(new Set());
-  
+
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -625,6 +639,31 @@ const AssetRadar = () => {
     return `Browse ${total.toLocaleString()} ${activeTab === "all" ? "assets" : tabLabel.toLowerCase()}`;
   };
 
+  if (planLimits.asset_radar_classes.length === 0) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Asset Radar"
+          description="Browse scored assets across all asset classes"
+        />
+        <BlurredUpgradeOverlay
+          feature="Asset Radar"
+          description="Upgrade to a paid plan to access Asset Radar and browse scored assets."
+        >
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="p-4 rounded-lg border border-border bg-card">
+                <div className="h-6 w-20 mb-2 bg-muted rounded" />
+                <div className="h-4 w-32 mb-3 bg-muted rounded" />
+                <div className="h-5 w-16 bg-muted rounded" />
+              </div>
+            ))}
+          </div>
+        </BlurredUpgradeOverlay>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -633,8 +672,8 @@ const AssetRadar = () => {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 mb-4">
-          {ASSET_CLASS_TABS.map((tab) => (
+        <TabsList className={`grid w-full mb-4`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
+          {visibleTabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-1 px-2 text-xs sm:text-sm">
               {tab.icon}
               <span className="hidden sm:inline">{tab.label}</span>
@@ -723,9 +762,13 @@ const AssetRadar = () => {
                                 {signalStrengthInfo.label}
                               </Badge>
                             )}
-                            <Badge variant={sentiment.variant} className="text-xs">
-                              {asset.score}
-                            </Badge>
+                            {planLimits.show_scores ? (
+                              <Badge variant={sentiment.variant} className="text-xs">
+                                {asset.score}
+                              </Badge>
+                            ) : (
+                              <span style={{ filter: "blur(3px)", userSelect: "none" }} className="text-xs text-muted-foreground select-none">—</span>
+                            )}
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>

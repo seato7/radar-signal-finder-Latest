@@ -151,7 +151,7 @@ const Pricing = () => {
       />
 
       {/* Billing toggle */}
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         <div className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 backdrop-blur p-1">
           <button
             onClick={() => setIsAnnual(false)}
@@ -183,6 +183,7 @@ const Pricing = () => {
             </span>
           </button>
         </div>
+        <p className="text-xs text-muted-foreground">All prices in USD</p>
       </div>
 
       {/* Plan cards */}
@@ -275,7 +276,9 @@ const Pricing = () => {
                     ? "Current Plan"
                     : plan.plan_id === "enterprise"
                     ? "Contact Us"
-                    : "Start 7-Day Free Trial"}
+                    : plan.plan_id === "starter"
+                    ? "Start 7-Day Free Trial"
+                    : "Get Started"}
                 </Button>
               </CardContent>
             </Card>
@@ -285,7 +288,7 @@ const Pricing = () => {
 
       {/* Footer note */}
       <p className="text-center text-sm text-muted-foreground">
-        All plans include a 7-day free trial. No credit card required to start.
+        Starter plan includes a 7-day free trial. No credit card required.
       </p>
     </div>
   );
