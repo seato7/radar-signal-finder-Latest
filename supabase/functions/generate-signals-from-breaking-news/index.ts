@@ -92,11 +92,11 @@ serve(async (req) => {
         magnitude,
         observed_at: item.published_at || new Date().toISOString(),
         value_text: item.headline?.substring(0, 200) || 'Breaking news',
-        checksum: JSON.stringify({ 
-          ticker: item.ticker, 
-          signal_type: 'breaking_news', 
+        checksum: JSON.stringify({
+          ticker: item.ticker,
+          signal_type: signalType,
           headline: item.headline?.substring(0, 50),
-          published_at: item.published_at 
+          published_at_date: item.published_at ? item.published_at.substring(0, 10) : null,
         }),
         citation: { 
           source: item.source || 'Breaking News', 
@@ -123,7 +123,11 @@ serve(async (req) => {
         .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
         .select('id');
       
-      if (!insertError) insertedCount += data?.length || 0;
+      if (insertError) {
+        console.error('Signal insert error:', insertError.message, insertError.details);
+      } else {
+        insertedCount += data?.length || 0;
+      }
     }
 
     console.log(`[SIGNAL-GEN-BREAKING] ✅ Created ${insertedCount} breaking news signals (${signals.length - insertedCount} duplicates)`);
