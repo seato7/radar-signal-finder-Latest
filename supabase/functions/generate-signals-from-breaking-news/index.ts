@@ -28,6 +28,7 @@ serve(async (req) => {
       .from('breaking_news')
       .select('*')
       .gte('published_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .neq('sentiment_score', 0)
       .order('published_at', { ascending: false })
       .limit(5000);
 
@@ -64,7 +65,7 @@ serve(async (req) => {
       const assetId = tickerToAssetId.get(item.ticker);
       if (!assetId) continue;
 
-      const sentimentScore = item.sentiment_score ?? 0.3; // default mildly positive if not set
+      const sentimentScore = item.sentiment_score ?? 0;
       const relevanceScore = item.relevance_score || 0.5;
 
       // Skip neutral news with low relevance
