@@ -156,40 +156,149 @@ function parseRSSXml(xml: string, sourceName: string): RSSItem[] {
 }
 
 // Keyword-based sentiment heuristic (NOT estimation - this is text analysis of REAL news content)
-// FIX: Added negation handling to correctly score "not rising", "no profit", "failed to beat", etc.
+// Negation handling: word-window check + multi-word phrase pre-pass
 const NEGATION_WORDS = ['not', 'no', 'never', "didn't", "doesn't", "won't", "can't", 'cannot', 'failed to', 'unable to'];
+const NEGATION_PHRASES = ['no longer', 'fails to', 'unable to', 'not expected to', 'does not', 'did not'];
 
-function isNegated(text: string, wordIndex: number, windowSize = 5): boolean {
-  // Check if any negation word appears in the window of words before the target word
+function isNegated(text: string, wordIndex: number, windowSize = 7): boolean {
   const words = text.split(/\s+/);
   const start = Math.max(0, wordIndex - windowSize);
   const contextWords = words.slice(start, wordIndex);
   return NEGATION_WORDS.some(neg => contextWords.join(' ').includes(neg));
 }
 
-function calculateKeywordSentiment(text: string): number {
-  const textLower = text.toLowerCase();
+function isNegatedByPhrase(text: string, keywordCharIndex: number): boolean {
+  const lookback = text.substring(Math.max(0, keywordCharIndex - 60), keywordCharIndex);
+  return NEGATION_PHRASES.some(phrase => lookback.includes(phrase));
+}
+
+function calculateKeywordSentiment(fullText: string): number {
+  const textLower = fullText.toLowerCase();
   const words = textLower.split(/\s+/);
+  const headline = textLower.substring(0, 100);
   let score = 0;
-  
-  const positiveWords = ['surge', 'soar', 'rally', 'gain', 'jump', 'rise', 'boost', 'record', 'beat', 'outperform', 'upgrade', 'bullish', 'growth', 'profit'];
-  const negativeWords = ['crash', 'plunge', 'drop', 'fall', 'decline', 'slump', 'loss', 'miss', 'downgrade', 'bearish', 'warning', 'concern', 'risk', 'cut'];
-  
+  let positiveCount = 0;
+  let negativeCount = 0;
+  let headlinePositive = 0;
+  let headlineNegative = 0;
+
+  const positiveWords = [
+    // Price action
+    'surge', 'soar', 'rally', 'rise', 'jump', 'spike', 'rocket',
+    'skyrocket', 'explode', 'moon', 'pump', 'climb', 'advance',
+    'rebound', 'bounce', 'recover', 'reverse', 'turnaround',
+    'breakout', 'breakthrough', 'peak', 'high', 'record', 'all-time',
+    // Earnings/fundamentals
+    'beat', 'beats', 'crushed', 'smashed', 'topped', 'exceeded',
+    'outperform', 'outperformed', 'profit', 'profitable', 'revenue',
+    'growth', 'grew', 'expand', 'expansion', 'accelerate', 'momentum',
+    'strong', 'strength', 'robust', 'impressive', 'solid', 'stellar',
+    'record-breaking', 'blowout', 'blockbuster', 'massive',
+    // Analyst/ratings
+    'upgrade', 'upgraded', 'overweight', 'buy',
+    'strong buy', 'accumulate', 'bullish', 'optimistic', 'confident',
+    'positive', 'raised', 'increases', 'boosted', 'lifted',
+    'target raised', 'price target', 'upside',
+    // Corporate actions
+    'acquisition', 'acquire', 'merger', 'deal', 'partnership',
+    'contract', 'win', 'won', 'award', 'awarded', 'approved',
+    'approval', 'cleared', 'launched', 'launch', 'unveiled',
+    'patent', 'innovation', 'milestone',
+    'dividend', 'buyback', 'repurchase', 'raise',
+    'investment', 'funding', 'billion', 'expansion',
+    // Market sentiment
+    'demand', 'boom', 'booming', 'bull',
+    'squeeze', 'short squeeze', 'oversold', 'undervalued',
+    'opportunity', 'potential', 'promising', 'exciting',
+    'leadership', 'dominant', 'dominates', 'market share',
+    'ahead of', 'better than', 'above expectations',
+    // Crypto specific
+    'adoption', 'institutional', 'etf', 'halving',
+    'accumulation', 'hodl', 'staking', 'yield', 'apy',
+  ];
+
+  const negativeWords = [
+    // Price action
+    'crash', 'plunge', 'drop', 'fall', 'sink', 'tumble', 'slump',
+    'collapse', 'tank', 'crater', 'spiral', 'nosedive', 'freefall',
+    'selloff', 'sell-off', 'dump', 'dumping', 'rout', 'wipeout',
+    'correction', 'pullback', 'decline', 'dip', 'slide',
+    // Earnings/fundamentals
+    'miss', 'missed', 'disappoints', 'disappointing', 'disappointed',
+    'below', 'weak', 'weakness', 'poor', 'loss', 'losses',
+    'deficit', 'shortfall', 'underperform', 'underperformed',
+    'worse than', 'below expectations', 'cut guidance',
+    'reduced guidance', 'lowered outlook', 'warning', 'warns',
+    // Analyst/ratings
+    'downgrade', 'downgraded', 'underweight', 'sell', 'avoid',
+    'bearish', 'pessimistic', 'concerned', 'worried', 'cautious',
+    'target cut', 'price cut', 'downside', 'overvalued',
+    // Corporate/legal
+    'lawsuit', 'sued', 'litigation', 'fine', 'fined', 'penalty',
+    'fraud', 'investigation', 'probe', 'scandal', 'misconduct',
+    'recall', 'halt', 'halted', 'suspend', 'suspended', 'ban',
+    'banned', 'blocked', 'rejected', 'denied', 'failed',
+    'bankruptcy', 'bankrupt', 'insolvent', 'default', 'defaulted',
+    'layoffs', 'layoff', 'fired', 'cuts', 'cutting', 'restructure',
+    'restructuring', 'writedown', 'write-off', 'impairment',
+    // Risk/macro
+    'recession', 'slowdown', 'contraction', 'inflation', 'stagflation',
+    'bubble', 'volatile', 'volatility', 'uncertainty', 'uncertain',
+    'risk', 'threat', 'danger', 'concern', 'fear', 'panic',
+    'crisis', 'emergency', 'contagion', 'systemic', 'exposure',
+    'debt', 'leverage', 'margin call', 'forced selling',
+    'supply chain', 'shortage', 'disruption', 'headwinds',
+    // Regulatory
+    'regulation', 'regulatory', 'compliance', 'antitrust',
+    'monopoly', 'sanction', 'sanctioned', 'restricted',
+    // Crypto specific
+    'hack', 'hacked', 'exploit', 'rug pull', 'scam', 'delisted',
+    'delisting', 'sec', 'securities violation', 'manipulation',
+  ];
+
   for (const word of positiveWords) {
     const idx = words.findIndex(w => w.startsWith(word));
     if (idx !== -1) {
-      // FIX: Invert sentiment if negated ("not rally" → negative)
-      score += isNegated(textLower, idx) ? -0.15 : 0.15;
+      const charIndex = textLower.indexOf(word);
+      const negated = isNegated(textLower, idx) || (charIndex !== -1 && isNegatedByPhrase(textLower, charIndex));
+      const delta = negated ? -0.15 : 0.15;
+      score += delta;
+      if (!negated) {
+        positiveCount++;
+        if (headline.includes(word)) headlinePositive++;
+      } else {
+        negativeCount++;
+        if (headline.includes(word)) headlineNegative++;
+      }
     }
   }
+
   for (const word of negativeWords) {
     const idx = words.findIndex(w => w.startsWith(word));
     if (idx !== -1) {
-      // FIX: Invert sentiment if negated ("not falling" → positive)
-      score += isNegated(textLower, idx) ? 0.15 : -0.15;
+      const charIndex = textLower.indexOf(word);
+      const negated = isNegated(textLower, idx) || (charIndex !== -1 && isNegatedByPhrase(textLower, charIndex));
+      const delta = negated ? 0.15 : -0.15;
+      score += delta;
+      if (!negated) {
+        negativeCount++;
+        if (headline.includes(word)) headlineNegative++;
+      } else {
+        positiveCount++;
+        if (headline.includes(word)) headlinePositive++;
+      }
     }
   }
-  
+
+  // Headline bonus: keywords in first 100 chars carry extra weight
+  if (headlinePositive > 0 && score > 0) score += 0.2;
+  else if (headlineNegative > 0 && score < 0) score -= 0.2;
+
+  // Frequency bonus: 3+ keyword hits = stronger signal
+  if (positiveCount + negativeCount >= 3) {
+    score *= 1.2;
+  }
+
   return Math.max(-1, Math.min(1, score));
 }
 
@@ -312,6 +421,22 @@ serve(async (req) => {
           const tickers = extractTickers(fullText, validTickers);
           for (const ticker of tickers) {
             const sentiment = calculateKeywordSentiment(fullText);
+
+            // Calculate relevance based on ticker/company prominence in text
+            const tickerLower = ticker.toLowerCase();
+            const titleLower = item.title.toLowerCase();
+            const summaryLower = (item.description || '').toLowerCase();
+            const companyName = Object.entries(COMPANY_MAPPINGS).find(([, t]) => t === ticker)?.[0]?.toLowerCase();
+
+            let relevance = 0;
+            if (titleLower.includes(tickerLower) || titleLower.includes(`$${tickerLower}`)) relevance += 0.4;
+            if (companyName && titleLower.includes(companyName)) relevance += 0.3;
+            if (summaryLower.includes(tickerLower) || summaryLower.includes(`$${tickerLower}`)) relevance += 0.2;
+            const mentionCount = (fullText.toLowerCase().split(tickerLower).length - 1)
+              + (companyName ? fullText.toLowerCase().split(companyName).length - 1 : 0);
+            relevance += Math.min(0.3, mentionCount * 0.05);
+            relevance = Math.max(0.1, Math.min(1.0, relevance));
+
             allNews.push({
               ticker,
               headline: item.title.substring(0, 500),
@@ -320,7 +445,7 @@ serve(async (req) => {
               url: item.link || null,
               published_at: safeParseDate(item.pubDate),
               sentiment_score: sentiment,
-              relevance_score: feed.relevanceTier ?? 0.7,
+              relevance_score: relevance,
               metadata: { matched_by: 'ticker_extraction' },
             });
           }

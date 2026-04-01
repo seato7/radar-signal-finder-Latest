@@ -79,7 +79,7 @@ serve(async (req) => {
       const magnitude = Math.min(5, Math.abs(sentimentScore) * 5 * relevanceScore);
 
       // Skip very weak signals
-      if (magnitude < 0.5) continue;
+      if (magnitude < 0.3) continue;
       
       // Use specific signal types that match scoring expectations
       const signalType = direction === 'up' ? 'breaking_news_bullish' : 
