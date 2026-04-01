@@ -126,12 +126,21 @@ const Pricing = () => {
     try {
       console.log("[Pricing] Invoking manage-payments/checkout", { planId, isAnnual });
 
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        navigate("/auth");
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("manage-payments/checkout", {
         body: {
           plan: planId,
           period: isAnnual ? "annual" : "monthly",
           success_url: window.location.origin + "/pricing?success=true",
           cancel_url: window.location.origin + "/pricing?canceled=true",
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
         },
       });
 
