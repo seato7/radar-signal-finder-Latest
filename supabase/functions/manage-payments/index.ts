@@ -156,72 +156,92 @@ serve(async (req) => {
 
     // Create checkout session
     if (req.method === 'POST' && url.pathname.endsWith('/checkout')) {
-      const body = await req.json();
-      const plan = body.plan || body.plan_id;
-      const period = body.period || 'monthly';
-      const successUrl = body.success_url;
-      const cancelUrl = body.cancel_url;
+      try {
+        const body = await req.json();
+        const plan = body.plan || body.plan_id;
+        const period = body.period || 'monthly';
+        const successUrl = body.success_url;
+        const cancelUrl = body.cancel_url;
 
-      logStep('Checkout request', { plan, period });
+        logStep('Checkout request', { plan, period, user_id: user.id, user_email: user.email });
 
-      if (!plan || !PRICE_IDS[plan]) {
-        throw new Error(`Invalid plan: ${plan}`);
-      }
-      if (period !== 'monthly' && period !== 'annual') {
-        throw new Error(`Invalid period: ${period}`);
-      }
+        // Explicit env var guard — fail fast with a clear message
+        const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+        if (!stripeKey) {
+          logStep('ERROR: STRIPE_SECRET_KEY is not set in Supabase secrets');
+          return new Response(JSON.stringify({ error: 'Payment service not configured — STRIPE_SECRET_KEY missing' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        logStep('Stripe key present', { prefix: stripeKey.substring(0, 7) });
 
-      const priceId = PRICE_IDS[plan][period];
-      if (!priceId) {
-        throw new Error(`No price found for ${plan}/${period}`);
-      }
+        if (!plan || !PRICE_IDS[plan]) {
+          return new Response(JSON.stringify({ error: `Invalid plan: "${plan}". Valid plans: starter, pro, premium` }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        if (period !== 'monthly' && period !== 'annual') {
+          return new Response(JSON.stringify({ error: `Invalid period: "${period}". Must be monthly or annual` }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
 
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2024-11-20',
-      });
+        const priceId = PRICE_IDS[plan][period];
+        logStep('Resolved price ID', { plan, period, priceId });
 
-      const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
-      let customerId = customers.data[0]?.id;
+        const stripe = new Stripe(stripeKey, { apiVersion: '2024-11-20' });
 
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: user.email!,
-          metadata: { user_id: user.id },
-        });
-        customerId = customer.id;
-      }
+        const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
+        let customerId = customers.data[0]?.id;
+        logStep('Customer lookup', { found: !!customerId, customerId });
 
-      logStep('Creating checkout session', { plan, period, priceId, customerId });
+        if (!customerId) {
+          const customer = await stripe.customers.create({
+            email: user.email!,
+            metadata: { user_id: user.id },
+          });
+          customerId = customer.id;
+          logStep('Customer created', { customerId });
+        }
 
-      const sessionParams: Record<string, unknown> = {
-        customer: customerId,
-        client_reference_id: user.id,
-        line_items: [{ price: priceId, quantity: 1 }],
-        mode: 'subscription',
-        success_url: successUrl || `${safeOrigin(req)}/pricing?success=true`,
-        cancel_url: cancelUrl || `${safeOrigin(req)}/pricing?canceled=true`,
-        metadata: {
-          user_id: user.id,
-          plan_id: plan,
-          period,
-        },
-      };
-
-      // 7-day free trial for starter monthly only — always require card details
-      if (plan === 'starter' && period === 'monthly') {
-        sessionParams.subscription_data = {
-          trial_period_days: 7,
+        const sessionParams: Record<string, unknown> = {
+          customer: customerId,
+          client_reference_id: user.id,
+          line_items: [{ price: priceId, quantity: 1 }],
+          mode: 'subscription',
+          success_url: successUrl || `${safeOrigin(req)}/pricing?success=true`,
+          cancel_url: cancelUrl || `${safeOrigin(req)}/pricing?canceled=true`,
+          metadata: { user_id: user.id, plan_id: plan, period },
         };
-        sessionParams.payment_method_collection = 'always';
+
+        // 7-day free trial for starter monthly only — always require card details
+        if (plan === 'starter' && period === 'monthly') {
+          sessionParams.subscription_data = { trial_period_days: 7 };
+          sessionParams.payment_method_collection = 'always';
+        }
+
+        logStep('Creating Stripe checkout session', { plan, period, priceId, customerId });
+        const session = await stripe.checkout.sessions.create(sessionParams as any);
+        logStep('Checkout session created', { sessionId: session.id, url: session.url?.substring(0, 60) });
+
+        return new Response(JSON.stringify({ url: session.url }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      } catch (checkoutError: any) {
+        // Surface the full Stripe error — code, type, and message
+        const stripeCode = checkoutError?.raw?.code || checkoutError?.code || 'unknown';
+        const stripeType = checkoutError?.raw?.type || checkoutError?.type || 'unknown';
+        const message = checkoutError?.message || 'Checkout failed';
+        logStep('CHECKOUT ERROR', { message, stripeCode, stripeType, stack: checkoutError?.stack?.substring(0, 300) });
+        return new Response(JSON.stringify({ error: message, code: stripeCode, type: stripeType }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
-
-      const session = await stripe.checkout.sessions.create(sessionParams as any);
-
-      logStep('Checkout session created', { sessionId: session.id });
-
-      return new Response(JSON.stringify({ url: session.url }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
     }
 
     // Webhook handler for Stripe events
