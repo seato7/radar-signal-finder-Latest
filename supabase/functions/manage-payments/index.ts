@@ -8,25 +8,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const ALLOWED_CURRENCIES = ['USD', 'AUD', 'GBP', 'EUR', 'CAD'];
-
-function detectCurrency(req: Request, body?: Record<string, unknown>): string {
-  if (body?.currency && typeof body.currency === 'string' &&
-      ALLOWED_CURRENCIES.includes(body.currency.toUpperCase())) {
-    return body.currency.toUpperCase();
-  }
-  const acceptLang = req.headers.get('Accept-Language') || '';
-  if (acceptLang.includes('en-AU')) return 'AUD';
-  if (acceptLang.includes('en-GB')) return 'GBP';
-  if (acceptLang.includes('en-CA')) return 'CAD';
-  if (/\b(fr|de|es|it|nl)\b/.test(acceptLang)) return 'EUR';
-  return 'USD';
-}
-
-function getPlans(currency: string) {
-  return PLANS.map(p => ({ ...p, currency }));
-}
-
 const ALLOWED_ORIGINS = [
   'https://insiderpulse.org',
   'https://www.insiderpulse.org',
@@ -39,6 +20,22 @@ function safeOrigin(req: Request): string {
   return ALLOWED_ORIGINS.includes(origin) ? origin : 'https://insiderpulse.org';
 }
 
+// Price ID mapping: plan → period → Stripe price ID
+const PRICE_IDS: Record<string, Record<string, string>> = {
+  starter: {
+    monthly: 'price_1THJR2RxVAVJnFJ46CgqT52b',
+    annual:  'price_1THJRxRxVAVJnFJ4PCujKFhL',
+  },
+  pro: {
+    monthly: 'price_1THJSSRxVAVJnFJ4mRtkJkfS',
+    annual:  'price_1THJUnRxVAVJnFJ45jLNUNdU',
+  },
+  premium: {
+    monthly: 'price_1THJVJRxVAVJnFJ4wm3RXfx8',
+    annual:  'price_1THJVoRxVAVJnFJ4JJVYi2Sv',
+  },
+};
+
 const PLANS = [
   {
     id: 'free',
@@ -46,45 +43,65 @@ const PLANS = [
     price: 0,
     currency: 'USD',
     features: {
-      max_bots: 1,
-      max_alerts: 10,
+      max_bots: 0,
+      max_alerts: 0,
+      backtest_days: 0,
+      live_trading: false,
+      exports: false,
+      analytics: false,
+    },
+  },
+  {
+    id: 'starter',
+    name: 'Starter',
+    monthly_price: 9.99,
+    annual_price: 89,
+    currency: 'USD',
+    features: {
+      max_bots: 0,
+      max_alerts: 1,
       backtest_days: 30,
       live_trading: false,
       exports: false,
-      analytics: false
-    }
-  },
-  {
-    id: 'lite',
-    name: 'Lite',
-    price: 19,
-    currency: 'USD',
-    stripe_price_id: 'price_lite_monthly',
-    features: {
-      max_bots: 3,
-      max_alerts: 50,
-      backtest_days: 90,
-      live_trading: false,
-      exports: true,
-      analytics: false
-    }
+      analytics: false,
+    },
   },
   {
     id: 'pro',
     name: 'Pro',
-    price: 49,
+    monthly_price: 34.99,
+    annual_price: 299,
     currency: 'USD',
-    stripe_price_id: 'price_pro_monthly',
     features: {
-      max_bots: 10,
-      max_alerts: 200,
-      backtest_days: 365,
+      max_bots: 0,
+      max_alerts: 5,
+      backtest_days: 90,
+      live_trading: false,
+      exports: false,
+      analytics: false,
+    },
+  },
+  {
+    id: 'premium',
+    name: 'Premium',
+    monthly_price: 89.99,
+    annual_price: 799,
+    currency: 'USD',
+    features: {
+      max_bots: -1,
+      max_alerts: -1,
+      backtest_days: -1,
       live_trading: true,
       exports: true,
-      analytics: true
-    }
-  }
+      analytics: true,
+    },
+  },
 ];
+
+const logStep = (step: string, details?: Record<string, unknown>) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[MANAGE-PAYMENTS] ${step}${detailsStr}`);
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -102,8 +119,7 @@ serve(async (req) => {
   try {
     // Get plans endpoint (public)
     if (url.pathname.endsWith('/plans')) {
-      const currency = detectCurrency(req);
-      return new Response(JSON.stringify({ plans: getPlans(currency) }), {
+      return new Response(JSON.stringify({ plans: PLANS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -125,7 +141,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         plan,
         features: planDetails?.features,
-        status: 'active'
+        status: 'active',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -133,11 +149,24 @@ serve(async (req) => {
 
     // Create checkout session
     if (req.method === 'POST' && url.pathname.endsWith('/checkout')) {
-      const { plan_id } = await req.json();
-      const plan = PLANS.find(p => p.id === plan_id);
-      
-      if (!plan || !plan.stripe_price_id) {
-        throw new Error('Invalid plan');
+      const body = await req.json();
+      const plan = body.plan || body.plan_id;
+      const period = body.period || 'monthly';
+      const successUrl = body.success_url;
+      const cancelUrl = body.cancel_url;
+
+      logStep('Checkout request', { plan, period });
+
+      if (!plan || !PRICE_IDS[plan]) {
+        throw new Error(`Invalid plan: ${plan}`);
+      }
+      if (period !== 'monthly' && period !== 'annual') {
+        throw new Error(`Invalid period: ${period}`);
+      }
+
+      const priceId = PRICE_IDS[plan][period];
+      if (!priceId) {
+        throw new Error(`No price found for ${plan}/${period}`);
       }
 
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
@@ -148,25 +177,39 @@ serve(async (req) => {
       let customerId = customers.data[0]?.id;
 
       if (!customerId) {
-        const customer = await stripe.customers.create({ 
+        const customer = await stripe.customers.create({
           email: user.email!,
-          metadata: { user_id: user.id }
+          metadata: { user_id: user.id },
         });
         customerId = customer.id;
       }
 
-      const session = await stripe.checkout.sessions.create({
+      logStep('Creating checkout session', { plan, period, priceId, customerId });
+
+      const sessionParams: Record<string, unknown> = {
         customer: customerId,
         client_reference_id: user.id,
-        line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
+        line_items: [{ price: priceId, quantity: 1 }],
         mode: 'subscription',
-        success_url: `${safeOrigin(req)}/settings?success=true`,
-        cancel_url: `${safeOrigin(req)}/pricing`,
+        success_url: successUrl || `${safeOrigin(req)}/pricing?success=true`,
+        cancel_url: cancelUrl || `${safeOrigin(req)}/pricing?canceled=true`,
         metadata: {
           user_id: user.id,
-          plan_id: plan.id
-        }
-      });
+          plan_id: plan,
+          period,
+        },
+      };
+
+      // 7-day free trial for starter monthly only
+      if (plan === 'starter' && period === 'monthly') {
+        sessionParams.subscription_data = {
+          trial_period_days: 7,
+        };
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionParams as any);
+
+      logStep('Checkout session created', { sessionId: session.id });
 
       return new Response(JSON.stringify({ url: session.url }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -178,12 +221,12 @@ serve(async (req) => {
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
         apiVersion: '2024-11-20',
       });
-      
+
       const signature = req.headers.get('stripe-signature') || '';
       const body = await req.text();
-      
+
       const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
-      
+
       let event;
       try {
         event = await stripe.webhooks.constructEventAsync(
@@ -197,43 +240,51 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      
+
       // Handle checkout completed
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object as any;
         const userId = session.metadata?.user_id || session.client_reference_id;
         const planId = session.metadata?.plan_id;
-        
+
         if (userId && planId) {
-          await supabaseClient
-            .from('user_roles')
-            .upsert({
-              user_id: userId,
-              role: planId
-            });
-        }
-      }
-      
-      // Handle subscription updated/deleted
-      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
-        const subscription = event.data.object as any;
-        const customerId = subscription.customer;
-        
-        const customer = await stripe.customers.retrieve(customerId);
-        const userId = (customer as any).metadata?.user_id;
-        
-        if (userId) {
-          if (event.type === 'customer.subscription.deleted' || subscription.status !== 'active') {
+          try {
             await supabaseClient
               .from('user_roles')
               .upsert({
                 user_id: userId,
-                role: 'free'
+                role: planId,
               });
+          } catch (e) {
+            logStep('Error upserting user role', { error: String(e) });
           }
         }
       }
-      
+
+      // Handle subscription updated/deleted
+      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+        const subscription = event.data.object as any;
+        const customerId = subscription.customer;
+
+        const customer = await stripe.customers.retrieve(customerId);
+        const userId = (customer as any).metadata?.user_id;
+
+        if (userId) {
+          if (event.type === 'customer.subscription.deleted' || subscription.status !== 'active') {
+            try {
+              await supabaseClient
+                .from('user_roles')
+                .upsert({
+                  user_id: userId,
+                  role: 'free',
+                });
+            } catch (e) {
+              logStep('Error resetting user role', { error: String(e) });
+            }
+          }
+        }
+      }
+
       return new Response(JSON.stringify({ received: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -260,8 +311,12 @@ serve(async (req) => {
 
     throw new Error('Not found');
   } catch (error) {
-    await sendErrorAlert('manage-payments', error, { url: req.url });
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    const errorMessage = (error as Error).message;
+    logStep('ERROR', { message: errorMessage });
+    try {
+      await sendErrorAlert('manage-payments', error, { url: req.url });
+    } catch (_) { /* ignore alert failures */ }
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
