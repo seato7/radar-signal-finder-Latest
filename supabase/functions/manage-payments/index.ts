@@ -103,6 +103,12 @@ const logStep = (step: string, details?: Record<string, unknown>) => {
   console.log(`[MANAGE-PAYMENTS] ${step}${detailsStr}`);
 };
 
+// Startup check — log whether critical env vars are present
+logStep('STARTUP', {
+  stripe_key_present: !!Deno.env.get('STRIPE_SECRET_KEY'),
+  stripe_webhook_secret_present: !!Deno.env.get('STRIPE_WEBHOOK_SECRET'),
+});
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -115,6 +121,7 @@ serve(async (req) => {
   );
 
   const url = new URL(req.url);
+  logStep('REQUEST', { method: req.method, path: url.pathname });
 
   try {
     // Get plans endpoint (public)
@@ -200,11 +207,12 @@ serve(async (req) => {
         },
       };
 
-      // 7-day free trial for starter monthly only
+      // 7-day free trial for starter monthly only — always require card details
       if (plan === 'starter' && period === 'monthly') {
         sessionParams.subscription_data = {
           trial_period_days: 7,
         };
+        sessionParams.payment_method_collection = 'always';
       }
 
       const session = await stripe.checkout.sessions.create(sessionParams as any);

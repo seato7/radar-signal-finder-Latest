@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Plan {
@@ -94,6 +95,7 @@ const Pricing = () => {
   const [isAnnual, setIsAnnual] = useState(false);
   const navigate = useNavigate();
   const { userPlan, isAuthenticated, refreshSubscription } = useAuth();
+  const { toast } = useToast();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -122,9 +124,10 @@ const Pricing = () => {
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke("manage-payments", {
+      console.log("[Pricing] Invoking manage-payments/checkout", { planId, isAnnual });
+
+      const { data, error } = await supabase.functions.invoke("manage-payments/checkout", {
         body: {
-          action: "checkout",
           plan: planId,
           period: isAnnual ? "annual" : "monthly",
           success_url: window.location.origin + "/pricing?success=true",
@@ -132,11 +135,24 @@ const Pricing = () => {
         },
       });
 
-      if (!error && data?.url) {
-        window.location.href = data.url;
+      console.log("[Pricing] manage-payments/checkout response", { data, error });
+
+      if (error) {
+        throw new Error(error.message || "Checkout failed");
       }
-    } catch {
-      // Checkout error — silently fail
+
+      if (!data?.url) {
+        throw new Error("No checkout URL returned — check Stripe configuration");
+      }
+
+      window.location.href = data.url;
+    } catch (err: any) {
+      console.error("[Pricing] Checkout error:", err);
+      toast({
+        title: "Checkout failed",
+        description: err.message || "Something went wrong. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
