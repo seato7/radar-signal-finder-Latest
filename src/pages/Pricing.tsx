@@ -323,10 +323,10 @@ const Pricing = () => {
                 >
                   {current
                     ? "Current Plan"
+                    : plan.plan_id === "starter" && !isAnnual
+                    ? "Start 7-Day Free Trial"
                     : plan.plan_id === "enterprise"
                     ? "Contact Us"
-                    : plan.plan_id === "starter"
-                    ? "Start 7-Day Free Trial"
                     : "Get Started"}
                 </Button>
               </CardContent>
