@@ -196,7 +196,7 @@ const Pricing = () => {
     <div className="space-y-10">
       <PageHeader
         title="Simple, Transparent Pricing"
-        description="Start with a 7-day free trial. No credit card required."
+        description="Start with a 7-day free trial."
       />
 
       {/* Billing toggle */}
@@ -337,7 +337,7 @@ const Pricing = () => {
 
       {/* Footer note */}
       <p className="text-center text-sm text-muted-foreground">
-        Starter plan includes a 7-day free trial. No credit card required.
+        Starter plan includes a 7-day free trial. Card required — cancel anytime.
       </p>
     </div>
   );
