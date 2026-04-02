@@ -121,71 +121,125 @@ serve(async (req) => {
   );
 
   const url = new URL(req.url);
-  logStep('REQUEST', { method: req.method, path: url.pathname });
+
+  // ── Webhook: must read raw text before any JSON parsing ──
+  // Detect webhook by path suffix OR stripe-signature header presence
+  if (url.pathname.endsWith('/webhook') || req.headers.get('stripe-signature')) {
+    logStep('REQUEST', { method: req.method, path: url.pathname, route: 'webhook' });
+    try {
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2023-10-16' });
+      const signature = req.headers.get('stripe-signature') || '';
+      const rawBody = await req.text();
+      const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
+
+      let event;
+      try {
+        event = await stripe.webhooks.constructEventAsync(rawBody, signature, webhookSecret);
+      } catch {
+        return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as any;
+        const userId = session.metadata?.user_id || session.client_reference_id;
+        const planId = session.metadata?.plan_id;
+        if (userId && planId) {
+          try {
+            await supabaseClient.from('user_roles').upsert({ user_id: userId, role: planId });
+          } catch (e) { logStep('Error upserting user role', { error: String(e) }); }
+        }
+      }
+
+      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+        const subscription = event.data.object as any;
+        const customer = await stripe.customers.retrieve(subscription.customer);
+        const userId = (customer as any).metadata?.user_id;
+        if (userId && (event.type === 'customer.subscription.deleted' || subscription.status !== 'active')) {
+          try {
+            await supabaseClient.from('user_roles').upsert({ user_id: userId, role: 'free' });
+          } catch (e) { logStep('Error resetting user role', { error: String(e) }); }
+        }
+      }
+
+      return new Response(JSON.stringify({ received: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: (error as Error).message }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
+  // ── All other routes: read body ONCE here ──
+  let body: Record<string, unknown> = {};
+  if (req.method === 'POST') {
+    try { body = await req.json(); } catch { body = {}; }
+  }
+
+  // Resolve action: body.action first, then path suffix fallback
+  let action = (body.action as string) || '';
+  if (!action) {
+    if (url.pathname.endsWith('/plans'))    action = 'plans';
+    else if (url.pathname.endsWith('/checkout')) action = 'checkout';
+    else if (url.pathname.endsWith('/status'))   action = 'status';
+    else if (url.pathname.endsWith('/portal'))   action = 'portal';
+  }
+
+  logStep('REQUEST', { method: req.method, path: url.pathname, action });
 
   try {
-    // Get plans endpoint (public)
-    if (url.pathname.endsWith('/plans')) {
+    // Plans — public, no auth required
+    if (action === 'plans') {
       return new Response(JSON.stringify({ plans: PLANS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    // All remaining actions require authentication
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     if (authError || !user) throw new Error('Unauthorized');
 
-    // Get subscription status
-    if (url.pathname.endsWith('/status')) {
+    // Status
+    if (action === 'status') {
       const { data: roleData } = await supabaseClient
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-
+        .from('user_roles').select('role').eq('user_id', user.id).single();
       const plan = roleData?.role || 'free';
       const planDetails = PLANS.find(p => p.id === plan);
-
-      return new Response(JSON.stringify({
-        plan,
-        features: planDetails?.features,
-        status: 'active',
-      }), {
+      return new Response(JSON.stringify({ plan, features: planDetails?.features, status: 'active' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Create checkout session
-    if (req.method === 'POST' && url.pathname.endsWith('/checkout')) {
+    // Checkout
+    if (action === 'checkout') {
       try {
-        const body = await req.json();
-        const plan = body.plan || body.plan_id;
-        const period = body.period || 'monthly';
-        const successUrl = body.success_url;
-        const cancelUrl = body.cancel_url;
+        const plan = (body.plan || body.plan_id) as string;
+        const period = (body.period as string) || 'monthly';
+        const successUrl = body.success_url as string;
+        const cancelUrl = body.cancel_url as string;
 
         logStep('Checkout request', { plan, period, user_id: user.id, user_email: user.email });
 
-        // Explicit env var guard — fail fast with a clear message
         const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
         if (!stripeKey) {
-          logStep('ERROR: STRIPE_SECRET_KEY is not set in Supabase secrets');
+          logStep('ERROR: STRIPE_SECRET_KEY not set');
           return new Response(JSON.stringify({ error: 'Payment service not configured — STRIPE_SECRET_KEY missing' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
         logStep('Stripe key present', { prefix: stripeKey.substring(0, 7) });
 
         if (!plan || !PRICE_IDS[plan]) {
-          return new Response(JSON.stringify({ error: `Invalid plan: "${plan}". Valid plans: starter, pro, premium` }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          return new Response(JSON.stringify({ error: `Invalid plan: "${plan}". Valid: starter, pro, premium` }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
         if (period !== 'monthly' && period !== 'annual') {
           return new Response(JSON.stringify({ error: `Invalid period: "${period}". Must be monthly or annual` }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
@@ -199,10 +253,7 @@ serve(async (req) => {
         logStep('Customer lookup', { found: !!customerId, customerId });
 
         if (!customerId) {
-          const customer = await stripe.customers.create({
-            email: user.email!,
-            metadata: { user_id: user.id },
-          });
+          const customer = await stripe.customers.create({ email: user.email!, metadata: { user_id: user.id } });
           customerId = customer.id;
           logStep('Customer created', { customerId });
         }
@@ -217,7 +268,6 @@ serve(async (req) => {
           metadata: { user_id: user.id, plan_id: plan, period },
         };
 
-        // 7-day free trial for starter monthly only — always require card details
         if (plan === 'starter' && period === 'monthly') {
           sessionParams.subscription_data = { trial_period_days: 7 };
           sessionParams.payment_method_collection = 'always';
@@ -232,121 +282,38 @@ serve(async (req) => {
         });
 
       } catch (checkoutError: any) {
-        // Surface the full Stripe error — code, type, and message
         const stripeCode = checkoutError?.raw?.code || checkoutError?.code || 'unknown';
         const stripeType = checkoutError?.raw?.type || checkoutError?.type || 'unknown';
         const message = checkoutError?.message || 'Checkout failed';
         logStep('CHECKOUT ERROR', { message, stripeCode, stripeType, stack: checkoutError?.stack?.substring(0, 300) });
         return new Response(JSON.stringify({ error: message, code: stripeCode, type: stripeType }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
     }
 
-    // Webhook handler for Stripe events
-    if (req.method === 'POST' && url.pathname.endsWith('/webhook')) {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2023-10-16',
-      });
-
-      const signature = req.headers.get('stripe-signature') || '';
-      const body = await req.text();
-
-      const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
-
-      let event;
-      try {
-        event = await stripe.webhooks.constructEventAsync(
-          body,
-          signature,
-          webhookSecret
-        );
-      } catch (err) {
-        return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // Handle checkout completed
-      if (event.type === 'checkout.session.completed') {
-        const session = event.data.object as any;
-        const userId = session.metadata?.user_id || session.client_reference_id;
-        const planId = session.metadata?.plan_id;
-
-        if (userId && planId) {
-          try {
-            await supabaseClient
-              .from('user_roles')
-              .upsert({
-                user_id: userId,
-                role: planId,
-              });
-          } catch (e) {
-            logStep('Error upserting user role', { error: String(e) });
-          }
-        }
-      }
-
-      // Handle subscription updated/deleted
-      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
-        const subscription = event.data.object as any;
-        const customerId = subscription.customer;
-
-        const customer = await stripe.customers.retrieve(customerId);
-        const userId = (customer as any).metadata?.user_id;
-
-        if (userId) {
-          if (event.type === 'customer.subscription.deleted' || subscription.status !== 'active') {
-            try {
-              await supabaseClient
-                .from('user_roles')
-                .upsert({
-                  user_id: userId,
-                  role: 'free',
-                });
-            } catch (e) {
-              logStep('Error resetting user role', { error: String(e) });
-            }
-          }
-        }
-      }
-
-      return new Response(JSON.stringify({ received: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Customer portal
-    if (url.pathname.endsWith('/portal')) {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2023-10-16',
-      });
-
+    // Portal
+    if (action === 'portal') {
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2023-10-16' });
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
       if (!customers.data[0]) throw new Error('No subscription found');
-
       const session = await stripe.billingPortal.sessions.create({
         customer: customers.data[0].id,
         return_url: `${safeOrigin(req)}/settings`,
       });
-
       return new Response(JSON.stringify({ url: session.url }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    throw new Error('Not found');
+    throw new Error(`Not found — unrecognised action: "${action}"`);
+
   } catch (error) {
     const errorMessage = (error as Error).message;
     logStep('ERROR', { message: errorMessage });
-    try {
-      await sendErrorAlert('manage-payments', error, { url: req.url });
-    } catch (_) { /* ignore alert failures */ }
+    try { await sendErrorAlert('manage-payments', error, { url: req.url }); } catch (_) { /* ignore */ }
     return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
