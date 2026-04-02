@@ -171,9 +171,18 @@ const Pricing = () => {
       window.location.href = data.url;
     } catch (err: any) {
       console.error("[Pricing] Checkout error:", err);
+
+      // Try to extract actual error message from edge function response
+      let errorMessage = "Something went wrong. Please try again.";
+      try {
+        const body = await err.context?.json();
+        if (body?.error) errorMessage = body.error;
+        console.error("[Pricing] Edge function error body:", body);
+      } catch {}
+
       toast({
         title: "Checkout failed",
-        description: err.message || "Something went wrong. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
