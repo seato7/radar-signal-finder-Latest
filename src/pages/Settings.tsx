@@ -126,6 +126,7 @@ export default function Settings() {
   const [cancelStep, setCancelStep] = useState<CancelStep>('idle');
   const [confirmText, setConfirmText] = useState('');
   const [portalLoading, setPortalLoading] = useState(false);
+  const [pauseLoading, setPauseLoading] = useState(false);
 
   useEffect(() => {
     fetchKeys();
@@ -158,17 +159,45 @@ export default function Settings() {
     }
   };
 
-  const handlePauseRequest = () => {
-    toast({
-      title: 'Pause requested',
-      description: "We'll pause your billing for 30 days. You'll keep full access during that time.",
-    });
-    setCancelStep('idle');
+  const handlePauseRequest = async () => {
+    setPauseLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { navigate('/auth'); return; }
+
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (!refreshed.session?.access_token) { navigate('/auth'); return; }
+
+      const { data, error } = await supabase.functions.invoke('manage-payments', {
+        body: { action: 'pause' },
+        headers: { Authorization: `Bearer ${refreshed.session.access_token}` },
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error('Pause failed — please try again');
+
+      const resumeDate = new Date(data.resumes_at * 1000).toLocaleDateString('en-US', {
+        month: 'long', day: 'numeric', year: 'numeric',
+      });
+      toast({
+        title: 'Account paused for 30 days',
+        description: `You keep full access until ${resumeDate}. No charge during this time.`,
+      });
+      setCancelStep('idle');
+    } catch (err: any) {
+      let errorMessage = err.message || 'Something went wrong. Please try again.';
+      try {
+        const body = await err.context?.json();
+        if (body?.error) errorMessage = body.error;
+      } catch {}
+      toast({ title: 'Pause failed', description: errorMessage, variant: 'destructive' });
+    } finally {
+      setPauseLoading(false);
+    }
   };
 
-  const handleDowngrade = () => {
+  const handleDowngrade = async () => {
     setCancelStep('idle');
-    navigate('/pricing');
+    await openStripePortal();
   };
 
   const handleConfirmCancel = async () => {
@@ -373,8 +402,11 @@ export default function Settings() {
                     className="mt-2 w-full sm:w-auto"
                     style={{ background: 'linear-gradient(to right, #06B6D4, #3B82F6)' }}
                     onClick={handlePauseRequest}
+                    disabled={pauseLoading}
                   >
-                    Pause My Account for 30 Days
+                    {pauseLoading
+                      ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Pausing account...</>
+                      : 'Pause My Account for 30 Days'}
                   </Button>
                 </div>
 

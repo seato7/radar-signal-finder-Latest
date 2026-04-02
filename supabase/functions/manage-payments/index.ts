@@ -292,6 +292,31 @@ serve(async (req) => {
       }
     }
 
+    // Pause
+    if (action === 'pause') {
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2023-10-16' });
+      logStep('Pause: looking up customer', { email: user.email });
+      const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
+      if (!customers.data[0]) throw new Error('No Stripe customer found for this account');
+      const customerId = customers.data[0].id;
+      logStep('Pause: finding active subscription', { customerId });
+      const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 1 });
+      if (!subscriptions.data[0]) throw new Error('No active subscription found');
+      const subscriptionId = subscriptions.data[0].id;
+      const resumesAt = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
+      logStep('Pause: pausing subscription', { subscriptionId, resumesAt });
+      await stripe.subscriptions.update(subscriptionId, {
+        pause_collection: {
+          behavior: 'mark_uncollectable',
+          resumes_at: resumesAt,
+        },
+      } as any);
+      logStep('Pause: subscription paused successfully', { subscriptionId, resumesAt });
+      return new Response(JSON.stringify({ success: true, resumes_at: resumesAt }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Portal
     if (action === 'portal') {
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2023-10-16' });
