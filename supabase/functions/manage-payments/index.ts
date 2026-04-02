@@ -192,7 +192,7 @@ serve(async (req) => {
         const priceId = PRICE_IDS[plan][period];
         logStep('Resolved price ID', { plan, period, priceId });
 
-        const stripe = new Stripe(stripeKey, { apiVersion: '2024-11-20' });
+        const stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
 
         const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
         let customerId = customers.data[0]?.id;
