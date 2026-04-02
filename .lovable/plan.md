@@ -1,90 +1,69 @@
 
 Current findings
 
-- I inspected `supabase/functions/manage-payments/index.ts` and `src/pages/Pricing.tsx`.
-- The source code already includes the detailed logging you asked for:
-  - `STARTUP` with `stripe_key_present` and `stripe_webhook_secret_present`
-  - `REQUEST` with method/path
-  - `Checkout request` with plan/period/user details
-  - `CHECKOUT ERROR` with message/code/type
-- The frontend already sends:
-  - `plan`
-  - `period`
-  - `success_url`
-  - `cancel_url`
-  - `Authorization: Bearer <session access token>`
-- I checked the live function logs and analytics logs for `manage-payments` and found no recent log entries at all.
-- I also checked the preview snapshot’s console and network logs and found no `manage-payments` request in the current snapshot.
+- `src/pages/Pricing.tsx` still has the old catch block:
+  - it logs `err`
+  - then shows `err.message || "Something went wrong. Please try again."`
+  - it does not attempt `await err.context?.json()`, so a 400 response body from the backend is currently hidden from the toast.
+- The live `manage-payments` runtime logs I checked right now show only:
+  - `STARTUP - {"stripe_key_present":true,"stripe_webhook_secret_present":false}`
+- I do not see any fresh `REQUEST`, `Checkout request`, or `CHECKOUT ERROR` lines after the click you mentioned.
+- Analytics also show no recent HTTP invocation records for `manage-payments`.
 
-What this means
+What the logs mean right now
 
-- I cannot truthfully report an exact current live checkout error from logs yet, because no recent `manage-payments` invocation log is available in the captured data.
-- The missing `STRIPE_WEBHOOK_SECRET` is not the likely blocker for `/checkout`: that secret is only used in the `/webhook` branch, not in the checkout path.
-- The most likely remaining causes are:
-  1. The deployed `manage-payments` function is not the same version as the source I inspected, or
-  2. The checkout request is reaching the function but failing with a Stripe API error after deployment drift, or
-  3. The browser click is still not sending the authenticated request in the environment the user is testing.
+- Exact currently visible live log output:
+  - `STARTUP - {"stripe_key_present":true,"stripe_webhook_secret_present":false}`
+- Exact currently missing log output:
+  - no `REQUEST`
+  - no `Checkout request`
+  - no `CHECKOUT ERROR`
+  - no Stripe error payload
+- That means I cannot truthfully report a backend error body from logs yet, because the latest reported click did not produce any captured live checkout log entries.
 
 Implementation plan
 
-1. Reproduce and capture a fresh failure
-   - Trigger the pricing checkout flow from the app while authenticated.
-   - Immediately inspect:
-     - live `manage-payments` logs
-     - the exact network request/response
-   - Goal: get the real `CHECKOUT ERROR` payload instead of guessing.
+1. Update `src/pages/Pricing.tsx`
+   - Replace the current `catch (err: any)` block in `handleCheckout` with the version you provided.
+   - Keep the rest of the checkout flow unchanged.
+   - Result: when the backend returns a JSON body like `{ error: "..." }`, the toast will show that actual message.
 
-2. Confirm deployment/runtime drift
-   - If the fresh click still produces no `manage-payments` logs, treat that as deployment mismatch or request-routing mismatch.
-   - Redeploy only the relevant function(s), not the whole backend:
-     - `manage-payments`
-     - optionally the frontend if the runtime still lacks the auth-header checkout change
-   - This avoids unrelated edge-function build issues from blocking a focused payments fix.
+2. Verify frontend behavior after the change
+   - Re-test the pricing button.
+   - Confirm the console logs:
+     - `[Pricing] Checkout error: ...`
+     - `[Pricing] Edge function error body: ...`
+   - Confirm the toast shows the backend `error` string instead of the generic fallback.
 
-3. Fix based on the actual error
-   - If Stripe mode mismatch:
-     - verify the runtime key mode matches the live price IDs
-     - keep `STRIPE_SECRET_KEY` on live mode for the current live prices
-   - If Stripe returns a price/resource error:
-     - correct the price mapping or failing checkout parameter
-   - If auth is the issue:
-     - verify the request reaches the function with the bearer token
-     - keep the current `Pricing.tsx` auth-header behavior
-   - If some other Stripe API call fails:
-     - patch only the failing checkout-session logic and preserve current URLs/plan-period contract
+3. Publish the frontend
+   - Push the updated client code live via frontend publish/update so the new toast behavior is active outside preview.
 
-4. Keep webhook handling separate
-   - Do not treat missing `STRIPE_WEBHOOK_SECRET` as the cause of checkout failure.
-   - If needed, set it afterwards so subscription sync works, but do not block checkout repair on it.
-
-5. Verify end to end
-   - Test direct authenticated POST to `/manage-payments/checkout` with:
-     ```text
-     { "plan": "starter", "period": "monthly" }
-     ```
-   - Then test the real pricing buttons in the UI for all paid plans.
-   - Confirm each returns a 2xx response and redirects to a Stripe checkout URL.
-   - Confirm logs now show:
+4. Re-check live backend logs immediately after a fresh click
+   - Inspect `manage-payments` logs again for:
      - `STARTUP`
      - `REQUEST`
      - `Checkout request`
-     - either successful session creation or a fully detailed `CHECKOUT ERROR`
+     - `CHECKOUT ERROR`
+   - If the request now reaches the function, capture the exact Stripe/backend error and fix that next.
+
+Expected outcome
+
+- The frontend will surface the real backend error body.
+- We’ll know whether the failure is:
+  - a backend validation/Stripe error returned by `manage-payments`, or
+  - a client-side/request-routing issue where the request never reaches the backend.
+- Right now, based on the logs, the second case is still possible because no fresh checkout invocation is visible.
 
 Technical details
 
-- Relevant file already aligned with your intended logging:
-  - `supabase/functions/manage-payments/index.ts`
-- Relevant frontend call already aligned with authenticated checkout:
+- File to change:
   - `src/pages/Pricing.tsx`
-- Important code-level observation:
-  - `/checkout` does not depend on `STRIPE_WEBHOOK_SECRET`
-  - `/webhook` does
-- Important operational observation:
-  - because there are no recent live logs for `manage-payments`, the next correct step is to generate one fresh authenticated invocation and diagnose from that exact runtime output, rather than guessing from stale assumptions.
-
-Expected outcome after implementation
-
-- We will be able to state the exact live error message from logs.
-- If it is a Stripe-mode mismatch, the fix is straightforward and isolated.
-- If it is another Stripe API failure, the code path is already narrow and easy to correct.
-- Final verification will be a real redirect from the pricing buttons to a Stripe-hosted checkout page.
+- Exact frontend issue:
+  - current code throws/handles only `err.message`
+  - function response bodies from `FunctionsHttpError` are not parsed
+- Exact live backend status at time of inspection:
+  - `STRIPE_SECRET_KEY` present: `true`
+  - `STRIPE_WEBHOOK_SECRET` present: `false`
+- Important note:
+  - the missing webhook secret does not explain the absence of `REQUEST` / `CHECKOUT ERROR` logs for `/checkout`
+  - first priority is surfacing the response body in the client and generating one fresh logged invocation
