@@ -141,14 +141,28 @@ serve(async (req) => {
         });
       }
 
+      // Use service role key so webhook DB writes bypass RLS
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      );
+
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object as any;
         const userId = session.metadata?.user_id || session.client_reference_id;
         const planId = session.metadata?.plan_id;
+        logStep('Webhook: checkout.session.completed', { userId, planId });
         if (userId && planId) {
-          try {
-            await supabaseClient.from('user_roles').upsert({ user_id: userId, role: planId });
-          } catch (e) { logStep('Error upserting user role', { error: String(e) }); }
+          const { error: upsertError } = await supabaseAdmin
+            .from('user_roles')
+            .upsert({ user_id: userId, role: planId }, { onConflict: 'user_id' });
+          if (upsertError) {
+            logStep('Error upserting user role', { error: upsertError.message });
+          } else {
+            logStep('User role updated', { userId, role: planId });
+          }
+        } else {
+          logStep('Webhook: missing userId or planId — cannot update role', { userId, planId });
         }
       }
 
@@ -156,10 +170,16 @@ serve(async (req) => {
         const subscription = event.data.object as any;
         const customer = await stripe.customers.retrieve(subscription.customer);
         const userId = (customer as any).metadata?.user_id;
+        logStep('Webhook: subscription event', { type: event.type, status: subscription.status, userId });
         if (userId && (event.type === 'customer.subscription.deleted' || subscription.status !== 'active')) {
-          try {
-            await supabaseClient.from('user_roles').upsert({ user_id: userId, role: 'free' });
-          } catch (e) { logStep('Error resetting user role', { error: String(e) }); }
+          const { error: upsertError } = await supabaseAdmin
+            .from('user_roles')
+            .upsert({ user_id: userId, role: 'free' }, { onConflict: 'user_id' });
+          if (upsertError) {
+            logStep('Error resetting user role', { error: upsertError.message });
+          } else {
+            logStep('User role reset to free', { userId });
+          }
         }
       }
 
@@ -299,10 +319,14 @@ serve(async (req) => {
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
       if (!customers.data[0]) throw new Error('No Stripe customer found for this account');
       const customerId = customers.data[0].id;
-      logStep('Pause: finding active subscription', { customerId });
-      const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 1 });
-      if (!subscriptions.data[0]) throw new Error('No active subscription found');
-      const subscriptionId = subscriptions.data[0].id;
+      logStep('Pause: finding active or trialing subscription', { customerId });
+      const [activeSubs, trialSubs] = await Promise.all([
+        stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 1 }),
+        stripe.subscriptions.list({ customer: customerId, status: 'trialing', limit: 1 }),
+      ]);
+      const subscription = activeSubs.data[0] || trialSubs.data[0];
+      if (!subscription) throw new Error('No active subscription found');
+      const subscriptionId = subscription.id;
       const resumesAt = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60);
       logStep('Pause: pausing subscription', { subscriptionId, resumesAt });
       await stripe.subscriptions.update(subscriptionId, {

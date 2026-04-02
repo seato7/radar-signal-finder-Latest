@@ -100,9 +100,10 @@ const Pricing = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") {
+      // Wait 4s to give Stripe time to deliver the webhook before refreshing plan
       setTimeout(() => {
         refreshSubscription?.();
-      }, 2000);
+      }, 4000);
     }
   }, [refreshSubscription]);
 
