@@ -85,7 +85,7 @@ const TopThemesCard = () => {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-lg">
             <Flame className="h-5 w-5 text-warning" />
-            Top Themes Right Now
+            Market Themes
           </div>
           <Button 
             variant="ghost" 

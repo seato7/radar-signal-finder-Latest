@@ -102,7 +102,7 @@ export default function TradingSignals() {
     <div className="space-y-6">
       <PageHeader
         title="Active Signals"
-        description="Our highest-conviction opportunities — entry price, target, stop loss and position sizing powered by the InsiderPulse scoring engine"
+        description="Highest-scored signals — entry price, target, stop loss and position sizing powered by the InsiderPulse scoring engine"
       />
 
       {/* Disclaimer banner */}

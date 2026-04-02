@@ -596,7 +596,7 @@ const AssetRadar = () => {
     return () => clearInterval(interval);
   }, [page, activeTab, sortBy, userPlan]);
 
-  // Fetch active trade signal tickers once on mount for Top Pick badges
+  // Fetch active trade signal tickers once on mount for Signal badges
   useEffect(() => {
     supabase
       .from('trade_signals')
@@ -765,7 +765,7 @@ const AssetRadar = () => {
                             {activeSignalTickers.has(asset.ticker) && (
                               <Badge className="bg-success/20 text-success border-success/30 border text-[10px] px-1.5 py-0 flex items-center gap-0.5">
                                 <Crosshair className="h-2.5 w-2.5" />
-                                Top Pick
+                                Signal
                               </Badge>
                             )}
                           </div>

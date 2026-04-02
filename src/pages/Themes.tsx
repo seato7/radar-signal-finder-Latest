@@ -128,7 +128,7 @@ const Themes = () => {
       <div className="space-y-6">
         <PageHeader
           title="Investment Themes"
-          description="Multi-signal opportunities across all data sources"
+          description="Multi-signal data points across all data sources"
         />
         <div className="text-center py-12">
           <p className="text-muted-foreground">Loading themes...</p>
@@ -141,7 +141,7 @@ const Themes = () => {
     <div className="space-y-6">
       <PageHeader
         title="Investment Themes"
-        description={`Multi-signal opportunities across all data sources ${hasUnlimitedThemes ? '(Unlimited)' : `(${userThemeLimit} of ${themes.length} available)`}`}
+        description={`Multi-signal data points across all data sources ${hasUnlimitedThemes ? '(Unlimited)' : `(${userThemeLimit} of ${themes.length} available)`}`}
       />
 
       {!hasUnlimitedThemes && themes.length > userThemeLimit && (
@@ -231,7 +231,7 @@ const Themes = () => {
                 <div className="flex gap-2">
                   <Button asChild className="flex-1" variant="outline">
                     <Link to="/asset-radar">
-                      View Opportunities
+                      View Signals
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>

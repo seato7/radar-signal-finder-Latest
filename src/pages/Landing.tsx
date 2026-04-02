@@ -327,7 +327,7 @@ const Landing = () => {
           >
             InsiderPulse monitors 26,000+ assets across insider filings, dark pool activity,
             congressional trades, options flow and momentum signals. Our proprietary scoring
-            engine surfaces the highest-conviction opportunities before the crowd moves.
+            engine surfaces the highest-scored signals before the crowd moves.
           </motion.p>
 
           <motion.div
@@ -411,8 +411,8 @@ const Landing = () => {
                 {
                   step: "3",
                   icon: <Crosshair className="h-6 w-6" />,
-                  title: "You Get the Best Opportunities",
-                  desc: "Assets meeting our strict entry criteria surface as Top Picks, complete with entry price, profit target, risk level and recommended position size.",
+                  title: "You Get the Highest-Scored Signals",
+                  desc: "Assets meeting our strict entry criteria surface as Active Signals, complete with entry price, profit target, risk level and calculated position size.",
                 },
               ].map((item) => (
                 <motion.div
@@ -440,7 +440,7 @@ const Landing = () => {
         <div className="max-w-4xl mx-auto">
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-10">
-              <h2 className="text-4xl font-black mb-4">Today's Top Picks</h2>
+              <h2 className="text-4xl font-black mb-4">Today's Active Signals</h2>
               <p className="text-slate-400 text-lg">One free signal daily. Unlock all 22 with Pro.</p>
             </motion.div>
 
@@ -561,13 +561,13 @@ const Landing = () => {
                 },
                 {
                   icon: <Crosshair className="h-6 w-6 text-cyan-400" />,
-                  title: "Daily Top Picks",
-                  desc: "Our scoring engine surfaces the best opportunities every day with entry, target and risk levels included.",
+                  title: "Daily Active Signals",
+                  desc: "Our scoring engine surfaces algorithmic signals every day with entry, target and risk levels included.",
                 },
                 {
                   icon: <BarChart3 className="h-6 w-6 text-cyan-400" />,
                   title: "AI-Powered Scoring",
-                  desc: "Every asset scored continuously. Know exactly which assets have the highest conviction behind them.",
+                  desc: "Every asset scored continuously. Know exactly which assets have the highest score behind them.",
                 },
                 {
                   icon: <Shield className="h-6 w-6 text-cyan-400" />,
@@ -594,7 +594,7 @@ const Landing = () => {
       <section className="relative z-10 py-32 px-6 text-center">
         <AnimatedSection>
           <motion.div variants={fadeUp}>
-            <h2 className="text-5xl font-black mb-6">Reveal Today's Best Pick</h2>
+            <h2 className="text-5xl font-black mb-6">View Active Signals</h2>
             <p className="text-slate-400 text-xl max-w-2xl mx-auto mb-10">
               Join thousands of investors who see the market differently.
             </p>
@@ -602,7 +602,7 @@ const Landing = () => {
               className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-10 py-6 text-lg font-semibold shadow-lg shadow-cyan-500/25"
               asChild
             >
-              <Link to="/auth">Show Me Today's Top Pick</Link>
+              <Link to="/auth">View Active Signals</Link>
             </Button>
           </motion.div>
         </AnimatedSection>
