@@ -124,18 +124,110 @@ serve(async (req) => {
   logStep('REQUEST', { method: req.method, path: url.pathname });
 
   try {
-    // Get plans endpoint (public)
-    if (url.pathname.endsWith('/plans')) {
+    // Determine action from body (POST) or query param (GET)
+    let action = '';
+    let body: Record<string, unknown> = {};
+
+    if (req.method === 'POST') {
+      try {
+        body = await req.json();
+      } catch {
+        body = {};
+      }
+      action = (body.action as string) || '';
+    } else if (req.method === 'GET') {
+      action = url.searchParams.get('action') || '';
+    }
+
+    // Also support legacy sub-path routing as fallback
+    if (!action) {
+      if (url.pathname.endsWith('/plans')) action = 'plans';
+      else if (url.pathname.endsWith('/checkout')) action = 'checkout';
+      else if (url.pathname.endsWith('/status')) action = 'status';
+      else if (url.pathname.endsWith('/webhook')) action = 'webhook';
+      else if (url.pathname.endsWith('/portal')) action = 'portal';
+    }
+
+    logStep('Resolved action', { action, method: req.method });
+
+    // Get plans (public)
+    if (action === 'plans') {
       return new Response(JSON.stringify({ plans: PLANS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    // Webhook handler — does NOT require user auth
+    if (action === 'webhook') {
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
+        apiVersion: '2024-11-20',
+      });
+
+      const signature = req.headers.get('stripe-signature') || '';
+      const rawBody = JSON.stringify(body);
+
+      const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
+
+      let event;
+      try {
+        event = await stripe.webhooks.constructEventAsync(
+          rawBody,
+          signature,
+          webhookSecret
+        );
+      } catch (err) {
+        return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as any;
+        const userId = session.metadata?.user_id || session.client_reference_id;
+        const planId = session.metadata?.plan_id;
+
+        if (userId && planId) {
+          try {
+            await supabaseClient
+              .from('user_roles')
+              .upsert({ user_id: userId, role: planId });
+          } catch (e) {
+            logStep('Error upserting user role', { error: String(e) });
+          }
+        }
+      }
+
+      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+        const subscription = event.data.object as any;
+        const customerId = subscription.customer;
+        const customer = await stripe.customers.retrieve(customerId);
+        const userId = (customer as any).metadata?.user_id;
+
+        if (userId) {
+          if (event.type === 'customer.subscription.deleted' || subscription.status !== 'active') {
+            try {
+              await supabaseClient
+                .from('user_roles')
+                .upsert({ user_id: userId, role: 'free' });
+            } catch (e) {
+              logStep('Error resetting user role', { error: String(e) });
+            }
+          }
+        }
+      }
+
+      return new Response(JSON.stringify({ received: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // All remaining actions require authentication
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
     if (authError || !user) throw new Error('Unauthorized');
 
     // Get subscription status
-    if (url.pathname.endsWith('/status')) {
+    if (action === 'status') {
       const { data: roleData } = await supabaseClient
         .from('user_roles')
         .select('role')
@@ -155,17 +247,15 @@ serve(async (req) => {
     }
 
     // Create checkout session
-    if (req.method === 'POST' && url.pathname.endsWith('/checkout')) {
+    if (action === 'checkout') {
       try {
-        const body = await req.json();
-        const plan = body.plan || body.plan_id;
-        const period = body.period || 'monthly';
-        const successUrl = body.success_url;
-        const cancelUrl = body.cancel_url;
+        const plan = (body.plan || body.plan_id) as string;
+        const period = (body.period as string) || 'monthly';
+        const successUrl = body.success_url as string;
+        const cancelUrl = body.cancel_url as string;
 
         logStep('Checkout request', { plan, period, user_id: user.id, user_email: user.email });
 
-        // Explicit env var guard — fail fast with a clear message
         const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
         if (!stripeKey) {
           logStep('ERROR: STRIPE_SECRET_KEY is not set in Supabase secrets');
@@ -217,7 +307,6 @@ serve(async (req) => {
           metadata: { user_id: user.id, plan_id: plan, period },
         };
 
-        // 7-day free trial for starter monthly only — always require card details
         if (plan === 'starter' && period === 'monthly') {
           sessionParams.subscription_data = { trial_period_days: 7 };
           sessionParams.payment_method_collection = 'always';
@@ -232,7 +321,6 @@ serve(async (req) => {
         });
 
       } catch (checkoutError: any) {
-        // Surface the full Stripe error — code, type, and message
         const stripeCode = checkoutError?.raw?.code || checkoutError?.code || 'unknown';
         const stripeType = checkoutError?.raw?.type || checkoutError?.type || 'unknown';
         const message = checkoutError?.message || 'Checkout failed';
@@ -244,82 +332,8 @@ serve(async (req) => {
       }
     }
 
-    // Webhook handler for Stripe events
-    if (req.method === 'POST' && url.pathname.endsWith('/webhook')) {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
-        apiVersion: '2024-11-20',
-      });
-
-      const signature = req.headers.get('stripe-signature') || '';
-      const body = await req.text();
-
-      const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
-
-      let event;
-      try {
-        event = await stripe.webhooks.constructEventAsync(
-          body,
-          signature,
-          webhookSecret
-        );
-      } catch (err) {
-        return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // Handle checkout completed
-      if (event.type === 'checkout.session.completed') {
-        const session = event.data.object as any;
-        const userId = session.metadata?.user_id || session.client_reference_id;
-        const planId = session.metadata?.plan_id;
-
-        if (userId && planId) {
-          try {
-            await supabaseClient
-              .from('user_roles')
-              .upsert({
-                user_id: userId,
-                role: planId,
-              });
-          } catch (e) {
-            logStep('Error upserting user role', { error: String(e) });
-          }
-        }
-      }
-
-      // Handle subscription updated/deleted
-      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
-        const subscription = event.data.object as any;
-        const customerId = subscription.customer;
-
-        const customer = await stripe.customers.retrieve(customerId);
-        const userId = (customer as any).metadata?.user_id;
-
-        if (userId) {
-          if (event.type === 'customer.subscription.deleted' || subscription.status !== 'active') {
-            try {
-              await supabaseClient
-                .from('user_roles')
-                .upsert({
-                  user_id: userId,
-                  role: 'free',
-                });
-            } catch (e) {
-              logStep('Error resetting user role', { error: String(e) });
-            }
-          }
-        }
-      }
-
-      return new Response(JSON.stringify({ received: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     // Customer portal
-    if (url.pathname.endsWith('/portal')) {
+    if (action === 'portal') {
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', {
         apiVersion: '2024-11-20',
       });
@@ -337,7 +351,7 @@ serve(async (req) => {
       });
     }
 
-    throw new Error('Not found');
+    throw new Error(`Unknown action: "${action}"`);
   } catch (error) {
     const errorMessage = (error as Error).message;
     logStep('ERROR', { message: errorMessage });

@@ -124,7 +124,7 @@ const Pricing = () => {
     }
 
     try {
-      console.log("[Pricing] Invoking manage-payments/checkout", { planId, isAnnual });
+      console.log("[Pricing] Invoking manage-payments (action: checkout)", { planId, isAnnual });
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -146,8 +146,9 @@ const Pricing = () => {
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke("manage-payments/checkout", {
+      const { data, error } = await supabase.functions.invoke("manage-payments", {
         body: {
+          action: "checkout",
           plan: planId,
           period: isAnnual ? "annual" : "monthly",
           success_url: window.location.origin + "/pricing?success=true",
