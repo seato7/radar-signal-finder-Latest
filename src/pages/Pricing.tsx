@@ -127,7 +127,21 @@ const Pricing = () => {
       console.log("[Pricing] Invoking manage-payments/checkout", { planId, isAnnual });
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      if (!session) {
+        navigate("/auth");
+        return;
+      }
+
+      // Refresh to ensure token is valid and not stale
+      const { data: { session: freshSession }, error: refreshError } =
+        await supabase.auth.refreshSession();
+
+      if (refreshError || !freshSession?.access_token) {
+        toast({
+          title: "Session expired",
+          description: "Please sign in again to continue.",
+          variant: "destructive",
+        });
         navigate("/auth");
         return;
       }
@@ -140,7 +154,7 @@ const Pricing = () => {
           cancel_url: window.location.origin + "/pricing?canceled=true",
         },
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${freshSession.access_token}`,
         },
       });
 
