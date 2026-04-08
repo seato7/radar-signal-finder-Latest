@@ -114,11 +114,11 @@ serve(async (req) => {
   try {
     console.log('[GENERATE-TRADE-SIGNALS] Starting...');
 
-    // 1. Fetch top 50 candidates by hybrid_score
+    // 1. Fetch top 50 candidates by hybrid_score (raised bar: >= 70)
     const { data: candidates, error: candidatesError } = await supabase
       .from('assets')
-      .select('id, ticker, hybrid_score, sector')
-      .gt('hybrid_score', 65)
+      .select('id, ticker, hybrid_score, sector, exchange')
+      .gte('hybrid_score', 70)
       .order('hybrid_score', { ascending: false })
       .limit(50);
 
@@ -155,6 +155,29 @@ serve(async (req) => {
     const skippedActive = candidates.length - eligible.length;
 
     console.log(`[GENERATE-TRADE-SIGNALS] ${skippedActive} skipped (active signal exists), ${eligible.length} eligible`);
+
+    // Global active signal cap — max 5 at any time to keep quality high
+    const { count: totalActiveCount } = await supabase
+      .from('trade_signals')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+
+    if ((totalActiveCount ?? 0) >= 5) {
+      console.log(`[GENERATE-TRADE-SIGNALS] Active signal cap reached (${totalActiveCount}/5) — skipping generation`);
+      const duration = Date.now() - startTime;
+      await logHeartbeat(supabase, {
+        function_name: 'generate-trade-signals',
+        status: 'success',
+        rows_inserted: 0,
+        rows_skipped: eligible.length,
+        duration_ms: duration,
+        source_used: 'assets',
+      });
+      return new Response(
+        JSON.stringify({ inserted: 0, skipped_active: skippedActive, skipped_no_condition: 0, skipped_cap: eligible.length }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     if (eligible.length === 0) {
       const duration = Date.now() - startTime;
@@ -232,7 +255,7 @@ serve(async (req) => {
       const hasMomentum = momentumAssetIds.has(asset.id);
       const entryPrice = latestPriceMap.get(asset.ticker);
 
-      // Entry condition
+      // Entry condition — AI score, direction, momentum, price data all required
       if (
         !aiScore ||
         aiScore.ai_score <= 60 ||
@@ -244,6 +267,30 @@ serve(async (req) => {
         continue;
       }
 
+      // Quality filter 1: minimum price $1.00 — eliminates penny stocks
+      if (entryPrice < 1.00) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — price $${entryPrice} below $1.00 minimum`);
+        skippedNoCondition++;
+        continue;
+      }
+
+      // Quality filter 2: OTC + price < $5.00 — skip low-liquidity OTC names
+      const exchange = ((asset as any).exchange ?? '').toUpperCase();
+      if ((exchange === 'OTC' || exchange === 'OTCMKTS' || exchange === 'PINK') && entryPrice < 5.00) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — OTC exchange with price $${entryPrice} below $5.00`);
+        skippedNoCondition++;
+        continue;
+      }
+
+      // Quality filter 3: minimum expected return 8%
+      const expectedReturn = (Math.round(entryPrice * 1.15 * 100) / 100 - entryPrice) / entryPrice;
+      if (expectedReturn < 0.08) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — expected return ${(expectedReturn * 100).toFixed(1)}% below 8% minimum`);
+        skippedNoCondition++;
+        continue;
+      }
+
+      // position_size_pct represents the MAXIMUM position size for this signal
       const positionSizePct = await computeKellySize(supabase, (asset as any).sector ?? null, Number(asset.hybrid_score), aiScore.confidence);
       console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: confidence=${aiScore.confidence}, kelly=${positionSizePct}`);
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

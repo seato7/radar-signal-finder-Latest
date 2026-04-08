@@ -89,8 +89,10 @@ export default function TradingSignals() {
     ? active.reduce((sum, s) => sum + (s.position_size_pct ?? 0), 0) / active.length
     : null;
 
-  const winRate = exits.length > 0
-    ? (exits.filter((s) => (s.pnl_pct ?? 0) > 0).length / exits.length) * 100
+  // Win rate calculated only from conclusive exits (triggered/stopped) — expired signals are inconclusive
+  const conclusiveExits = exits.filter((s) => s.status === 'triggered' || s.status === 'stopped');
+  const winRate = conclusiveExits.length > 0
+    ? (conclusiveExits.filter((s) => (s.pnl_pct ?? 0) > 0).length / conclusiveExits.length) * 100
     : null;
 
   const visibleActive = hasUnlimited ? active : active.slice(0, signalLimit);
@@ -178,7 +180,7 @@ export default function TradingSignals() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
               <Target className="h-3.5 w-3.5" />
-              Win Rate (closed)
+              Win Rate (excl. expired)
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
