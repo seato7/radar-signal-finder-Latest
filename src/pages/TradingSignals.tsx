@@ -80,6 +80,28 @@ export default function TradingSignals() {
   const active = (signals ?? []).filter((s) => s.status === 'active');
   const exits = (signals ?? []).filter((s) => ['triggered', 'stopped', 'expired'].includes(s.status));
 
+  const activeTickers = active.map((s) => s.ticker);
+
+  const { data: currentPrices } = useQuery({
+    queryKey: ['active-signal-prices', activeTickers],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('prices')
+        .select('ticker, close, date')
+        .in('ticker', activeTickers)
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: activeTickers.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const priceMap = new Map<string, number>();
+  currentPrices?.forEach((p) => {
+    if (!priceMap.has(p.ticker)) priceMap.set(p.ticker, Number(p.close));
+  });
+
   // Summary stats
   const avgScoreAtEntry = active.length > 0
     ? active.reduce((sum, s) => sum + (s.score_at_entry ?? 0), 0) / active.length
@@ -89,8 +111,12 @@ export default function TradingSignals() {
     ? active.reduce((sum, s) => sum + (s.position_size_pct ?? 0), 0) / active.length
     : null;
 
-  // Win rate calculated only from conclusive exits (triggered/stopped) — expired signals are inconclusive
-  const conclusiveExits = exits.filter((s) => s.status === 'triggered' || s.status === 'stopped');
+  // Win rate: triggered + stopped are always conclusive; expired count as wins if pnl_pct > 0
+  const conclusiveExits = exits.filter((s) =>
+    s.status === 'triggered' ||
+    s.status === 'stopped' ||
+    (s.status === 'expired' && (s.pnl_pct ?? 0) > 0)
+  );
   const winRate = conclusiveExits.length > 0
     ? (conclusiveExits.filter((s) => (s.pnl_pct ?? 0) > 0).length / conclusiveExits.length) * 100
     : null;
@@ -180,7 +206,7 @@ export default function TradingSignals() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
               <Target className="h-3.5 w-3.5" />
-              Win Rate (excl. expired)
+              Win Rate
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
@@ -221,6 +247,7 @@ export default function TradingSignals() {
                       <th className="text-right py-2 px-4 font-medium">Entry Price</th>
                       <th className="text-right py-2 px-4 font-medium">Target</th>
                       <th className="text-right py-2 px-4 font-medium">Stop Loss</th>
+                      <th className="text-right py-2 px-4 font-medium">Live P&amp;L</th>
                       <th className="text-right py-2 px-4 font-medium">Size %</th>
                       <th className="text-right py-2 px-4 font-medium">Score</th>
                       <th className="text-right py-2 px-4 font-medium">AI Score</th>
@@ -234,6 +261,10 @@ export default function TradingSignals() {
                       const expiresFormatted = s.expires_at
                         ? format(new Date(s.expires_at), 'MMM d')
                         : "—";
+                      const currentPrice = priceMap.get(s.ticker);
+                      const livePnl = currentPrice != null && s.entry_price != null
+                        ? ((currentPrice - s.entry_price) / s.entry_price) * 100
+                        : null;
                       return (
                         <tr key={s.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                           <td className="py-2.5 pr-4">
@@ -247,6 +278,9 @@ export default function TradingSignals() {
                           </td>
                           <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "—"}
+                          </td>
+                          <td className="text-right py-2.5 px-4">
+                            <PnlCell pnl={livePnl} />
                           </td>
                           <td className="text-right py-2.5 px-4 tabular-nums">
                             {s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "—"}
@@ -289,6 +323,7 @@ export default function TradingSignals() {
                           <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "—"}
                           </td>
+                          <td className="text-right py-2.5 px-4 tabular-nums">—</td>
                           <td className="text-right py-2.5 px-4 tabular-nums">—</td>
                           <td className="text-right py-2.5 px-4 tabular-nums">—</td>
                           <td className="text-right py-2.5 px-4 tabular-nums">—</td>
