@@ -261,6 +261,7 @@ serve(async (req) => {
         score_at_entry: Number(asset.hybrid_score),
         ai_score_at_entry: aiScore.ai_score,
         expires_at: expiresAt,
+        entry_date: new Date().toISOString(),
       });
     }
 
