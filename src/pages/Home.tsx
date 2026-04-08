@@ -56,6 +56,9 @@ const Home = () => {
 
       {/* Signal Spotlight */}
       <SignalSpotlight />
+      <p className="text-xs text-muted-foreground text-center -mt-3">
+        Algorithmically generated data output only. Not financial advice.
+      </p>
 
       {/* Main Grid */}
       <div className="grid gap-6 lg:grid-cols-2">

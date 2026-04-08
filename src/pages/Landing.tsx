@@ -508,6 +508,13 @@ const Landing = () => {
                 </div>
               </div>
             </motion.div>
+
+            <motion.p
+              variants={fadeUp}
+              className="text-center text-slate-500 text-xs mt-4"
+            >
+              All signals are algorithmically generated data outputs only. Not financial advice.
+            </motion.p>
           </AnimatedSection>
         </div>
       </section>
