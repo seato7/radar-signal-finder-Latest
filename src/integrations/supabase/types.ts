@@ -4039,7 +4039,14 @@ export type Database = {
     }
     Enums: {
       alert_status: "active" | "dismissed"
-      app_role: "free" | "lite" | "pro" | "admin"
+      app_role:
+        | "free"
+        | "lite"
+        | "pro"
+        | "admin"
+        | "starter"
+        | "premium"
+        | "enterprise"
       signal_direction: "up" | "down" | "neutral"
     }
     CompositeTypes: {
@@ -4169,7 +4176,15 @@ export const Constants = {
   public: {
     Enums: {
       alert_status: ["active", "dismissed"],
-      app_role: ["free", "lite", "pro", "admin"],
+      app_role: [
+        "free",
+        "lite",
+        "pro",
+        "admin",
+        "starter",
+        "premium",
+        "enterprise",
+      ],
       signal_direction: ["up", "down", "neutral"],
     },
   },
