@@ -7,6 +7,68 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const TAVILY_NEGATIVE_KEYWORDS = [
+  'bankrupt', 'fraud', 'sec ', 'sec.gov', 'delisted', 'delist',
+  'lawsuit', 'investigation', 'crash', 'collapse', 'indicted', 'ponzi',
+];
+
+interface TavilyResult {
+  title: string;
+  url: string;
+  content: string;
+}
+
+async function checkTavilyNews(ticker: string): Promise<{ blocked: boolean; reason: string | null }> {
+  const apiKey = Deno.env.get('TAVILY_API_KEY');
+  if (!apiKey) {
+    console.log(`[GENERATE-TRADE-SIGNALS] TAVILY_API_KEY not set — skipping news check for ${ticker}`);
+    return { blocked: false, reason: null };
+  }
+
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query: `${ticker} stock price news today`,
+        max_results: 3,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[GENERATE-TRADE-SIGNALS] Tavily API error for ${ticker}: ${response.status} — proceeding without news check`);
+      return { blocked: false, reason: null };
+    }
+
+    const data = await response.json();
+    const results: TavilyResult[] = data.results ?? [];
+
+    console.log(`[GENERATE-TRADE-SIGNALS] Tavily found ${results.length} results for ${ticker}:`);
+    for (const r of results) {
+      console.log(`  - ${r.title}`);
+    }
+
+    for (const result of results) {
+      const text = `${result.title} ${result.content}`.toLowerCase();
+      for (const keyword of TAVILY_NEGATIVE_KEYWORDS) {
+        if (text.includes(keyword)) {
+          const reason = `negative keyword "${keyword}" in: "${result.title}"`;
+          console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: BLOCKED — ${reason}`);
+          return { blocked: true, reason };
+        }
+      }
+    }
+
+    console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily check passed — no negative signals found`);
+    return { blocked: false, reason: null };
+
+  } catch (err) {
+    console.warn(`[GENERATE-TRADE-SIGNALS] Tavily fetch failed for ${ticker}: ${err} — proceeding without news check`);
+    return { blocked: false, reason: null };
+  }
+}
+
 const MOMENTUM_SIGNAL_TYPES = [
   'momentum_5d_strong_bullish',
   'momentum_5d_bullish',
@@ -286,6 +348,14 @@ serve(async (req) => {
       const expectedReturn = (Math.round(entryPrice * 1.15 * 100) / 100 - entryPrice) / entryPrice;
       if (expectedReturn < 0.08) {
         console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — expected return ${(expectedReturn * 100).toFixed(1)}% below 8% minimum`);
+        skippedNoCondition++;
+        continue;
+      }
+
+      // Tavily news verification — block assets with negative recent news
+      const tavilyCheck = await checkTavilyNews(asset.ticker);
+      if (tavilyCheck.blocked) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — Tavily news block: ${tavilyCheck.reason}`);
         skippedNoCondition++;
         continue;
       }
