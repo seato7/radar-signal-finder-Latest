@@ -12,33 +12,74 @@ const TAVILY_NEGATIVE_KEYWORDS = [
   'lawsuit', 'investigation', 'crash', 'collapse', 'indicted', 'ponzi',
 ];
 
+const TAVILY_POSITIVE_KEYWORDS = [
+  'earnings beat', 'upgrade', 'buy rating', 'partnership', 'contract win',
+  'fda approval', 'record revenue', 'breakout', 'rally', 'surge',
+  'strong growth', 'raised guidance', 'analyst upgrade', 'price target raised',
+  'institutional buying', 'beat expectations', 'outperform', 'strong buy',
+];
+
 interface TavilyResult {
   title: string;
   url: string;
   content: string;
 }
 
-async function checkTavilyNews(ticker: string): Promise<{ blocked: boolean; reason: string | null }> {
+interface TavilyCheckResult {
+  blocked: boolean;
+  reason: string | null;
+  hasPositiveSignal: boolean;
+  currentPrice: number | null;
+  priceSource: string | null;
+}
+
+function extractPriceFromText(text: string): number | null {
+  const patterns = [
+    /\$\s*([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/g,
+    /trading at\s+\$?([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/gi,
+    /price of\s+\$?([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/gi,
+    /priced at\s+\$?([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/gi,
+  ];
+
+  const candidates: number[] = [];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const val = parseFloat(match[1].replace(/,/g, ''));
+      if (val >= 0.50 && val <= 100000) candidates.push(val);
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  candidates.sort((a, b) => a - b);
+  return candidates[Math.floor(candidates.length / 2)];
+}
+
+async function checkTavilyNews(ticker: string): Promise<TavilyCheckResult> {
+  const noCheck: TavilyCheckResult = { blocked: false, reason: null, hasPositiveSignal: false, currentPrice: null, priceSource: null };
+
   const apiKey = Deno.env.get('TAVILY_API_KEY');
   if (!apiKey) {
     console.log(`[GENERATE-TRADE-SIGNALS] TAVILY_API_KEY not set — skipping news check for ${ticker}`);
-    return { blocked: false, reason: null };
+    return noCheck;
   }
 
   try {
+    const year = new Date().getFullYear();
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_key: apiKey,
-        query: `${ticker} stock price news today`,
+        query: `${ticker} stock price today ${year}`,
         max_results: 3,
       }),
     });
 
     if (!response.ok) {
       console.warn(`[GENERATE-TRADE-SIGNALS] Tavily API error for ${ticker}: ${response.status} — proceeding without news check`);
-      return { blocked: false, reason: null };
+      return noCheck;
     }
 
     const data = await response.json();
@@ -49,23 +90,59 @@ async function checkTavilyNews(ticker: string): Promise<{ blocked: boolean; reas
       console.log(`  - ${r.title}`);
     }
 
+    let blocked = false;
+    let reason: string | null = null;
+    let hasPositiveSignal = false;
+    let currentPrice: number | null = null;
+    let priceSource: string | null = null;
+
     for (const result of results) {
-      const text = `${result.title} ${result.content}`.toLowerCase();
-      for (const keyword of TAVILY_NEGATIVE_KEYWORDS) {
-        if (text.includes(keyword)) {
-          const reason = `negative keyword "${keyword}" in: "${result.title}"`;
-          console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: BLOCKED — ${reason}`);
-          return { blocked: true, reason };
+      const text = `${result.title} ${result.content}`;
+      const textLower = text.toLowerCase();
+
+      // Check negative keywords — first match blocks the signal
+      if (!blocked) {
+        for (const keyword of TAVILY_NEGATIVE_KEYWORDS) {
+          if (textLower.includes(keyword)) {
+            reason = `negative keyword "${keyword}" in: "${result.title}"`;
+            console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: BLOCKED — ${reason}`);
+            blocked = true;
+            break;
+          }
+        }
+      }
+
+      // Check positive keywords
+      if (!hasPositiveSignal) {
+        for (const keyword of TAVILY_POSITIVE_KEYWORDS) {
+          if (textLower.includes(keyword)) {
+            hasPositiveSignal = true;
+            console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: positive signal found — "${keyword}" in "${result.title}"`);
+            break;
+          }
+        }
+      }
+
+      // Extract current price from text if not yet found
+      if (currentPrice == null) {
+        const extracted = extractPriceFromText(text);
+        if (extracted != null) {
+          currentPrice = extracted;
+          priceSource = result.url;
+          console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily price extracted $${extracted} from "${result.title}"`);
         }
       }
     }
 
-    console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily check passed — no negative signals found`);
-    return { blocked: false, reason: null };
+    if (!blocked) {
+      console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily check passed — hasPositiveSignal=${hasPositiveSignal}, extractedPrice=${currentPrice ?? 'none'}`);
+    }
+
+    return { blocked, reason, hasPositiveSignal, currentPrice, priceSource };
 
   } catch (err) {
     console.warn(`[GENERATE-TRADE-SIGNALS] Tavily fetch failed for ${ticker}: ${err} — proceeding without news check`);
-    return { blocked: false, reason: null };
+    return noCheck;
   }
 }
 
@@ -352,12 +429,26 @@ serve(async (req) => {
         continue;
       }
 
-      // Tavily news verification — block assets with negative recent news
+      // Tavily news verification — block negative news, confirm positive signals, verify price
       const tavilyCheck = await checkTavilyNews(asset.ticker);
       if (tavilyCheck.blocked) {
         console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — Tavily news block: ${tavilyCheck.reason}`);
         skippedNoCondition++;
         continue;
+      }
+
+      if (tavilyCheck.hasPositiveSignal) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: positive news signal confirmed ✓`);
+      }
+
+      // Use Tavily price if it differs from TwelveData by more than 5%
+      let resolvedEntryPrice = entryPrice;
+      if (tavilyCheck.currentPrice != null) {
+        const priceDiff = Math.abs(tavilyCheck.currentPrice - entryPrice) / entryPrice;
+        if (priceDiff > 0.05) {
+          console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: price discrepancy >5% — TwelveData $${entryPrice} vs Tavily $${tavilyCheck.currentPrice} (${(priceDiff * 100).toFixed(1)}%) — using Tavily price`);
+          resolvedEntryPrice = tavilyCheck.currentPrice;
+        }
       }
 
       // position_size_pct represents the MAXIMUM position size for this signal
@@ -370,10 +461,10 @@ serve(async (req) => {
         asset_id: asset.id,
         signal_type: 'entry',
         status: 'active',
-        entry_price: entryPrice,
-        exit_target: Math.round(entryPrice * 1.15 * 100) / 100,
-        stop_loss: Math.round(entryPrice * 0.90 * 100) / 100,
-        peak_price: entryPrice,
+        entry_price: resolvedEntryPrice,
+        exit_target: Math.round(resolvedEntryPrice * 1.15 * 100) / 100,
+        stop_loss: Math.round(resolvedEntryPrice * 0.90 * 100) / 100,
+        peak_price: resolvedEntryPrice,
         position_size_pct: positionSizePct,
         score_at_entry: Number(asset.hybrid_score),
         ai_score_at_entry: aiScore.ai_score,
