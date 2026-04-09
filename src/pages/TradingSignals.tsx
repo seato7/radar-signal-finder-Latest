@@ -111,6 +111,10 @@ export default function TradingSignals() {
     ? active.reduce((sum, s) => sum + (s.position_size_pct ?? 0), 0) / active.length
     : null;
 
+  const totalReturn = exits.length > 0
+    ? exits.reduce((sum, s) => sum + (s.pnl_pct ?? 0), 0) / exits.length
+    : null;
+
   // Win rate: triggered + stopped are always conclusive; expired count as wins if pnl_pct > 0
   const conclusiveExits = exits.filter((s) =>
     s.status === 'triggered' ||
@@ -155,7 +159,7 @@ export default function TradingSignals() {
       )}
 
       {/* Summary stats bar */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
@@ -197,6 +201,22 @@ export default function TradingSignals() {
             ) : (
               <p className="text-2xl font-bold">
                 {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "—"}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Avg Return
+            </div>
+            {isLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <p className={`text-2xl font-bold ${totalReturn == null ? '' : totalReturn >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {totalReturn == null ? "—" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
               </p>
             )}
           </CardContent>
