@@ -50,41 +50,109 @@ serve(async (req) => {
       });
     }
 
-    // Get asset mappings
+    // Get asset mappings — exact match first, then normalised fallback for crypto pairs
     const tickers = [...new Set(news.map(n => n.ticker))];
+    console.log(`[SIGNAL-GEN-BREAKING] Unique tickers in news (${tickers.length}): ${tickers.join(', ')}`);
+
     const { data: assets } = await supabaseClient
       .from('assets')
       .select('id, ticker')
       .in('ticker', tickers);
 
-    const tickerToAssetId = new Map(assets?.map(a => [a.ticker, a.id]) || []);
-    const assetIdToTicker = new Map(assets?.map(a => [a.id, a.ticker]) || []);
+    const tickerToAssetId = new Map<string, string>();
+    const assetIdToTicker = new Map<string, string>();
 
+    for (const a of assets ?? []) {
+      tickerToAssetId.set(a.ticker, a.id);
+      assetIdToTicker.set(a.id, a.ticker);
+    }
+
+    // FIX: normalised fallback for tickers not found by exact match
+    // e.g. news has 'BTC' but assets stores 'BTC/USD'
+    const missingTickers = tickers.filter(t => !tickerToAssetId.has(t));
+    if (missingTickers.length > 0) {
+      console.log(`[SIGNAL-GEN-BREAKING] ${missingTickers.length} tickers not found by exact match — trying normalised lookup: ${missingTickers.join(', ')}`);
+
+      const expandedVariants: string[] = [];
+      for (const t of missingTickers) {
+        expandedVariants.push(`${t}/USD`, `${t}USD`, `${t}-USD`, `${t}/BTC`, `${t}BTC`, `${t}/USDT`);
+      }
+      // Known stock aliases
+      if (missingTickers.includes('GOOG')) expandedVariants.push('GOOGL');
+
+      const { data: expandedAssets } = await supabaseClient
+        .from('assets')
+        .select('id, ticker')
+        .in('ticker', expandedVariants);
+
+      for (const missing of missingTickers) {
+        const variants = [`${missing}/USD`, `${missing}USD`, `${missing}-USD`, `${missing}/BTC`, `${missing}BTC`, `${missing}/USDT`];
+        if (missing === 'GOOG') variants.push('GOOGL');
+
+        for (const variant of variants) {
+          const found = (expandedAssets ?? []).find(a => a.ticker === variant);
+          if (found) {
+            tickerToAssetId.set(missing, found.id);
+            if (!assetIdToTicker.has(found.id)) assetIdToTicker.set(found.id, found.ticker);
+            console.log(`[SIGNAL-GEN-BREAKING] Normalised: ${missing} → ${found.ticker} (id: ${found.id})`);
+            break;
+          }
+        }
+      }
+    }
+
+    const stillMissing = tickers.filter(t => !tickerToAssetId.has(t));
+    if (stillMissing.length > 0) {
+      console.log(`[SIGNAL-GEN-BREAKING] ⚠ ${stillMissing.length} tickers still not in assets after normalisation: ${stillMissing.join(', ')}`);
+    }
+    console.log(`[SIGNAL-GEN-BREAKING] Asset map: ${tickerToAssetId.size}/${tickers.length} tickers resolved`);
+
+    // --- Filter chain with per-step counters ---
     const signals = [];
+    let skippedNoAsset = 0;
+    let skippedNeutral = 0;
+    let skippedLowMagnitude = 0;
+
     for (const item of news) {
+      // Filter 1: asset lookup
       const assetId = tickerToAssetId.get(item.ticker);
-      if (!assetId) continue;
+      if (!assetId) {
+        skippedNoAsset++;
+        continue;
+      }
 
       const sentimentScore = item.sentiment_score ?? 0;
       const relevanceScore = item.relevance_score || 0.5;
 
-      // Skip neutral news with low relevance
-      if (Math.abs(sentimentScore) < 0.15 && relevanceScore < 0.3) continue;
+      // Filter 2: skip neutral news with low relevance
+      if (Math.abs(sentimentScore) < 0.15 && relevanceScore < 0.3) {
+        skippedNeutral++;
+        continue;
+      }
 
       let direction = 'neutral';
       if (sentimentScore > 0.2) direction = 'up';
       else if (sentimentScore < -0.2) direction = 'down';
 
-      // Magnitude based on sentiment strength and relevance
-      const magnitude = Math.min(5, Math.abs(sentimentScore) * 5 * relevanceScore);
+      // Filter 3: skip neutral direction
+      if (direction === 'neutral') {
+        skippedNeutral++;
+        continue;
+      }
 
-      // Skip very weak signals
-      if (magnitude < 0.3) continue;
-      
-      // Use specific signal types that match scoring expectations
-      const signalType = direction === 'up' ? 'breaking_news_bullish' : 
+      // Filter 4: magnitude threshold
+      const magnitude = Math.min(5, Math.abs(sentimentScore) * 5 * relevanceScore);
+      if (magnitude < 0.3) {
+        skippedLowMagnitude++;
+        continue;
+      }
+
+      const signalType = direction === 'up' ? 'breaking_news_bullish' :
                          direction === 'down' ? 'breaking_news_bearish' : 'breaking_news';
 
+      // FIX: checksum uses full published_at timestamp + URL so each unique article
+      // gets a unique checksum — prevents same-day articles being blocked as duplicates
+      // on every hourly run after the first
       signals.push({
         asset_id: assetId,
         signal_type: signalType,
@@ -95,13 +163,13 @@ serve(async (req) => {
         checksum: JSON.stringify({
           ticker: item.ticker,
           signal_type: signalType,
-          headline: item.headline?.substring(0, 50),
-          published_at_date: item.published_at ? item.published_at.substring(0, 10) : null,
+          url: item.url ?? item.headline?.substring(0, 30),
+          published_at: item.published_at,
         }),
-        citation: { 
-          source: item.source || 'Breaking News', 
+        citation: {
+          source: item.source || 'Breaking News',
           url: item.url,
-          timestamp: new Date().toISOString() 
+          timestamp: new Date().toISOString()
         },
         raw: {
           headline: item.headline,
@@ -112,6 +180,8 @@ serve(async (req) => {
         }
       });
     }
+
+    console.log(`[SIGNAL-GEN-BREAKING] Filter results — no asset: ${skippedNoAsset}, neutral/low relevance: ${skippedNeutral}, low magnitude: ${skippedLowMagnitude}, passed all filters: ${signals.length}`);
 
     // Batch upsert
     let insertedCount = 0;
