@@ -68,7 +68,17 @@ serve(async (req) => {
 
     if (newsError) throw newsError;
 
-    console.log(`[SIGNAL-GEN-BREAKING] Found ${news?.length || 0} breaking news records (incl. null dates, all sentiments)`);
+    const totalNews = news?.length || 0;
+    const nullSentiment = news?.filter(n => n.sentiment_score === null).length ?? 0;
+    const zeroSentiment = news?.filter(n => n.sentiment_score === 0).length ?? 0;
+    const nonZeroSentiment = news?.filter(n => (n.sentiment_score ?? 0) !== 0).length ?? 0;
+    const sampleArticles = (news ?? []).slice(0, 3).map(n => ({
+      ticker: n.ticker,
+      sentiment_score: n.sentiment_score,
+      published_at: n.published_at,
+    }));
+
+    console.log(`[SIGNAL-GEN-BREAKING] Found ${totalNews} breaking news records (incl. null dates, all sentiments)`);
 
     if (!news || news.length === 0) {
       const duration = Date.now() - startTime;
@@ -78,6 +88,7 @@ serve(async (req) => {
         rows_inserted: 0,
         duration_ms: duration,
         source_used: 'breaking_news',
+        metadata: { totalNews, nullSentiment, zeroSentiment, nonZeroSentiment, sampleArticles },
       });
       return new Response(JSON.stringify({ message: 'No breaking news to process', signals_created: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -226,7 +237,7 @@ serve(async (req) => {
         .from('signals')
         .upsert(batch, { onConflict: 'checksum', ignoreDuplicates: true })
         .select('id');
-      
+
       if (insertError) {
         console.error('Signal insert error:', insertError.message, insertError.details);
       } else {
@@ -234,7 +245,8 @@ serve(async (req) => {
       }
     }
 
-    console.log(`[SIGNAL-GEN-BREAKING] ✅ Created ${insertedCount} breaking news signals (${signals.length - insertedCount} duplicates)`);
+    const checksumBlocked = signals.length - insertedCount;
+    console.log(`[SIGNAL-GEN-BREAKING] ✅ Created ${insertedCount} breaking news signals (${checksumBlocked} duplicates)`);
 
     if (insertedCount > 0) {
       const affectedTickers = [...new Set(
@@ -248,9 +260,21 @@ serve(async (req) => {
       function_name: 'generate-signals-from-breaking-news',
       status: 'success',
       rows_inserted: insertedCount,
-      rows_skipped: signals.length - insertedCount,
+      rows_skipped: checksumBlocked,
       duration_ms: duration,
       source_used: 'breaking_news',
+      metadata: {
+        totalNews,
+        nullSentiment,
+        zeroSentiment,
+        nonZeroSentiment,
+        noAssetMatch: skippedNoAsset,
+        neutralSkipped: skippedNeutral,
+        lowMagnitude: skippedLowMagnitude,
+        checksumBlocked,
+        inserted: insertedCount,
+        sampleArticles,
+      },
     });
 
     return new Response(JSON.stringify({ 
