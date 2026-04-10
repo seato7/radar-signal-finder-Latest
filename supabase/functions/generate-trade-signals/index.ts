@@ -253,13 +253,13 @@ serve(async (req) => {
   try {
     console.log('[GENERATE-TRADE-SIGNALS] Starting...');
 
-    // 1. Fetch top 50 candidates by hybrid_score (raised bar: >= 70)
+    // 1. Fetch top 100 candidates by hybrid_score (lowered bar: >= 60)
     const { data: candidates, error: candidatesError } = await supabase
       .from('assets')
       .select('id, ticker, hybrid_score, sector, exchange')
-      .gte('hybrid_score', 70)
+      .gte('hybrid_score', 60)
       .order('hybrid_score', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (candidatesError) throw candidatesError;
     if (!candidates || candidates.length === 0) {
@@ -277,7 +277,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[GENERATE-TRADE-SIGNALS] ${candidates.length} candidates with hybrid_score > 65`);
+    console.log(`[GENERATE-TRADE-SIGNALS] ${candidates.length} candidates with hybrid_score >= 60`);
 
     const candidateTickers = candidates.map((c) => c.ticker);
     const candidateAssetIds = candidates.map((c) => c.id);
@@ -355,7 +355,18 @@ serve(async (req) => {
       }
     }
 
-    // 4. Bulk fetch momentum signals in last 7 days for eligible assets
+    // 4a. Bulk fetch breaking news signals in last 24h for eligible assets
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentNewsSignals } = await supabase
+      .from('signals')
+      .select('asset_id')
+      .in('asset_id', eligibleIds)
+      .in('signal_type', ['breaking_news_bullish', 'breaking_news_bearish'])
+      .gte('observed_at', oneDayAgo);
+
+    const newsBoostAssetIds = new Set((recentNewsSignals || []).map((s: any) => s.asset_id));
+
+    // 4b. Bulk fetch momentum signals in last 7 days for eligible assets
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: momentumSignals } = await supabase
       .from('signals')
@@ -392,18 +403,27 @@ serve(async (req) => {
     for (const asset of eligible) {
       const aiScore = aiScoreMap.get(asset.id);
       const hasMomentum = momentumAssetIds.has(asset.id);
+      const hasRecentNews = newsBoostAssetIds.has(asset.id);
       const entryPrice = latestPriceMap.get(asset.ticker);
 
-      // Entry condition — AI score, direction, momentum, price data all required
-      if (
-        !aiScore ||
-        aiScore.ai_score <= 60 ||
-        aiScore.direction !== 'up' ||
-        !hasMomentum ||
-        entryPrice == null
-      ) {
+      // Entry condition — AI score, direction, momentum/news, price data all required.
+      // News-boosted path: allows through if hybrid_score >= 55 AND ai_score > 50,
+      // bypassing the momentum requirement when recent breaking news confirms activity.
+      if (!aiScore || aiScore.direction !== 'up' || entryPrice == null) {
         skippedNoCondition++;
         continue;
+      }
+
+      const newsBoostQualifies = hasRecentNews && Number(asset.hybrid_score) >= 55 && aiScore.ai_score > 50;
+      const standardQualifies = aiScore.ai_score > 55 && hasMomentum;
+
+      if (!newsBoostQualifies && !standardQualifies) {
+        skippedNoCondition++;
+        continue;
+      }
+
+      if (newsBoostQualifies && !standardQualifies) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: qualified via news boost path (hybrid=${asset.hybrid_score}, ai=${aiScore.ai_score})`);
       }
 
       // Quality filter 1: minimum price $1.00 — eliminates penny stocks
