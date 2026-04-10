@@ -170,14 +170,14 @@ serve(async (req) => {
       const relevanceScore = item.relevance_score || 0.5;
 
       // Filter 2: skip neutral news with low relevance
-      if (Math.abs(sentimentScore) < 0.15 && relevanceScore < 0.3) {
+      if (Math.abs(sentimentScore) < 0.05 && relevanceScore < 0.2) {
         skippedNeutral++;
         continue;
       }
 
       let direction = 'neutral';
-      if (sentimentScore > 0.2) direction = 'up';
-      else if (sentimentScore < -0.2) direction = 'down';
+      if (sentimentScore > 0.1) direction = 'up';
+      else if (sentimentScore < -0.1) direction = 'down';
 
       // Filter 3: skip neutral direction
       if (direction === 'neutral') {
@@ -187,7 +187,7 @@ serve(async (req) => {
 
       // Filter 4: magnitude threshold
       const magnitude = Math.min(5, Math.abs(sentimentScore) * 5 * relevanceScore);
-      if (magnitude < 0.3) {
+      if (magnitude < 0.1) {
         skippedLowMagnitude++;
         continue;
       }
