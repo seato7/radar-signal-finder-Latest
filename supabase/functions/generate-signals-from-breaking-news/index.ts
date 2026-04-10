@@ -23,18 +23,52 @@ serve(async (req) => {
 
     console.log('[SIGNAL-GEN-BREAKING] Starting breaking news signal generation...');
 
-    // Fetch breaking news
+    // DEBUG: count total rows in breaking_news so we can see if query filtering is the problem
+    const { count: totalCount } = await supabaseClient
+      .from('breaking_news')
+      .select('*', { count: 'exact', head: true });
+    console.log(`[SIGNAL-GEN-BREAKING] DEBUG total breaking_news rows: ${totalCount}`);
+
+    // DEBUG: count rows with non-null, non-zero sentiment
+    const { count: sentimentCount } = await supabaseClient
+      .from('breaking_news')
+      .select('*', { count: 'exact', head: true })
+      .not('sentiment_score', 'is', null)
+      .neq('sentiment_score', 0);
+    console.log(`[SIGNAL-GEN-BREAKING] DEBUG rows with non-null non-zero sentiment_score: ${sentimentCount}`);
+
+    // DEBUG: count rows with null sentiment_score
+    const { count: nullSentimentCount } = await supabaseClient
+      .from('breaking_news')
+      .select('*', { count: 'exact', head: true })
+      .is('sentiment_score', null);
+    console.log(`[SIGNAL-GEN-BREAKING] DEBUG rows with NULL sentiment_score: ${nullSentimentCount}`);
+
+    // DEBUG: count rows with null published_at
+    const { count: nullDateCount } = await supabaseClient
+      .from('breaking_news')
+      .select('*', { count: 'exact', head: true })
+      .is('published_at', null);
+    console.log(`[SIGNAL-GEN-BREAKING] DEBUG rows with NULL published_at: ${nullDateCount}`);
+
+    // FIX 1: Removed .neq('sentiment_score', 0) from DB query — in PostgreSQL,
+    // NULL != 0 evaluates to NULL (falsy), silently excluding all NULL-sentiment rows.
+    // We handle sentiment filtering in code instead (null-safe).
+    //
+    // FIX 2: Include articles with NULL published_at — the RSS ingest stores null
+    // when pubDate is missing or unparseable. We still want to process those.
+    // Use .or() to include both recent and null-dated articles.
+    const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: news, error: newsError } = await supabaseClient
       .from('breaking_news')
       .select('*')
-      .gte('published_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .neq('sentiment_score', 0)
+      .or(`published_at.gte.${cutoffDate},published_at.is.null`)
       .order('published_at', { ascending: false })
       .limit(5000);
 
     if (newsError) throw newsError;
 
-    console.log(`[SIGNAL-GEN-BREAKING] Found ${news?.length || 0} breaking news records`);
+    console.log(`[SIGNAL-GEN-BREAKING] Found ${news?.length || 0} breaking news records (incl. null dates, all sentiments)`);
 
     if (!news || news.length === 0) {
       const duration = Date.now() - startTime;
