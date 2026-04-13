@@ -515,6 +515,84 @@ const TOPIC_TICKER_MAP: Record<string, string[]> = {
   'money laundering': ['GS','JPM','BAC','HSBC','C'],
 };
 
+// ── Dynamic asset matching ────────────────────────────────────────────────────
+
+// Topic keyword → DB sector value for sector-based expansion
+const TOPIC_SECTOR_MAP: Record<string, string> = {
+  'oil': 'Energy',
+  'crude': 'Energy',
+  'natural gas': 'Energy',
+  'energy': 'Energy',
+  'war': 'Defense',
+  'defense': 'Defense',
+  'missile': 'Defense',
+  'military': 'Defense',
+  'semiconductor': 'Technology',
+  'chip': 'Technology',
+  'ai': 'Technology',
+  'artificial intelligence': 'Technology',
+  'cybersecurity': 'Technology',
+  'cloud': 'Technology',
+  'biotech': 'Healthcare',
+  'fda': 'Healthcare',
+  'drug approval': 'Healthcare',
+  'cancer': 'Healthcare',
+  'bank': 'Financial Services',
+  'banking': 'Financial Services',
+  'airline': 'Transportation',
+  'shipping': 'Transportation',
+  'mining': 'Materials',
+  'gold': 'Materials',
+  'copper': 'Materials',
+  'solar': 'Utilities',
+  'clean energy': 'Utilities',
+  'nuclear': 'Utilities',
+  'uranium': 'Utilities',
+};
+
+// Suffixes to strip when building name keywords
+const COMPANY_SUFFIX_STRIP = new Set([
+  'inc', 'corp', 'ltd', 'llc', 'co', 'group', 'holdings', 'holding',
+  'technologies', 'technology', 'systems', 'system', 'international',
+  'global', 'plc', 'sa', 'ag', 'nv', 'se', 'services', 'solutions',
+  'partners', 'capital', 'management', 'enterprises', 'industries', 'industry',
+  'company', 'acquisition', 'resources', 'energy', 'financial', 'healthcare',
+]);
+
+// Generic words to skip as name keywords (too short or too common)
+const NAME_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'new', 'one', 'first', 'best', 'top', 'big', 'old',
+  'all', 'any', 'now', 'our', 'into', 'from', 'with', 'this', 'that', 'about',
+  'over', 'under', 'north', 'south', 'east', 'west', 'american', 'national',
+  'united', 'general', 'standard', 'pacific', 'atlantic', 'western', 'eastern',
+  'central', 'digital', 'global', 'strategic', 'advanced', 'applied', 'premier',
+]);
+
+/**
+ * Extract 1–2 meaningful keywords from a company name.
+ * Returns an empty array for names that produce only generic keywords.
+ * Examples:
+ *   "Tesla Inc"              → ["tesla"]
+ *   "Palantir Technologies"  → ["palantir"]
+ *   "Advanced Micro Devices" → ["advanced", "advanced micro"]  (but "advanced" filtered as stop word → ["advanced micro"]... actually "advanced" IS in stop words above)
+ *   "Shopify Inc"            → ["shopify"]
+ *   "Astronics Corp"         → ["astronics"]
+ */
+function extractNameKeywords(name: string): string[] {
+  const words = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 4 && !COMPANY_SUFFIX_STRIP.has(w) && !NAME_STOP_WORDS.has(w));
+
+  if (words.length === 0) return [];
+
+  const keywords: string[] = [];
+  keywords.push(words[0]);
+  if (words.length >= 2) keywords.push(`${words[0]} ${words[1]}`);
+  return keywords;
+}
+
 interface RSSItem {
   title: string;
   link: string;
@@ -774,59 +852,51 @@ serve(async (req) => {
   try {
     console.log('[v5] Starting optimized breaking news ingestion via RSS...');
     
-    // Load valid tickers - limit to 500 most relevant
+    // ── Dynamic asset loading: all 26k+ assets for name-based matching ───────
+    const { data: allAssets } = await supabase
+      .from('assets')
+      .select('id, ticker, name, sector, hybrid_score')
+      .not('name', 'is', null)
+      .limit(10000);
+
     const validTickers = new Set<string>();
-    
-    // Get popular tickers
-    const { data: popularAssets } = await supabase
-      .from('assets')
-      .select('ticker')
-      .in('ticker', [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD', 'INTC', 'NFLX',
-        'DIS', 'BA', 'NKE', 'JPM', 'GS', 'MS', 'BAC', 'WFC', 'C', 'V', 'MA', 'PYPL',
-        'COIN', 'HOOD', 'WMT', 'TGT', 'COST', 'HD', 'LOW', 'CVS', 'WBA', 'KR',
-        'KO', 'PEP', 'PG', 'MCD', 'SBUX', 'CMG', 'XOM', 'CVX', 'COP', 'OXY',
-        'PFE', 'MRNA', 'JNJ', 'UNH', 'ABBV', 'MRK', 'LLY', 'BMY', 'AMGN', 'GILD',
-        'CRM', 'ADBE', 'ORCL', 'IBM', 'CSCO', 'QCOM', 'AVGO', 'TXN', 'MU', 'NOW',
-        'PLTR', 'CRWD', 'DDOG', 'ZS', 'NET', 'RIVN', 'LCID', 'NIO', 'F', 'GM',
-        'SNAP', 'SPOT', 'ROKU', 'RBLX', 'GME', 'AMC', 'DAL', 'UAL', 'AAL', 'LUV',
-        'CAT', 'LMT', 'RTX', 'GE', 'T', 'VZ', 'UBER', 'ABNB', 'SPY', 'QQQ',
-        'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'LINK', 'AVAX', 'MATIC',
-      ]);
-    
-    if (popularAssets) {
-      for (const asset of popularAssets) {
-        validTickers.add(asset.ticker.toUpperCase());
+
+    // Build raw name keyword map before deduplication
+    const rawNameMap = new Map<string, string[]>(); // keyword → [tickers...]
+
+    for (const asset of allAssets ?? []) {
+      const ticker = asset.ticker.toUpperCase();
+      validTickers.add(ticker);
+
+      for (const kw of extractNameKeywords(asset.name)) {
+        if (!rawNameMap.has(kw)) rawNameMap.set(kw, []);
+        rawNameMap.get(kw)!.push(ticker);
       }
     }
-    
-    // Add watchlist tickers
-    const { data: watchlistItems } = await supabase
-      .from('watchlist')
-      .select('ticker')
-      .limit(200);
-    
-    if (watchlistItems) {
-      for (const item of watchlistItems) {
-        validTickers.add(item.ticker.toUpperCase());
-      }
+
+    // Filter: keep only keywords specific to ≤3 companies.
+    // This drops generic words like "energy", "bank", "tech" which match hundreds of names.
+    const nameMap = new Map<string, string[]>();
+    for (const [kw, tickers] of rawNameMap) {
+      if (tickers.length <= 3) nameMap.set(kw, tickers);
     }
-    
-    // Add more assets to reach 500
-    const { data: moreAssets } = await supabase
-      .from('assets')
-      .select('ticker')
-      .limit(400);
-    
-    if (moreAssets) {
-      for (const asset of moreAssets) {
-        if (validTickers.size < 500) {
-          validTickers.add(asset.ticker.toUpperCase());
-        }
+
+    // Pre-load top 10 assets per sector for sector-based expansion (parallel queries)
+    const sectorTopTickers = new Map<string, string[]>();
+    const uniqueSectors = [...new Set(Object.values(TOPIC_SECTOR_MAP))];
+    await Promise.all(uniqueSectors.map(async (sector) => {
+      const { data: sectorAssets } = await supabase
+        .from('assets')
+        .select('ticker')
+        .eq('sector', sector)
+        .order('hybrid_score', { ascending: false })
+        .limit(10);
+      if (sectorAssets && sectorAssets.length > 0) {
+        sectorTopTickers.set(sector, sectorAssets.map((a: any) => a.ticker.toUpperCase()));
       }
-    }
-    
-    console.log(`Loaded ${validTickers.size} tickers for matching`);
+    }));
+
+    console.log(`Loaded ${validTickers.size} assets, ${nameMap.size} name keywords (${rawNameMap.size} raw, ${rawNameMap.size - nameMap.size} filtered as generic), ${sectorTopTickers.size} sector buckets`);
 
     const allNews: Array<{
       ticker: string;
@@ -879,9 +949,10 @@ serve(async (req) => {
           // Pattern + company name extraction
           const extractedSet = new Set(extractTickers(fullText, validTickers));
 
-          // Topic-based ticker expansion — scan title + first 500 chars
+          // Topic-based ticker expansion + sector expansion — scan title + first 500 chars
           const textForTopic = `${item.title} ${(item.description || '').substring(0, 500)}`.toLowerCase();
           let topicAdded = 0;
+          const triggeredSectors = new Set<string>();
           for (const [topic, topicTickers] of Object.entries(TOPIC_TICKER_MAP)) {
             if (textForTopic.includes(topic)) {
               for (const t of topicTickers) {
@@ -890,13 +961,37 @@ serve(async (req) => {
                   topicAdded++;
                 }
               }
+              const sector = TOPIC_SECTOR_MAP[topic];
+              if (sector) triggeredSectors.add(sector);
             }
           }
 
-          // Cap at 10 tickers per article, deduplicated
-          const tickers = Array.from(extractedSet).slice(0, 10);
-          if (topicAdded > 0) {
-            console.log(`[TOPIC-MAP] "${item.title.substring(0, 60)}": +${topicAdded} tickers from topic map (total ${tickers.length})`);
+          // Sector-based expansion — add top DB assets for each triggered sector
+          for (const sector of triggeredSectors) {
+            for (const t of (sectorTopTickers.get(sector) ?? [])) {
+              if (!extractedSet.has(t)) extractedSet.add(t);
+            }
+          }
+
+          // Dynamic name-based matching — scan article against all 10k+ asset name keywords.
+          // Finds small caps that appear in news even if never explicitly mapped.
+          // e.g. "Astronics wins defense contract" → matches "astronics" → adds ATRO.
+          let nameMapAdded = 0;
+          for (const [keyword, kTickers] of nameMap) {
+            if (textForTopic.includes(keyword)) {
+              for (const t of kTickers) {
+                if (!extractedSet.has(t)) {
+                  extractedSet.add(t);
+                  nameMapAdded++;
+                }
+              }
+            }
+          }
+
+          // Cap at 20 tickers per article (raised from 10 to allow dynamic small-cap matches)
+          const tickers = Array.from(extractedSet).slice(0, 20);
+          if (topicAdded > 0 || nameMapAdded > 0) {
+            console.log(`[TICKER-MATCH] "${item.title.substring(0, 60)}": topic+${topicAdded} sector+${triggeredSectors.size} name+${nameMapAdded} (total ${tickers.length})`);
           }
 
           for (const ticker of tickers) {
