@@ -4041,12 +4041,11 @@ export type Database = {
       alert_status: "active" | "dismissed"
       app_role:
         | "free"
-        | "lite"
-        | "pro"
-        | "admin"
         | "starter"
+        | "pro"
         | "premium"
         | "enterprise"
+        | "admin"
       signal_direction: "up" | "down" | "neutral"
     }
     CompositeTypes: {
@@ -4178,12 +4177,11 @@ export const Constants = {
       alert_status: ["active", "dismissed"],
       app_role: [
         "free",
-        "lite",
-        "pro",
-        "admin",
         "starter",
+        "pro",
         "premium",
         "enterprise",
+        "admin",
       ],
       signal_direction: ["up", "down", "neutral"],
     },
