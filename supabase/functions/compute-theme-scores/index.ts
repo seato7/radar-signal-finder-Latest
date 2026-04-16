@@ -405,7 +405,7 @@ serve(async (req) => {
     // Only include assets with meaningful signal mass (same filter as Asset Radar)
     const { data: allAssets, error: assetsError } = await supabaseClient
       .from('assets')
-      .select('id, ticker, name, asset_class, expected_return, confidence_score, computed_score, score_explanation, metadata')
+      .select('id, ticker, name, asset_class, sector, expected_return, confidence_score, computed_score, score_explanation, metadata')
       .not('expected_return', 'is', null)
       .not('computed_score', 'is', null);
 
@@ -450,7 +450,7 @@ serve(async (req) => {
     const unmappedSectors = new Set<string>();
 
     for (const asset of scoredAssets) {
-      const sector = asset.metadata?.sector || null;
+      const sector = (asset as any).sector || asset.metadata?.sector || null;
       const mapping = assignAssetToThemes(
         asset.ticker,
         asset.name,

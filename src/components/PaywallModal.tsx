@@ -7,14 +7,14 @@ interface PaywallModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   feature: string;
-  requiredPlan?: 'Lite' | 'Pro';
+  requiredPlan?: 'Starter' | 'Pro';
 }
 
 export const PaywallModal: React.FC<PaywallModalProps> = ({
   open,
   onOpenChange,
   feature,
-  requiredPlan = 'Lite',
+  requiredPlan = 'Starter',
 }) => {
   const navigate = useNavigate();
 

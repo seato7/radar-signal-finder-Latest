@@ -250,8 +250,9 @@ serve(async (req) => {
           const formulaScore = Number(asset.computed_score ?? 50);
 
           // Only call Tavily if asset has a breaking news signal in last 24h
+          const BREAKING_NEWS_TYPES = ['breaking_news', 'breaking_news_bullish', 'breaking_news_bearish'];
           const hasBreakingNews = signals.some(s =>
-            s.signal_type === 'breaking_news' &&
+            BREAKING_NEWS_TYPES.includes(s.signal_type) &&
             new Date(s.observed_at) > new Date(Date.now() - 24 * 60 * 60 * 1000)
           );
           const tavilyContext = hasBreakingNews
