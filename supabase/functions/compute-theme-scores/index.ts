@@ -1,6 +1,7 @@
-// redeployed 2026-03-17
+// redeployed 2026-04-17
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGemini } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -370,6 +371,36 @@ function calculateThemeScore(
   };
 }
 
+/**
+ * Compute a news sentiment adjustment in the range -10 to +10 from
+ * breaking_news_bullish / breaking_news_bearish signals.
+ * Bullish signals add magnitude; bearish signals subtract magnitude.
+ * The raw sum is normalised by dividing by max(1, signalCount) and
+ * clamped to ±10.
+ */
+function computeNewsSentiment(
+  signals: Array<{ signal_type: string; magnitude: number }>
+): { sentimentScore: number; bullishCount: number; bearishCount: number } {
+  let rawSum = 0;
+  let bullishCount = 0;
+  let bearishCount = 0;
+  for (const s of signals) {
+    if (s.signal_type === 'breaking_news_bullish') {
+      rawSum += s.magnitude;
+      bullishCount++;
+    } else if (s.signal_type === 'breaking_news_bearish') {
+      rawSum -= s.magnitude;
+      bearishCount++;
+    }
+  }
+  const count = bullishCount + bearishCount;
+  // Normalise: average magnitude is ~1-2, so divide by max(1, count) * 0.5
+  // to map a full-bullish theme to roughly +10.
+  const normalised = count === 0 ? 0 : (rawSum / count) * 5;
+  const sentimentScore = Math.max(-10, Math.min(10, normalised));
+  return { sentimentScore, bullishCount, bearishCount };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -445,9 +476,11 @@ serve(async (req) => {
     console.log(`[THEME-SCORING-V3] DB theme names: ${Array.from(dbThemeNames).slice(0, 10).join(', ')}...`);
 
     // Map each asset to themes
+    // Also build assetIdToThemes so we can group news signals by theme later
     let mappedCount = 0;
     let unmappedCount = 0;
     const unmappedSectors = new Set<string>();
+    const assetIdToThemes = new Map<string, string[]>();
 
     for (const asset of scoredAssets) {
       const sector = (asset as any).sector || asset.metadata?.sector || null;
@@ -464,7 +497,7 @@ serve(async (req) => {
       for (let i = 0; i < mapping.themes.length; i++) {
         const themeName = mapping.themes[i];
         const weight = mapping.weights[i];
-        
+
         if (themeAssets.has(themeName)) {
           themeAssets.get(themeName)!.push({
             ticker: asset.ticker,
@@ -474,6 +507,9 @@ serve(async (req) => {
             weight: weight,
           });
           wasMapped = true;
+          const existing = assetIdToThemes.get(asset.id) ?? [];
+          existing.push(themeName);
+          assetIdToThemes.set(asset.id, existing);
         }
       }
 
@@ -513,11 +549,40 @@ serve(async (req) => {
 
     console.log(`[THEME-SCORING-V4] Global P95 scale: ${(globalP95Scale * 100).toFixed(4)}%, Global mean: ${(globalMeanExpectedReturn * 100).toFixed(4)}%`);
 
+    // ── STEP: Bulk-fetch breaking news signals for all theme assets (last 48h) ──
+    // One query for all asset IDs avoids N per-theme queries.
+    const allThemeAssetIds = [...assetIdToThemes.keys()];
+    const newsCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+    const themeNewsSignals = new Map<string, Array<{ signal_type: string; magnitude: number; value_text: string | null }>>();
+    for (const theme of themes) themeNewsSignals.set(theme.name, []);
+
+    if (allThemeAssetIds.length > 0) {
+      const { data: newsSignals } = await supabaseClient
+        .from('signals')
+        .select('asset_id, signal_type, magnitude, value_text')
+        .in('asset_id', allThemeAssetIds)
+        .in('signal_type', ['breaking_news_bullish', 'breaking_news_bearish'])
+        .gte('observed_at', newsCutoff);
+
+      for (const sig of newsSignals ?? []) {
+        const themeNames = assetIdToThemes.get(sig.asset_id) ?? [];
+        for (const tn of themeNames) {
+          const arr = themeNewsSignals.get(tn);
+          if (arr) arr.push({ signal_type: sig.signal_type, magnitude: sig.magnitude ?? 0, value_text: sig.value_text });
+        }
+      }
+      console.log(`[THEME-SCORING-V4] Fetched ${newsSignals?.length ?? 0} breaking news signals across theme assets`);
+    }
+
     // Calculate theme scores using weighted-average approach (same as assets)
     const results: Array<{
       theme_id: string;
       theme_name: string;
       score: number;
+      mechanical_score: number;
+      news_sentiment: number;
+      news_signal_count: number;
       expected_return: number;
       expected_return_centered: number;
       confidence_score: number;
@@ -526,6 +591,7 @@ serve(async (req) => {
       bullish_mass: number;
       bearish_mass: number;
       top_assets: string[];
+      ai_summary: string | null;
       computed_at: string;
     }> = [];
 
@@ -533,13 +599,17 @@ serve(async (req) => {
 
     for (const theme of themes) {
       const assets = themeAssets.get(theme.name) || [];
-      
+      const newsSignalsForTheme = themeNewsSignals.get(theme.name) ?? [];
+
       if (assets.length === 0) {
         // Theme has no mapped assets with signal mass - give neutral score
         results.push({
           theme_id: theme.id,
           theme_name: theme.name,
           score: 50,
+          mechanical_score: 50,
+          news_sentiment: 0,
+          news_signal_count: newsSignalsForTheme.length,
           expected_return: 0,
           expected_return_centered: 0,
           confidence_score: 0,
@@ -548,20 +618,28 @@ serve(async (req) => {
           bullish_mass: 0,
           bearish_mass: 0,
           top_assets: [],
+          ai_summary: null,
           computed_at: now.toISOString(),
         });
         continue;
       }
 
-      // Calculate theme score using weighted-average approach (aligned with assets)
-      const { 
-        score, 
-        avgExpectedReturn, 
+      // Step 1: Mechanical score (weighted-average expected return)
+      const {
+        score: mechanicalScore,
+        avgExpectedReturn,
         avgExpectedReturnCentered,
         avgConfidenceScore,
-        bullishMass, 
-        bearishMass 
+        bullishMass,
+        bearishMass,
       } = calculateThemeScore(assets, globalP95Scale, globalMeanExpectedReturn);
+
+      // Step 2: News sentiment blend
+      const { sentimentScore, bullishCount, bearishCount } = computeNewsSentiment(newsSignalsForTheme);
+      // sentimentScore is in -10..+10; map to -20..+20 score adjustment
+      const newsSentimentAdjustment = sentimentScore * 2;
+      const blendedScore = mechanicalScore * 0.6 + newsSentimentAdjustment * 0.4;
+      const finalScore = Math.max(0, Math.min(100, Math.round(blendedScore * 100) / 100));
 
       // Calculate total signal mass for display
       let totalSignalMass = 0;
@@ -575,10 +653,32 @@ serve(async (req) => {
         .slice(0, 5)
         .map(a => a.ticker);
 
+      // Step 3: Gemini summary for non-neutral themes with significant news flow
+      let aiSummary: string | null = null;
+      const hasSignificantNews = newsSignalsForTheme.length > 5;
+      const isNonNeutral = finalScore > 55 || finalScore < 45;
+
+      if (hasSignificantNews && isNonNeutral) {
+        const headlines = newsSignalsForTheme
+          .slice(0, 5)
+          .map(s => s.value_text)
+          .filter(Boolean)
+          .join('; ');
+        const prompt = `In one sentence, explain why the ${theme.name} investment theme is currently scoring ${Math.round(finalScore)}/100 based on these recent signals: ${headlines || 'recent market activity'}. Be specific about what is driving the score.`;
+        const raw = await callGemini(prompt, 150, 'text');
+        if (raw) {
+          aiSummary = raw.trim().replace(/\n/g, ' ');
+          console.log(`[THEME-SCORING-V4] Gemini summary for "${theme.name}": ${aiSummary}`);
+        }
+      }
+
       results.push({
         theme_id: theme.id,
         theme_name: theme.name,
-        score,
+        score: finalScore,
+        mechanical_score: mechanicalScore,
+        news_sentiment: Math.round(sentimentScore * 100) / 100,
+        news_signal_count: newsSignalsForTheme.length,
         expected_return: avgExpectedReturn,
         expected_return_centered: avgExpectedReturnCentered,
         confidence_score: avgConfidenceScore,
@@ -587,6 +687,7 @@ serve(async (req) => {
         bullish_mass: bullishMass,
         bearish_mass: bearishMass,
         top_assets: topAssets,
+        ai_summary: aiSummary,
         computed_at: now.toISOString(),
       });
     }
@@ -595,9 +696,9 @@ serve(async (req) => {
     results.sort((a, b) => b.score - a.score);
 
     // Log theme distribution with new metrics
-    console.log("[THEME-SCORING-V4] Theme scores (weighted-average model):");
+    console.log("[THEME-SCORING-V4] Theme scores (mechanical+news blend):");
     for (const r of results.slice(0, 20)) {
-      console.log(`  ${r.theme_name}: score=${r.score.toFixed(1)}, avgReturn=${(r.expected_return*100).toFixed(4)}%, centered=${(r.expected_return_centered*100).toFixed(4)}%, conf=${r.confidence_score.toFixed(2)}, assets=${r.asset_count}`);
+      console.log(`  ${r.theme_name}: final=${r.score.toFixed(1)} (mech=${r.mechanical_score.toFixed(1)}, news_adj=${(r.news_sentiment * 2).toFixed(1)}, news_n=${r.news_signal_count}), assets=${r.asset_count}${r.ai_summary ? ', ai=✓' : ''}`);
     }
 
     // Update database
@@ -618,36 +719,47 @@ serve(async (req) => {
             asset_count: result.asset_count,
             total_signal_mass: result.total_signal_mass,
             top_assets: result.top_assets,
-            model_version: 'v4_weighted_avg',
+            mechanical_score: result.mechanical_score,
+            news_sentiment: result.news_sentiment,
+            news_signal_count: result.news_signal_count,
+            model_version: 'v5_news_ai',
           },
           positive_components: result.top_assets,
           computed_at: result.computed_at,
         }, { onConflict: 'theme_id' });
 
-      // Update themes table
+      // Update themes table (including ai_summary when present)
+      const themesUpdate: Record<string, unknown> = {
+        score: result.score,
+        alpha: result.expected_return_centered,
+        updated_at: now.toISOString(),
+        metadata: {
+          expected_return: result.expected_return,
+          expected_return_centered: result.expected_return_centered,
+          bullish_mass: result.bullish_mass,
+          bearish_mass: result.bearish_mass,
+          confidence_score: result.confidence_score,
+          asset_count: result.asset_count,
+          total_signal_mass: result.total_signal_mass,
+          top_assets: result.top_assets,
+          mechanical_score: result.mechanical_score,
+          news_sentiment: result.news_sentiment,
+          news_signal_count: result.news_signal_count,
+          model_version: 'v5_news_ai',
+        },
+      };
+      if (result.ai_summary !== null) {
+        themesUpdate.ai_summary = result.ai_summary;
+      }
       await supabaseClient
         .from('themes')
-        .update({ 
-          score: result.score,
-          alpha: result.expected_return_centered,
-          updated_at: now.toISOString(),
-          metadata: {
-            expected_return: result.expected_return,
-            expected_return_centered: result.expected_return_centered,
-            bullish_mass: result.bullish_mass,
-            bearish_mass: result.bearish_mass,
-            confidence_score: result.confidence_score,
-            asset_count: result.asset_count,
-            total_signal_mass: result.total_signal_mass,
-            top_assets: result.top_assets,
-            model_version: 'v4_weighted_avg',
-          }
-        })
+        .update(themesUpdate)
         .eq('id', result.theme_id);
     }
 
     const duration = Date.now() - startTime;
-    console.log(`[THEME-SCORING-V4] Complete in ${duration}ms. ${results.length} themes scored from ${scoredAssets.length} assets`);
+    const aiSummaryCount = results.filter(r => r.ai_summary !== null).length;
+    console.log(`[THEME-SCORING-V4] Complete in ${duration}ms. ${results.length} themes scored from ${scoredAssets.length} assets. ${aiSummaryCount} Gemini summaries generated.`);
 
     // Log function status
     await supabaseClient.from('function_status').insert({
@@ -656,24 +768,27 @@ serve(async (req) => {
       executed_at: now.toISOString(),
       duration_ms: duration,
       rows_inserted: results.length,
-      metadata: { 
+      metadata: {
         themes: results.length,
         total_assets: allAssets.length,
         scored_assets: scoredAssets.length,
-        model_version: 'v4_weighted_avg',
+        model_version: 'v5_news_ai',
         global_p95_scale: globalP95Scale,
         global_mean: globalMeanExpectedReturn,
+        ai_summaries_generated: aiSummaryCount,
+        total_news_signals: results.reduce((sum, r) => sum + r.news_signal_count, 0),
       }
     });
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         themes: results.length,
         scored_assets: scoredAssets.length,
         duration_ms: duration,
-        model_version: 'v4_weighted_avg',
-        results 
+        model_version: 'v5_news_ai',
+        ai_summaries_generated: aiSummaryCount,
+        results,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
