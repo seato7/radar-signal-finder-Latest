@@ -3476,6 +3476,7 @@ export type Database = {
       }
       themes: {
         Row: {
+          ai_summary: string | null
           alpha: number | null
           contributors: Json | null
           created_at: string | null
@@ -3488,6 +3489,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          ai_summary?: string | null
           alpha?: number | null
           contributors?: Json | null
           created_at?: string | null
@@ -3500,6 +3502,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          ai_summary?: string | null
           alpha?: number | null
           contributors?: Json | null
           created_at?: string | null
@@ -4041,11 +4044,12 @@ export type Database = {
       alert_status: "active" | "dismissed"
       app_role:
         | "free"
-        | "starter"
+        | "lite"
         | "pro"
+        | "admin"
+        | "starter"
         | "premium"
         | "enterprise"
-        | "admin"
       signal_direction: "up" | "down" | "neutral"
     }
     CompositeTypes: {
@@ -4177,11 +4181,12 @@ export const Constants = {
       alert_status: ["active", "dismissed"],
       app_role: [
         "free",
-        "starter",
+        "lite",
         "pro",
+        "admin",
+        "starter",
         "premium",
         "enterprise",
-        "admin",
       ],
       signal_direction: ["up", "down", "neutral"],
     },
