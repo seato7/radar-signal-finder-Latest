@@ -3,7 +3,7 @@
  * Auto-disables functions that fail repeatedly or exceed SLA thresholds
  */
 
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.57.2";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 export interface CircuitBreakerConfig {
   maxConsecutiveFailures: number; // Default: 3
