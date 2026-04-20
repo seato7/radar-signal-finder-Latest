@@ -796,6 +796,7 @@ Deno.serve(async (req) => {
             .from('assets')
             .update({
               computed_score: null,
+              hybrid_score: null,
               expected_return: null,
               confidence_score: null,
               confidence_label: 'unscorable',
@@ -1364,6 +1365,12 @@ Deno.serve(async (req) => {
           .from('assets')
           .update({
             computed_score: update.score,
+            // Seed hybrid_score with computed_score so every ranked asset has a
+            // usable hybrid immediately. compute-ai-scores runs 20 assets every
+            // 2h and would otherwise leave ~6k assets with NULL hybrid_score
+            // forever; when it does run, it overwrites this with
+            // 0.4*computed + 0.6*ai (compute-ai-scores/index.ts:273).
+            hybrid_score: update.score,
             sector_percentile_rank: update.sector_percentile_rank,
             expected_return: update.expected_return,
             confidence_score: update.confidence_score,
