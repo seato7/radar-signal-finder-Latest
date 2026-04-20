@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_deletion_log: {
+        Row: {
+          data_exported: boolean
+          deleted_at: string
+          deletion_feedback: string | null
+          deletion_reason: string | null
+          email_hash: string | null
+          id: string
+          ip_address: unknown
+          plan_at_deletion: string | null
+          stripe_subscription_cancelled: boolean
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          data_exported?: boolean
+          deleted_at?: string
+          deletion_feedback?: string | null
+          deletion_reason?: string | null
+          email_hash?: string | null
+          id?: string
+          ip_address?: unknown
+          plan_at_deletion?: string | null
+          stripe_subscription_cancelled?: boolean
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          data_exported?: boolean
+          deleted_at?: string
+          deletion_feedback?: string | null
+          deletion_reason?: string | null
+          email_hash?: string | null
+          id?: string
+          ip_address?: unknown
+          plan_at_deletion?: string | null
+          stripe_subscription_cancelled?: boolean
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       advanced_technicals: {
         Row: {
           adx: number | null
@@ -2839,6 +2881,33 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       scoring_config: {
         Row: {
           config_name: string
@@ -3634,6 +3703,36 @@ export type Database = {
           id?: string
           last_updated_at?: string
           minute_key?: string
+        }
+        Relationships: []
+      }
+      user_preferences: {
+        Row: {
+          created_at: string
+          email_alerts: boolean
+          email_daily_digest: boolean
+          email_marketing: boolean
+          email_weekly_summary: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_alerts?: boolean
+          email_daily_digest?: boolean
+          email_marketing?: boolean
+          email_weekly_summary?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_alerts?: boolean
+          email_daily_digest?: boolean
+          email_marketing?: boolean
+          email_weekly_summary?: boolean
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
