@@ -496,35 +496,82 @@ Deno.serve(async (req) => {
       days_stale: number;
     }>();
 
-    let coverageOffset = 0;
-    while (true) {
-      const { data: coveragePage, error: coverageError } = await supabase
-        .from('price_coverage_daily')
-        .select('ticker, status, points_30d, last_price_date, days_stale')
-        .eq('snapshot_date', today)
-        .eq('vendor', 'twelvedata')
-        .range(coverageOffset, coverageOffset + 999);
+    let coverageSnapshotDate = today;
+    let coverageBootstrapTriggered = false;
+    let coverageBootstrapError: string | null = null;
 
-      if (coverageError) {
-        console.warn(`Coverage query error: ${coverageError.message}`);
-        break;
+    const loadCoverageFor = async (snapshotDate: string): Promise<number> => {
+      coverageMap.clear();
+      let coverageOffset = 0;
+      while (true) {
+        const { data: coveragePage, error: coverageError } = await supabase
+          .from('price_coverage_daily')
+          .select('ticker, status, points_30d, last_price_date, days_stale')
+          .eq('snapshot_date', snapshotDate)
+          .eq('vendor', 'twelvedata')
+          .range(coverageOffset, coverageOffset + 999);
+
+        if (coverageError) {
+          console.warn(`Coverage query error: ${coverageError.message}`);
+          break;
+        }
+        if (!coveragePage || coveragePage.length === 0) break;
+
+        for (const c of coveragePage) {
+          coverageMap.set(c.ticker, {
+            status: c.status,
+            points_30d: c.points_30d,
+            last_price_date: c.last_price_date,
+            days_stale: c.days_stale,
+          });
+        }
+
+        if (coveragePage.length < 1000) break;
+        coverageOffset += 1000;
       }
-      if (!coveragePage || coveragePage.length === 0) break;
+      return coverageMap.size;
+    };
 
-      for (const c of coveragePage) {
-        coverageMap.set(c.ticker, {
-          status: c.status,
-          points_30d: c.points_30d,
-          last_price_date: c.last_price_date,
-          days_stale: c.days_stale,
-        });
+    await loadCoverageFor(today);
+
+    // Self-heal: if today's coverage is empty, invoke the RPC directly instead
+    // of waiting for the 12:00 UTC compute-price-coverage-daily cron. Without
+    // this, every invocation between 00:00 and 12:00 UTC scores zero assets,
+    // and any failure in the daily cron leaves the scoring pipeline dark.
+    if (coverageMap.size === 0) {
+      console.warn(`[ASSET-SCORES] No coverage rows for ${today}; bootstrapping via compute_and_update_coverage RPC`);
+      coverageBootstrapTriggered = true;
+      const { error: rpcError } = await supabase.rpc('compute_and_update_coverage', {
+        p_snapshot_date: today,
+        p_vendor: 'twelvedata',
+        p_freshness_days: 7,
+      });
+      if (rpcError) {
+        coverageBootstrapError = rpcError.message;
+        console.warn(`[ASSET-SCORES] Coverage bootstrap failed: ${rpcError.message}`);
+      } else {
+        await loadCoverageFor(today);
       }
-
-      if (coveragePage.length < 1000) break;
-      coverageOffset += 1000;
     }
 
-    console.log(`Loaded ${coverageMap.size} coverage records for ${today}`);
+    // Final fallback: use the most recent snapshot that does have rows. Keeps
+    // scoring alive even if the RPC itself is broken (e.g. prices ingestion down).
+    if (coverageMap.size === 0) {
+      const { data: latest } = await supabase
+        .from('price_coverage_daily')
+        .select('snapshot_date')
+        .eq('vendor', 'twelvedata')
+        .order('snapshot_date', { ascending: false })
+        .limit(1);
+      const fallbackDate = latest?.[0]?.snapshot_date as string | undefined;
+      if (fallbackDate && fallbackDate !== today) {
+        console.warn(`[ASSET-SCORES] Falling back to most recent coverage snapshot: ${fallbackDate}`);
+        coverageSnapshotDate = fallbackDate;
+        await loadCoverageFor(fallbackDate);
+      }
+    }
+
+    console.log(`Loaded ${coverageMap.size} coverage records for ${coverageSnapshotDate}`);
 
     // ========================================================================
     // FETCH ALPHA TABLE (signal_type_alpha) - ALL HORIZONS for fallback
@@ -1432,6 +1479,9 @@ Deno.serve(async (req) => {
         component_alpha_count: componentAlphaMap.size,
         component_evidence: componentEvidence,
         coverage_count: coverageMap.size,
+        coverage_snapshot_date_used: coverageSnapshotDate,
+        coverage_bootstrap_triggered: coverageBootstrapTriggered,
+        coverage_bootstrap_error: coverageBootstrapError,
         model_version: 'v1_alpha',
         ranked_count: rankedCount,
         excluded_count: excludedCount,
@@ -1461,6 +1511,9 @@ Deno.serve(async (req) => {
         component_alpha_count: componentAlphaMap.size,
         component_evidence: componentEvidence,
         coverage_count: coverageMap.size,
+        coverage_snapshot_date_used: coverageSnapshotDate,
+        coverage_bootstrap_triggered: coverageBootstrapTriggered,
+        coverage_bootstrap_error: coverageBootstrapError,
         model_version: 'v1_alpha',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
