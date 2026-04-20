@@ -14,13 +14,35 @@ serve(async (req) => {
 
   // ========================================================================
   // CRON SECRET ENFORCEMENT
-  // If CRON_SHARED_SECRET is set, require x-cron-secret header to match
+  // If CRON_SHARED_SECRET is set, require x-cron-secret header to match.
+  // Log unauthorized invocations to function_status so silent 401s (e.g. the
+  // pg_cron call sending an empty x-cron-secret because app.cron_secret GUC
+  // wasn't set in the DB) are diagnosable via SQL instead of disappearing.
   // ========================================================================
   const expectedSecret = Deno.env.get('CRON_SHARED_SECRET');
   const providedSecret = req.headers.get('x-cron-secret');
-  
+
   if (expectedSecret && providedSecret !== expectedSecret) {
     console.warn('[PRICE-COVERAGE] Unauthorized: missing or invalid x-cron-secret');
+    try {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      );
+      await supabase.from('function_status').insert({
+        function_name: 'compute-price-coverage-daily',
+        status: 'unauthorized',
+        executed_at: new Date().toISOString(),
+        error_message: 'x-cron-secret header missing or does not match CRON_SHARED_SECRET env var',
+        metadata: {
+          provided_secret_present: providedSecret !== null,
+          provided_secret_empty: providedSecret === '',
+          expected_secret_configured: true,
+        },
+      });
+    } catch {
+      // Ignore logging errors — still return 401.
+    }
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
