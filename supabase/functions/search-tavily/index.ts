@@ -66,13 +66,13 @@ serve(async (req) => {
   if (!response.ok) {
     if (response.status === 402) {
       return new Response(
-        JSON.stringify({ error: 'Tavily quota exceeded — add credits at app.tavily.com' }),
+        JSON.stringify({ error: 'Tavily quota exceeded. Add credits at app.tavily.com.' }),
         { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     if (response.status === 429) {
       return new Response(
-        JSON.stringify({ error: 'Tavily rate limit exceeded — slow down requests' }),
+        JSON.stringify({ error: 'Tavily rate limit exceeded. Slow down requests.' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

@@ -114,7 +114,7 @@ serve(async (req) => {
       });
       
       return new Response(
-        JSON.stringify({ success: false, message: 'SLACK_WEBHOOK_URL not configured — reminder not sent' }),
+        JSON.stringify({ success: false, message: 'SLACK_WEBHOOK_URL not configured. Reminder not sent.' }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

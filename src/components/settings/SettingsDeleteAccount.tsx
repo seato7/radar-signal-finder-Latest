@@ -130,7 +130,7 @@ export default function SettingsDeleteAccount() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        toast({ title: 'Session expired — please sign in again', variant: 'destructive' });
+        toast({ title: 'Session expired. Please sign in again', variant: 'destructive' });
         navigate('/auth');
         return;
       }
@@ -284,7 +284,7 @@ export default function SettingsDeleteAccount() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Before you delete — are you sure cancelling isn't enough?</CardTitle>
+          <CardTitle>Before you delete, are you sure cancelling isn't enough?</CardTitle>
           <CardDescription>
             Cancelling your subscription keeps your account and settings. You can resubscribe anytime. Deletion is forever.
           </CardDescription>
@@ -349,7 +349,7 @@ export default function SettingsDeleteAccount() {
                     : <><Download className="h-4 w-4 mr-2" />Download my data</>}
                 </Button>
                 <Button variant="outline" onClick={() => setStep('confirm')}>
-                  Skip — I don't need it
+                  Skip, I don't need it
                 </Button>
               </>
             ) : (

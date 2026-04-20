@@ -115,7 +115,7 @@ export default function SettingsSubscription() {
         headers: { Authorization: `Bearer ${refreshed.session.access_token}` },
       });
       if (error) throw new Error(error.message);
-      if (!data?.success) throw new Error('Pause failed — please try again');
+      if (!data?.success) throw new Error('Pause failed. Please try again');
 
       const resumeDate = new Date(data.resumes_at * 1000).toLocaleDateString('en-US', {
         month: 'long', day: 'numeric', year: 'numeric',
@@ -215,7 +215,7 @@ export default function SettingsSubscription() {
             <div className="flex items-start gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/30">
               <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
               <div>
-                <p className="font-semibold text-foreground">Before you go — here's what you'll lose</p>
+                <p className="font-semibold text-foreground">Before you go, here's what you'll lose</p>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   Cancelling removes access immediately at the end of your billing period.
                 </p>
@@ -290,7 +290,7 @@ export default function SettingsSubscription() {
                 <p className="font-semibold text-foreground">Switch to Starter for $9.99/mo instead</p>
               </div>
               <p className="text-sm text-muted-foreground">
-                Keep access to InsiderPulse signals, your watchlist, and the AI assistant at a fraction of the cost. No data lost — just scaled back.
+                Keep access to InsiderPulse signals, your watchlist, and the AI assistant at a fraction of the cost. No data lost, just scaled back.
               </p>
               <ul className="text-sm text-muted-foreground space-y-1 ml-1">
                 <li className="flex items-center gap-2"><span className="text-cyan-500">✓</span> 1 active signal</li>
@@ -299,7 +299,7 @@ export default function SettingsSubscription() {
                 <li className="flex items-center gap-2"><span className="text-cyan-500">✓</span> 1 investment theme</li>
               </ul>
               <Button variant="outline" className="w-full sm:w-auto" onClick={handleDowngrade}>
-                Switch to Starter — $9.99/mo
+                Switch to Starter for $9.99/mo
               </Button>
             </div>
 

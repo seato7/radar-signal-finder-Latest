@@ -30,9 +30,9 @@ const plans: Plan[] = [
     description: "Everything you need to start investing smarter",
     features: [
       "1 Active Signal",
-      "Asset Radar — Stocks only",
+      "Asset Radar: Stocks only",
       "1 Theme",
-      "AI Assistant — 5 messages/day",
+      "AI Assistant: 5 messages/day",
       "1 Alert",
       "3 Watchlist slots",
     ],
@@ -47,9 +47,9 @@ const plans: Plan[] = [
     description: "For active investors tracking multiple opportunities",
     features: [
       "3 Active Signals",
-      "Asset Radar — Stocks, ETFs & Forex",
+      "Asset Radar: Stocks, ETFs & Forex",
       "3 Themes",
-      "AI Assistant — 20 messages/day",
+      "AI Assistant: 20 messages/day",
       "5 Alerts",
       "10 Watchlist slots",
     ],
@@ -64,9 +64,9 @@ const plans: Plan[] = [
     description: "Unlimited access to every InsiderPulse feature",
     features: [
       "Unlimited Active Signals",
-      "Full Asset Radar — All asset classes + scores",
+      "Full Asset Radar: All asset classes + scores",
       "Unlimited Themes",
-      "AI Assistant — Unlimited",
+      "AI Assistant: Unlimited",
       "Unlimited Alerts",
       "Unlimited Watchlist slots",
       "Analytics dashboard",
@@ -167,7 +167,7 @@ const Pricing = () => {
       }
 
       if (!data?.url) {
-        throw new Error("No checkout URL returned — check Stripe configuration");
+        throw new Error("No checkout URL returned. Check Stripe configuration");
       }
 
       window.location.href = data.url;
@@ -280,7 +280,7 @@ const Pricing = () => {
                           ${plan.annual}/yr
                           {plan.annualSaving && (
                             <span className="ml-1.5 text-success font-medium">
-                              — save {plan.annualSaving}
+                              · save {plan.annualSaving}
                             </span>
                           )}
                         </p>
@@ -338,7 +338,7 @@ const Pricing = () => {
 
       {/* Footer note */}
       <p className="text-center text-sm text-muted-foreground">
-        Starter plan includes a 7-day free trial. Card required — cancel anytime.
+        Starter plan includes a 7-day free trial. Card required, cancel anytime.
       </p>
     </div>
   );

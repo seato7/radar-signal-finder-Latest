@@ -786,7 +786,7 @@ const AssetRadar = () => {
                                 {asset.score}
                               </Badge>
                             ) : (
-                              <span style={{ filter: "blur(3px)", userSelect: "none" }} className="text-xs text-muted-foreground select-none">—</span>
+                              <span style={{ filter: "blur(3px)", userSelect: "none" }} className="text-xs text-muted-foreground select-none">-</span>
                             )}
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>

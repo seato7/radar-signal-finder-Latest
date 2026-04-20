@@ -215,7 +215,7 @@ const Watchlist = () => {
         description={slotsLimit === -1
           ? "Track your selected opportunities"
           : slotsLimit === 0
-            ? "Track your selected opportunities — upgrade to add assets"
+            ? "Track your selected opportunities. Upgrade to add assets"
             : `Track your selected opportunities (${tickers.length} / ${slotsLimit} slots used)`
         }
         action={

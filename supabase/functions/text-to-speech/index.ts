@@ -19,7 +19,7 @@ serve(async (req) => {
       throw new Error('Text is required');
     }
     if (text.length > 5000) {
-      return new Response(JSON.stringify({ error: 'Text too long — maximum 5000 characters' }), {
+      return new Response(JSON.stringify({ error: 'Text too long. Maximum 5000 characters.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }

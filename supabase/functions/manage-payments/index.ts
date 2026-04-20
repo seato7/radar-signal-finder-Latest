@@ -246,7 +246,7 @@ serve(async (req) => {
         const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
         if (!stripeKey) {
           logStep('ERROR: STRIPE_SECRET_KEY not set');
-          return new Response(JSON.stringify({ error: 'Payment service not configured — STRIPE_SECRET_KEY missing' }), {
+          return new Response(JSON.stringify({ error: 'Payment service not configured. STRIPE_SECRET_KEY missing.' }), {
             status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
@@ -355,7 +355,7 @@ serve(async (req) => {
       });
     }
 
-    throw new Error(`Not found — unrecognised action: "${action}"`);
+    throw new Error(`Not found. Unrecognised action: "${action}"`);
 
   } catch (error) {
     const errorMessage = (error as Error).message;

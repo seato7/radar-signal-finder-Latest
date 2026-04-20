@@ -39,9 +39,9 @@ ${signalsFormatted || 'No active signals'}
 ${tavilyContext ? `\nReal-time context:\n${tavilyContext}` : ''}
 
 Instructions:
-1. Analyse the signal combination — do they confirm or contradict each other?
+1. Analyse the signal combination. Do they confirm or contradict each other?
 2. Weight insider and dark pool signals highest, social signals lowest
-3. Consider signal freshness — signals from today > signals from 3 days ago
+3. Consider signal freshness. Signals from today > signals from 3 days ago
 4. Identify the single strongest thesis for or against this asset
 5. Penalise contradictory signals (e.g. insider buying but dark pool selling)
 

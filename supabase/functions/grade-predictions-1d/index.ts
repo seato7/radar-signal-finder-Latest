@@ -354,7 +354,7 @@ Deno.serve(async (req) => {
       await alerter.sendCriticalAlert({
         type: 'no_data_found',
         etlName: 'grade-predictions-1d',
-        message: `grade-predictions-1d ran with ${ungraded.length} ungraded prediction(s) but graded 0. All were skipped — T1 prices likely missing for all tickers.`,
+        message: `grade-predictions-1d ran with ${ungraded.length} ungraded prediction(s) but graded 0. All were skipped: T1 prices likely missing for all tickers.`,
         details: {
           ungraded_count: String(ungraded.length),
           dates_scanned: datesFound.join(', '),

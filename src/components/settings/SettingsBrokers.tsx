@@ -298,7 +298,7 @@ export default function SettingsBrokers() {
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
                   <div className="space-y-2">
-                    <p className="font-semibold">Save this API key — it won't be shown again!</p>
+                    <p className="font-semibold">Save this API key. It won't be shown again!</p>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 p-2 bg-muted rounded text-sm break-all">{newApiKey}</code>
                       <Button size="sm" variant="outline" onClick={() => copyToClipboard(newApiKey)}>

@@ -65,14 +65,14 @@ export default function AccountDeleted() {
 
           <div className="border-t border-border" />
 
-          {/* Feedback form — only if we have a deletion_id and haven't submitted yet */}
+          {/* Feedback form, only if we have a deletion_id and haven't submitted yet */}
           {deletionId && !submitted && (
             <div className="space-y-3">
               <div className="space-y-1 text-center">
                 <h2 className="font-semibold">Thank you for trying InsiderPulse</h2>
                 <p className="text-sm text-muted-foreground">
                   If there's something we could have done better, we'd like to know.
-                  This is anonymous — we can't reply.
+                  This is anonymous, we can't reply.
                 </p>
               </div>
               <Textarea
@@ -99,7 +99,7 @@ export default function AccountDeleted() {
           {submitted && (
             <div className="text-center p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
               <p className="text-sm text-cyan-600 dark:text-cyan-400 font-medium">
-                Thank you — your feedback has been recorded.
+                Thank you. Your feedback has been recorded.
               </p>
             </div>
           )}

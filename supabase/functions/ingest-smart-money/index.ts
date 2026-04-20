@@ -22,7 +22,7 @@ serve(async (req) => {
     JSON.stringify({
       success: false,
       disabled: true,
-      reason: "ingest-smart-money disabled — was generating 100% synthetic data via Math.random() for all metrics. No real data source configured. BigMoneyConfirm component will use zero-weight until a real institutional flow source is wired up.",
+      reason: "ingest-smart-money disabled. Was generating 100% synthetic data via Math.random() for all metrics. No real data source configured. BigMoneyConfirm component will use zero-weight until a real institutional flow source is wired up.",
       replacement: "Use ingest-dark-pool, ingest-sec-13f-edgar, and ingest-etf-flows for real institutional flow signals.",
     }),
     {

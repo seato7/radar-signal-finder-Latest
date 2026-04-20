@@ -185,7 +185,7 @@ serve(async (req) => {
     } catch (e) {
       logStep('AUDIT LOG FAILED — aborting deletion', { error: (e as Error).message });
       return new Response(
-        JSON.stringify({ error: 'Could not record deletion audit log — deletion aborted for legal safety', detail: (e as Error).message }),
+        JSON.stringify({ error: 'Could not record deletion audit log. Deletion aborted for legal safety.', detail: (e as Error).message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }

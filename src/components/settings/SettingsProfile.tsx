@@ -75,7 +75,7 @@ export default function SettingsProfile() {
 
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    : '—';
+    : '-';
 
   return (
     <Card>

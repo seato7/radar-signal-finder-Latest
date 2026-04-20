@@ -298,7 +298,7 @@ const AssetDetail = () => {
               <div>
                 <p className="text-xs text-muted-foreground mb-0.5">Entry Price</p>
                 <p className="font-semibold tabular-nums">
-                  {activeSignal.entry_price != null ? `$${activeSignal.entry_price.toFixed(2)}` : "—"}
+                  {activeSignal.entry_price != null ? `$${activeSignal.entry_price.toFixed(2)}` : "-"}
                 </p>
               </div>
               <div>
@@ -306,7 +306,7 @@ const AssetDetail = () => {
                   <Target className="h-3 w-3" /> Target (+15%)
                 </p>
                 <p className="font-semibold tabular-nums text-success">
-                  {activeSignal.exit_target != null ? `$${activeSignal.exit_target.toFixed(2)}` : "—"}
+                  {activeSignal.exit_target != null ? `$${activeSignal.exit_target.toFixed(2)}` : "-"}
                 </p>
               </div>
               <div>
@@ -314,7 +314,7 @@ const AssetDetail = () => {
                   <ShieldAlert className="h-3 w-3" /> Stop Loss (-10%)
                 </p>
                 <p className="font-semibold tabular-nums text-destructive">
-                  {activeSignal.stop_loss != null ? `$${activeSignal.stop_loss.toFixed(2)}` : "—"}
+                  {activeSignal.stop_loss != null ? `$${activeSignal.stop_loss.toFixed(2)}` : "-"}
                 </p>
               </div>
               <div>
@@ -322,7 +322,7 @@ const AssetDetail = () => {
                 <p className="font-semibold tabular-nums">
                   {activeSignal.position_size_pct != null
                     ? `${(activeSignal.position_size_pct * 100).toFixed(1)}%`
-                    : "—"}
+                    : "-"}
                 </p>
               </div>
             </div>

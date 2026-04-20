@@ -129,7 +129,7 @@ const FollowedThemesCard = () => {
                     {theme.currentScore.toFixed(0)}
                   </div>
                   <Badge variant="outline" className="text-xs text-muted-foreground border-border/50">
-                    —
+                    -
                   </Badge>
                 </div>
               );

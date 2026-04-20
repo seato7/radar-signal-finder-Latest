@@ -335,7 +335,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
             <p className="text-xs text-muted-foreground mt-2 text-right">
               {todayCount} of {dailyLimit} messages used today
               {todayCount >= dailyLimit && (
-                <> — <Link to="/pricing" className="text-primary underline underline-offset-2">Upgrade</Link> for more</>
+                <>. <Link to="/pricing" className="text-primary underline underline-offset-2">Upgrade</Link> for more</>
               )}
             </p>
           )}
