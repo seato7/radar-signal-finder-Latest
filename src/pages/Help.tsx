@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -122,6 +123,7 @@ const Help = () => {
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -198,19 +200,33 @@ const Help = () => {
       {/* Navbar, matching Landing */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-[#020817]/80 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+          <Link to={isAuthenticated ? "/dashboard" : "/"} className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
             InsiderPulse
           </Link>
           <div className="flex items-center gap-3">
-            <Button variant="ghost" className="text-slate-300 hover:text-white" asChild>
-              <Link to="/auth">Sign In</Link>
-            </Button>
-            <Button
-              className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-5"
-              asChild
-            >
-              <Link to="/auth">Start Free</Link>
-            </Button>
+            {isAuthenticated ? (
+              <Button
+                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-5"
+                asChild
+              >
+                <Link to="/dashboard">
+                  Back to Dashboard
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" className="text-slate-300 hover:text-white" asChild>
+                  <Link to="/auth">Sign In</Link>
+                </Button>
+                <Button
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-5"
+                  asChild
+                >
+                  <Link to="/auth">Start Free</Link>
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </nav>
