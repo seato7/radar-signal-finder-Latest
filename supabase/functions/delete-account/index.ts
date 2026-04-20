@@ -163,8 +163,9 @@ serve(async (req) => {
     }
 
     // ── 3. Insert audit log — MUST succeed before any deletion proceeds ──
+    let deletionId: string | null = null;
     try {
-      const { error: logError } = await supabaseAdmin
+      const { data: logRow, error: logError } = await supabaseAdmin
         .from('account_deletion_log')
         .insert({
           user_id: user.id,
@@ -176,8 +177,11 @@ serve(async (req) => {
           data_exported: dataExported,
           ip_address: ipAddress,
           user_agent: userAgent,
-        });
+        })
+        .select('id')
+        .single();
       if (logError) throw new Error(logError.message);
+      deletionId = logRow?.id ?? null;
     } catch (e) {
       logStep('AUDIT LOG FAILED — aborting deletion', { error: (e as Error).message });
       return new Response(
@@ -185,7 +189,7 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
-    logStep('Audit log inserted', { user_id: user.id });
+    logStep('Audit log inserted', { user_id: user.id, deletion_id: deletionId });
 
     // ── 4. Delete PII-bearing rows (each in its own try/catch) ──
     const piiTables = ['watchlist', 'alerts', 'user_preferences', 'profiles', 'broker_keys', 'user_roles'];
@@ -241,6 +245,7 @@ serve(async (req) => {
       JSON.stringify({
         success: authUserDeleted,
         deleted_at: deletedAt,
+        deletion_id: deletionId,
         stripe_cancelled: stripeCancelled,
         auth_user_deleted: authUserDeleted,
         errors,

@@ -33,6 +33,7 @@ import DataIngestion from "./pages/DataIngestion";
 import PipelineTests from "./pages/PipelineTests";
 import TradingSignals from "./pages/TradingSignals";
 import Landing from "./pages/Landing";
+import AccountDeleted from "./pages/AccountDeleted";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -60,6 +61,7 @@ const App = () => (
             <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/account-deleted" element={<AccountDeleted />} />
             <Route path="/" element={<Landing />} />
             <Route
               path="/*"
