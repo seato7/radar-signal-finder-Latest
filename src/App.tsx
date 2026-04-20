@@ -62,6 +62,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/account-deleted" element={<AccountDeleted />} />
+            <Route path="/help" element={<Help />} />
             <Route path="/" element={<Landing />} />
             <Route
               path="/*"
@@ -95,7 +96,6 @@ const App = () => (
                                 </ProtectedRoute>
                               } 
                             />
-                            <Route path="/help" element={<Help />} />
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/assistant" element={<Assistant />} />
