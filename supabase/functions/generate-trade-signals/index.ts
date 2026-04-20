@@ -301,8 +301,17 @@ serve(async (req) => {
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active');
 
-    if ((totalActiveCount ?? 0) >= 5) {
-      console.log(`[GENERATE-TRADE-SIGNALS] Active signal cap reached (${totalActiveCount}/5) — skipping generation`);
+    // Absolute cap on concurrent active signals. Enforced BOTH here (fast-exit when
+    // already at cap) AND inside the generation loop (see `remainingSlots` below),
+    // because a single invocation could otherwise insert N candidates in one batch
+    // without re-checking the count between them — which is what produced the "22
+    // signals in one run" incident.
+    const CAP = 5;
+    const remainingSlots = Math.max(0, CAP - (totalActiveCount ?? 0));
+    console.log(`[GENERATE-TRADE-SIGNALS] Active signal cap: ${totalActiveCount ?? 0}/${CAP} used, ${remainingSlots} slots remaining this run`);
+
+    if (remainingSlots === 0) {
+      console.log(`[GENERATE-TRADE-SIGNALS] Active signal cap reached (${totalActiveCount}/${CAP}) — skipping generation`);
       const duration = Date.now() - startTime;
       await logHeartbeat(supabase, {
         function_name: 'generate-trade-signals',
@@ -422,8 +431,16 @@ serve(async (req) => {
     // 6. Evaluate entry conditions and build insert rows
     const toInsert: any[] = [];
     let skippedNoCondition = 0;
+    let skippedByCap = 0;
 
     for (const asset of eligible) {
+      // In-loop cap enforcement. `eligible` is already hybrid-score-sorted desc so the
+      // best candidates get the remaining slots first.
+      if (toInsert.length >= remainingSlots) {
+        skippedByCap++;
+        continue;
+      }
+
       const aiScore = aiScoreMap.get(asset.id);
       const hasMomentum = momentumAssetIds.has(asset.id);
       const hasRecentNews = newsBoostAssetIds.has(asset.id);
@@ -542,7 +559,14 @@ serve(async (req) => {
       });
     }
 
-    console.log(`[GENERATE-TRADE-SIGNALS] ${toInsert.length} signals to insert, ${skippedNoCondition} skipped (no condition met)`);
+    console.log(`[GENERATE-TRADE-SIGNALS] ${toInsert.length} signals to insert, ${skippedNoCondition} skipped (no condition met), ${skippedByCap} skipped (cap)`);
+
+    // Defensive second-line truncation — even if something above went wrong, we never
+    // insert more than the remaining slots. The in-loop check already enforces this.
+    if (toInsert.length > remainingSlots) {
+      console.warn(`[GENERATE-TRADE-SIGNALS] toInsert (${toInsert.length}) exceeds remainingSlots (${remainingSlots}) — truncating`);
+      toInsert.length = remainingSlots;
+    }
 
     // 7. Insert new trade signals
     let inserted = 0;
@@ -559,20 +583,29 @@ serve(async (req) => {
       inserted = insertedRows?.length ?? 0;
     }
 
-    console.log(`[GENERATE-TRADE-SIGNALS] ✅ Inserted ${inserted} trade signals`);
+    console.log(`[GENERATE-TRADE-SIGNALS] ✅ Inserted ${inserted} trade signals (${totalActiveCount ?? 0} pre-existing + ${inserted} new = ${(totalActiveCount ?? 0) + inserted}/${CAP})`);
 
     const duration = Date.now() - startTime;
     await logHeartbeat(supabase, {
       function_name: 'generate-trade-signals',
       status: 'success',
       rows_inserted: inserted,
-      rows_skipped: skippedActive + skippedNoCondition,
+      rows_skipped: skippedActive + skippedNoCondition + skippedByCap,
       duration_ms: duration,
       source_used: 'assets',
+      metadata: {
+        active_before: totalActiveCount ?? 0,
+        active_after: (totalActiveCount ?? 0) + inserted,
+        cap: CAP,
+        remaining_slots_at_start: remainingSlots,
+        skipped_active: skippedActive,
+        skipped_no_condition: skippedNoCondition,
+        skipped_by_cap: skippedByCap,
+      },
     });
 
     return new Response(
-      JSON.stringify({ inserted, skipped_active: skippedActive, skipped_no_condition: skippedNoCondition }),
+      JSON.stringify({ inserted, skipped_active: skippedActive, skipped_no_condition: skippedNoCondition, skipped_by_cap: skippedByCap }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
 
