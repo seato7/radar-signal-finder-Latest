@@ -92,8 +92,11 @@ serve(async (req) => {
     console.log(`[CHECK-TRADE-EXITS] TwelveData live: ${tdSucceeded}/${activeTickers.length} tickers resolved`);
 
     const now = new Date();
-    const peakUpdates: { id: string; peak_price: number }[] = [];
-    const exitUpdates: { id: string; status: string; exit_price: number; exit_date: string; pnl_pct: number; peak_price?: number }[] = [];
+    const nowIso = now.toISOString();
+    type PriceStamp = { last_live_price: number | null; last_live_price_at: string; last_live_price_source: 'live' | 'db' | 'none' };
+    const peakUpdates: { id: string; peak_price: number; stamp: PriceStamp }[] = [];
+    const exitUpdates: { id: string; status: string; exit_price: number; exit_date: string; pnl_pct: number; peak_price?: number; stamp: PriceStamp }[] = [];
+    const priceUpdates: { id: string; stamp: PriceStamp }[] = [];
 
     let stopped = 0;
     let triggered = 0;
@@ -122,6 +125,14 @@ serve(async (req) => {
         priceSource = 'none';
       }
 
+      // Price stamp written to the row every run (even when no exit fires) so the
+      // frontend's "Live P&L" column can use a fresh price.
+      const stamp: PriceStamp = {
+        last_live_price: currentPrice,
+        last_live_price_at: nowIso,
+        last_live_price_source: priceSource,
+      };
+
       const entryPrice = Number(signal.entry_price);
       const exitTarget = Number(signal.exit_target);
       const stopLoss = Number(signal.stop_loss);
@@ -138,13 +149,15 @@ serve(async (req) => {
             id: signal.id,
             status: 'expired',
             exit_price: entryPrice,
-            exit_date: now.toISOString(),
+            exit_date: nowIso,
             pnl_pct: 0,
             peak_price: peakPrice,
+            stamp,
           });
           expired++;
         } else {
-          console.warn(`[CHECK-TRADE-EXITS] ${signal.ticker}: no price (live or DB) — skipping until next run`);
+          console.warn(`[CHECK-TRADE-EXITS] ${signal.ticker}: no price (live or DB) — stamping 'none' and skipping exit checks`);
+          priceUpdates.push({ id: signal.id, stamp });
           skippedNoPrice++;
         }
         continue;
@@ -173,13 +186,17 @@ serve(async (req) => {
           id: signal.id,
           status: newStatus,
           exit_price: currentPrice,
-          exit_date: now.toISOString(),
+          exit_date: nowIso,
           pnl_pct: pnlPct,
           peak_price: newPeak,
+          stamp,
         });
         console.log(`[CHECK-TRADE-EXITS] ${signal.ticker}: ${newStatus} @ ${currentPrice} [${priceSource}] (pnl ${pnlPct > 0 ? '+' : ''}${pnlPct}%)`);
       } else if (newPeak > peakPrice) {
-        peakUpdates.push({ id: signal.id, peak_price: newPeak });
+        peakUpdates.push({ id: signal.id, peak_price: newPeak, stamp });
+      } else {
+        // Still active, no peak move — just refresh the live-price stamp.
+        priceUpdates.push({ id: signal.id, stamp });
       }
     }
 
@@ -194,7 +211,19 @@ serve(async (req) => {
               exit_date: u.exit_date,
               pnl_pct: u.pnl_pct,
               peak_price: u.peak_price,
+              ...u.stamp,
             })
+            .eq('id', u.id)
+        ),
+      );
+    }
+
+    if (priceUpdates.length > 0) {
+      await Promise.allSettled(
+        priceUpdates.map((u) =>
+          supabase
+            .from('trade_signals')
+            .update({ ...u.stamp })
             .eq('id', u.id)
         ),
       );
@@ -205,7 +234,7 @@ serve(async (req) => {
         peakUpdates.map((u) =>
           supabase
             .from('trade_signals')
-            .update({ peak_price: u.peak_price })
+            .update({ peak_price: u.peak_price, ...u.stamp })
             .eq('id', u.id)
         ),
       );

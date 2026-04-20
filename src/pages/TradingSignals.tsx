@@ -10,8 +10,9 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle } from "lucide-react";
+import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface TradeSignal {
   id: string;
@@ -31,6 +32,9 @@ interface TradeSignal {
   pnl_pct: number | null;
   expires_at: string | null;
   created_at: string;
+  last_live_price?: number | null;
+  last_live_price_at?: string | null;
+  last_live_price_source?: 'live' | 'db' | 'none' | null;
 }
 
 const FREE_ROW_LIMIT = 3;
@@ -55,6 +59,42 @@ const PnlCell = ({ pnl }: { pnl: number | null }) => {
     <span className={cn("font-medium tabular-nums", positive ? "text-success" : "text-destructive")}>
       {positive ? "+" : ""}{pnl.toFixed(2)}%
     </span>
+  );
+};
+
+const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) => {
+  if (!lastLivePriceAt) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Circle className="h-2 w-2 fill-muted-foreground text-muted-foreground shrink-0" />
+        </TooltipTrigger>
+        <TooltipContent>Daily close</TooltipContent>
+      </Tooltip>
+    );
+  }
+  const ageMs = Date.now() - new Date(lastLivePriceAt).getTime();
+  const ageMin = Math.floor(ageMs / 60000);
+  const ageHr = Math.floor(ageMin / 60);
+  let color: string;
+  let label: string;
+  if (ageMin < 10) {
+    color = "fill-success text-success";
+    label = `Live — updated ${ageMin}m ago`;
+  } else if (ageMin < 60 * 24) {
+    color = "fill-amber-500 text-amber-500";
+    label = ageHr >= 1 ? `Delayed — updated ${ageHr}h ago` : `Delayed — updated ${ageMin}m ago`;
+  } else {
+    color = "fill-muted-foreground text-muted-foreground";
+    label = "Daily close";
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Circle className={cn("h-2 w-2 shrink-0", color)} />
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 };
 
@@ -301,7 +341,7 @@ export default function TradingSignals() {
                       const expiresFormatted = s.expires_at
                         ? format(new Date(s.expires_at), 'MMM d')
                         : "—";
-                      const currentPrice = priceMap.get(s.ticker);
+                      const currentPrice = s.last_live_price ?? priceMap.get(s.ticker);
                       const livePnl = currentPrice != null && s.entry_price != null
                         ? ((currentPrice - s.entry_price) / s.entry_price) * 100
                         : null;
@@ -320,7 +360,10 @@ export default function TradingSignals() {
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "—"}
                           </td>
                           <td className="text-right py-2.5 px-4">
-                            <PnlCell pnl={livePnl} />
+                            <span className="inline-flex items-center gap-1.5 justify-end">
+                              <PnlCell pnl={livePnl} />
+                              <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
+                            </span>
                           </td>
                           <td className="text-right py-2.5 px-4 tabular-nums">
                             {s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "—"}
