@@ -262,8 +262,12 @@ serve(async (req) => {
     }
 
     // Query DB to see how many of these checksums already exist (DB-side collisions)
+    // Capped at 500 unique checksums per query to stay within .in() payload limits.
+    let dbExistingChecksums: number | null = null;
+    let dbExistingSampleSize = 0;
     if (uniqueChecksums.size > 0) {
       const checksumSample = [...uniqueChecksums].slice(0, 500);
+      dbExistingSampleSize = checksumSample.length;
       const { data: existing, error: existingErr } = await supabaseClient
         .from('signals')
         .select('checksum')
@@ -271,9 +275,12 @@ serve(async (req) => {
       if (existingErr) {
         console.log(`[SIGNAL-GEN-BREAKING] DEBUG existing-checksum query error: ${existingErr.message}`);
       } else {
-        console.log(`[SIGNAL-GEN-BREAKING] DEBUG of ${checksumSample.length} sampled unique checksums, ${existing?.length ?? 0} already exist in DB`);
+        dbExistingChecksums = existing?.length ?? 0;
+        console.log(`[SIGNAL-GEN-BREAKING] DEBUG of ${checksumSample.length} sampled unique checksums, ${dbExistingChecksums} already exist in DB`);
       }
     }
+
+    const sampleChecksums = signals.slice(0, 3).map(s => s.checksum);
 
     // Batch upsert
     let insertedCount = 0;
@@ -321,6 +328,11 @@ serve(async (req) => {
         checksumBlocked,
         inserted: insertedCount,
         sampleArticles,
+        withinBatchDuplicates,
+        dbExistingChecksums,
+        dbExistingSampleSize,
+        uniqueChecksums: uniqueChecksums.size,
+        sampleChecksums,
       },
     });
 
