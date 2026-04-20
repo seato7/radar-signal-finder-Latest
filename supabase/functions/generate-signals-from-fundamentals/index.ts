@@ -77,8 +77,8 @@ serve(async (req) => {
       // --- High profitability: roe > 15% (net_margin enriches magnitude when available) ---
       if (roe != null && roe > 15) {
         const magnitude = netMargin != null
-          ? Math.min(1, (netMargin / 100 + roe / 100) / 2)
-          : Math.min(1, roe / 100);
+          ? Math.min(5, ((netMargin / 100 + roe / 100) / 2) * 5)
+          : Math.min(5, (roe / 100) * 5);
         const marginText = netMargin != null ? `, net margin ${netMargin.toFixed(1)}%` : '';
         signals.push({
           asset_id: assetId,
@@ -100,7 +100,7 @@ serve(async (req) => {
           asset_id: assetId,
           signal_type: 'profitability_weak',
           direction: 'down',
-          magnitude: 0.5,
+          magnitude: 2.5,
           observed_at: observedAt,
           value_text: `Weak profitability: ROE ${roe.toFixed(1)}%${marginText}`,
           checksum: JSON.stringify({ ticker: fund.ticker, signal_type: 'profitability_weak', date: today }),
@@ -111,7 +111,7 @@ serve(async (req) => {
 
       // --- Revenue growth: revenueGrowthTTMYoy > 10% ---
       if (revenueGrowthYoy != null && revenueGrowthYoy > 10) {
-        const magnitude = Math.min(1, revenueGrowthYoy / 50);
+        const magnitude = Math.min(5, (revenueGrowthYoy / 50) * 5);
         signals.push({
           asset_id: assetId,
           signal_type: 'revenue_growth',
@@ -127,7 +127,7 @@ serve(async (req) => {
 
       // --- Earnings growth: epsGrowth5Y > 10% ---
       if (epsGrowth5Y != null && epsGrowth5Y > 10) {
-        const magnitude = Math.min(1, epsGrowth5Y / 50);
+        const magnitude = Math.min(5, (epsGrowth5Y / 50) * 5);
         signals.push({
           asset_id: assetId,
           signal_type: 'eps_growth',

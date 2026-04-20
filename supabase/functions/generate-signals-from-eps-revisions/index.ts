@@ -74,8 +74,7 @@ serve(async (req) => {
       const direction = rev.revision_direction as 'up' | 'down';
       const signalType = direction === 'up' ? 'eps_revision_up' : 'eps_revision_down';
 
-      // Magnitude: |revision_pct| / 100, clamped 0–1
-      const magnitude = Math.min(1, Math.abs(revisionPct) / 100);
+      const magnitude = Math.min(5, (Math.abs(revisionPct) / 100) * 5);
 
       const signalData = {
         ticker: rev.ticker,

@@ -231,7 +231,7 @@ ${combinedContent.substring(0, 8000)}`;
           signal_type: 'search_trend_breakout',
           asset_id: assetData?.id,
           direction: 'up',
-          magnitude: Math.min((trend.trend_change ?? 50) / 100, 1.0),
+          magnitude: Math.min(((trend.trend_change ?? 50) / 100) * 5, 5),
           value_text: `Search interest breakout: +${(trend.trend_change ?? 0).toFixed(1)}% (volume: ${trend.search_volume ?? 50})`,
           observed_at: new Date().toISOString(),
           citation: {

@@ -146,7 +146,7 @@ serve(async (req) => {
             signal_type: 'policy_approval',
             value_text: title,
             direction: 'up',
-            magnitude: 1.0,
+            magnitude: 3.0,
             observed_at: new Date().toISOString(),
             raw: { summary },
             citation: {

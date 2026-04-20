@@ -236,7 +236,7 @@ Deno.serve(async (req) => {
               signal_type: 'cot_positioning',
               asset_id,
               direction: net_position > 0 ? 'up' : 'down',
-              magnitude: Math.min(1, (Math.abs(net_position) / 100000)), // normalised to 0-1 scale
+              magnitude: Math.min(5, (Math.abs(net_position) / 100000) * 5),
               observed_at: new Date(record.report_date_as_yyyy_mm_dd).toISOString(),
               value_text: `${sentiment.toUpperCase()} positioning: ${net_position.toLocaleString()} contracts`,
               citation: {

@@ -257,8 +257,7 @@ serve(async (req) => {
         if (price5d && price5d > 0) {
           const momentum5d = ((latestPrice - price5d) / price5d) * 100;
           const direction = momentum5d > 0 ? 'up' : (momentum5d < 0 ? 'down' : 'neutral');
-          // FIX: Normalised to 0-5 scale (was 0-1)
-          const magnitude = Math.min(1, Math.max(0, Math.abs(momentum5d) / 20));
+          const magnitude = Math.min(5, Math.max(0, (Math.abs(momentum5d) / 20) * 5));
 
           const dataQuality = hasLimitedData5d ? '_limited_data' : '';
           let signalType: string;
@@ -299,8 +298,7 @@ serve(async (req) => {
           if (price20d && price20d > 0) {
             const momentum20d = ((latestPrice - price20d) / price20d) * 100;
             const direction = momentum20d > 0 ? 'up' : (momentum20d < 0 ? 'down' : 'neutral');
-            // FIX: Normalised to 0-5 scale (was 0-1)
-            const magnitude = Math.min(1, Math.max(0, Math.abs(momentum20d) / 30));
+            const magnitude = Math.min(5, Math.max(0, (Math.abs(momentum20d) / 30) * 5));
 
             const dataQuality = hasLimitedData20d ? '_limited_data' : '';
             let signalType: string;
