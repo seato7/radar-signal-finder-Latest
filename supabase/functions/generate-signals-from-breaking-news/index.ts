@@ -238,6 +238,43 @@ serve(async (req) => {
 
     console.log(`[SIGNAL-GEN-BREAKING] Filter results — no asset: ${skippedNoAsset}, neutral/low relevance: ${skippedNeutral}, low magnitude: ${skippedLowMagnitude}, passed all filters: ${signals.length}`);
 
+    // DEBUG: checksum collision diagnostics
+    // Goal: determine whether checksumBlocked comes from within-batch collisions
+    // (same checksum generated twice in this run) or from DB collisions (checksum
+    // already exists from a prior run).
+    const batchChecksums = signals.map(s => s.checksum);
+    const uniqueChecksums = new Set(batchChecksums);
+    const withinBatchDuplicates = batchChecksums.length - uniqueChecksums.size;
+
+    console.log(`[SIGNAL-GEN-BREAKING] DEBUG first 5 checksums:`);
+    for (const s of signals.slice(0, 5)) {
+      console.log(`  ${s.checksum}`);
+    }
+    console.log(`[SIGNAL-GEN-BREAKING] DEBUG total signals: ${signals.length}, unique checksums: ${uniqueChecksums.size}, within-batch duplicates: ${withinBatchDuplicates}`);
+
+    // Tally which keys collide within-batch so we can see the shape of the collision
+    if (withinBatchDuplicates > 0) {
+      const counts = new Map<string, number>();
+      for (const c of batchChecksums) counts.set(c, (counts.get(c) ?? 0) + 1);
+      const collisions = [...counts.entries()].filter(([, n]) => n > 1).slice(0, 5);
+      console.log(`[SIGNAL-GEN-BREAKING] DEBUG sample within-batch collisions:`);
+      for (const [c, n] of collisions) console.log(`  x${n}: ${c}`);
+    }
+
+    // Query DB to see how many of these checksums already exist (DB-side collisions)
+    if (uniqueChecksums.size > 0) {
+      const checksumSample = [...uniqueChecksums].slice(0, 500);
+      const { data: existing, error: existingErr } = await supabaseClient
+        .from('signals')
+        .select('checksum')
+        .in('checksum', checksumSample);
+      if (existingErr) {
+        console.log(`[SIGNAL-GEN-BREAKING] DEBUG existing-checksum query error: ${existingErr.message}`);
+      } else {
+        console.log(`[SIGNAL-GEN-BREAKING] DEBUG of ${checksumSample.length} sampled unique checksums, ${existing?.length ?? 0} already exist in DB`);
+      }
+    }
+
     // Batch upsert
     let insertedCount = 0;
     const batchSize = 100;
