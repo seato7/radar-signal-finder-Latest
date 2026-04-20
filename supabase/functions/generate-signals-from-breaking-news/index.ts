@@ -186,8 +186,13 @@ serve(async (req) => {
       }
 
       // Filter 4: magnitude threshold
-      const magnitude = Math.min(5, Math.abs(sentimentScore) * 5 * relevanceScore);
-      if (magnitude < 0.1) {
+      // DB constraint: signals.magnitude must be in [0, 1] (check_magnitude_range
+      // added in 20251107052148). Previous clamp to 5 silently failed every upsert
+      // with a check-constraint violation, which the batch-insert error handler
+      // then mislabelled as "duplicates blocked by checksum" — hence 568 reported
+      // as checksumBlocked on an empty signals table.
+      const magnitude = Math.min(1, Math.abs(sentimentScore) * relevanceScore);
+      if (magnitude < 0.02) {
         skippedLowMagnitude++;
         continue;
       }
@@ -283,7 +288,13 @@ serve(async (req) => {
     const sampleChecksums = signals.slice(0, 3).map(s => s.checksum);
 
     // Batch upsert
+    // Track insert errors separately so the heartbeat metadata reflects the
+    // actual outcome — the previous implementation silently swallowed batch
+    // errors and reported them as "checksum duplicates", which is how the
+    // magnitude check-constraint violation went undiagnosed for so long.
     let insertedCount = 0;
+    let errorRowCount = 0;
+    const insertErrorSamples: Array<{ message: string; code?: string; details?: string }> = [];
     const batchSize = 100;
     for (let i = 0; i < signals.length; i += batchSize) {
       const batch = signals.slice(i, i + batchSize);
@@ -293,13 +304,23 @@ serve(async (req) => {
         .select('id');
 
       if (insertError) {
+        errorRowCount += batch.length;
+        if (insertErrorSamples.length < 3) {
+          insertErrorSamples.push({
+            message: insertError.message,
+            code: (insertError as { code?: string }).code,
+            details: insertError.details,
+          });
+        }
         console.error('Signal insert error:', insertError.message, insertError.details);
       } else {
         insertedCount += data?.length || 0;
       }
     }
 
-    const checksumBlocked = signals.length - insertedCount;
+    // checksumBlocked = rows that went through without error but did not insert.
+    // These are true duplicate-checksum skips. errorRowCount is tracked separately.
+    const checksumBlocked = signals.length - insertedCount - errorRowCount;
     console.log(`[SIGNAL-GEN-BREAKING] ✅ Created ${insertedCount} breaking news signals (${checksumBlocked} duplicates)`);
 
     if (insertedCount > 0) {
@@ -327,6 +348,8 @@ serve(async (req) => {
         lowMagnitude: skippedLowMagnitude,
         checksumBlocked,
         inserted: insertedCount,
+        errorRowCount,
+        insertErrorSamples,
         sampleArticles,
         withinBatchDuplicates,
         dbExistingChecksums,
