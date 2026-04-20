@@ -3528,6 +3528,9 @@ export type Database = {
           exit_target: number | null
           expires_at: string | null
           id: string
+          last_live_price: number | null
+          last_live_price_at: string | null
+          last_live_price_source: string | null
           peak_price: number | null
           pnl_pct: number | null
           position_size_pct: number | null
@@ -3550,6 +3553,9 @@ export type Database = {
           exit_target?: number | null
           expires_at?: string | null
           id?: string
+          last_live_price?: number | null
+          last_live_price_at?: string | null
+          last_live_price_source?: string | null
           peak_price?: number | null
           pnl_pct?: number | null
           position_size_pct?: number | null
@@ -3572,6 +3578,9 @@ export type Database = {
           exit_target?: number | null
           expires_at?: string | null
           id?: string
+          last_live_price?: number | null
+          last_live_price_at?: string | null
+          last_live_price_source?: string | null
           peak_price?: number | null
           pnl_pct?: number | null
           position_size_pct?: number | null
