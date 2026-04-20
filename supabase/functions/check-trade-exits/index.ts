@@ -1,17 +1,25 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { getTwelveDataPrice } from "../_shared/twelvedata.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// DB prices are the ONLY source of truth for exit decisions. The prior Tavily
-// price-verification path was removed after extracting wrong prices from unrelated
-// article context caused catastrophic false exits (ARYD closed at $1.55 vs $10.54
-// entry, AGEN at $4.54 vs $29.86). News-article price scraping is not reliable
-// enough to base exits on.
+// Exit decisions use the TwelveData /price real-time quote where available, falling
+// back to the latest DB daily close only if TwelveData returns null. DB closes alone
+// miss intraday stop/target breaches — a stock can blow through a stop at 10am and
+// we wouldn't know until the next day's close lands in the prices table.
+//
+// NOTE: price extraction from Tavily article text was removed permanently after it
+// produced catastrophic false exits (ARYD $1.55 vs $10.54 entry, AGEN $4.54 vs
+// $29.86). Tavily is never used for price decisions.
+//
+// Rate: TwelveData plan is 55 credits/minute (per ingest-prices-twelvedata comment).
+// Max 5 active signals per run × every 5min = ~1 call/min average — well under the
+// limit, so we call for every active signal unconditionally.
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -74,6 +82,15 @@ serve(async (req) => {
       }
     }
 
+    // Fetch real-time prices in parallel for all active tickers. With max 5 signals
+    // this is at most 5 concurrent requests and well under the 55/min TwelveData cap.
+    const livePriceEntries = await Promise.all(
+      activeTickers.map(async (t) => [t, await getTwelveDataPrice(t)] as const)
+    );
+    const livePriceMap = new Map<string, number | null>(livePriceEntries);
+    const tdSucceeded = livePriceEntries.filter(([, p]) => p != null).length;
+    console.log(`[CHECK-TRADE-EXITS] TwelveData live: ${tdSucceeded}/${activeTickers.length} tickers resolved`);
+
     const now = new Date();
     const peakUpdates: { id: string; peak_price: number }[] = [];
     const exitUpdates: { id: string; status: string; exit_price: number; exit_date: string; pnl_pct: number; peak_price?: number }[] = [];
@@ -82,9 +99,29 @@ serve(async (req) => {
     let triggered = 0;
     let expired = 0;
     let skippedNoPrice = 0;
+    let usedLive = 0;
+    let usedDb = 0;
 
     for (const signal of activeSignals) {
-      const currentPrice = latestPriceMap.get(signal.ticker);
+      const livePrice = livePriceMap.get(signal.ticker) ?? null;
+      const dbPrice = latestPriceMap.get(signal.ticker);
+      // Prefer live (intraday). Fall back to DB close only when TwelveData returned
+      // null (rate limit / network / delisted / unsupported symbol).
+      let currentPrice: number | null;
+      let priceSource: 'live' | 'db' | 'none';
+      if (livePrice != null) {
+        currentPrice = livePrice;
+        priceSource = 'live';
+        usedLive++;
+      } else if (dbPrice != null) {
+        currentPrice = dbPrice;
+        priceSource = 'db';
+        usedDb++;
+      } else {
+        currentPrice = null;
+        priceSource = 'none';
+      }
+
       const entryPrice = Number(signal.entry_price);
       const exitTarget = Number(signal.exit_target);
       const stopLoss = Number(signal.stop_loss);
@@ -93,10 +130,10 @@ serve(async (req) => {
       const pastExpiry = now >= expiresAt;
 
       if (currentPrice == null) {
-        // No DB price. If the signal is past its 7-day expiry, force-close at entry
-        // (pnl 0%) so nothing hangs forever. Otherwise skip and wait for price data.
+        // No live and no DB price. If the signal is past its 7-day expiry, force-close
+        // at entry (pnl 0%) so nothing hangs forever. Otherwise skip until next run.
         if (pastExpiry) {
-          console.log(`[CHECK-TRADE-EXITS] ${signal.ticker}: force-expire — past expiry with no DB price`);
+          console.log(`[CHECK-TRADE-EXITS] ${signal.ticker}: force-expire — past expiry with no live or DB price`);
           exitUpdates.push({
             id: signal.id,
             status: 'expired',
@@ -107,7 +144,7 @@ serve(async (req) => {
           });
           expired++;
         } else {
-          console.warn(`[CHECK-TRADE-EXITS] ${signal.ticker}: no DB price — skipping until next run`);
+          console.warn(`[CHECK-TRADE-EXITS] ${signal.ticker}: no price (live or DB) — skipping until next run`);
           skippedNoPrice++;
         }
         continue;
@@ -140,7 +177,7 @@ serve(async (req) => {
           pnl_pct: pnlPct,
           peak_price: newPeak,
         });
-        console.log(`[CHECK-TRADE-EXITS] ${signal.ticker}: ${newStatus} @ ${currentPrice} (pnl ${pnlPct > 0 ? '+' : ''}${pnlPct}%)`);
+        console.log(`[CHECK-TRADE-EXITS] ${signal.ticker}: ${newStatus} @ ${currentPrice} [${priceSource}] (pnl ${pnlPct > 0 ? '+' : ''}${pnlPct}%)`);
       } else if (newPeak > peakPrice) {
         peakUpdates.push({ id: signal.id, peak_price: newPeak });
       }
@@ -175,7 +212,7 @@ serve(async (req) => {
     }
 
     const checked = activeSignals.length;
-    console.log(`[CHECK-TRADE-EXITS] ✅ Checked ${checked}: ${stopped} stopped, ${triggered} triggered, ${expired} expired, ${skippedNoPrice} skipped (no price)`);
+    console.log(`[CHECK-TRADE-EXITS] ✅ Checked ${checked}: ${stopped} stopped, ${triggered} triggered, ${expired} expired, ${skippedNoPrice} skipped | price source: ${usedLive} live / ${usedDb} db`);
 
     const duration = Date.now() - startTime;
     await logHeartbeat(supabase, {
@@ -190,11 +227,14 @@ serve(async (req) => {
         triggered,
         expired,
         skipped_no_price: skippedNoPrice,
+        price_source_live: usedLive,
+        price_source_db: usedDb,
+        twelvedata_calls: activeTickers.length,
       },
     });
 
     return new Response(
-      JSON.stringify({ checked, stopped, triggered, expired, skipped_no_price: skippedNoPrice }),
+      JSON.stringify({ checked, stopped, triggered, expired, skipped_no_price: skippedNoPrice, price_source_live: usedLive, price_source_db: usedDb }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
 
