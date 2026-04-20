@@ -21,6 +21,7 @@ export type Database = {
           deletion_feedback: string | null
           deletion_reason: string | null
           email_hash: string | null
+          feedback_submitted: boolean
           id: string
           ip_address: unknown
           plan_at_deletion: string | null
@@ -34,6 +35,7 @@ export type Database = {
           deletion_feedback?: string | null
           deletion_reason?: string | null
           email_hash?: string | null
+          feedback_submitted?: boolean
           id?: string
           ip_address?: unknown
           plan_at_deletion?: string | null
@@ -47,6 +49,7 @@ export type Database = {
           deletion_feedback?: string | null
           deletion_reason?: string | null
           email_hash?: string | null
+          feedback_submitted?: boolean
           id?: string
           ip_address?: unknown
           plan_at_deletion?: string | null
@@ -1743,6 +1746,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      exit_feedback: {
+        Row: {
+          deletion_id: string
+          feedback_text: string
+          id: string
+          submitted_at: string
+        }
+        Insert: {
+          deletion_id: string
+          feedback_text: string
+          id?: string
+          submitted_at?: string
+        }
+        Update: {
+          deletion_id?: string
+          feedback_text?: string
+          id?: string
+          submitted_at?: string
+        }
+        Relationships: []
       }
       forex_sentiment: {
         Row: {
