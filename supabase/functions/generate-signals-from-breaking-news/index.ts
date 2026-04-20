@@ -195,9 +195,24 @@ serve(async (req) => {
       const signalType = direction === 'up' ? 'breaking_news_bullish' :
                          direction === 'down' ? 'breaking_news_bearish' : 'breaking_news';
 
-      // FIX: checksum uses full published_at timestamp + URL so each unique article
-      // gets a unique checksum — prevents same-day articles being blocked as duplicates
-      // on every hourly run after the first
+      // Checksum: use the breaking_news row's primary key as the uniqueness anchor.
+      // The previous url+published_at approach produced identical checksums for
+      // articles where both url and published_at are NULL (common with RSS feeds),
+      // causing every subsequent insert to be blocked as a duplicate.
+      const checksum = item.id
+        ? JSON.stringify({
+            breaking_news_id: item.id,
+            ticker: item.ticker,
+            signal_type: signalType,
+          })
+        : JSON.stringify({
+            ticker: item.ticker,
+            signal_type: signalType,
+            headline: item.headline?.substring(0, 80),
+            source: item.source,
+            ts: Date.now(),
+          });
+
       signals.push({
         asset_id: assetId,
         signal_type: signalType,
@@ -205,12 +220,7 @@ serve(async (req) => {
         magnitude,
         observed_at: item.published_at || new Date().toISOString(),
         value_text: item.headline?.substring(0, 200) || 'Breaking news',
-        checksum: JSON.stringify({
-          ticker: item.ticker,
-          signal_type: signalType,
-          url: item.url ?? item.headline?.substring(0, 30),
-          published_at: item.published_at,
-        }),
+        checksum,
         citation: {
           source: item.source || 'Breaking News',
           url: item.url,
