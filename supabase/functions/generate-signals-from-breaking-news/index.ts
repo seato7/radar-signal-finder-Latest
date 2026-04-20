@@ -186,13 +186,9 @@ serve(async (req) => {
       }
 
       // Filter 4: magnitude threshold
-      // DB constraint: signals.magnitude must be in [0, 1] (check_magnitude_range
-      // added in 20251107052148). Previous clamp to 5 silently failed every upsert
-      // with a check-constraint violation, which the batch-insert error handler
-      // then mislabelled as "duplicates blocked by checksum" — hence 568 reported
-      // as checksumBlocked on an empty signals table.
-      const magnitude = Math.min(1, Math.abs(sentimentScore) * relevanceScore);
-      if (magnitude < 0.02) {
+      // 0-5 scale — symmetric with technicals/earnings/smart-money generators.
+      const magnitude = Math.min(5, Math.abs(sentimentScore) * 5 * relevanceScore);
+      if (magnitude < 0.1) {
         skippedLowMagnitude++;
         continue;
       }
