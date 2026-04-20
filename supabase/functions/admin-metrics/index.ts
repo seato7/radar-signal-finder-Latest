@@ -77,7 +77,7 @@ serve(async (req) => {
         totals: {
           all_users: users?.users?.length || 0,
           free: roleCount('free'),
-          lite: roleCount('lite'),
+          starter: roleCount('starter'),
           pro: roleCount('pro'),
           admin: roleCount('admin'),
           // Fix: use ?? new Date(0) so null last_sign_in_at = epoch, not 1970 from (|| 0)

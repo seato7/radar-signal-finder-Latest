@@ -147,8 +147,8 @@ const Admin = () => {
                     <Badge variant="secondary">{userStats.totals.free}</Badge>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Lite</span>
-                    <Badge variant="secondary">{userStats.totals.lite}</Badge>
+                    <span className="text-sm font-medium">Starter</span>
+                    <Badge variant="secondary">{userStats.totals.starter}</Badge>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Pro</span>

@@ -184,13 +184,13 @@ const Themes = () => {
                   <Badge
                     variant="outline"
                     className={`${
-                      theme.score >= 80 ? 'border-success text-success' :
+                      theme.score >= 75 ? 'border-success text-success' :
                       theme.score >= 60 ? 'border-accent text-accent' :
                       'border-warning text-warning'
                     }`}
                   >
                     <TrendingUp className="mr-1 h-3 w-3" />
-                    {theme.score >= 80 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak'}
+                    {theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak'}
                   </Badge>
                 </div>
               </CardHeader>
