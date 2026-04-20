@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
+import { getTwelveDataPrice } from "../_shared/twelvedata.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,39 +26,18 @@ interface TavilyResult {
   content: string;
 }
 
+// Tavily is used ONLY for news/sentiment (keyword scanning of article text).
+// Price extraction from article text was removed — it produced catastrophic
+// false matches from unrelated numbers. Real-time price comes from TwelveData
+// /price (see _shared/twelvedata.ts).
 interface TavilyCheckResult {
   blocked: boolean;
   reason: string | null;
   hasPositiveSignal: boolean;
-  currentPrice: number | null;
-  priceSource: string | null;
-}
-
-function extractPriceFromText(text: string): number | null {
-  const patterns = [
-    /\$\s*([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/g,
-    /trading at\s+\$?([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/gi,
-    /price of\s+\$?([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/gi,
-    /priced at\s+\$?([\d]{1,6}(?:,\d{3})*(?:\.\d{1,4})?)/gi,
-  ];
-
-  const candidates: number[] = [];
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const val = parseFloat(match[1].replace(/,/g, ''));
-      if (val >= 0.50 && val <= 100000) candidates.push(val);
-    }
-  }
-
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
-  candidates.sort((a, b) => a - b);
-  return candidates[Math.floor(candidates.length / 2)];
 }
 
 async function checkTavilyNews(ticker: string): Promise<TavilyCheckResult> {
-  const noCheck: TavilyCheckResult = { blocked: false, reason: null, hasPositiveSignal: false, currentPrice: null, priceSource: null };
+  const noCheck: TavilyCheckResult = { blocked: false, reason: null, hasPositiveSignal: false };
 
   const apiKey = Deno.env.get('TAVILY_API_KEY');
   if (!apiKey) {
@@ -72,7 +52,7 @@ async function checkTavilyNews(ticker: string): Promise<TavilyCheckResult> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_key: apiKey,
-        query: `${ticker} stock price today ${year}`,
+        query: `${ticker} stock news today ${year}`,
         max_results: 3,
       }),
     });
@@ -93,14 +73,10 @@ async function checkTavilyNews(ticker: string): Promise<TavilyCheckResult> {
     let blocked = false;
     let reason: string | null = null;
     let hasPositiveSignal = false;
-    let currentPrice: number | null = null;
-    let priceSource: string | null = null;
 
     for (const result of results) {
-      const text = `${result.title} ${result.content}`;
-      const textLower = text.toLowerCase();
+      const textLower = `${result.title} ${result.content}`.toLowerCase();
 
-      // Check negative keywords — first match blocks the signal
       if (!blocked) {
         for (const keyword of TAVILY_NEGATIVE_KEYWORDS) {
           if (textLower.includes(keyword)) {
@@ -112,7 +88,6 @@ async function checkTavilyNews(ticker: string): Promise<TavilyCheckResult> {
         }
       }
 
-      // Check positive keywords
       if (!hasPositiveSignal) {
         for (const keyword of TAVILY_POSITIVE_KEYWORDS) {
           if (textLower.includes(keyword)) {
@@ -122,23 +97,13 @@ async function checkTavilyNews(ticker: string): Promise<TavilyCheckResult> {
           }
         }
       }
-
-      // Extract current price from text if not yet found
-      if (currentPrice == null) {
-        const extracted = extractPriceFromText(text);
-        if (extracted != null) {
-          currentPrice = extracted;
-          priceSource = result.url;
-          console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily price extracted $${extracted} from "${result.title}"`);
-        }
-      }
     }
 
     if (!blocked) {
-      console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily check passed — hasPositiveSignal=${hasPositiveSignal}, extractedPrice=${currentPrice ?? 'none'}`);
+      console.log(`[GENERATE-TRADE-SIGNALS] ${ticker}: Tavily check passed — hasPositiveSignal=${hasPositiveSignal}`);
     }
 
-    return { blocked, reason, hasPositiveSignal, currentPrice, priceSource };
+    return { blocked, reason, hasPositiveSignal };
 
   } catch (err) {
     console.warn(`[GENERATE-TRADE-SIGNALS] Tavily fetch failed for ${ticker}: ${err} — proceeding without news check`);
@@ -507,7 +472,8 @@ serve(async (req) => {
         continue;
       }
 
-      // Tavily news verification — block negative news, confirm positive signals, verify price
+      // Tavily news verification — block negative news, confirm positive signals. NEVER
+      // used for price — prices come from TwelveData below.
       const tavilyCheck = await checkTavilyNews(asset.ticker);
       if (tavilyCheck.blocked) {
         console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — Tavily news block: ${tavilyCheck.reason}`);
@@ -519,20 +485,23 @@ serve(async (req) => {
         console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: positive news signal confirmed ✓`);
       }
 
-      // Use Tavily price if it differs from TwelveData by more than 5%
+      // Real-time price verification via TwelveData /price. DB `prices` row is the prior
+      // session close; TwelveData is a live quote. If they diverge >5%, trust the live
+      // quote as entry_price — otherwise stick with the stable DB close.
+      const livePrice = await getTwelveDataPrice(asset.ticker);
       let resolvedEntryPrice = entryPrice;
-      if (tavilyCheck.currentPrice != null) {
-        const priceDiff = Math.abs(tavilyCheck.currentPrice - entryPrice) / entryPrice;
+      if (livePrice != null) {
+        const priceDiff = Math.abs(livePrice - entryPrice) / entryPrice;
         if (priceDiff > 0.05) {
-          console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: price discrepancy >5% — TwelveData $${entryPrice} vs Tavily $${tavilyCheck.currentPrice} (${(priceDiff * 100).toFixed(1)}%) — using Tavily price`);
-          resolvedEntryPrice = tavilyCheck.currentPrice;
+          console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: live price diverges >5% — DB $${entryPrice} vs TwelveData $${livePrice} (${(priceDiff * 100).toFixed(1)}%) — using live price`);
+          resolvedEntryPrice = livePrice;
         }
       }
 
-      // Re-validate after Tavily resolution — the switched-in price must still clear
-      // the $1.00 floor. A stale/bad Tavily extract can't sneak a penny stock through.
+      // Re-validate after live-price resolution — the switched-in price must still
+      // clear the $1.00 floor.
       if (resolvedEntryPrice <= 0 || resolvedEntryPrice < 1.00) {
-        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — resolved price $${resolvedEntryPrice} below $1.00 after Tavily`);
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — resolved price $${resolvedEntryPrice} below $1.00 after TwelveData check`);
         skippedNoCondition++;
         continue;
       }
