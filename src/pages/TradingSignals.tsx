@@ -37,10 +37,10 @@ const FREE_ROW_LIMIT = 3;
 
 const ResultBadge = ({ status }: { status: string }) => {
   if (status === 'triggered') {
-    return <Badge className="bg-success/20 text-success border-success/30 border">Triggered</Badge>;
+    return <Badge className="bg-success/20 text-success border-success/30 border">Target Hit</Badge>;
   }
   if (status === 'stopped') {
-    return <Badge variant="destructive" className="bg-destructive/20 text-destructive border-destructive/30 border">Stopped</Badge>;
+    return <Badge variant="destructive" className="bg-destructive/20 text-destructive border-destructive/30 border">Stop Loss</Badge>;
   }
   if (status === 'expired') {
     return <Badge className="bg-amber-500/20 text-amber-600 border-amber-500/30 border">Expired</Badge>;
