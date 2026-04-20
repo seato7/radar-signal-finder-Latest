@@ -396,6 +396,29 @@ serve(async (req) => {
       }
     }
 
+    // 5b. Fetch most recent closed signals per eligible ticker (last 14d) for the
+    // quality-based re-entry filter. Prevents immediately re-opening a name that just
+    // stopped out, and enforces a short cooldown after a flat/negative expiry.
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentClosedRows } = await supabase
+      .from('trade_signals')
+      .select('ticker, status, exit_date, pnl_pct')
+      .in('ticker', eligibleTickers)
+      .in('status', ['stopped', 'expired', 'triggered'])
+      .gte('exit_date', fourteenDaysAgo)
+      .order('exit_date', { ascending: false });
+
+    const mostRecentClosed = new Map<string, { status: string; exit_date: string; pnl_pct: number }>();
+    for (const row of recentClosedRows || []) {
+      if (!mostRecentClosed.has(row.ticker)) {
+        mostRecentClosed.set(row.ticker, {
+          status: String(row.status),
+          exit_date: String(row.exit_date),
+          pnl_pct: Number(row.pnl_pct ?? 0),
+        });
+      }
+    }
+
     // 6. Evaluate entry conditions and build insert rows
     const toInsert: any[] = [];
     let skippedNoCondition = 0;
@@ -409,9 +432,27 @@ serve(async (req) => {
       // Entry condition — AI score, direction, momentum/news, price data all required.
       // News-boosted path: allows through if hybrid_score >= 55 AND ai_score > 50,
       // bypassing the momentum requirement when recent breaking news confirms activity.
-      if (!aiScore || aiScore.direction !== 'up' || entryPrice == null) {
+      if (!aiScore || aiScore.direction !== 'up' || entryPrice == null || entryPrice <= 0) {
         skippedNoCondition++;
         continue;
+      }
+
+      // Quality-based re-entry filter: skip names that just stopped out or expired flat.
+      // Winners (triggered) are allowed to re-enter without a cooldown since the thesis
+      // was validated.
+      const recentClose = mostRecentClosed.get(asset.ticker);
+      if (recentClose) {
+        const daysSince = (Date.now() - new Date(recentClose.exit_date).getTime()) / (24 * 60 * 60 * 1000);
+        if (recentClose.status === 'stopped' && daysSince < 7) {
+          console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — stopped ${daysSince.toFixed(1)}d ago, 7d cooldown (pnl ${recentClose.pnl_pct}%)`);
+          skippedNoCondition++;
+          continue;
+        }
+        if (recentClose.status === 'expired' && recentClose.pnl_pct <= 0 && daysSince < 3) {
+          console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — expired flat/negative ${daysSince.toFixed(1)}d ago, 3d cooldown`);
+          skippedNoCondition++;
+          continue;
+        }
       }
 
       const newsBoostQualifies = hasRecentNews && Number(asset.hybrid_score) >= 55 && aiScore.ai_score > 50;
@@ -426,8 +467,8 @@ serve(async (req) => {
         console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: qualified via news boost path (hybrid=${asset.hybrid_score}, ai=${aiScore.ai_score})`);
       }
 
-      // Quality filter 1: minimum price $1.00 — eliminates penny stocks
-      if (entryPrice < 1.00) {
+      // Quality filter 1: minimum price $1.00 — eliminates penny stocks and zero-price rows
+      if (entryPrice <= 0 || entryPrice < 1.00) {
         console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — price $${entryPrice} below $1.00 minimum`);
         skippedNoCondition++;
         continue;
@@ -469,6 +510,14 @@ serve(async (req) => {
           console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: price discrepancy >5% — TwelveData $${entryPrice} vs Tavily $${tavilyCheck.currentPrice} (${(priceDiff * 100).toFixed(1)}%) — using Tavily price`);
           resolvedEntryPrice = tavilyCheck.currentPrice;
         }
+      }
+
+      // Re-validate after Tavily resolution — the switched-in price must still clear
+      // the $1.00 floor. A stale/bad Tavily extract can't sneak a penny stock through.
+      if (resolvedEntryPrice <= 0 || resolvedEntryPrice < 1.00) {
+        console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: skipped — resolved price $${resolvedEntryPrice} below $1.00 after Tavily`);
+        skippedNoCondition++;
+        continue;
       }
 
       // position_size_pct represents the MAXIMUM position size for this signal
