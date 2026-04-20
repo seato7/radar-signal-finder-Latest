@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { createClient } from "npm:@supabase/supabase-js@2.57.2";
 import { SlackAlerter } from "../_shared/slack-alerts.ts";
 import { callGemini } from "../_shared/gemini.ts";
 
