@@ -210,7 +210,7 @@ const Privacy = () => {
                   Privacy Policy
                 </h1>
                 <p className="text-lg text-slate-400 mb-4">
-                  InsiderPulse — Version {PRIVACY_VERSION}
+                  InsiderPulse, Version {PRIVACY_VERSION}
                 </p>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                   <span>Last Updated: {PRIVACY_LAST_UPDATED}</span>

@@ -211,7 +211,7 @@ const Terms = () => {
                   Terms of Service
                 </h1>
                 <p className="text-lg text-slate-400 mb-4">
-                  InsiderPulse — Version {TOS_VERSION}
+                  InsiderPulse, Version {TOS_VERSION}
                 </p>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                   <span>Last Updated: {TOS_LAST_UPDATED}</span>
