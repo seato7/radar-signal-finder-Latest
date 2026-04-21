@@ -620,8 +620,8 @@ const Landing = () => {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-500">
           <span>InsiderPulse © 2026</span>
           <div className="flex items-center gap-6">
-            <Link to="#" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
-            <Link to="#" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
+            <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
             <Link to="#" className="hover:text-slate-300 transition-colors">Contact</Link>
           </div>
         </div>
