@@ -333,7 +333,7 @@ export default function SettingsSubscription() {
         )}
 
         {/* ── Step 4: Final confirmation ── */}
-        {cancelStep === 'confirm' && (
+        {(cancelStep === 'confirm' || cancelStep === 'processing') && (
           <div className="space-y-5">
             <div className="p-4 rounded-lg border border-destructive/40 bg-destructive/5 space-y-2">
               <p className="font-semibold text-destructive">This will cancel your subscription</p>
