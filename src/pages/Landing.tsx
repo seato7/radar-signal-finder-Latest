@@ -622,7 +622,7 @@ const Landing = () => {
           <div className="flex items-center gap-6">
             <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
             <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
-            <Link to="#" className="hover:text-slate-300 transition-colors">Contact</Link>
+            <a href="mailto:support@insiderpulse.org" className="hover:text-slate-300 transition-colors">Contact</a>
           </div>
         </div>
       </footer>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -340,6 +340,11 @@ const Pricing = () => {
       <p className="text-center text-sm text-muted-foreground">
         Starter plan includes a 7-day free trial. Card required, cancel anytime.
       </p>
+      <div className="flex items-center justify-center gap-4 mt-4 text-xs text-slate-500">
+        <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
+        <span aria-hidden>·</span>
+        <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
+      </div>
     </div>
   );
 };

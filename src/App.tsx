@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -124,6 +124,16 @@ const App = () => (
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </main>
+                        <footer className="border-t border-white/5 bg-background/40 backdrop-blur-sm py-3 px-6">
+                          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                            <span>InsiderPulse © 2026</span>
+                            <div className="flex items-center gap-4">
+                              <Link to="/help" className="hover:text-slate-300 transition-colors">Help</Link>
+                              <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy</Link>
+                              <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms</Link>
+                            </div>
+                          </div>
+                        </footer>
                       </div>
                     </div>
                   </SidebarProvider>

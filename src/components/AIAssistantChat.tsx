@@ -262,6 +262,10 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               <p className="mb-2">👋 Hi! I'm the InsiderPulse AI Assistant.</p>
               <p className="text-sm">Ask me about themes, signals, or market opportunities across all asset classes!</p>
               <p className="text-xs mt-4">✨ I can also generate charts and visualizations!</p>
+              <p className="text-xs text-slate-500 mt-3">
+                General market information only, not financial advice. See our{" "}
+                <Link to="/terms" className="text-cyan-500 hover:underline">Terms of Service</Link>.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">

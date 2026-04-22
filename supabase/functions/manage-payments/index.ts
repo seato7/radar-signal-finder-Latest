@@ -286,6 +286,14 @@ serve(async (req) => {
           success_url: successUrl || `${safeOrigin(req)}/pricing?success=true`,
           cancel_url: cancelUrl || `${safeOrigin(req)}/pricing?canceled=true`,
           metadata: { user_id: user.id, plan_id: plan, period },
+          consent_collection: {
+            terms_of_service: 'required',
+          },
+          custom_text: {
+            terms_of_service_acceptance: {
+              message: 'I agree to the InsiderPulse [Terms of Service](https://insiderpulse.org/terms) and [Privacy Policy](https://insiderpulse.org/privacy). By subscribing I authorise recurring charges until I cancel.',
+            },
+          },
         };
 
         if (plan === 'starter' && period === 'monthly') {

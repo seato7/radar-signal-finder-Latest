@@ -76,6 +76,13 @@ const getSignupEmailHtml = (verifyLink: string) => `
               <p style="margin: 0 0 6px 0;">InsiderPulse | <a href="mailto:support@insiderpulse.org" style="color: #475569; text-decoration: none;">support@insiderpulse.org</a></p>
               <p style="margin: 0 0 6px 0;">If you didn't create an account with InsiderPulse, you can safely ignore this email.</p>
               <p style="margin: 0;">© ${new Date().getFullYear()} InsiderPulse. All rights reserved.</p>
+              <p style="color: #64748b; font-size: 12px; margin-top: 16px; text-align: center;">
+                <a href="https://insiderpulse.org/privacy" style="color: #06B6D4; text-decoration: none;">Privacy Policy</a>
+                &nbsp;·&nbsp;
+                <a href="https://insiderpulse.org/terms" style="color: #06B6D4; text-decoration: none;">Terms of Service</a>
+                &nbsp;·&nbsp;
+                <a href="https://insiderpulse.org/help" style="color: #06B6D4; text-decoration: none;">Help</a>
+              </p>
             </td>
           </tr>
         </table>
@@ -132,6 +139,13 @@ const getRecoveryEmailHtml = (resetLink: string) => `
             <td style="background-color: #0F1729; border-top: 1px solid rgba(255,255,255,0.06); padding: 24px 32px; text-align: center; color: #475569; font-size: 12px; line-height: 1.7;">
               <p style="margin: 0 0 6px 0;">InsiderPulse | <a href="mailto:support@insiderpulse.org" style="color: #475569; text-decoration: none;">support@insiderpulse.org</a></p>
               <p style="margin: 0;">© ${new Date().getFullYear()} InsiderPulse. All rights reserved.</p>
+              <p style="color: #64748b; font-size: 12px; margin-top: 16px; text-align: center;">
+                <a href="https://insiderpulse.org/privacy" style="color: #06B6D4; text-decoration: none;">Privacy Policy</a>
+                &nbsp;·&nbsp;
+                <a href="https://insiderpulse.org/terms" style="color: #06B6D4; text-decoration: none;">Terms of Service</a>
+                &nbsp;·&nbsp;
+                <a href="https://insiderpulse.org/help" style="color: #06B6D4; text-decoration: none;">Help</a>
+              </p>
             </td>
           </tr>
         </table>
