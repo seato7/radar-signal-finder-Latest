@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { TOS_VERSION, PRIVACY_VERSION } from "@/lib/policyVersions";
 
 const emailSchema = z.string().email("Invalid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
@@ -32,6 +34,7 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
@@ -53,9 +56,24 @@ export default function Auth() {
       toast({ title: "Validation Error", description: "Passwords do not match", variant: "destructive" });
       return;
     }
+    if (!agreedToTerms) {
+      toast({
+        title: "Agreement required",
+        description: "Please agree to the Terms of Service and Privacy Policy to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase.functions.invoke('custom-auth-email', {
-      body: { action: 'signup', email, password }
+      body: {
+        action: 'signup',
+        email,
+        password,
+        tos_version: TOS_VERSION,
+        privacy_version: PRIVACY_VERSION,
+        user_agent: navigator.userAgent,
+      }
     });
     setLoading(false);
     if (error || (data && !data.success)) {
@@ -355,10 +373,52 @@ export default function Auth() {
                   }}
                 />
               </div>
+              <div className="space-y-1">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="agree-terms"
+                    checked={agreedToTerms}
+                    onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
+                    className="mt-0.5 border-white/20 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500 data-[state=checked]:text-white"
+                  />
+                  <label
+                    htmlFor="agree-terms"
+                    className="text-xs leading-snug cursor-pointer select-none"
+                    style={{ color: "#94a3b8" }}
+                  >
+                    I agree to the{" "}
+                    <Link
+                      to="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                      style={{ color: "#06B6D4" }}
+                    >
+                      Terms of Service
+                    </Link>{" "}
+                    and{" "}
+                    <Link
+                      to="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                      style={{ color: "#06B6D4" }}
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
+                  </label>
+                </div>
+                {!agreedToTerms && (
+                  <p className="text-xs pl-6" style={{ color: "#64748b" }}>
+                    You must agree to continue.
+                  </p>
+                )}
+              </div>
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full py-2.5 rounded-lg font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                disabled={loading || !agreedToTerms}
+                className="w-full py-2.5 rounded-lg font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{ background: "linear-gradient(to right, #06B6D4, #3B82F6)" }}
               >
                 {loading ? "Creating account..." : "Create Account"}

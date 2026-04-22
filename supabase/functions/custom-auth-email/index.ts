@@ -23,6 +23,9 @@ interface AuthEmailRequest {
   action: "signup" | "recovery" | "resend_verification";
   email: string;
   password?: string;
+  tos_version?: string;
+  privacy_version?: string;
+  user_agent?: string;
 }
 
 // Logo URL from Supabase Storage (publicly accessible)
@@ -179,7 +182,7 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("BREVO_API_KEY is not configured");
     }
 
-    const { action, email, password }: AuthEmailRequest = await req.json();
+    const { action, email, password, tos_version, privacy_version, user_agent }: AuthEmailRequest = await req.json();
 
     console.log(`Processing ${action} request`); // email redacted from logs
 
@@ -187,6 +190,26 @@ const handler = async (req: Request): Promise<Response> => {
       if (!password) {
         throw new Error("Password is required for signup");
       }
+
+      if (!tos_version || !privacy_version) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Missing required policy versions for signup.",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
+
+      // Capture caller IP from proxy/CDN headers (best-effort).
+      const ipAddress =
+        req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+        req.headers.get("cf-connecting-ip") ||
+        req.headers.get("x-real-ip") ||
+        null;
 
       // 1. Create user WITHOUT auto-confirm (email_confirm: false)
       const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -200,8 +223,8 @@ const handler = async (req: Request): Promise<Response> => {
         // Handle "already registered" case - return 200 so frontend can handle gracefully
         if (createError.message.includes("already been registered") || createError.message.includes("already exists")) {
           return new Response(
-            JSON.stringify({ 
-              success: false, 
+            JSON.stringify({
+              success: false,
               error: "This email is already registered. Please sign in instead.",
               code: "EMAIL_EXISTS"
             }),
@@ -214,9 +237,68 @@ const handler = async (req: Request): Promise<Response> => {
         throw createError;
       }
 
-      console.log("User created with id:", userData.user?.id);
+      const newUserId = userData.user?.id;
+      console.log("User created with id:", newUserId);
 
-      // 2. Generate official Supabase verification link
+      // 2. Record policy acceptance. Prefer failing signup over an
+      // orphaned account with no enforceable contract.
+      if (!newUserId) {
+        throw new Error("Auth user created but no id returned");
+      }
+
+      const { error: acceptanceError } = await supabaseAdmin
+        .from("user_policy_acceptances")
+        .insert({
+          user_id: newUserId,
+          tos_version,
+          privacy_version,
+          ip_address: ipAddress,
+          user_agent: user_agent ?? null,
+        });
+
+      if (acceptanceError) {
+        console.error("Policy acceptance insert failed:", {
+          user_id: newUserId,
+          error: acceptanceError.message,
+        });
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(newUserId);
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Signup failed, please try again.",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            }
+          );
+        } catch (cleanupError: any) {
+          console.error("CRITICAL: orphaned account created with no acceptance:", {
+            user_id: newUserId,
+            cleanup_error: cleanupError?.message,
+          });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Signup failed, please contact support.",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            }
+          );
+        }
+      }
+
+      console.log("Policy acceptance recorded:", {
+        user_id: newUserId,
+        tos_version,
+        privacy_version,
+        has_ip: !!ipAddress,
+      });
+
+      // 3. Generate official Supabase verification link
       const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
         type: "signup",
         email,
@@ -234,7 +316,7 @@ const handler = async (req: Request): Promise<Response> => {
       const actionLink = linkData.properties.action_link;
       console.log("Generated verification link for: [redacted]"); // don't log email in plaintext
 
-      // 3. Send branded email via Brevo
+      // 4. Send branded email via Brevo
       await sendViaBrevo(
         email,
         "Verify your InsiderPulse account",
