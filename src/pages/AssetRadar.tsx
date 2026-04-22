@@ -145,7 +145,7 @@ const AssetRadar = () => {
 
   const fetchAssets = async (pageNum: number, assetClass: AssetClassTab = activeTab, currentSortBy: SortOption = sortBy) => {
     setLoading(true);
-    
+
     try {
       // Use cycle-based cutoff instead of "today" - covers full Standard tier cycle
       const cutoffTime = new Date(Date.now() - FULL_CYCLE_HOURS * 60 * 60 * 1000).toISOString();
@@ -155,9 +155,91 @@ const AssetRadar = () => {
       let totalCount = 0;
 
       // ═══════════════════════════════════════════════════════════════════
+      // SEARCH PATH: use relevance-ranked RPC when query length >= 2
+      // ═══════════════════════════════════════════════════════════════════
+      const trimmedSearch = searchTerm.trim();
+      if (trimmedSearch.length >= 2) {
+        const { data: rpcData, error: rpcError } = await (supabase.rpc as any)('search_assets', {
+          q: trimmedSearch,
+          result_limit: PAGE_SIZE,
+          filter_asset_class: tabConfig?.filter ?? null,
+        });
+
+        if (rpcError) throw rpcError;
+
+        const rows = (rpcData ?? []) as AssetRow[];
+        assetsData = rows;
+        totalCount = rows.length;
+
+        const tickers = rows.map((r) => r.ticker);
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const changeCutoffDate = threeDaysAgo.toISOString().split('T')[0];
+
+        const { data: recentPriceData } = tickers.length > 0
+          ? await supabase
+              .from('prices')
+              .select('ticker, close, date, last_updated_at')
+              .in('ticker', tickers)
+              .gte('date', changeCutoffDate)
+              .order('date', { ascending: false })
+          : { data: [] as any[] };
+
+        const priceData = recentPriceData || [];
+        const priceMap = new Map<string, { lastUpdated: string; close: number }>();
+        const previousPriceMap = new Map<string, number>();
+        const seenDates = new Map<string, string>();
+
+        priceData.forEach((p: any) => {
+          if (!priceMap.has(p.ticker)) {
+            priceMap.set(p.ticker, { lastUpdated: p.last_updated_at || (p.date ? p.date + 'T00:00:00.000Z' : ''), close: p.close });
+            seenDates.set(p.ticker, p.date);
+          } else if (!previousPriceMap.has(p.ticker) && p.date !== seenDates.get(p.ticker)) {
+            previousPriceMap.set(p.ticker, p.close);
+          }
+        });
+
+        const priceChangeMap = new Map<string, number | null>();
+        priceMap.forEach((info, ticker) => {
+          const previousPrice = previousPriceMap.get(ticker);
+          if (previousPrice && previousPrice !== 0) {
+            priceChangeMap.set(ticker, Math.round(((info.close - previousPrice) / previousPrice) * 10000) / 100);
+          } else {
+            priceChangeMap.set(ticker, null);
+          }
+        });
+
+        const enhancedAssets: AssetWithScore[] = rows.map((asset) => {
+          const score = asset.hybrid_score ?? asset.computed_score ?? 50;
+          const sentiment = getSentiment(score);
+          const priceInfo = priceMap.get(asset.ticker);
+          const signalMass = extractSignalMass(asset.score_explanation);
+          const signalStrengthInfo = getSignalStrength(signalMass);
+          return {
+            id: asset.id,
+            ticker: asset.ticker,
+            name: asset.name,
+            exchange: asset.exchange,
+            asset_class: asset.asset_class,
+            score,
+            sentiment: sentiment.label,
+            lastUpdated: priceInfo?.lastUpdated || null,
+            priceChange: priceChangeMap.get(asset.ticker) ?? null,
+            signalStrength: signalStrengthInfo.level,
+            signalMass,
+          };
+        });
+
+        setAssets(enhancedAssets);
+        setTotal(totalCount);
+        setLoading(false);
+        return;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
       // SCORE-BASED SORTING: Use pre-computed computed_score column
       // ═══════════════════════════════════════════════════════════════════
-      if ((currentSortBy === "score-desc" || currentSortBy === "score-asc") && !searchTerm) {
+      if ((currentSortBy === "score-desc" || currentSortBy === "score-asc") && trimmedSearch.length < 2) {
         // Fetch assets ordered by pre-computed score from database
         let assetQuery = supabase
           .from('assets')
@@ -257,7 +339,7 @@ const AssetRadar = () => {
       // ═══════════════════════════════════════════════════════════════════
       // "Most Recently Updated" mode: fetch from prices first
       // ═══════════════════════════════════════════════════════════════════
-      if (currentSortBy === "recent" && !searchTerm) {
+      if (currentSortBy === "recent" && trimmedSearch.length < 2) {
         let priceQuery = supabase
           .from('prices')
           .select('ticker, close, date, last_updated_at', { count: 'exact' })
@@ -462,9 +544,8 @@ const AssetRadar = () => {
         query = query.eq('asset_class', tabConfig.filter);
       }
 
-      if (searchTerm) {
-        query = query.or(`ticker.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%,exchange.ilike.%${searchTerm}%`);
-      }
+      // Search (length >= 2) is handled by the RPC branch at the top of this function;
+      // this default path runs only when searchTerm is empty or a single character.
 
       if (currentSortBy === "alpha-desc") {
         query = query.order('ticker', { ascending: false });
@@ -553,6 +634,10 @@ const AssetRadar = () => {
 
   // Sort assets based on selected option (for non-score modes that don't pre-sort)
   const sortedAssets = useMemo(() => {
+    // When searching, preserve RPC relevance ordering
+    if (searchTerm.trim().length >= 2) {
+      return assets;
+    }
     // For score sorting, assets are already sorted from fetch
     if (sortBy === "score-desc" || sortBy === "score-asc") {
       return assets;
@@ -577,12 +662,12 @@ const AssetRadar = () => {
       default:
         return sorted;
     }
-  }, [assets, sortBy]);
+  }, [assets, sortBy, searchTerm]);
 
   useEffect(() => {
     if (planLoading || planLimits.asset_radar_classes.length === 0) return;
     setPage(0);
-    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 300);
+    const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 250);
     return () => clearTimeout(debounce);
   }, [searchTerm, activeTab, sortBy, userPlan]);
 
@@ -712,6 +797,11 @@ const AssetRadar = () => {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
+                  {searchTerm.trim().length === 1 && (
+                    <p className="text-xs text-muted-foreground mt-1.5 ml-1">
+                      Type at least 2 characters to search
+                    </p>
+                  )}
                 </div>
                 <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
                   <SelectTrigger className="w-full sm:w-[180px]">
