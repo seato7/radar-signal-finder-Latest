@@ -2,6 +2,45 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
 import { getTwelveDataPrice } from "../_shared/twelvedata.ts";
+import { callGemini } from "../_shared/gemini.ts";
+
+const BANNED_REASON_WORDS = /\b(buy|sell|should|will|guarantee|recommend|target|profit)\b/i;
+
+async function generateSignalReason(context: Record<string, unknown>): Promise<string | null> {
+  const prompt = `You are generating a one-line factual explanation for why an algorithm flagged a market signal. Output ONE sentence, max 20 words, describing WHY this signal was generated based on the data points. No investment advice language. No "buy", "sell", "will", "should", "guaranteed", "recommend", "target". Just factual data statements.
+
+GOOD examples:
+- "AI score 82 with 3 bullish news signals over 24h and positive 7-day momentum."
+- "Hybrid score 67 triggered by news boost path, mixed recent sentiment."
+- "Strong AI confidence (0.91), 7-day momentum positive, semiconductor sector."
+
+BAD examples (do not produce):
+- "This is a strong buy because..." (advice language)
+- "Price will rise due to..." (predictive)
+- "Based on our analysis..." (too vague)
+
+Data for this signal:
+${JSON.stringify(context, null, 2)}
+
+Respond with ONLY the sentence. No preamble. No quotation marks.`;
+
+  try {
+    const raw = await callGemini(prompt, 60, 'text');
+    if (!raw) return null;
+
+    let cleaned = raw.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+    if (cleaned.length < 15) return null;
+    if (BANNED_REASON_WORDS.test(cleaned)) {
+      console.warn(`[GENERATE-TRADE-SIGNALS] Reason rejected by banned-word filter: "${cleaned}"`);
+      return null;
+    }
+    if (cleaned.length > 200) cleaned = cleaned.slice(0, 197) + '...';
+    return cleaned;
+  } catch (err) {
+    console.error('[GENERATE-TRADE-SIGNALS] Gemini reason generation failed:', err);
+    return null;
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -333,12 +372,19 @@ serve(async (req) => {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: recentNewsSignals } = await supabase
       .from('signals')
-      .select('asset_id')
+      .select('asset_id, signal_type')
       .in('asset_id', eligibleIds)
       .in('signal_type', ['breaking_news_bullish', 'breaking_news_bearish'])
       .gte('observed_at', oneDayAgo);
 
     const newsBoostAssetIds = new Set((recentNewsSignals || []).map((s: any) => s.asset_id));
+    const newsCountsByAsset = new Map<string, { bullish: number; bearish: number }>();
+    for (const row of recentNewsSignals || []) {
+      const curr = newsCountsByAsset.get((row as any).asset_id) ?? { bullish: 0, bearish: 0 };
+      if ((row as any).signal_type === 'breaking_news_bullish') curr.bullish++;
+      else if ((row as any).signal_type === 'breaking_news_bearish') curr.bearish++;
+      newsCountsByAsset.set((row as any).asset_id, curr);
+    }
 
     // 4b. Bulk fetch momentum signals in last 7 days for eligible assets
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -511,6 +557,29 @@ serve(async (req) => {
       console.log(`[GENERATE-TRADE-SIGNALS] ${asset.ticker}: confidence=${aiScore.confidence}, kelly=${positionSizePct}`);
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
+      const newsCounts = newsCountsByAsset.get(asset.id) ?? { bullish: 0, bearish: 0 };
+      const recentNewsSentiment = newsCounts.bullish + newsCounts.bearish === 0
+        ? null
+        : newsCounts.bullish > newsCounts.bearish ? 'bullish'
+        : newsCounts.bearish > newsCounts.bullish ? 'bearish'
+        : 'mixed';
+
+      const reasonContext = {
+        ticker: asset.ticker,
+        ai_score: aiScore.ai_score,
+        ai_confidence: aiScore.confidence,
+        hybrid_score: Number(asset.hybrid_score),
+        has_7d_momentum: hasMomentum,
+        bullish_news_24h: newsCounts.bullish,
+        bearish_news_24h: newsCounts.bearish,
+        recent_news_sentiment: recentNewsSentiment,
+        tavily_positive_signal: tavilyCheck.hasPositiveSignal,
+        sector: (asset as any).sector ?? null,
+        entry_path: standardQualifies ? 'standard' : 'news_boost',
+      };
+
+      const reason = await generateSignalReason(reasonContext);
+
       toInsert.push({
         ticker: asset.ticker,
         asset_id: asset.id,
@@ -525,6 +594,7 @@ serve(async (req) => {
         ai_score_at_entry: aiScore.ai_score,
         expires_at: expiresAt,
         entry_date: new Date().toISOString(),
+        reason,
       });
     }
 

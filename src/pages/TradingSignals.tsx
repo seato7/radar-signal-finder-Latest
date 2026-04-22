@@ -35,6 +35,7 @@ interface TradeSignal {
   last_live_price?: number | null;
   last_live_price_at?: string | null;
   last_live_price_source?: 'live' | 'db' | 'none' | null;
+  reason: string | null;
 }
 
 const FREE_ROW_LIMIT = 3;
@@ -347,8 +348,13 @@ export default function TradingSignals() {
                         : null;
                       return (
                         <tr key={s.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                          <td className="py-2.5 pr-4">
-                            <span className="font-semibold">{s.ticker}</span>
+                          <td className="py-2.5 pr-4 align-top">
+                            <div className="font-semibold">{s.ticker}</div>
+                            {s.reason && (
+                              <div className="text-xs text-slate-500 mt-1 leading-snug max-w-xs font-normal">
+                                {s.reason}
+                              </div>
+                            )}
                           </td>
                           <td className="text-right py-2.5 px-4 tabular-nums">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
