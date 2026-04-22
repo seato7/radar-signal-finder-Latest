@@ -10,7 +10,7 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle } from "lucide-react";
+import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle, ExternalLink } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -39,6 +39,17 @@ interface TradeSignal {
 }
 
 const FREE_ROW_LIMIT = 3;
+
+function tickerToYahooSymbol(ticker: string): string {
+  if (/\/(USD|USDT|USDC)$/.test(ticker)) {
+    return ticker.replace('/', '-');
+  }
+  const forexMatch = ticker.match(/^([A-Z]{3})\/([A-Z]{3})$/);
+  if (forexMatch) {
+    return `${forexMatch[1]}${forexMatch[2]}=X`;
+  }
+  return ticker;
+}
 
 const ResultBadge = ({ status }: { status: string }) => {
   if (status === 'triggered') {
@@ -349,7 +360,15 @@ export default function TradingSignals() {
                       return (
                         <tr key={s.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                           <td className="py-2.5 pr-4 align-top">
-                            <div className="font-semibold">{s.ticker}</div>
+                            <a
+                              href={`https://finance.yahoo.com/quote/${tickerToYahooSymbol(s.ticker)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold hover:text-cyan-400 transition-colors inline-flex items-center gap-1"
+                            >
+                              {s.ticker}
+                              <ExternalLink className="w-3 h-3 opacity-60" />
+                            </a>
                             {s.reason && (
                               <div className="text-xs text-slate-500 mt-1 leading-snug max-w-xs font-normal">
                                 {s.reason}
