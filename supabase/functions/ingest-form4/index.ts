@@ -12,6 +12,46 @@ const corsHeaders = {
 // SEC-compliant User-Agent with explicit product name + contact
 const SEC_USER_AGENT = "InsiderPulse/1.0 contact@insiderpulse.com";
 
+/**
+ * Normalise a raw XBRL ticker symbol for storage.
+ * Returns null if the ticker is invalid and should be skipped.
+ *
+ * Rules applied (in order):
+ *   - Strip exchange prefix (e.g. "NYSE:AAPL" -> "AAPL")
+ *   - Split on comma or whitespace, take first token ("GEF, GEF-B" -> "GEF")
+ *   - Strip wrapping quotes, parens, square brackets
+ *   - Upper-case
+ *   - Reject placeholder values (NONE, NULL, N/A, NA, etc.)
+ *   - Length bounds (1..12)
+ *   - Character set: A-Z 0-9 . - only (Form 4 is stocks only, no forex/crypto)
+ *   - Must start and end with alphanumeric
+ */
+function normaliseFormTicker(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+
+  let ticker = String(raw).trim();
+
+  if (ticker.includes(':')) {
+    ticker = ticker.split(':').slice(1).join(':').trim();
+  }
+
+  ticker = ticker.split(/[,\s]+/)[0].trim();
+  ticker = ticker.replace(/^["'(\[]+/, '').replace(/["')\]]+$/, '');
+  ticker = ticker.toUpperCase();
+
+  const placeholders = new Set([
+    'NONE', 'NULL', 'UNDEFINED', 'N/A', 'NA', '', 'NONE.', 'NULL.',
+  ]);
+  if (placeholders.has(ticker)) return null;
+
+  if (ticker.length === 0 || ticker.length > 12) return null;
+
+  if (!/^[A-Z0-9.\-]+$/.test(ticker)) return null;
+  if (!/^[A-Z0-9]/.test(ticker) || !/[A-Z0-9]$/.test(ticker)) return null;
+
+  return ticker;
+}
+
 // Track parse errors — increased cap so systemic failures (e.g. SEC schema changes) don't go silent
 let debugErrorCount = 0;
 const MAX_DEBUG_ERRORS = 50; // was 5 — too low, systemic failures would go completely silent
@@ -352,16 +392,10 @@ serve(async (req) => {
           continue;
         }
         
-        const ticker = parsed.ticker;
+        const ticker = normaliseFormTicker(parsed.ticker);
 
-        // Validate ticker — reject values that come from parsing the wrong XML field
-        const tickerUpper = ticker.toUpperCase();
-        if (
-          tickerUpper === 'N/A' ||
-          ticker.trim() === '' ||
-          ticker.length > 10
-        ) {
-          console.warn(`[INGEST-FORM4] Skipping invalid ticker "${ticker}" (filingUrl: ${filingUrl})`);
+        if (!ticker) {
+          console.warn(`[INGEST-FORM4] Skipping Form 4 with invalid ticker "${parsed.ticker}" (filingUrl: ${filingUrl})`);
           privateCompanySkips++;
           continue;
         }
