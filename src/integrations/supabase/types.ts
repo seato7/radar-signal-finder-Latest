@@ -4198,6 +4198,26 @@ export type Database = {
         Args: { p_theme_id: string; p_user_id: string }
         Returns: boolean
       }
+      search_assets: {
+        Args: { filter_asset_class?: string; q: string; result_limit?: number }
+        Returns: {
+          ai_score: number
+          asset_class: string
+          computed_score: number
+          effective_score: number
+          exchange: string
+          hybrid_score: number
+          id: string
+          name: string
+          relevance: number
+          score_computed_at: string
+          score_explanation: Json
+          sector: string
+          ticker: string
+        }[]
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       update_assets_from_coverage: {
         Args: { p_snapshot_date: string; p_vendor?: string }
         Returns: {
