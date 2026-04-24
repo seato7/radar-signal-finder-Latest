@@ -3730,6 +3730,48 @@ export type Database = {
         }
         Relationships: []
       }
+      user_asset_requests: {
+        Row: {
+          admin_notes: string | null
+          created_at: string
+          id: string
+          requested_name: string | null
+          requested_reason: string | null
+          requested_ticker: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          search_query: string | null
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          created_at?: string
+          id?: string
+          requested_name?: string | null
+          requested_reason?: string | null
+          requested_ticker: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          search_query?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Update: {
+          admin_notes?: string | null
+          created_at?: string
+          id?: string
+          requested_name?: string | null
+          requested_reason?: string | null
+          requested_ticker?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          search_query?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       user_policy_acceptances: {
         Row: {
           accepted_at: string
