@@ -40,10 +40,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     setTodayCount((c) => c + 1);
   };
 
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('ai-chat-history');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -51,10 +48,37 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Save conversation history to localStorage whenever messages change
+  const historyKey = user?.id ? `ai-chat-history-${user.id}` : null;
+
+  // Load history when user becomes known. One-time migration of the legacy
+  // global 'ai-chat-history' key into the user-scoped key so existing users
+  // keep their history on first load post-rollout.
   useEffect(() => {
-    localStorage.setItem('ai-chat-history', JSON.stringify(messages));
-  }, [messages]);
+    if (!historyKey) {
+      setMessages([]);
+      return;
+    }
+    const legacy = localStorage.getItem('ai-chat-history');
+    if (legacy && !localStorage.getItem(historyKey)) {
+      localStorage.setItem(historyKey, legacy);
+    }
+    if (legacy) {
+      localStorage.removeItem('ai-chat-history');
+    }
+    const saved = localStorage.getItem(historyKey);
+    if (saved) {
+      try {
+        setMessages(JSON.parse(saved));
+      } catch {
+        setMessages([]);
+      }
+    }
+  }, [historyKey]);
+
+  useEffect(() => {
+    if (!historyKey) return;
+    localStorage.setItem(historyKey, JSON.stringify(messages));
+  }, [messages, historyKey]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -113,6 +137,22 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
       );
 
       if (!response.ok) {
+        if (response.status === 429) {
+          let description = 'Upgrade your plan or wait until tomorrow.';
+          try {
+            const errorData = await response.json();
+            if (errorData?.message) description = errorData.message;
+          } catch {
+            // fall through to default description
+          }
+          toast({
+            title: 'Daily message limit reached',
+            description,
+            variant: 'destructive',
+          });
+          setIsLoading(false);
+          return;
+        }
         throw new Error('Failed to start chat');
       }
 
@@ -194,7 +234,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
 
   const clearHistory = () => {
     setMessages([]);
-    localStorage.removeItem('ai-chat-history');
+    if (historyKey) localStorage.removeItem(historyKey);
     toast({
       title: 'History cleared',
       description: 'Conversation history has been cleared.',

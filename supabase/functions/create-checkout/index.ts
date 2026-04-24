@@ -1,3 +1,9 @@
+// DEPRECATED as of Apr 24 2026. All checkout flows now use manage-payments
+// edge function. This file contains obsolete SKB-prefixed price IDs and
+// includes the 'lite' plan which is now forbidden by CHECK constraint
+// user_roles_role_not_lite. Do NOT revive without updating price IDs and
+// removing lite. Scheduled for removal in next cleanup sprint.
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
