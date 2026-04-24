@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { TickerLink } from "@/lib/tickerLink";
 
 interface TopAsset {
   ticker: string;
@@ -148,7 +149,8 @@ const TopAssetsCard = () => {
                       <span className="font-mono font-bold text-lg text-foreground group-hover:text-primary transition-colors">
                         {asset.ticker}
                       </span>
-                      <Badge 
+                      <TickerLink ticker={asset.ticker} iconOnly />
+                      <Badge
                         variant="outline" 
                         className={`text-[10px] px-1.5 py-0 ${strengthInfo.className}`}
                       >

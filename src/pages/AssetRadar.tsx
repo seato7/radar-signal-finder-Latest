@@ -14,6 +14,9 @@ import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { getPlanLimits } from "@/lib/planLimits";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { TickerLink } from "@/lib/tickerLink";
+import { RequestAssetModal } from "@/components/RequestAssetModal";
+import { useToast } from "@/hooks/use-toast";
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
@@ -119,8 +122,10 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 const AssetRadar = () => {
-  const { userPlan, planLoading } = useAuth();
+  const { user, userPlan, planLoading } = useAuth();
   const planLimits = getPlanLimits(userPlan);
+  const { toast } = useToast();
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
 
   const visibleTabs = ASSET_CLASS_TABS.filter((tab) =>
     tab.filter === null
@@ -831,8 +836,27 @@ const AssetRadar = () => {
               ))}
             </div>
           ) : assets.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              {searchTerm ? `No assets found matching "${searchTerm}"` : "No assets available"}
+            <div className="text-center py-8 space-y-4">
+              <p className="text-muted-foreground">
+                {searchTerm ? `No assets found matching "${searchTerm}"` : "No assets available"}
+              </p>
+              {searchTerm.trim().length >= 2 && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!user) {
+                      toast({
+                        title: "Sign in required",
+                        description: "Please sign in to request assets.",
+                      });
+                      return;
+                    }
+                    setRequestModalOpen(true);
+                  }}
+                >
+                  Request "{searchTerm}" be added
+                </Button>
+              )}
             </div>
           ) : (
             <>
@@ -852,6 +876,7 @@ const AssetRadar = () => {
                         <div className="flex items-start justify-between mb-1">
                           <div className="flex items-center gap-2">
                             <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                            <TickerLink ticker={asset.ticker} iconOnly />
                             {activeSignalTickers.has(asset.ticker) && (
                               <Badge className="bg-success/20 text-success border-success/30 border text-[10px] px-1.5 py-0 flex items-center gap-0.5">
                                 <Crosshair className="h-2.5 w-2.5" />
@@ -952,6 +977,13 @@ const AssetRadar = () => {
         </CardContent>
       </Card>
       </Tabs>
+
+      <RequestAssetModal
+        open={requestModalOpen}
+        onOpenChange={setRequestModalOpen}
+        initialTicker={searchTerm}
+        searchQuery={searchTerm}
+      />
     </div>
   );
 };

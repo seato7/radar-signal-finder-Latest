@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TickerLink } from "@/lib/tickerLink";
 
 interface WatchlistData {
   id: string;
@@ -279,7 +280,9 @@ const Watchlist = () => {
             <Card key={ticker} className="shadow-data">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-foreground">{ticker}</h3>
+                  <h3 className="text-lg font-bold text-foreground">
+                    <TickerLink ticker={ticker} />
+                  </h3>
                   <div className="flex gap-2">
                     <Button variant="ghost" size="icon" asChild>
                       <Link to={`/asset/${ticker}`}>

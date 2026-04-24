@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { TickerLink } from "@/lib/tickerLink";
 
 interface SpotlightSignal {
   ticker: string;
@@ -132,14 +133,16 @@ const SignalSpotlight = () => {
               </div>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="shrink-0"
-            onClick={() => navigate(`/asset/${spotlight.ticker}`)}
-          >
-            Explore <ExternalLink className="h-3 w-3 ml-1" />
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <TickerLink ticker={spotlight.ticker} iconOnly />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/asset/${encodeURIComponent(spotlight.ticker)}`)}
+            >
+              Explore <ExternalLink className="h-3 w-3 ml-1" />
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { TrendingUp, TrendingDown, Activity, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TickerLink } from "@/lib/tickerLink";
 
 interface TopMover {
   ticker: string;
@@ -78,7 +79,7 @@ const MarketRadar = () => {
                   className="flex items-center justify-between p-3 rounded-lg bg-success/5 border border-success/20 hover:border-success/40 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-foreground">{mover.ticker}</span>
+                    <TickerLink ticker={mover.ticker} className="font-mono font-bold text-foreground" />
                     {mover.breakout === 'resistance_break' && (
                       <Zap className="h-3 w-3 text-warning" />
                     )}
@@ -115,7 +116,7 @@ const MarketRadar = () => {
                   className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20 hover:border-destructive/40 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-foreground">{mover.ticker}</span>
+                    <TickerLink ticker={mover.ticker} className="font-mono font-bold text-foreground" />
                     {mover.breakout === 'support_break' && (
                       <Zap className="h-3 w-3 text-warning" />
                     )}
