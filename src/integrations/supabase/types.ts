@@ -3574,6 +3574,7 @@ export type Database = {
           contributors: Json | null
           created_at: string | null
           id: string
+          is_demo: boolean
           keywords: string[]
           metadata: Json | null
           name: string
@@ -3587,6 +3588,7 @@ export type Database = {
           contributors?: Json | null
           created_at?: string | null
           id?: string
+          is_demo?: boolean
           keywords?: string[]
           metadata?: Json | null
           name: string
@@ -3600,6 +3602,7 @@ export type Database = {
           contributors?: Json | null
           created_at?: string | null
           id?: string
+          is_demo?: boolean
           keywords?: string[]
           metadata?: Json | null
           name?: string
@@ -4083,6 +4086,7 @@ export type Database = {
       }
     }
     Functions: {
+      _effective_plan: { Args: { _user_id: string }; Returns: string }
       acquire_twelvedata_credits: {
         Args: { credits_needed: number; max_credits?: number }
         Returns: {
@@ -4145,6 +4149,25 @@ export type Database = {
         }[]
       }
       execute_sql: { Args: { sql: string }; Returns: Json }
+      get_active_signal_count: { Args: never; Returns: number }
+      get_active_signal_for_ticker: {
+        Args: { _ticker: string }
+        Returns: {
+          created_at: string
+          entry_price: number
+          exit_target: number
+          expires_at: string
+          id: string
+          position_size_pct: number
+          stop_loss: number
+        }[]
+      }
+      get_active_signal_tickers_for_user: {
+        Args: never
+        Returns: {
+          ticker: string
+        }[]
+      }
       get_api_usage_summary: {
         Args: { hours_back?: number }
         Returns: {
@@ -4156,6 +4179,63 @@ export type Database = {
           success_rate: number
           successful_calls: number
           total_calls: number
+        }[]
+      }
+      get_asset_for_user_by_ticker: {
+        Args: { _ticker: string }
+        Returns: {
+          ai_score: number
+          asset_class: string
+          computed_score: number
+          exchange: string
+          expected_return: number
+          hybrid_score: number
+          id: string
+          metadata: Json
+          name: string
+          score_computed_at: string
+          score_explanation: Json
+          sector: string
+          ticker: string
+        }[]
+      }
+      get_asset_tickers_by_ids_for_user: {
+        Args: { _ids: string[] }
+        Returns: {
+          id: string
+          name: string
+          ticker: string
+        }[]
+      }
+      get_assets_diagnostic: {
+        Args: never
+        Returns: {
+          last_score_update: string
+          scored_assets: number
+          total_assets: number
+        }[]
+      }
+      get_assets_for_user: {
+        Args: {
+          _class_filter?: string
+          _result_limit?: number
+          _result_offset?: number
+          _search?: string
+          _sort_mode?: string
+          _tickers?: string[]
+        }
+        Returns: {
+          asset_class: string
+          computed_score: number
+          exchange: string
+          expected_return: number
+          hybrid_score: number
+          id: string
+          name: string
+          score_computed_at: string
+          score_explanation: Json
+          ticker: string
+          total_count: number
         }[]
       }
       get_latest_theme_score: {
@@ -4196,6 +4276,34 @@ export type Database = {
           global_mean: number
         }[]
       }
+      get_signals_for_user: {
+        Args: never
+        Returns: {
+          ai_score_at_entry: number
+          asset_id: string
+          created_at: string
+          entry_date: string
+          entry_price: number
+          exit_date: string
+          exit_price: number
+          exit_target: number
+          expires_at: string
+          id: string
+          last_live_price: number
+          last_live_price_at: string
+          last_live_price_source: string
+          peak_price: number
+          pnl_pct: number
+          position_size_pct: number
+          reason: string
+          score_at_entry: number
+          signal_type: string
+          status: string
+          stop_loss: number
+          ticker: string
+          updated_at: string
+        }[]
+      }
       get_stale_functions: {
         Args: never
         Returns: {
@@ -4216,6 +4324,30 @@ export type Database = {
           ticker: string
         }[]
       }
+      get_themes_by_ids_for_user: {
+        Args: { _ids: string[] }
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
+      get_themes_for_user: {
+        Args: never
+        Returns: {
+          ai_summary: string
+          alpha: number
+          created_at: string
+          id: string
+          is_demo: boolean
+          keywords: string[]
+          name: string
+          score: number
+          tickers: string[]
+          updated_at: string
+        }[]
+      }
+      get_total_asset_count: { Args: never; Returns: number }
+      get_total_signal_return: { Args: never; Returns: number }
       get_twelvedata_credits_status: {
         Args: never
         Returns: {
@@ -4260,6 +4392,7 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      supabase_health_check_admin: { Args: never; Returns: boolean }
       update_assets_from_coverage: {
         Args: { p_snapshot_date: string; p_vendor?: string }
         Returns: {
