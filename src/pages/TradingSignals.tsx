@@ -100,20 +100,25 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
   );
 };
 
+const MaskedTicker = () => (
+  <span className="font-semibold tracking-widest text-muted-foreground select-none">
+    {'\u2022 \u2022 \u2022 \u2022 \u2022'}
+  </span>
+);
+
 export default function TradingSignals() {
   const { planLoading, limits } = useAuth();
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false);
-  const signalLimit = planLoading ? 0 : limits().active_signals;
+  const planLimits = planLoading ? null : limits();
+  const signalLimit = planLimits?.active_signals ?? 0;
   const hasUnlimited = signalLimit === -1;
+  const isFreeTeaser = !!(planLimits?.can_view_signals_teaser && signalLimit === 0);
 
   const { data: signals, isLoading, error } = useQuery({
     queryKey: ['trade-signals'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('trade_signals')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { data, error } = await (supabase.rpc as any)('get_signals_for_user');
       if (error) throw error;
       return (data ?? []) as TradeSignal[];
     },
@@ -171,10 +176,10 @@ export default function TradingSignals() {
     ? (conclusiveExits.filter((s) => (s.pnl_pct ?? 0) > 0).length / conclusiveExits.length) * 100
     : null;
 
-  const visibleActive = hasUnlimited ? active : active.slice(0, signalLimit);
-  const visibleExits = hasUnlimited ? exits : exits.slice(0, signalLimit);
-  const activeBlurred = !hasUnlimited && active.length > signalLimit;
-  const exitsBlurred = !hasUnlimited && exits.length > signalLimit;
+  const visibleActive = hasUnlimited ? active : isFreeTeaser ? active : active.slice(0, signalLimit);
+  const visibleExits = hasUnlimited ? exits : isFreeTeaser ? exits : exits.slice(0, signalLimit);
+  const activeBlurred = !hasUnlimited && !isFreeTeaser && active.length > signalLimit;
+  const exitsBlurred = !hasUnlimited && !isFreeTeaser && exits.length > signalLimit;
 
   return (
     <div className="space-y-6">
@@ -350,7 +355,9 @@ export default function TradingSignals() {
                       return (
                         <tr key={s.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                           <td className="py-2.5 pr-4 align-top">
-                            <TickerLink ticker={s.ticker} className="font-semibold" />
+                            {s.ticker === '***'
+                              ? <MaskedTicker />
+                              : <TickerLink ticker={s.ticker} className="font-semibold" />}
                             {s.reason && (
                               <div className="text-xs text-slate-500 mt-1 leading-snug max-w-xs font-normal">
                                 {s.reason}
@@ -403,7 +410,9 @@ export default function TradingSignals() {
                     <tbody>
                       {active.slice(signalLimit, Math.min(signalLimit + 3, active.length)).map((s) => (
                         <tr key={s.id} className="border-b border-border/50">
-                          <td className="py-2.5 pr-4 font-semibold">{s.ticker}</td>
+                          <td className="py-2.5 pr-4 font-semibold">
+                            {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
+                          </td>
                           <td className="text-right py-2.5 px-4 tabular-nums">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
@@ -476,7 +485,9 @@ export default function TradingSignals() {
                       return (
                         <tr key={s.id} className={rowClass}>
                           <td className="py-2.5 pr-4">
-                            <TickerLink ticker={s.ticker} className="font-semibold" />
+                            {s.ticker === '***'
+                              ? <MaskedTicker />
+                              : <TickerLink ticker={s.ticker} className="font-semibold" />}
                           </td>
                           <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
@@ -509,7 +520,9 @@ export default function TradingSignals() {
                     <tbody>
                       {exits.slice(signalLimit, Math.min(signalLimit + 3, exits.length)).map((s) => (
                         <tr key={s.id} className="border-b border-border/50">
-                          <td className="py-2.5 pr-4 font-semibold">{s.ticker}</td>
+                          <td className="py-2.5 pr-4 font-semibold">
+                            {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
+                          </td>
                           <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
@@ -527,6 +540,16 @@ export default function TradingSignals() {
           )}
         </CardContent>
       </Card>
+
+      {isFreeTeaser && (active.length > 0 || exits.length > 0) && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <p className="flex-1 text-sm">
+            Tickers, prices and entry levels are hidden on the Free plan. Upgrade
+            to see every active signal in full.
+          </p>
+          <Button onClick={() => setPaywallOpen(true)}>Upgrade plan</Button>
+        </div>
+      )}
 
       {error && (
         <p className="text-sm text-destructive text-center">

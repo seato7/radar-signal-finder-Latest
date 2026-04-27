@@ -86,14 +86,12 @@ const LiveStatsSection = () => {
   useEffect(() => {
     const fetchStats = async () => {
       const [assetResult, signalResult] = await Promise.all([
-        supabase.from("assets").select("*", { count: "exact", head: true }),
-        supabase.from("trade_signals").select("*", { count: "exact", head: true }).eq("status", "active"),
+        (supabase.rpc as any)("get_total_asset_count"),
+        (supabase.rpc as any)("get_active_signal_count"),
       ]);
-      console.log("Asset count:", assetResult.count, assetResult.error);
-      console.log("Signal count:", signalResult.count, signalResult.error);
       setStats({
-        assetCount: assetResult.count ?? 26868,
-        activeSignals: signalResult.count ?? 22,
+        assetCount: Number(assetResult.data ?? 26868),
+        activeSignals: Number(signalResult.data ?? 22),
       });
     };
     fetchStats();

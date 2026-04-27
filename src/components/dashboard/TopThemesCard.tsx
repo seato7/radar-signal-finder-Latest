@@ -23,10 +23,8 @@ const TopThemesCard = () => {
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['top-themes-dashboard'],
     queryFn: async (): Promise<ThemeScore[]> => {
-      const { data: allThemes, error: themesError } = await supabase
-        .from('themes')
-        .select('id, name');
-      
+      const { data: allThemes, error: themesError } = await (supabase.rpc as any)('get_themes_for_user');
+
       if (themesError) throw themesError;
       if (!allThemes || allThemes.length === 0) return [];
       

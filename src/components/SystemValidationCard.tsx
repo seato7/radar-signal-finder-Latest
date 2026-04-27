@@ -59,7 +59,7 @@ export function SystemValidationCard() {
     try {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       
-      const [totalSignals, momentumSignals, lastScore] = await Promise.all([
+      const [totalSignals, momentumSignals, diagnostic] = await Promise.all([
         supabase
           .from('signals')
           .select('id', { count: 'exact', head: true })
@@ -69,18 +69,17 @@ export function SystemValidationCard() {
           .select('id', { count: 'exact', head: true })
           .gte('observed_at', twentyFourHoursAgo)
           .or('signal_type.eq.momentum_5d_bullish,signal_type.eq.momentum_5d_bearish,signal_type.eq.momentum_20d_bullish,signal_type.eq.momentum_20d_bearish'),
-        supabase
-          .from('assets')
-          .select('score_computed_at')
-          .not('score_computed_at', 'is', null)
-          .order('score_computed_at', { ascending: false })
-          .limit(1)
+        (supabase.rpc as any)('get_assets_diagnostic'),
       ]);
+
+      const diagnosticRow = (diagnostic.data ?? [])[0] as
+        | { last_score_update: string | null }
+        | undefined;
 
       setStats({
         total_24h: totalSignals.count || 0,
         momentum_24h: momentumSignals.count || 0,
-        last_score_update: lastScore.data?.[0]?.score_computed_at || null
+        last_score_update: diagnosticRow?.last_score_update ?? null,
       });
     } catch (error) {
       console.error('Failed to fetch stats:', error);

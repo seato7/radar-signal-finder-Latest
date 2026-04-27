@@ -88,24 +88,15 @@ const AssetDetail = () => {
       setLoading(true);
       
       try {
-        const { data: assetData } = await supabase
-          .from('assets')
-          .select('*')
-          .ilike('ticker', ticker)
-          .maybeSingle();
-        
+        const { data: assetRows } = await (supabase.rpc as any)('get_asset_for_user_by_ticker', { _ticker: ticker });
+        const assetData = (assetRows ?? [])[0];
+
         if (!assetData) { setLoading(false); return; }
         setAsset(assetData);
 
         // Fetch active trade signal for this ticker
-        const { data: signalData } = await supabase
-          .from('trade_signals')
-          .select('id, entry_price, exit_target, stop_loss, position_size_pct, expires_at, created_at')
-          .eq('ticker', assetData.ticker)
-          .eq('status', 'active')
-          .limit(1)
-          .maybeSingle();
-        setActiveSignal(signalData ?? null);
+        const { data: signalRows } = await (supabase.rpc as any)('get_active_signal_for_ticker', { _ticker: assetData.ticker });
+        setActiveSignal((signalRows ?? [])[0] ?? null);
 
         // Fetch latest price data for "last updated" display
         const { data: latestPrice } = await supabase
@@ -134,10 +125,9 @@ const AssetDetail = () => {
             .in('signal_id', signals.map(s => s.id));
 
           if (themeMap?.length) {
-            const { data: themesData } = await supabase
-              .from('themes')
-              .select('id, name')
-              .in('id', [...new Set(themeMap.map(t => t.theme_id))]);
+            const { data: themesData } = await (supabase.rpc as any)('get_themes_by_ids_for_user', {
+              _ids: [...new Set(themeMap.map(t => t.theme_id))],
+            });
             setThemes(themesData || []);
           }
         }
@@ -157,13 +147,7 @@ const AssetDetail = () => {
       
       // If we already have nav state, just compute the score to ensure consistency
       if (navState?.rank && navState?.score) {
-        // Score already set from nav state, just ensure we have total count
-        if (!totalAssets) {
-          const { count } = await supabase
-            .from('assets')
-            .select('id', { count: 'exact', head: true });
-          // Don't override the "in current view" context
-        }
+        // Score already set from nav state; nav state already carries total count.
         return;
       }
       
@@ -171,11 +155,13 @@ const AssetDetail = () => {
         // Import the batch scoring function to compute scores consistently
         const { computeAssetScoresBatch } = await import('@/lib/assetScoring');
         
-        // Get total count of assets
-        const { count: totalCount } = await supabase
-          .from('assets')
-          .select('id', { count: 'exact', head: true });
-        
+        // Get total count of assets (visible to caller's plan) via RPC.
+        const { data: countRows } = await (supabase.rpc as any)('get_assets_for_user', {
+          _result_limit: 1,
+          _result_offset: 0,
+        });
+        const totalCount = Number((countRows?.[0] as any)?.total_count ?? 0);
+
         setTotalAssets(totalCount || 0);
         setRankContext("estimated");
         

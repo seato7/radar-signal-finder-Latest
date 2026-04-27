@@ -245,26 +245,17 @@ const AssetRadar = () => {
       // SCORE-BASED SORTING: Use pre-computed computed_score column
       // ═══════════════════════════════════════════════════════════════════
       if ((currentSortBy === "score-desc" || currentSortBy === "score-asc") && trimmedSearch.length < 2) {
-        // Fetch assets ordered by pre-computed score from database
-        let assetQuery = supabase
-          .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_computed_at, score_explanation', { count: 'exact' });
-
-        if (tabConfig?.filter) {
-          assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
-        }
-
-        // Order by effective_score (COALESCE(hybrid_score, computed_score) generated column)
-        const sortOrder = currentSortBy === "score-desc" ? { ascending: false } : { ascending: true };
-
-        const { data: sortedAssets, count, error: assetError } = await assetQuery
-          .order('effective_score', { ...sortOrder, nullsFirst: false })
-          .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+        const { data: sortedAssets, error: assetError } = await (supabase.rpc as any)('get_assets_for_user', {
+          _class_filter: tabConfig?.filter ?? null,
+          _sort_mode: currentSortBy,
+          _result_limit: PAGE_SIZE,
+          _result_offset: pageNum * PAGE_SIZE,
+        });
 
         if (assetError) throw assetError;
 
         const assets = (sortedAssets || []) as AssetRow[];
-        totalCount = count || 0;
+        totalCount = (sortedAssets?.[0] as any)?.total_count ?? 0;
 
         if (assets.length === 0) {
           setAssets([]);
@@ -365,16 +356,11 @@ const AssetRadar = () => {
           return;
         }
 
-        let assetQuery = supabase
-          .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_explanation')
-          .in('ticker', recentTickers);
-
-        if (tabConfig?.filter) {
-          assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
-        }
-
-        const { data: matchingAssets, error: assetError } = await assetQuery;
+        const { data: matchingAssets, error: assetError } = await (supabase.rpc as any)('get_assets_for_user', {
+          _class_filter: tabConfig?.filter ?? null,
+          _tickers: recentTickers,
+          _result_limit: recentTickers.length,
+        });
         if (assetError) throw assetError;
 
         const priceMap = new Map<string, { lastUpdated: string; close: number }>();
@@ -478,16 +464,11 @@ const AssetRadar = () => {
           return;
         }
 
-        let assetQuery = supabase
-          .from('assets')
-          .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_explanation')
-          .in('ticker', tickersInOrder);
-
-        if (tabConfig?.filter) {
-          assetQuery = assetQuery.eq('asset_class', tabConfig.filter);
-        }
-
-        const { data: matchingAssets } = await assetQuery;
+        const { data: matchingAssets } = await (supabase.rpc as any)('get_assets_for_user', {
+          _class_filter: tabConfig?.filter ?? null,
+          _tickers: tickersInOrder,
+          _result_limit: tickersInOrder.length,
+        });
 
         // Fetch latest price date for timestamp display
         const { data: latestPriceDates } = await supabase
@@ -540,33 +521,23 @@ const AssetRadar = () => {
 
       // ═══════════════════════════════════════════════════════════════════
       // Default mode: fetch assets first, then enrich with prices
+      // Search (length >= 2) is handled by the search_assets RPC at the
+      // top of this function; this path runs only for empty / single-char
+      // search with alpha sort.
       // ═══════════════════════════════════════════════════════════════════
-      let query = supabase
-        .from('assets')
-        .select('id, ticker, name, exchange, asset_class, computed_score, hybrid_score, score_explanation', { count: 'exact' });
-
-      if (tabConfig?.filter) {
-        query = query.eq('asset_class', tabConfig.filter);
-      }
-
-      // Search (length >= 2) is handled by the RPC branch at the top of this function;
-      // this default path runs only when searchTerm is empty or a single character.
-
-      if (currentSortBy === "alpha-desc") {
-        query = query.order('ticker', { ascending: false });
-      } else {
-        query = query.order('ticker', { ascending: true });
-      }
-
-      const { data, error, count } = await query
-        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+      const { data, error } = await (supabase.rpc as any)('get_assets_for_user', {
+        _class_filter: tabConfig?.filter ?? null,
+        _sort_mode: currentSortBy === "alpha-desc" ? "alpha-desc" : "alpha-asc",
+        _result_limit: PAGE_SIZE,
+        _result_offset: pageNum * PAGE_SIZE,
+      });
 
       if (error) throw error;
 
       const fetchedAssets = (data || []) as AssetRow[];
 
       assetsData = fetchedAssets;
-      totalCount = count || 0;
+      totalCount = (data?.[0] as any)?.total_count ?? 0;
 
       const tickers = assetsData.map(a => a.ticker);
       const threeDaysAgo = new Date();
@@ -688,13 +659,9 @@ const AssetRadar = () => {
 
   // Fetch active trade signal tickers once on mount for Signal badges
   useEffect(() => {
-    supabase
-      .from('trade_signals')
-      .select('ticker')
-      .eq('status', 'active')
-      .then(({ data }) => {
-        setActiveSignalTickers(new Set((data ?? []).map((r: any) => r.ticker)));
-      });
+    (supabase.rpc as any)('get_active_signal_tickers_for_user').then(({ data }: any) => {
+      setActiveSignalTickers(new Set((data ?? []).map((r: any) => r.ticker)));
+    });
   }, []);
 
   const handleTabChange = (value: string) => {
@@ -901,7 +868,12 @@ const AssetRadar = () => {
                                 {asset.score}
                               </Badge>
                             ) : (
-                              <span style={{ filter: "blur(3px)", userSelect: "none" }} className="text-xs text-muted-foreground select-none">-</span>
+                              <span className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground font-mono">__/100</span>
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
+                                  Premium only
+                                </Badge>
+                              </span>
                             )}
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>

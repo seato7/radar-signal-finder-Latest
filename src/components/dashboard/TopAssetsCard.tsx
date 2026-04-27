@@ -40,35 +40,35 @@ const TopAssetsCard = () => {
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['top-assets-dashboard-scored'],
     queryFn: async (): Promise<TopAsset[]> => {
-      // Get top SCORED assets (with signal mass >= 0.001), sorted by score descending
-      const { data: scoredAssets, error } = await supabase
-        .from('assets')
-        .select('ticker, name, computed_score, hybrid_score, expected_return, score_explanation')
-        .not('computed_score', 'is', null)
-        .order('computed_score', { ascending: false })
-        .limit(100); // Fetch more to filter by mass
-      
+      // Get top scored assets via plan-gated RPC, then filter by signal mass.
+      const { data: scoredAssets, error } = await (supabase.rpc as any)('get_assets_for_user', {
+        _sort_mode: 'score-desc',
+        _result_limit: 100,
+        _result_offset: 0,
+      });
+
       if (error) throw error;
       if (!scoredAssets || scoredAssets.length === 0) {
         return [];
       }
-      
-      // Filter to only assets with meaningful signal mass
-      const massyAssets = scoredAssets.filter(a => {
+
+      // Filter to only assets with meaningful signal mass and a known score
+      // (free tier sees nulls — those are filtered out here so the card stays empty).
+      const massyAssets = (scoredAssets as any[]).filter((a) => {
+        if (a.computed_score == null && a.hybrid_score == null) return false;
         const mass = extractFromExplanation(a.score_explanation, 'signal_mass');
         return mass >= 0.001;
       });
-      
-      // Take top 3 by score
-      return massyAssets.slice(0, 3).map(a => {
+
+      return massyAssets.slice(0, 3).map((a) => {
         const mass = extractFromExplanation(a.score_explanation, 'signal_mass');
         const strengthInfo = getSignalStrength(mass);
         return {
           ticker: a.ticker,
           name: a.name || a.ticker,
-          score: a.hybrid_score ?? a.computed_score ?? 50,
-          expectedReturn: a.expected_return ?? 0,
-          signalStrength: strengthInfo.level
+          score: Number(a.hybrid_score ?? a.computed_score ?? 50),
+          expectedReturn: Number(a.expected_return ?? 0),
+          signalStrength: strengthInfo.level,
         };
       });
     },

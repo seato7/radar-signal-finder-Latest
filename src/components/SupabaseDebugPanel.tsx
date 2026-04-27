@@ -22,8 +22,8 @@ export const SupabaseDebugPanel = () => {
         const supabaseUrl = (supabase as any).supabaseUrl || '';
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || 'unknown';
         
-        // Test connection with a simple query
-        const { error } = await supabase.from('assets').select('id').limit(1);
+        // Test connection via the admin-only health check RPC.
+        const { error } = await (supabase.rpc as any)('supabase_health_check_admin');
         
         setInfo({
           url: supabaseUrl,

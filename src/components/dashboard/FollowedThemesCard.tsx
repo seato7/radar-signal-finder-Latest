@@ -22,52 +22,35 @@ const FollowedThemesCard = () => {
     queryFn: async (): Promise<FollowedTheme[]> => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
-      
-      // Get user's subscribed themes
+
+      const { data: allThemes } = await (supabase.rpc as any)('get_themes_for_user');
+      const themes = (allThemes ?? []) as Array<{ id: string; name: string; score: number | null }>;
+      if (themes.length === 0) return [];
+
+      const themeById = new Map(themes.map((t) => [t.id, t]));
+
       const { data: subscriptions, error: subError } = await supabase
         .from('user_theme_subscriptions')
         .select('theme_id')
         .eq('user_id', user.id)
         .limit(3);
-      
-      if (subError || !subscriptions || subscriptions.length === 0) {
-        // Return top themes as suggestions if no subscriptions
-        const { data: topThemes } = await supabase
-          .from('themes')
-          .select('id, name, score')
-          .order('score', { ascending: false })
-          .limit(3);
-        
-        return (topThemes || []).map(t => ({
-          id: t.id,
-          name: t.name,
-          currentScore: t.score || 0,
-          previousScore: t.score || 0,
-          change: 0
-        }));
-      }
-      
-      // Get theme details with scores
-      const themePromises = subscriptions.map(async (sub) => {
-        const { data: theme } = await supabase
-          .from('themes')
-          .select('id, name, score')
-          .eq('id', sub.theme_id)
-          .single();
-        
-        if (!theme) return null;
 
-        return {
-          id: theme.id,
-          name: theme.name,
-          currentScore: theme.score || 0,
-          previousScore: theme.score || 0,
-          change: 0
-        };
-      });
-      
-      const results = await Promise.all(themePromises);
-      return results.filter((t): t is FollowedTheme => t !== null);
+      const pickThemes: typeof themes = (() => {
+        if (subError || !subscriptions || subscriptions.length === 0) {
+          return themes.slice(0, 3);
+        }
+        return subscriptions
+          .map((sub) => themeById.get(sub.theme_id))
+          .filter((t): t is typeof themes[number] => Boolean(t));
+      })();
+
+      return pickThemes.map((t) => ({
+        id: t.id,
+        name: t.name,
+        currentScore: Number(t.score ?? 0),
+        previousScore: Number(t.score ?? 0),
+        change: 0,
+      }));
     },
     staleTime: 10 * 60 * 1000,
   });
