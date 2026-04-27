@@ -148,6 +148,51 @@ curl -X POST https://your-railway-url/api/ingest/prices/hot
 
 ---
 
+## 💳 Plan Matrix
+
+Single source of truth for what each subscription tier sees and does. The
+canonical limits live in `src/lib/planLimits.ts`; gating is enforced
+server-side via the SECURITY DEFINER RPCs `get_assets_for_user`,
+`get_signals_for_user`, `get_themes_for_user`, and
+`get_total_signal_return`.
+
+| Feature | Free | Starter ($9.99/mo) | Pro ($34.99/mo) | Premium ($89.99/mo) | Enterprise (Contact) |
+|---------|------|--------------------|------------------|--------------------|--------------------|
+| AI messages / day | 1 | 5 | 20 | Unlimited | Unlimited |
+| Active signals | Teaser only | 1 | 3 | Unlimited | Unlimited |
+| Watchlist slots | 1 | 3 | 10 | Unlimited | Unlimited |
+| Asset Radar | 3 demo tickers | Stocks | Stocks + ETFs + Forex | All classes | All classes |
+| Themes | 1 demo (read-only) | 1 | 3 | Unlimited | Unlimited |
+| Alerts | 0 | 1 | 5 | Unlimited | Unlimited |
+| Asset scores | Hidden | Hidden | Hidden | Visible | Visible |
+| Trading Bots | Coming Soon | Coming Soon | Coming Soon | Coming Soon | Coming Soon |
+
+### Demo Configuration
+
+The Free tier shows a fixed-but-limited preview of every page so visitors can
+evaluate the product before paying. Demo configuration is hard-coded in the
+RPCs and `planLimits.ts`:
+
+- **Demo tickers**: `F`, `VTI`, `EUR/USD` (the only assets a Free user can
+  see on Asset Radar / Asset Detail).
+- **Demo theme**: a single theme flagged via `themes.is_demo = true`. Picked
+  by migration `20260427000001_plan-gating-rpcs.sql` from the first theme
+  whose name matches `dividend`, `blue chip`, or `consumer staples`. Check
+  the migration `RAISE NOTICE` output to confirm which theme was flagged.
+- **Signals teaser**: Free users receive masked rows from
+  `get_signals_for_user` (ticker `***`, prices nulled). The aggregate
+  total return is exposed via `get_total_signal_return` so the marketing
+  number renders even when individual signals are hidden.
+
+### Trading Bots
+
+The bots feature is disabled platform-wide. `manage-bots /create` returns
+HTTP 503 with `error: "feature_coming_soon"` for every plan, including
+admin. The frontend renders a Coming Soon state on the Trading Bots page
+and hides the Create Bot button.
+
+---
+
 ## 💰 Cost Breakdown
 
 | Service | Monthly Cost |

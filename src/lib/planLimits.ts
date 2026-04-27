@@ -11,20 +11,28 @@ export interface PlanLimits {
   show_sentiment: boolean;
   analytics_access: boolean;
   full_dashboard: boolean;
+  is_demo_only?: boolean;
+  demo_tickers?: string[];
+  can_view_signals_teaser?: boolean;
+  theme_read_only?: boolean;
 }
 
 export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
   free: {
     active_signals: 0,
-    ai_messages_per_day: 0,
+    ai_messages_per_day: 1,
     alerts: 0,
-    watchlist_slots: 0,
-    themes: 0,
-    asset_radar_classes: [],
+    watchlist_slots: 1,
+    themes: 1,
+    asset_radar_classes: ['stock', 'etf', 'forex'],
     show_scores: false,
     show_sentiment: false,
     analytics_access: false,
     full_dashboard: false,
+    is_demo_only: true,
+    demo_tickers: ['F', 'VTI', 'EUR/USD'],
+    can_view_signals_teaser: true,
+    theme_read_only: true,
   },
   starter: {
     active_signals: 1,

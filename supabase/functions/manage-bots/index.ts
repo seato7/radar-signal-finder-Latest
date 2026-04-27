@@ -200,35 +200,16 @@ serve(async (req) => {
       });
     }
 
-    // POST /create - Create new bot
+    // POST /create - Trading Bots are temporarily disabled while the
+    // feature is rebuilt for launch. Returns 503 for every plan with
+    // no admin override so the UI can render a Coming Soon state and
+    // no bot rows can be created until the feature ships.
     if (req.method === 'POST' && path.includes('/create')) {
-      const bot = await req.json();
-      
-      // Check user role limits
-      const { data: roleData } = await supabaseClient
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-      
-      const userPlan = roleData?.role || 'free';
-      
-      // TODO: Check plan limits (free = 1 bot, lite = 3, pro = 10)
-      
-      bot.user_id = user.id;
-      bot.status = 'stopped';
-      bot.created_at = new Date().toISOString();
-      bot.updated_at = new Date().toISOString();
-      
-      const { data, error } = await supabaseClient
-        .from('bots')
-        .insert(bot)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      return new Response(JSON.stringify({ bot_id: data.id, status: 'created' }), {
+      return new Response(JSON.stringify({
+        error: 'feature_coming_soon',
+        message: 'Trading Bots are coming soon. New bot creation is disabled.',
+      }), {
+        status: 503,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
