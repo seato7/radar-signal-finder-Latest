@@ -4199,6 +4199,14 @@ export type Database = {
           ticker: string
         }[]
       }
+      get_asset_tickers_by_ids_for_user: {
+        Args: { _ids: string[] }
+        Returns: {
+          id: string
+          name: string
+          ticker: string
+        }[]
+      }
       get_assets_diagnostic: {
         Args: never
         Returns: {
