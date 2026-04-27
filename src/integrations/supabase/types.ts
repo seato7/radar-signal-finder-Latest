@@ -4149,6 +4149,25 @@ export type Database = {
         }[]
       }
       execute_sql: { Args: { sql: string }; Returns: Json }
+      get_active_signal_count: { Args: never; Returns: number }
+      get_active_signal_for_ticker: {
+        Args: { _ticker: string }
+        Returns: {
+          created_at: string
+          entry_price: number
+          exit_target: number
+          expires_at: string
+          id: string
+          position_size_pct: number
+          stop_loss: number
+        }[]
+      }
+      get_active_signal_tickers_for_user: {
+        Args: never
+        Returns: {
+          ticker: string
+        }[]
+      }
       get_api_usage_summary: {
         Args: { hours_back?: number }
         Returns: {
@@ -4162,13 +4181,40 @@ export type Database = {
           total_calls: number
         }[]
       }
+      get_asset_for_user_by_ticker: {
+        Args: { _ticker: string }
+        Returns: {
+          ai_score: number
+          asset_class: string
+          computed_score: number
+          exchange: string
+          expected_return: number
+          hybrid_score: number
+          id: string
+          metadata: Json
+          name: string
+          score_computed_at: string
+          score_explanation: Json
+          sector: string
+          ticker: string
+        }[]
+      }
+      get_assets_diagnostic: {
+        Args: never
+        Returns: {
+          last_score_update: string
+          scored_assets: number
+          total_assets: number
+        }[]
+      }
       get_assets_for_user: {
         Args: {
           _class_filter?: string
           _result_limit?: number
           _result_offset?: number
           _search?: string
-          _sort_desc?: boolean
+          _sort_mode?: string
+          _tickers?: string[]
         }
         Returns: {
           asset_class: string
@@ -4270,6 +4316,13 @@ export type Database = {
           ticker: string
         }[]
       }
+      get_themes_by_ids_for_user: {
+        Args: { _ids: string[] }
+        Returns: {
+          id: string
+          name: string
+        }[]
+      }
       get_themes_for_user: {
         Args: never
         Returns: {
@@ -4285,6 +4338,7 @@ export type Database = {
           updated_at: string
         }[]
       }
+      get_total_asset_count: { Args: never; Returns: number }
       get_total_signal_return: { Args: never; Returns: number }
       get_twelvedata_credits_status: {
         Args: never
@@ -4330,6 +4384,7 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      supabase_health_check_admin: { Args: never; Returns: boolean }
       update_assets_from_coverage: {
         Args: { p_snapshot_date: string; p_vendor?: string }
         Returns: {
