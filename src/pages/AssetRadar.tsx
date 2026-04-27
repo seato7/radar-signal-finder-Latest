@@ -259,7 +259,7 @@ const AssetRadar = () => {
 
         if (assets.length === 0) {
           setAssets([]);
-          setTotal(count || 0);
+          setTotal(totalCount || 0);
           setLoading(false);
           return;
         }

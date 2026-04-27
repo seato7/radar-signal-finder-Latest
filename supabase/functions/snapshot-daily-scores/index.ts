@@ -31,6 +31,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const startTime = Date.now();
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
@@ -107,14 +109,16 @@ serve(async (req) => {
     
     console.log(`Created ${snapshots.length} score snapshots for ${today} (filtered from ${allAssets.length} total, ${scoredAssets.length} with signal mass >= ${SIGNAL_MASS_THRESHOLD})`);
 
-    // Log to function_status for monitoring
-    await supabase.from('function_status').insert({
-      function_name: 'snapshot-daily-scores',
-      status: 'success',
-      rows_inserted: snapshots.length,
-      duration_ms: Date.now() - startTime,
-      metadata: { date: today, total_assets: allAssets.length, scored_assets: scoredAssets.length }
-    }).then(() => {}).catch(() => {}); // non-critical — don't fail snapshot if logging fails
+    // Log to function_status for monitoring (non-critical)
+    try {
+      await supabase.from('function_status').insert({
+        function_name: 'snapshot-daily-scores',
+        status: 'success',
+        rows_inserted: snapshots.length,
+        duration_ms: Date.now() - startTime,
+        metadata: { date: today, total_assets: allAssets.length, scored_assets: scoredAssets.length }
+      });
+    } catch (_) { /* don't fail snapshot if logging fails */ }
 
     return new Response(
       JSON.stringify({

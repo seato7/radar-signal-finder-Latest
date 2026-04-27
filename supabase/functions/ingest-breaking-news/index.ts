@@ -477,7 +477,6 @@ const TOPIC_TICKER_MAP: Record<string, string[]> = {
   // MEDIA & ENTERTAINMENT
   'media': ['DIS','PARA','WBD','NFLX','CMCSA','FOXA','NYT'],
   'box office': ['DIS','AMC','CNK','IMAX','PARA','WBD'],
-  'streaming': ['NFLX','DIS','PARA','WBD','ROKU','AMZN'],
   'music': ['SPOT','LYV','SONY'],
   'advertising': ['META','GOOGL','TTD','MGNI','PUBM','IPG','OMC'],
   'super bowl': ['CMCSA','GOOGL','META','NFLX','NKE'],
