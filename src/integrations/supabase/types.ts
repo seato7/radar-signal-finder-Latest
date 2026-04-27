@@ -3574,6 +3574,7 @@ export type Database = {
           contributors: Json | null
           created_at: string | null
           id: string
+          is_demo: boolean
           keywords: string[]
           metadata: Json | null
           name: string
@@ -3587,6 +3588,7 @@ export type Database = {
           contributors?: Json | null
           created_at?: string | null
           id?: string
+          is_demo?: boolean
           keywords?: string[]
           metadata?: Json | null
           name: string
@@ -3600,6 +3602,7 @@ export type Database = {
           contributors?: Json | null
           created_at?: string | null
           id?: string
+          is_demo?: boolean
           keywords?: string[]
           metadata?: Json | null
           name?: string
@@ -4083,6 +4086,7 @@ export type Database = {
       }
     }
     Functions: {
+      _effective_plan: { Args: { _user_id: string }; Returns: string }
       acquire_twelvedata_credits: {
         Args: { credits_needed: number; max_credits?: number }
         Returns: {
@@ -4158,6 +4162,28 @@ export type Database = {
           total_calls: number
         }[]
       }
+      get_assets_for_user: {
+        Args: {
+          _class_filter?: string
+          _result_limit?: number
+          _result_offset?: number
+          _search?: string
+          _sort_desc?: boolean
+        }
+        Returns: {
+          asset_class: string
+          computed_score: number
+          exchange: string
+          expected_return: number
+          hybrid_score: number
+          id: string
+          name: string
+          score_computed_at: string
+          score_explanation: Json
+          ticker: string
+          total_count: number
+        }[]
+      }
       get_latest_theme_score: {
         Args: { p_theme_id: string }
         Returns: {
@@ -4196,6 +4222,34 @@ export type Database = {
           global_mean: number
         }[]
       }
+      get_signals_for_user: {
+        Args: never
+        Returns: {
+          ai_score_at_entry: number
+          asset_id: string
+          created_at: string
+          entry_date: string
+          entry_price: number
+          exit_date: string
+          exit_price: number
+          exit_target: number
+          expires_at: string
+          id: string
+          last_live_price: number
+          last_live_price_at: string
+          last_live_price_source: string
+          peak_price: number
+          pnl_pct: number
+          position_size_pct: number
+          reason: string
+          score_at_entry: number
+          signal_type: string
+          status: string
+          stop_loss: number
+          ticker: string
+          updated_at: string
+        }[]
+      }
       get_stale_functions: {
         Args: never
         Returns: {
@@ -4216,6 +4270,22 @@ export type Database = {
           ticker: string
         }[]
       }
+      get_themes_for_user: {
+        Args: never
+        Returns: {
+          ai_summary: string
+          alpha: number
+          created_at: string
+          id: string
+          is_demo: boolean
+          keywords: string[]
+          name: string
+          score: number
+          tickers: string[]
+          updated_at: string
+        }[]
+      }
+      get_total_signal_return: { Args: never; Returns: number }
       get_twelvedata_credits_status: {
         Args: never
         Returns: {
