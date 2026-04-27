@@ -21,29 +21,35 @@ const SignalSpotlight = () => {
   const { data: spotlight, isLoading } = useQuery({
     queryKey: ['signal-spotlight'],
     queryFn: async (): Promise<SpotlightSignal | null> => {
-      // Get most recent significant signal
+      // Two-step lookup: signals (no embedded join, assets is RPC-only
+      // since the plan-gating REVOKE landed) then asset metadata via
+      // get_asset_tickers_by_ids_for_user.
       const { data: signals, error } = await supabase
         .from('signals')
-        .select(`
-          signal_type,
-          direction,
-          magnitude,
-          asset_id,
-          assets!inner(ticker, name)
-        `)
+        .select('signal_type, direction, magnitude, asset_id')
         .not('direction', 'eq', 'neutral')
         .order('observed_at', { ascending: false })
         .limit(10);
-      
+
       if (error) throw error;
       if (!signals || signals.length === 0) return null;
-      
-      // Pick one with highest magnitude
+
       const sorted = signals.sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0));
       const top = sorted[0];
-      
-      const assets = top.assets as any;
-      const ticker = assets?.ticker || 'Unknown';
+
+      const assetIds = [top.asset_id].filter(Boolean) as string[];
+      let ticker = 'Unknown';
+      if (assetIds.length > 0) {
+        const { data: assetRows } = await (supabase.rpc as any)(
+          'get_asset_tickers_by_ids_for_user',
+          { _ids: assetIds }
+        );
+        const match = (assetRows ?? []).find((r: any) => r.id === top.asset_id);
+        if (match?.ticker) ticker = match.ticker;
+      }
+      // Free users (or any user the asset is hidden from) get the demo
+      // teaser experience: bail rather than leak the real ticker.
+      if (ticker === 'Unknown') return null;
       
       // Generate a compelling headline based on signal type
       const headlines: Record<string, string> = {

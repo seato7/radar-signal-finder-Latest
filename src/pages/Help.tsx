@@ -454,14 +454,14 @@ const Help = () => {
                       </thead>
                       <tbody className="text-slate-300">
                         {[
-                          ["Active Signals", "-", "1", "3", "Unlimited", "Unlimited"],
-                          ["Asset Radar coverage", "-", "Stocks only", "Stocks, ETFs & Forex", "All asset classes + scores", "All asset classes + scores"],
-                          ["Themes", "-", "1", "3", "Unlimited", "Unlimited"],
-                          ["AI Assistant (messages/day)", "-", "5", "20", "Unlimited", "Unlimited"],
-                          ["Alerts", "-", "1", "5", "Unlimited", "Unlimited"],
-                          ["Watchlist slots", "-", "3", "10", "Unlimited", "Unlimited"],
+                          ["Active Signals", "0", "1", "3", "Unlimited", "Unlimited"],
+                          ["Asset Radar coverage", "3 demo tickers", "Stocks (scores hidden)", "Stocks, ETFs & Forex (scores hidden)", "All asset classes plus scores", "All asset classes plus scores"],
+                          ["Themes", "1 demo (read only)", "1", "3", "Unlimited", "Unlimited"],
+                          ["AI Assistant (messages/day)", "1", "5", "20", "Unlimited", "Unlimited"],
+                          ["Alerts", "0", "1", "5", "Unlimited", "Unlimited"],
+                          ["Watchlist slots", "1", "3", "10", "Unlimited", "Unlimited"],
                           ["Analytics dashboard", "-", "-", "-", "Included", "Included"],
-                          ["Trading Bots access", "-", "-", "-", "First access", "First access"],
+                          ["Trading Bots", "-", "-", "-", "Coming Soon", "Coming Soon"],
                           ["Priority support", "-", "-", "-", "-", "Included"],
                         ].map((row, i) => (
                           <tr

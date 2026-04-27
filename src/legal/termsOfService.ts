@@ -239,7 +239,7 @@ export const TOS_SECTIONS: LegalSection[] = [
         type: "list",
         items: [
           "Redistribute, resell, republish, or commercially exploit Platform content, signals, or scores to any third party without our prior written consent",
-          "Use bots, scrapers, crawlers, or automated tools to extract data from the Platform except through our official API under an Enterprise plan",
+          "Use bots, scrapers, crawlers, or automated tools to extract data from the Platform",
           "Reverse engineer, decompile, or attempt to derive the source code, algorithms, or scoring methodologies of the Platform",
           "Circumvent or attempt to circumvent any access controls, paywalls, rate limits, or security measures",
           "Create competing products or services using Platform content, outputs, or derivatives thereof",
@@ -249,14 +249,6 @@ export const TOS_SECTIONS: LegalSection[] = [
           "Use the Platform to transmit malicious code, conduct phishing, or engage in any illegal activity",
           "Abuse the AI Assistant through excessive automation, prompt injection, or attempts to extract underlying model training data",
           "Misrepresent your identity, country of residence, or eligibility",
-        ],
-      },
-      {
-        type: "subsection",
-        number: "7.1",
-        heading: "API access",
-        content: [
-          { type: "paragraph", text: "Where API access is provided under an Enterprise plan, it is subject to a separate API Terms of Use including rate limits, fair-use rules, and redistribution restrictions. Unauthorised API scraping or key sharing results in immediate termination." },
         ],
       },
     ],

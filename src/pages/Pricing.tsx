@@ -22,6 +22,23 @@ interface Plan {
 
 const plans: Plan[] = [
   {
+    name: "Free",
+    monthly: 0,
+    annual: 0,
+    annualSaving: null,
+    plan_id: "free",
+    description: "Try the platform with a single demo theme and three demo tickers",
+    features: [
+      "1 demo theme (read only)",
+      "3 demo tickers (F, VTI, EUR/USD)",
+      "AI Assistant: 1 message/day",
+      "1 Watchlist slot",
+      "Scores hidden",
+      "No alerts or active signals",
+    ],
+    popular: false,
+  },
+  {
     name: "Starter",
     monthly: 9.99,
     annual: 89,
@@ -30,7 +47,7 @@ const plans: Plan[] = [
     description: "Everything you need to start investing smarter",
     features: [
       "1 Active Signal",
-      "Asset Radar: Stocks only",
+      "Asset Radar: Stocks only (scores hidden)",
       "1 Theme",
       "AI Assistant: 5 messages/day",
       "1 Alert",
@@ -47,7 +64,7 @@ const plans: Plan[] = [
     description: "For active investors tracking multiple opportunities",
     features: [
       "3 Active Signals",
-      "Asset Radar: Stocks, ETFs & Forex",
+      "Asset Radar: Stocks, ETFs & Forex (scores hidden)",
       "3 Themes",
       "AI Assistant: 20 messages/day",
       "5 Alerts",
@@ -64,13 +81,13 @@ const plans: Plan[] = [
     description: "Unlimited access to every InsiderPulse feature",
     features: [
       "Unlimited Active Signals",
-      "Full Asset Radar: All asset classes + scores",
+      "Full Asset Radar: All asset classes plus scores",
       "Unlimited Themes",
       "AI Assistant: Unlimited",
       "Unlimited Alerts",
       "Unlimited Watchlist slots",
       "Analytics dashboard",
-      "First access to Trading Bots",
+      "Trading Bots (Coming Soon)",
     ],
     popular: true,
   },
@@ -85,7 +102,6 @@ const plans: Plan[] = [
       "Everything in Premium",
       "Priority support",
       "Custom integrations",
-      "API access",
     ],
     popular: false,
   },
@@ -116,6 +132,11 @@ const Pricing = () => {
   const handleCheckout = async (planId: string) => {
     if (planId === "enterprise") {
       window.location.href = "mailto:support@insiderpulse.org";
+      return;
+    }
+
+    if (planId === "free") {
+      navigate(isAuthenticated ? "/dashboard" : "/auth");
       return;
     }
 
@@ -237,9 +258,10 @@ const Pricing = () => {
       </div>
 
       {/* Plan cards */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
         {plans.map((plan) => {
           const displayPrice = getDisplayPrice(plan);
+          const isFreePlan = plan.plan_id === "free";
           const current = isCurrentPlan(plan.plan_id);
 
           return (
@@ -267,7 +289,13 @@ const Pricing = () => {
                 </CardDescription>
 
                 <div className="pt-4">
-                  {displayPrice !== null ? (
+                  {isFreePlan ? (
+                    <div className="flex items-end gap-1">
+                      <span className="text-4xl font-extrabold text-foreground">
+                        Free
+                      </span>
+                    </div>
+                  ) : displayPrice !== null ? (
                     <div>
                       <div className="flex items-end gap-1">
                         <span className="text-4xl font-extrabold text-foreground">
@@ -324,6 +352,8 @@ const Pricing = () => {
                 >
                   {current
                     ? "Current Plan"
+                    : plan.plan_id === "free"
+                    ? (isAuthenticated ? "Switch to Free" : "Sign Up Free")
                     : plan.plan_id === "starter" && !isAnnual
                     ? "Start 7-Day Free Trial"
                     : plan.plan_id === "enterprise"
@@ -340,6 +370,18 @@ const Pricing = () => {
       <p className="text-center text-sm text-muted-foreground">
         Starter plan includes a 7-day free trial. Card required, cancel anytime.
       </p>
+      <div className="mx-auto max-w-3xl rounded-md border border-border/50 bg-muted/20 p-4 text-xs text-muted-foreground leading-relaxed">
+        <p>
+          InsiderPulse provides general financial information and analytical tools only. It is
+          not personal financial product advice and does not take into account your objectives,
+          financial situation or needs. Scores, signals and themes are based on publicly
+          available data and proprietary models that may be incomplete or wrong. Past
+          performance is not a reliable indicator of future performance. You should consider
+          obtaining advice from a licensed financial adviser and read the relevant Product
+          Disclosure Statement before making any investment decision. Trading carries risk of
+          loss; you are responsible for your own decisions and outcomes.
+        </p>
+      </div>
       <div className="flex items-center justify-center gap-4 mt-4 text-xs text-slate-500">
         <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
         <span aria-hidden>·</span>
