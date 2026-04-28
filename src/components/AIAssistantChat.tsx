@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { getPlanLimits } from '@/lib/planLimits';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -121,26 +122,15 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     setIsLoading(true);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-assistant`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            messages: newMessages,
-            context
-          }),
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('chat-assistant', {
+        body: { messages: newMessages, context },
+      });
 
-      if (!response.ok) {
-        if (response.status === 429) {
+      if (error) {
+        if ((error as any).context?.status === 429) {
           let description = 'Upgrade your plan or wait until tomorrow.';
           try {
-            const errorData = await response.json();
+            const errorData = await (error as any).context.json();
             if (errorData?.message) description = errorData.message;
           } catch {
             // fall through to default description
@@ -156,65 +146,14 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         throw new Error('Failed to start chat');
       }
 
-      const contentType = response.headers.get('content-type');
-      
-      // Check if it's a JSON response (image generation)
-      if (contentType?.includes('application/json')) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
-        const images = data.choices?.[0]?.message?.images?.map((img: any) => img.image_url?.url) || [];
-        
-        setMessages([...newMessages, { 
-          role: 'assistant', 
-          content: content || 'Here\'s your generated image:', 
-          images 
-        }]);
-      } else {
-        // Streaming response
-        if (!response.body) {
-          throw new Error('No response body');
-        }
+      const content = data?.choices?.[0]?.message?.content || '';
+      const images = data?.choices?.[0]?.message?.images?.map((img: any) => img.image_url?.url) || [];
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let assistantMessage = '';
-        let textBuffer = '';
-
-        // Add empty assistant message
-        setMessages([...newMessages, { role: 'assistant', content: '' }]);
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          textBuffer += decoder.decode(value, { stream: true });
-
-          let newlineIndex;
-          while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
-            let line = textBuffer.slice(0, newlineIndex);
-            textBuffer = textBuffer.slice(newlineIndex + 1);
-
-            if (line.endsWith('\r')) line = line.slice(0, -1);
-            if (line.startsWith(':') || line.trim() === '') continue;
-            if (!line.startsWith('data: ')) continue;
-
-            const jsonStr = line.slice(6).trim();
-            if (jsonStr === '[DONE]') break;
-
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                assistantMessage += content;
-                setMessages([...newMessages, { role: 'assistant', content: assistantMessage }]);
-              }
-            } catch {
-              textBuffer = line + '\n' + textBuffer;
-              break;
-            }
-          }
-        }
-      }
+      setMessages([...newMessages, {
+        role: 'assistant',
+        content: content || "Here's your generated image:",
+        images,
+      }]);
     } catch (error) {
       console.error('Chat error:', error);
       toast({
