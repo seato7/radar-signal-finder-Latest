@@ -1,5 +1,8 @@
 project_id = "detxhoqiarohjevedmxh"
 
+[functions.chat-assistant]
+verify_jwt = false
+
 [functions.custom-auth-email]
 verify_jwt = false
 
