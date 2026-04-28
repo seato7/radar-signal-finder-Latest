@@ -142,7 +142,11 @@ serve(async (req) => {
     try {
       const authHeader = req.headers.get('Authorization');
       if (authHeader) {
-        const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+        const userClientKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+          ?? Deno.env.get('SUPABASE_SECRET_KEY')
+          ?? Deno.env.get('SUPABASE_ANON_KEY')
+          ?? '';
+        const userClient = createClient(supabaseUrl, userClientKey, {
           global: { headers: { Authorization: authHeader } }
         });
         const { data: { user } } = await userClient.auth.getUser();
@@ -157,7 +161,15 @@ serve(async (req) => {
         }
       }
     } catch (e) {
-      console.error('Plan lookup failed, defaulting to free:', e);
+      console.error('chat-assistant auth path failed:', {
+        message: (e as Error).message,
+        stack: (e as Error).stack,
+        hasServiceRoleKey: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+        hasSecretKey: !!Deno.env.get('SUPABASE_SECRET_KEY'),
+        hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY'),
+      });
+      // Continue with userPlan='free' for safety; the 401 below
+      // will trigger if no session was resolved.
     }
 
     // Build plan-based restriction block
@@ -219,6 +231,11 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     const dailyLimit = DAILY_MESSAGE_LIMITS[normalizedPlan] ?? 0;
     if (dailyLimit !== -1) {
       if (!authenticatedUserId) {
+        console.warn('chat-assistant 401: no authenticated user', {
+          userPlan,
+          dailyLimit,
+          hadAuthHeader: !!req.headers.get('Authorization'),
+        });
         return new Response(
           JSON.stringify({
             error: 'unauthorized',
