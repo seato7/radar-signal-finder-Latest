@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Shield, AlertTriangle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/integrations/supabase/client';
 
 interface RiskAssessmentProps {
   theme: any;
@@ -16,22 +17,10 @@ export const RiskAssessment = ({ theme, signals }: RiskAssessmentProps) => {
   useEffect(() => {
     const fetchAssessment = async () => {
       try {
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assess-risk`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            body: JSON.stringify({ theme, signals }),
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setAssessment(data);
-        }
+        const { data, error } = await supabase.functions.invoke('assess-risk', {
+          body: { theme, signals },
+        });
+        if (!error && data) setAssessment(data);
       } catch (error) {
         console.error('Risk assessment error:', error);
       } finally {

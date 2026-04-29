@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface SignalExplainerProps {
   signal: {
@@ -27,22 +28,11 @@ export const SignalExplainer = ({ signal }: SignalExplainerProps) => {
 
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/explain-signal`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ signal }),
-        }
-      );
-
-      if (!response.ok) throw new Error('Failed to fetch explanation');
-
-      const data = await response.json();
-      setExplanation(data.explanation);
+      const { data, error } = await supabase.functions.invoke('explain-signal', {
+        body: { signal },
+      });
+      if (error) throw error;
+      setExplanation(data?.explanation ?? '');
     } catch (error) {
       console.error('Explanation error:', error);
       toast({

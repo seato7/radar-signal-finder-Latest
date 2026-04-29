@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FileText, Download } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PDFReportGeneratorProps {
   reportData: any;
@@ -16,22 +17,12 @@ export const PDFReportGenerator = ({ reportData, reportType, fileName = 'report'
   const generateReport = async () => {
     setIsGenerating(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-pdf-report`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ reportData, reportType }),
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('generate-pdf-report', {
+        body: { reportData, reportType },
+      });
+      if (error) throw error;
+      if (!data?.reportMarkdown) throw new Error('Failed to generate report');
 
-      if (!response.ok) throw new Error('Failed to generate report');
-
-      const data = await response.json();
-      
       // Download markdown as text file (can be converted to PDF client-side if needed)
       const blob = new Blob([data.reportMarkdown], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);

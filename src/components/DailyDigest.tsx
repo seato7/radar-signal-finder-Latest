@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Mail, RefreshCw } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DailyDigestProps {
   userWatchlist: any[];
@@ -19,22 +20,11 @@ export const DailyDigest = ({ userWatchlist, recentSignals, userActivity }: Dail
   const fetchDigest = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-digest`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ userWatchlist, recentSignals, userActivity }),
-        }
-      );
-
-      if (!response.ok) throw new Error('Failed to generate digest');
-
-      const data = await response.json();
-      setDigest(data.digest);
+      const { data, error } = await supabase.functions.invoke('generate-digest', {
+        body: { userWatchlist, recentSignals, userActivity },
+      });
+      if (error) throw error;
+      setDigest(data?.digest ?? '');
     } catch (error) {
       console.error('Digest error:', error);
       toast({

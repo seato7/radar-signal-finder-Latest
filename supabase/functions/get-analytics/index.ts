@@ -14,27 +14,37 @@ serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    const token = authHeader.slice(7);
 
+    // Service-role + getClaims. Legacy anon-key getUser path returned
+    // null after the asymmetric signing-key rotation, breaking analytics
+    // for every signed-in user.
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    if (authError || !user) throw new Error('Unauthorized');
+    const { data: claimsData, error: claimsError } =
+      await supabaseClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims?.sub) {
+      console.warn('get-analytics getClaims failed', { message: claimsError?.message });
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const userId = claimsData.claims.sub as string;
 
     // Get all bot orders and positions for the user
     const { data: bots } = await supabaseClient
       .from('bots')
       .select('id, name, strategy')
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (!bots || bots.length === 0) {
       return new Response(JSON.stringify({

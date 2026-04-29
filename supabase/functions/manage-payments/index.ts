@@ -123,11 +123,36 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Service-role + getClaims for auth resolution. The legacy anon-key +
+  // auth.getUser() pattern returned null after Supabase rotated to
+  // asymmetric signing keys, which is what broke paid-plan plan upgrades:
+  // checkout completed in Stripe, but the redirect back to /pricing
+  // could not resolve the user, leaving plan stuck on Free until the
+  // webhook arrived (and even then writes failed silently because the
+  // earlier auth.getUser path masked the user_id resolution).
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   );
+
+  // Resolve caller from Authorization header. Returns null for the
+  // webhook path (no Bearer token) or unsigned-in callers; non-public
+  // actions check this and 401 if missing.
+  const resolveCaller = async (): Promise<{ id: string; email: string | null } | null> => {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) return null;
+    const token = authHeader.slice(7);
+    const { data: claimsData, error: claimsError } =
+      await supabaseClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims?.sub) {
+      logStep('getClaims failed', { message: claimsError?.message });
+      return null;
+    }
+    return {
+      id: claimsData.claims.sub as string,
+      email: (claimsData.claims.email as string | undefined) ?? null,
+    };
+  };
 
   const url = new URL(req.url);
 
@@ -305,8 +330,19 @@ serve(async (req) => {
     }
 
     // All remaining actions require authentication
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    if (authError || !user) throw new Error('Unauthorized');
+    const caller = await resolveCaller();
+    if (!caller) throw new Error('Unauthorized');
+    // Email is optional in claims for some auth providers; fall back to the
+    // admin API so Stripe customer lookup never receives a null email.
+    let resolvedEmail = caller.email;
+    if (!resolvedEmail) {
+      const { data: adminUser } = await supabaseClient.auth.admin.getUserById(caller.id);
+      resolvedEmail = adminUser?.user?.email ?? null;
+    }
+    if (!resolvedEmail) throw new Error('No email on account');
+    // Shape-compatible shim so existing `user.id` / `user.email!` call sites
+    // below keep working without further churn.
+    const user = { id: caller.id, email: resolvedEmail };
 
     // Status
     if (action === 'status') {

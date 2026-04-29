@@ -185,21 +185,12 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     
     setIsSpeaking(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/text-to-speech`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ text }),
-        }
-      );
-
-      if (!response.ok) throw new Error('Speech generation failed');
-
-      const { audioContent } = await response.json();
+      const { data, error } = await supabase.functions.invoke('text-to-speech', {
+        body: { text },
+      });
+      if (error) throw error;
+      const audioContent = data?.audioContent;
+      if (!audioContent) throw new Error('Speech generation failed');
       const audio = new Audio(`data:audio/mpeg;base64,${audioContent}`);
       audio.onended = () => setIsSpeaking(false);
       await audio.play();
