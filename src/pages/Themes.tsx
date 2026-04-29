@@ -27,7 +27,8 @@ const Themes = () => {
   const { toast } = useToast();
   const { token, isAuthenticated, userPlan } = useAuth();
 
-  const userThemeLimit = getPlanLimits(userPlan).themes;
+  const planLimits = getPlanLimits(userPlan);
+  const userThemeLimit = planLimits.themes;
   const hasUnlimitedThemes = userThemeLimit === -1;
   const isFree = userPlan === 'free' || !userPlan;
 
@@ -126,9 +127,10 @@ const Themes = () => {
     }
   };
 
-  const showScore = userPlan === 'premium' || userPlan === 'enterprise' || userPlan === 'admin';
+  const showScore = planLimits.show_scores;
 
-  const isThemeLocked = (index: number) => {
+  const isThemeLocked = (index: number, theme: ThemeScore) => {
+    if (isFree && theme.is_demo) return false;
     if (hasUnlimitedThemes) return false;
     return index >= userThemeLimit;
   };
@@ -178,7 +180,7 @@ const Themes = () => {
 
       <div className="grid gap-6 md:grid-cols-2">
         {themes.map((theme, index) => {
-          const isLocked = isThemeLocked(index);
+          const isLocked = isThemeLocked(index, theme);
           const scoreLabel = showScore ? theme.score.toFixed(1) : '__';
           const strengthLabel = showScore
             ? (theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak')

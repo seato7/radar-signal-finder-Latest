@@ -13,7 +13,7 @@ const corsHeaders = {
 // copy on /pricing. -1 means unlimited. Enforced server-side here; the
 // client-side localStorage counter is kept only as a display hint.
 const DAILY_MESSAGE_LIMITS: Record<string, number> = {
-  free: 0,
+  free: 1,
   starter: 5,
   pro: 20,
   premium: -1,

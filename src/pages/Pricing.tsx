@@ -30,10 +30,9 @@ const plans: Plan[] = [
     description: "Try the platform with a single demo theme and three demo tickers",
     features: [
       "1 demo theme (read only)",
-      "3 demo tickers (F, VTI, EUR/USD)",
+      "3 demo tickers (F, VTI, EUR/USD) with scores",
       "AI Assistant: 1 message/day",
       "1 Watchlist slot",
-      "Scores hidden",
       "No alerts or active signals",
     ],
     popular: false,
@@ -47,7 +46,7 @@ const plans: Plan[] = [
     description: "Everything you need to start investing smarter",
     features: [
       "1 Active Signal",
-      "Asset Radar: Stocks only (scores hidden)",
+      "Asset Radar: Stocks (with scores)",
       "1 Theme",
       "AI Assistant: 5 messages/day",
       "1 Alert",
@@ -64,7 +63,7 @@ const plans: Plan[] = [
     description: "For active investors tracking multiple opportunities",
     features: [
       "3 Active Signals",
-      "Asset Radar: Stocks, ETFs & Forex (scores hidden)",
+      "Asset Radar: Stocks, ETFs & Forex (with scores)",
       "3 Themes",
       "AI Assistant: 20 messages/day",
       "5 Alerts",
@@ -81,7 +80,7 @@ const plans: Plan[] = [
     description: "Unlimited access to every InsiderPulse feature",
     features: [
       "Unlimited Active Signals",
-      "Full Asset Radar: All asset classes plus scores",
+      "Full Asset Radar: All asset classes (stocks, ETFs, forex, crypto, commodities)",
       "Unlimited Themes",
       "AI Assistant: Unlimited",
       "Unlimited Alerts",

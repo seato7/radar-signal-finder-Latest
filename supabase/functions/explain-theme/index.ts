@@ -14,10 +14,12 @@ serve(async (req) => {
   }
 
   try {
+    // Service role: themes/signals tables have SELECT revoked from anon/authenticated
+    // (plan-gating migration). Reads must use service-role; this function is read-only
+    // and the data it surfaces is already plan-gated upstream by get_themes_for_user.
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
     let themeId: string | null = null;

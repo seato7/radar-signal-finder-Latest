@@ -164,7 +164,7 @@ server-side via the SECURITY DEFINER RPCs `get_assets_for_user`,
 | Asset Radar | 3 demo tickers | Stocks | Stocks + ETFs + Forex | All classes | All classes |
 | Themes | 1 demo (read-only) | 1 | 3 | Unlimited | Unlimited |
 | Alerts | 0 | 1 | 5 | Unlimited | Unlimited |
-| Asset scores | Hidden | Hidden | Hidden | Visible | Visible |
+| Asset scores | Visible (demo only) | Visible | Visible | Visible | Visible |
 | Trading Bots | Coming Soon | Coming Soon | Coming Soon | Coming Soon | Coming Soon |
 
 ### Demo Configuration

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair, Lock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -127,11 +127,11 @@ const AssetRadar = () => {
   const { toast } = useToast();
   const [requestModalOpen, setRequestModalOpen] = useState(false);
 
-  const visibleTabs = ASSET_CLASS_TABS.filter((tab) =>
-    tab.filter === null
-      ? planLimits.asset_radar_classes.length > 0
-      : planLimits.asset_radar_classes.includes(tab.filter)
-  );
+  const isTabLocked = (filter: string | null): boolean => {
+    if (planLimits.asset_radar_classes.length === 0) return true;
+    if (filter === null) return false;
+    return !planLimits.asset_radar_classes.includes(filter);
+  };
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<AssetClassTab>(() => {
@@ -640,22 +640,32 @@ const AssetRadar = () => {
     }
   }, [assets, sortBy, searchTerm]);
 
+  const activeTabConfig = ASSET_CLASS_TABS.find((t) => t.value === activeTab);
+  const activeTabLocked = activeTabConfig ? isTabLocked(activeTabConfig.filter) : false;
+
   useEffect(() => {
     if (planLoading || planLimits.asset_radar_classes.length === 0) return;
+    if (activeTabLocked) {
+      setAssets([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
     setPage(0);
     const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 250);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy, userPlan]);
+  }, [searchTerm, activeTab, sortBy, userPlan, activeTabLocked]);
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
     if (planLoading || planLimits.asset_radar_classes.length === 0) return;
+    if (activeTabLocked) return;
     const interval = setInterval(() => {
       fetchAssets(page, activeTab, sortBy);
     }, REFRESH_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy, userPlan]);
+  }, [page, activeTab, sortBy, userPlan, activeTabLocked]);
 
   // Fetch active trade signal tickers once on mount for Signal badges
   useEffect(() => {
@@ -748,13 +758,22 @@ const AssetRadar = () => {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className={`grid w-full mb-4`} style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
-          {visibleTabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-1 px-2 text-xs sm:text-sm">
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-            </TabsTrigger>
-          ))}
+        <TabsList className={`grid w-full mb-4`} style={{ gridTemplateColumns: `repeat(${ASSET_CLASS_TABS.length}, minmax(0, 1fr))` }}>
+          {ASSET_CLASS_TABS.map((tab) => {
+            const locked = isTabLocked(tab.filter);
+            return (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="flex items-center gap-1 px-2 text-xs sm:text-sm"
+                title={locked ? "Upgrade to unlock" : undefined}
+              >
+                {tab.icon}
+                <span className="hidden sm:inline">{tab.label}</span>
+                {locked && <Lock className="h-3 w-3 text-muted-foreground ml-0.5" aria-label="Locked" />}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
         <Card className="shadow-data">
@@ -792,7 +811,22 @@ const AssetRadar = () => {
             </div>
           </CardHeader>
         <CardContent>
-          {loading ? (
+          {activeTabLocked ? (
+            <BlurredUpgradeOverlay
+              feature={`${activeTabConfig?.label ?? "This category"} requires an upgrade`}
+              description="Upgrade to Pro for ETFs and Forex, or Premium for crypto and commodities."
+            >
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="p-4 rounded-lg border border-border bg-card">
+                    <div className="h-6 w-20 mb-2 bg-muted rounded" />
+                    <div className="h-4 w-32 mb-3 bg-muted rounded" />
+                    <div className="h-5 w-16 bg-muted rounded" />
+                  </div>
+                ))}
+              </div>
+            </BlurredUpgradeOverlay>
+          ) : loading ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="p-4 rounded-lg border border-border">
@@ -863,18 +897,9 @@ const AssetRadar = () => {
                                 {signalStrengthInfo.label}
                               </Badge>
                             )}
-                            {planLimits.show_scores ? (
-                              <Badge variant={sentiment.variant} className="text-xs">
-                                {asset.score}
-                              </Badge>
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                <span className="text-xs text-muted-foreground font-mono">__/100</span>
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
-                                  Premium only
-                                </Badge>
-                              </span>
-                            )}
+                            <Badge variant={sentiment.variant} className="text-xs">
+                              {asset.score}
+                            </Badge>
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
