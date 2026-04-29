@@ -36,6 +36,15 @@ const PRICE_IDS: Record<string, Record<string, string>> = {
   },
 };
 
+// Reverse map for webhook: Stripe price ID → plan id
+const PRICE_TO_PLAN: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const [plan, periods] of Object.entries(PRICE_IDS)) {
+    for (const priceId of Object.values(periods)) m[priceId] = plan;
+  }
+  return m;
+})();
+
 const PLANS = [
   {
     id: 'free',
@@ -135,7 +144,12 @@ serve(async (req) => {
       let event;
       try {
         event = await stripe.webhooks.constructEventAsync(rawBody, signature, webhookSecret);
-      } catch {
+      } catch (sigError: any) {
+        logStep('Webhook: signature verification failed', {
+          message: sigError?.message,
+          secret_present: !!webhookSecret,
+          signature_present: !!signature,
+        });
         return new Response(JSON.stringify({ error: 'Webhook signature verification failed' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -147,62 +161,118 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       );
 
+      // Resolve user_id from a subscription: try subscription.metadata first,
+      // fall back to the customer's metadata.user_id (set on customer creation).
+      const resolveUserId = async (subscription: any): Promise<string | null> => {
+        const direct = (subscription.metadata as any)?.user_id;
+        if (direct) return direct;
+        try {
+          const customer = await stripe.customers.retrieve(subscription.customer);
+          return (customer as any)?.metadata?.user_id || null;
+        } catch (e: any) {
+          logStep('Webhook: failed to retrieve customer for user_id lookup', {
+            customer_id: subscription.customer,
+            message: e?.message,
+          });
+          return null;
+        }
+      };
+
+      // Decide the target role for a subscription event. Returns null = leave
+      // the existing role alone. trialing/active are paying states; only
+      // terminal-cancel states revert to free. past_due / incomplete /
+      // paused are transitional — Stripe will fire another event when they
+      // resolve, and we don't want to flap the user's role meanwhile.
+      const targetRoleForSubscription = (subscription: any): string | null => {
+        const status = subscription.status as string;
+        if (status === 'active' || status === 'trialing') {
+          const priceId = subscription.items?.data?.[0]?.price?.id;
+          const planId = priceId ? PRICE_TO_PLAN[priceId] : null;
+          if (!planId) {
+            logStep('Webhook: paying subscription with unrecognised price', { priceId, status });
+            return null;
+          }
+          return planId;
+        }
+        if (status === 'canceled' || status === 'unpaid' || status === 'incomplete_expired') {
+          return 'free';
+        }
+        return null;
+      };
+
+      // user_roles has UNIQUE(user_id, role), not UNIQUE(user_id), so plain
+      // upsert(..., { onConflict: 'user_id' }) silently no-ops. Replace all
+      // rows for the user, then insert the target role.
+      const replaceRole = async (userId: string, role: string, ctx: Record<string, unknown>) => {
+        const { error: deleteError } = await supabaseAdmin
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId);
+        if (deleteError) {
+          logStep('Webhook: error clearing existing roles', { ...ctx, userId, message: deleteError.message });
+        }
+        const { error: insertError } = await supabaseAdmin
+          .from('user_roles')
+          .insert({ user_id: userId, role });
+        if (insertError) {
+          logStep('Webhook: error inserting role', { ...ctx, userId, role, message: insertError.message });
+        } else {
+          logStep('Webhook: role written', { ...ctx, userId, role });
+        }
+      };
+
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object as any;
         const userId = session.metadata?.user_id || session.client_reference_id;
         const planId = session.metadata?.plan_id;
         logStep('Webhook: checkout.session.completed', { userId, planId });
         if (userId && planId) {
-          // user_roles has UNIQUE(user_id, role), not UNIQUE(user_id).
-          // Replace all existing roles for the user with the new plan role.
-          const { error: deleteError } = await supabaseAdmin
-            .from('user_roles')
-            .delete()
-            .eq('user_id', userId);
-          if (deleteError) {
-            logStep('Error clearing existing user roles', { error: deleteError.message });
-          }
-          const { error: insertError } = await supabaseAdmin
-            .from('user_roles')
-            .insert({ user_id: userId, role: planId });
-          if (insertError) {
-            logStep('Error inserting user role', { error: insertError.message });
-          } else {
-            logStep('User role updated', { userId, role: planId });
-          }
+          await replaceRole(userId, planId, { source: 'checkout.session.completed' });
         } else {
-          logStep('Webhook: missing userId or planId — cannot update role', { userId, planId });
+          logStep('Webhook: checkout.session.completed missing userId or planId', { userId, planId });
         }
       }
 
-      if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+      if (
+        event.type === 'customer.subscription.created' ||
+        event.type === 'customer.subscription.updated'
+      ) {
         const subscription = event.data.object as any;
-        const customer = await stripe.customers.retrieve(subscription.customer);
-        const userId = (customer as any).metadata?.user_id;
-        logStep('Webhook: subscription event', { type: event.type, status: subscription.status, userId });
-        if (userId && (event.type === 'customer.subscription.deleted' || subscription.status !== 'active')) {
-          const { error: deleteError } = await supabaseAdmin
-            .from('user_roles')
-            .delete()
-            .eq('user_id', userId);
-          if (deleteError) {
-            logStep('Error clearing user roles on cancel', { error: deleteError.message });
-          }
-          const { error: insertError } = await supabaseAdmin
-            .from('user_roles')
-            .insert({ user_id: userId, role: 'free' });
-          if (insertError) {
-            logStep('Error resetting user role', { error: insertError.message });
-          } else {
-            logStep('User role reset to free', { userId });
-          }
+        const userId = await resolveUserId(subscription);
+        const targetRole = targetRoleForSubscription(subscription);
+        logStep('Webhook: subscription state', {
+          type: event.type,
+          status: subscription.status,
+          userId,
+          targetRole,
+        });
+        if (userId && targetRole) {
+          await replaceRole(userId, targetRole, { source: event.type, status: subscription.status });
+        } else if (!userId) {
+          logStep('Webhook: subscription event missing user_id (customer metadata not set)', {
+            subscription_id: subscription.id,
+            customer_id: subscription.customer,
+          });
+        }
+      }
+
+      if (event.type === 'customer.subscription.deleted') {
+        const subscription = event.data.object as any;
+        const userId = await resolveUserId(subscription);
+        logStep('Webhook: customer.subscription.deleted', { userId });
+        if (userId) {
+          await replaceRole(userId, 'free', { source: 'customer.subscription.deleted' });
         }
       }
 
       return new Response(JSON.stringify({ received: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-    } catch (error) {
+    } catch (error: any) {
+      logStep('Webhook: unhandled error', {
+        message: error?.message,
+        stack: error?.stack?.substring(0, 500),
+      });
       return new Response(JSON.stringify({ error: (error as Error).message }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
