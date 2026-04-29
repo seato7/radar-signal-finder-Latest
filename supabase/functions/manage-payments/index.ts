@@ -153,11 +153,20 @@ serve(async (req) => {
         const planId = session.metadata?.plan_id;
         logStep('Webhook: checkout.session.completed', { userId, planId });
         if (userId && planId) {
-          const { error: upsertError } = await supabaseAdmin
+          // user_roles has UNIQUE(user_id, role), not UNIQUE(user_id).
+          // Replace all existing roles for the user with the new plan role.
+          const { error: deleteError } = await supabaseAdmin
             .from('user_roles')
-            .upsert({ user_id: userId, role: planId }, { onConflict: 'user_id' });
-          if (upsertError) {
-            logStep('Error upserting user role', { error: upsertError.message });
+            .delete()
+            .eq('user_id', userId);
+          if (deleteError) {
+            logStep('Error clearing existing user roles', { error: deleteError.message });
+          }
+          const { error: insertError } = await supabaseAdmin
+            .from('user_roles')
+            .insert({ user_id: userId, role: planId });
+          if (insertError) {
+            logStep('Error inserting user role', { error: insertError.message });
           } else {
             logStep('User role updated', { userId, role: planId });
           }
@@ -172,11 +181,18 @@ serve(async (req) => {
         const userId = (customer as any).metadata?.user_id;
         logStep('Webhook: subscription event', { type: event.type, status: subscription.status, userId });
         if (userId && (event.type === 'customer.subscription.deleted' || subscription.status !== 'active')) {
-          const { error: upsertError } = await supabaseAdmin
+          const { error: deleteError } = await supabaseAdmin
             .from('user_roles')
-            .upsert({ user_id: userId, role: 'free' }, { onConflict: 'user_id' });
-          if (upsertError) {
-            logStep('Error resetting user role', { error: upsertError.message });
+            .delete()
+            .eq('user_id', userId);
+          if (deleteError) {
+            logStep('Error clearing user roles on cancel', { error: deleteError.message });
+          }
+          const { error: insertError } = await supabaseAdmin
+            .from('user_roles')
+            .insert({ user_id: userId, role: 'free' });
+          if (insertError) {
+            logStep('Error resetting user role', { error: insertError.message });
           } else {
             logStep('User role reset to free', { userId });
           }
