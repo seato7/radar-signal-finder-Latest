@@ -141,18 +141,22 @@ serve(async (req) => {
     let authenticatedUserId: string | null = null;
     try {
       const authHeader = req.headers.get('Authorization');
-      if (authHeader) {
-        const userClientKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-        const userClient = createClient(supabaseUrl, userClientKey, {
-          global: { headers: { Authorization: authHeader } }
-        });
-        const { data: { user } } = await userClient.auth.getUser();
-        if (user) {
-          authenticatedUserId = user.id;
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice(7);
+        const { data: claimsData, error: claimsError } =
+          await supabase.auth.getClaims(token);
+        if (claimsError || !claimsData?.claims) {
+          console.warn('chat-assistant getClaims failed', {
+            message: claimsError?.message,
+            hasJwks: !!Deno.env.get('SUPABASE_JWKS'),
+            hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY'),
+          });
+        } else {
+          authenticatedUserId = claimsData.claims.sub;
           const { data: roleData } = await supabase
             .from('user_roles')
             .select('role')
-            .eq('user_id', user.id)
+            .eq('user_id', authenticatedUserId)
             .single();
           if (roleData?.role) userPlan = roleData.role;
         }
@@ -162,7 +166,7 @@ serve(async (req) => {
         message: (e as Error).message,
         stack: (e as Error).stack,
         hasServiceRoleKey: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
-        hasSecretKey: !!Deno.env.get('SUPABASE_SECRET_KEY'),
+        hasJwks: !!Deno.env.get('SUPABASE_JWKS'),
         hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY'),
       });
       // Continue with userPlan='free' for safety; the 401 below
