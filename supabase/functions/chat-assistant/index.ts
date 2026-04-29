@@ -126,14 +126,6 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // TEMP DIAGNOSTIC: log SUPABASE/KEY env var names available at runtime
-  // so we can pick the correct key for the user-context client.
-  // Logs keys only, never values. Remove once the right key is identified.
-  console.log('chat-assistant env keys:',
-    Object.keys(Deno.env.toObject())
-      .filter((k) => k.includes('SUPABASE') || k.includes('KEY'))
-  );
-
   try {
     const { messages, context, generateImage } = await req.json();
     
@@ -150,10 +142,7 @@ serve(async (req) => {
     try {
       const authHeader = req.headers.get('Authorization');
       if (authHeader) {
-        const userClientKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-          ?? Deno.env.get('SUPABASE_SECRET_KEY')
-          ?? Deno.env.get('SUPABASE_ANON_KEY')
-          ?? '';
+        const userClientKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
         const userClient = createClient(supabaseUrl, userClientKey, {
           global: { headers: { Authorization: authHeader } }
         });
