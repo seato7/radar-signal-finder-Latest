@@ -104,9 +104,10 @@ const Themes = () => {
     setSubscribing(themeId);
     try {
       const { error } = await supabase.functions.invoke('manage-alert-settings', {
-        body: { 
+        body: {
           action: 'subscribe',
-          theme_id: themeId 
+          theme_id: themeId,
+          theme_name: themeName,
         }
       });
 
