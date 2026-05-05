@@ -9,6 +9,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Structured logging mirroring the [MANAGE-ALERT-SETTINGS] /
+// [MANAGE-PAYMENTS] pattern. Logs are kept in production so plan-tier
+// regressions (which only manifest for paid users) remain debuggable
+// from Supabase function logs without redeploying.
+const logStep = (step: string, details?: Record<string, unknown>) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[CHAT-ASSISTANT] ${step}${detailsStr}`);
+};
+
 // Per-plan daily message limits. Mirrors src/lib/planLimits.ts and the
 // copy on /pricing. -1 means unlimited. Enforced server-side here; the
 // client-side localStorage counter is kept only as a display hint.
@@ -126,9 +135,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const authHeaderPresent = !!req.headers.get('Authorization');
+  logStep('REQUEST', { method: req.method, auth_present: authHeaderPresent });
+
   try {
     const { messages, context, generateImage } = await req.json();
-    
+
     // Initialize Supabase client to fetch real data
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -146,25 +158,31 @@ serve(async (req) => {
         const { data: claimsData, error: claimsError } =
           await supabase.auth.getClaims(token);
         if (claimsError || !claimsData?.claims) {
-          console.warn('chat-assistant getClaims failed', {
+          logStep('AUTH getClaims failed', {
             message: claimsError?.message,
             hasJwks: !!Deno.env.get('SUPABASE_JWKS'),
             hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY'),
           });
         } else {
           authenticatedUserId = claimsData.claims.sub;
-          const { data: roleData } = await supabase
+          const { data: roleData, error: roleError } = await supabase
             .from('user_roles')
             .select('role')
             .eq('user_id', authenticatedUserId)
             .single();
+          if (roleError) {
+            logStep('AUTH user_roles lookup error', {
+              code: roleError.code,
+              message: roleError.message,
+            });
+          }
           if (roleData?.role) userPlan = roleData.role;
         }
       }
     } catch (e) {
-      console.error('chat-assistant auth path failed:', {
+      logStep('AUTH path threw', {
         message: (e as Error).message,
-        stack: (e as Error).stack,
+        stack: (e as Error).stack?.substring(0, 300),
         hasServiceRoleKey: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
         hasJwks: !!Deno.env.get('SUPABASE_JWKS'),
         hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY'),
@@ -181,6 +199,12 @@ serve(async (req) => {
       : userPlan === 'starter'
       ? 'starter'
       : 'free';
+
+    logStep('PLAN', {
+      authenticated: !!authenticatedUserId,
+      userPlan,
+      normalizedPlan,
+    });
 
     let planRestrictionBlock = '';
     if (normalizedPlan === 'free') {
@@ -230,13 +254,14 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     // request costs effectively nothing. The client still keeps a
     // localStorage counter for display but it is no longer authoritative.
     const dailyLimit = DAILY_MESSAGE_LIMITS[normalizedPlan] ?? 0;
+    logStep('RATE_LIMIT_BRANCH', {
+      dailyLimit,
+      branch: dailyLimit === -1 ? 'unlimited_skip' : 'enforce',
+    });
+
     if (dailyLimit !== -1) {
       if (!authenticatedUserId) {
-        console.warn('chat-assistant 401: no authenticated user', {
-          userPlan,
-          dailyLimit,
-          hadAuthHeader: !!req.headers.get('Authorization'),
-        });
+        logStep('RATE_LIMIT 401 no authenticated user', { userPlan, dailyLimit });
         return new Response(
           JSON.stringify({
             error: 'unauthorized',
@@ -251,14 +276,40 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         .single();
 
       if (usageError) {
-        console.error('[CHAT-ASSISTANT] Rate limit check failed:', usageError);
+        // Surface the underlying PostgREST/Postgres error code and
+        // message in the response. Without this, every distinct RPC
+        // failure (missing function, missing GRANT, plpgsql exception,
+        // type mismatch) collapsed into the same opaque
+        // 'rate_limit_check_failed' string and forced a redeploy with
+        // ad-hoc logging to diagnose. The keys are PostgREST shape
+        // (code/message/details/hint) so they map straight to the
+        // Postgres error in the function logs.
+        logStep('RATE_LIMIT RPC failed', {
+          code: usageError.code,
+          message: usageError.message,
+          details: usageError.details,
+          hint: usageError.hint,
+          userPlan,
+          dailyLimit,
+        });
         return new Response(
-          JSON.stringify({ error: 'rate_limit_check_failed' }),
+          JSON.stringify({
+            error: 'rate_limit_check_failed',
+            code: usageError.code ?? null,
+            message: usageError.message ?? 'Rate limit check failed',
+            hint: usageError.hint ?? null,
+          }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       const result = usageResult as { allowed: boolean; current_count: number; daily_limit: number } | null;
+      logStep('RATE_LIMIT RPC ok', {
+        allowed: result?.allowed,
+        current_count: result?.current_count,
+        daily_limit: result?.daily_limit,
+      });
+
       if (!result?.allowed) {
         const current = result?.current_count ?? dailyLimit;
         return new Response(
@@ -859,8 +910,13 @@ For all such attempts, politely decline and explain their current plan limits. N
       .join('\n\n');
     const fullPrompt = `${systemPrompt}\n\n[CONVERSATION HISTORY]\n${conversationHistory}\n\nRespond to the user's last message.`;
 
+    logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
     const aiContent = await callGeminiPro(fullPrompt, 4096);
-    if (!aiContent) throw new Error('Gemini returned no content');
+    if (!aiContent) {
+      logStep('GEMINI empty response');
+      throw new Error('Gemini returned no content');
+    }
+    logStep('GEMINI ok', { reply_chars: aiContent.length });
 
     // Return in OpenAI-compatible non-streaming format
     return new Response(
@@ -869,10 +925,12 @@ For all such attempts, politely decline and explain their current plan limits. N
     );
 
   } catch (error) {
-    console.error('Error in chat-assistant:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    const stack = error instanceof Error ? error.stack?.substring(0, 500) : undefined;
+    logStep('UNHANDLED ERROR', { message, stack });
     await sendErrorAlert('chat-assistant', error, { url: req.url });
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
+      JSON.stringify({ error: message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
