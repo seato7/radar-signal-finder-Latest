@@ -359,6 +359,27 @@ export type Database = {
           },
         ]
       }
+      ai_usage_daily: {
+        Row: {
+          count: number
+          updated_at: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          count?: number
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          count?: number
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       alert_history: {
         Row: {
           alert_type: string
@@ -4367,6 +4388,14 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_ai_usage: {
+        Args: { _limit: number; _user_id: string }
+        Returns: {
+          allowed: boolean
+          current_count: number
+          daily_limit: number
+        }[]
       }
       is_subscribed_to_theme: {
         Args: { p_theme_id: string; p_user_id: string }
