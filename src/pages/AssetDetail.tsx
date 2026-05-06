@@ -9,6 +9,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssetScore } from "@/hooks/useAssetScore";
+import { useAddToWatchlist } from "@/hooks/useAddToWatchlist";
 import { formatDistanceToNow, differenceInDays, format } from "date-fns";
 
 const formatLabel = (str: string): string => {
@@ -189,8 +190,9 @@ const AssetDetail = () => {
     calculateScoreAndRanking();
   }, [asset, navState]);
 
+  const { addTicker, adding: addingToWatchlist } = useAddToWatchlist();
   const handleAddToWatchlist = () => {
-    toast({ title: "Added to Watchlist", description: `${ticker} has been added to your watchlist` });
+    addTicker(ticker);
   };
 
   const getBrokers = () => {
@@ -208,8 +210,8 @@ const AssetDetail = () => {
         title={`${asset.ticker} - ${asset.name}`}
         description={`Exchange: ${asset.exchange}`}
         action={
-          <Button variant="outline" onClick={handleAddToWatchlist}>
-            <Star className="h-4 w-4 mr-2" /> Add to Watchlist
+          <Button variant="outline" onClick={handleAddToWatchlist} disabled={addingToWatchlist}>
+            <Star className="h-4 w-4 mr-2" /> {addingToWatchlist ? "Adding..." : "Add to Watchlist"}
           </Button>
         }
       />

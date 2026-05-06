@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair, Lock } from "lucide-react";
+import { Search, Filter, ExternalLink, TrendingUp, DollarSign, Bitcoin, Wheat, BarChart3, Clock, ArrowUpDown, ChevronLeft, ChevronRight, Zap, Crosshair, Lock, Star } from "lucide-react";
+import { useAddToWatchlist } from "@/hooks/useAddToWatchlist";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -125,6 +126,7 @@ const AssetRadar = () => {
   const { user, userPlan, planLoading } = useAuth();
   const planLimits = getPlanLimits(userPlan);
   const { toast } = useToast();
+  const { addTicker: addToWatchlist, adding: addingToWatchlist } = useAddToWatchlist();
   const [requestModalOpen, setRequestModalOpen] = useState(false);
 
   const isTabLocked = (filter: string | null): boolean => {
@@ -900,6 +902,20 @@ const AssetRadar = () => {
                             <Badge variant={sentiment.variant} className="text-xs">
                               {asset.score}
                             </Badge>
+                            <button
+                              type="button"
+                              aria-label={`Add ${asset.ticker} to watchlist`}
+                              title="Add to watchlist"
+                              disabled={addingToWatchlist}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                addToWatchlist(asset.ticker);
+                              }}
+                              className="text-muted-foreground hover:text-yellow-500 transition-colors disabled:opacity-50"
+                            >
+                              <Star className="h-4 w-4" />
+                            </button>
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
