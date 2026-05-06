@@ -190,8 +190,9 @@ const AssetDetail = () => {
     calculateScoreAndRanking();
   }, [asset, navState]);
 
+  const { addTicker, adding: addingToWatchlist } = useAddToWatchlist();
   const handleAddToWatchlist = () => {
-    toast({ title: "Added to Watchlist", description: `${ticker} has been added to your watchlist` });
+    addTicker(ticker);
   };
 
   const getBrokers = () => {
