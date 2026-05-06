@@ -4108,6 +4108,8 @@ export type Database = {
     }
     Functions: {
       _effective_plan: { Args: { _user_id: string }; Returns: string }
+      _plan_alert_limit: { Args: { _plan: string }; Returns: number }
+      _plan_watchlist_slot_limit: { Args: { _plan: string }; Returns: number }
       acquire_twelvedata_credits: {
         Args: { credits_needed: number; max_credits?: number }
         Returns: {
