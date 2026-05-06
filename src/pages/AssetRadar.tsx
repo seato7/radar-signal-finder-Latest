@@ -126,6 +126,7 @@ const AssetRadar = () => {
   const { user, userPlan, planLoading } = useAuth();
   const planLimits = getPlanLimits(userPlan);
   const { toast } = useToast();
+  const { addTicker: addToWatchlist, adding: addingToWatchlist } = useAddToWatchlist();
   const [requestModalOpen, setRequestModalOpen] = useState(false);
 
   const isTabLocked = (filter: string | null): boolean => {
