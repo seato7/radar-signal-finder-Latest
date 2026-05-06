@@ -210,8 +210,8 @@ const AssetDetail = () => {
         title={`${asset.ticker} - ${asset.name}`}
         description={`Exchange: ${asset.exchange}`}
         action={
-          <Button variant="outline" onClick={handleAddToWatchlist}>
-            <Star className="h-4 w-4 mr-2" /> Add to Watchlist
+          <Button variant="outline" onClick={handleAddToWatchlist} disabled={addingToWatchlist}>
+            <Star className="h-4 w-4 mr-2" /> {addingToWatchlist ? "Adding..." : "Add to Watchlist"}
           </Button>
         }
       />
