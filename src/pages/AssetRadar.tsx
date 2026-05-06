@@ -902,6 +902,20 @@ const AssetRadar = () => {
                             <Badge variant={sentiment.variant} className="text-xs">
                               {asset.score}
                             </Badge>
+                            <button
+                              type="button"
+                              aria-label={`Add ${asset.ticker} to watchlist`}
+                              title="Add to watchlist"
+                              disabled={addingToWatchlist}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                addToWatchlist(asset.ticker);
+                              }}
+                              className="text-muted-foreground hover:text-yellow-500 transition-colors disabled:opacity-50"
+                            >
+                              <Star className="h-4 w-4" />
+                            </button>
                             <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
