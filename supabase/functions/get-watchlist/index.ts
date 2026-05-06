@@ -1,9 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getPlanLimits } from "../_shared/plan-limits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const logStep = (step: string, details?: Record<string, unknown>) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[GET-WATCHLIST] ${step}${detailsStr}`);
 };
 
 serve(async (req) => {
@@ -60,8 +66,47 @@ serve(async (req) => {
         .eq('user_id', user.id)
         .single();
 
-      const currentTickers = existing?.tickers || [];
-      if (!currentTickers.includes(ticker)) {
+      const currentTickers: string[] = existing?.tickers || [];
+      const alreadyPresent = currentTickers.includes(ticker);
+      const projectedCount = alreadyPresent ? currentTickers.length : currentTickers.length + 1;
+
+      // Pre-flight plan-limit check. The DB trigger
+      // enforce_watchlist_plan_limit is the actual security boundary
+      // (see 20260506000001_plan_limit_triggers.sql); this returns a
+      // clean 403 with current/limit fields the frontend can render
+      // an upgrade CTA from on the legitimate path. Only enforced
+      // when adding a new ticker; re-adding an existing ticker is a
+      // no-op and never crosses the cap.
+      const { data: roleData } = await supabaseClient
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      const userPlan = (roleData as { role?: string } | null)?.role ?? 'free';
+      const limits = getPlanLimits(userPlan);
+
+      if (!alreadyPresent && limits.watchlist_slots !== -1) {
+        logStep('LIMIT_CHECK', {
+          plan: userPlan,
+          current: currentTickers.length,
+          projected: projectedCount,
+          limit: limits.watchlist_slots,
+        });
+        if (projectedCount > limits.watchlist_slots) {
+          return new Response(JSON.stringify({
+            error: 'plan_limit_reached',
+            message: `Watchlist limit reached for your ${userPlan} plan`,
+            current: currentTickers.length,
+            limit: limits.watchlist_slots,
+            plan: userPlan,
+          }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      if (!alreadyPresent) {
         currentTickers.push(ticker);
       }
 

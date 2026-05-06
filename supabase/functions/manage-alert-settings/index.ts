@@ -1,6 +1,7 @@
-// redeployed 2026-05-05
+// redeployed 2026-05-06
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { getPlanLimits } from "../_shared/plan-limits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,6 +69,45 @@ serve(async (req) => {
       logStep('BRANCH', { branch: 'subscribe' });
       if (!theme_id || !theme_name) {
         throw new Error('theme_id and theme_name are required');
+      }
+
+      // Pre-flight plan-limit check. The DB trigger
+      // enforce_alerts_plan_limit is the actual security boundary
+      // (see 20260506000001_plan_limit_triggers.sql); this exists so
+      // the legitimate caller gets a clean 403 with current/limit
+      // fields the frontend can render an upgrade CTA from, instead
+      // of bubbling a Postgres check_violation up through the
+      // generic 400 catch.
+      const { data: roleData } = await supabaseAdmin
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .maybeSingle();
+      const userPlan = roleData?.role ?? 'free';
+      const limits = getPlanLimits(userPlan);
+
+      if (limits.alerts !== -1) {
+        const { count: currentAlerts, error: countError } = await supabaseAdmin
+          .from('alerts')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId);
+        if (countError) {
+          logStep('LIMIT_CHECK count failed', { message: countError.message });
+        }
+        const current = currentAlerts ?? 0;
+        logStep('LIMIT_CHECK', { plan: userPlan, current, limit: limits.alerts });
+        if (current >= limits.alerts) {
+          return new Response(JSON.stringify({
+            error: 'plan_limit_reached',
+            message: `Alert limit reached for your ${userPlan} plan`,
+            current,
+            limit: limits.alerts,
+            plan: userPlan,
+          }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
 
       const { data, error } = await supabaseAdmin
