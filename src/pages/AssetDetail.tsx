@@ -9,6 +9,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssetScore } from "@/hooks/useAssetScore";
+import { useAddToWatchlist } from "@/hooks/useAddToWatchlist";
 import { formatDistanceToNow, differenceInDays, format } from "date-fns";
 
 const formatLabel = (str: string): string => {
