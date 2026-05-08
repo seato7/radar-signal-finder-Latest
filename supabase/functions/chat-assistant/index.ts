@@ -750,7 +750,7 @@ Make it suitable for investment analysis with clear labels, professional styling
       const data = await response.json();
       console.log('Image generation response:', JSON.stringify(data).substring(0, 200));
       return new Response(
-        JSON.stringify(data),
+        JSON.stringify({ ...data, current_count: usageCurrentCount, daily_limit: dailyLimit }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
