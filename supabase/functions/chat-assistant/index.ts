@@ -259,6 +259,8 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       branch: dailyLimit === -1 ? 'unlimited_skip' : 'enforce',
     });
 
+    let usageCurrentCount: number | null = null;
+
     if (dailyLimit !== -1) {
       if (!authenticatedUserId) {
         logStep('RATE_LIMIT 401 no authenticated user', { userPlan, dailyLimit });
