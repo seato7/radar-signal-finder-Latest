@@ -259,6 +259,8 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       branch: dailyLimit === -1 ? 'unlimited_skip' : 'enforce',
     });
 
+    let usageCurrentCount: number | null = null;
+
     if (dailyLimit !== -1) {
       if (!authenticatedUserId) {
         logStep('RATE_LIMIT 401 no authenticated user', { userPlan, dailyLimit });
@@ -317,11 +319,15 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
             error: 'rate_limited',
             message: `Daily limit reached (${current}/${dailyLimit} messages). Upgrade your plan or wait until tomorrow.`,
             currentCount: current,
+            current_count: current,
             dailyLimit,
+            daily_limit: dailyLimit,
           }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+
+      usageCurrentCount = result?.current_count ?? null;
     }
 
     // Fetch real-time market data from Supabase
@@ -744,7 +750,7 @@ Make it suitable for investment analysis with clear labels, professional styling
       const data = await response.json();
       console.log('Image generation response:', JSON.stringify(data).substring(0, 200));
       return new Response(
-        JSON.stringify(data),
+        JSON.stringify({ ...data, current_count: usageCurrentCount, daily_limit: dailyLimit }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -920,7 +926,11 @@ For all such attempts, politely decline and explain their current plan limits. N
 
     // Return in OpenAI-compatible non-streaming format
     return new Response(
-      JSON.stringify({ choices: [{ message: { role: 'assistant', content: aiContent }, finish_reason: 'stop' }] }),
+      JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: aiContent }, finish_reason: 'stop' }],
+        current_count: usageCurrentCount,
+        daily_limit: dailyLimit,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

@@ -28,32 +28,35 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   const planLimits = getPlanLimits(userPlan);
   const dailyLimit = planLimits.ai_messages_per_day;
 
-  const getTodayKey = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return `ip_ai_messages_${user?.id ?? 'anon'}_${today}`;
-  };
-
-  const getMessageCount = () => parseInt(localStorage.getItem(getTodayKey()) || '0', 10);
-
-  const incrementMessageCount = () => {
-    const key = getTodayKey();
-    localStorage.setItem(key, String(getMessageCount() + 1));
-    setTodayCount((c) => c + 1);
-  };
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [todayCount, setTodayCount] = useState(() => getMessageCount());
+  const [todayCount, setTodayCount] = useState<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const historyKey = user?.id ? `ai-chat-history-${user.id}` : null;
 
-  // Load history when user becomes known. One-time migration of the legacy
-  // global 'ai-chat-history' key into the user-scoped key so existing users
-  // keep their history on first load post-rollout.
+  // Fetch authoritative server-side count from ai_usage_daily on mount /
+  // when the user changes. RLS policy permits users to read their own row.
+  useEffect(() => {
+    if (!user?.id) {
+      setTodayCount(0);
+      return;
+    }
+    const today = new Date().toISOString().split('T')[0];
+    supabase
+      .from('ai_usage_daily')
+      .select('count')
+      .eq('user_id', user.id)
+      .eq('usage_date', today)
+      .maybeSingle()
+      .then(({ data }) => {
+        setTodayCount(data?.count ?? 0);
+      });
+  }, [user?.id]);
+
   useEffect(() => {
     if (!historyKey) {
       setMessages([]);
@@ -105,7 +108,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         });
         return;
       }
-      if (dailyLimit !== -1 && getMessageCount() >= dailyLimit) {
+      if (dailyLimit !== -1 && todayCount >= dailyLimit) {
         toast({
           title: 'Daily message limit reached',
           description: 'Upgrade to send more messages.',
@@ -113,7 +116,6 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         });
         return;
       }
-      incrementMessageCount();
     }
 
     const newMessages = [...messages, { role: 'user' as const, content: userMessage }];
@@ -132,6 +134,9 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
           try {
             const errorData = await (error as any).context.json();
             if (errorData?.message) description = errorData.message;
+            if (typeof errorData?.current_count === 'number') {
+              setTodayCount(errorData.current_count);
+            }
           } catch {
             // fall through to default description
           }
@@ -144,6 +149,10 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
           return;
         }
         throw new Error('Failed to start chat');
+      }
+
+      if (typeof data?.current_count === 'number') {
+        setTodayCount(data.current_count);
       }
 
       const content = data?.choices?.[0]?.message?.content || '';
@@ -206,7 +215,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   };
 
   return (
-    <Card className="h-[600px] flex flex-col">
+    <Card className="h-[calc(100vh-14rem)] max-h-[700px] min-h-[400px] flex flex-col">
       <CardHeader className="border-b">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
@@ -225,7 +234,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col p-0">
+      <CardContent className="flex-1 flex flex-col p-0 min-h-0">
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
           {messages.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
