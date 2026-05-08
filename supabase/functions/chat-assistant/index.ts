@@ -319,11 +319,15 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
             error: 'rate_limited',
             message: `Daily limit reached (${current}/${dailyLimit} messages). Upgrade your plan or wait until tomorrow.`,
             currentCount: current,
+            current_count: current,
             dailyLimit,
+            daily_limit: dailyLimit,
           }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+
+      usageCurrentCount = result?.current_count ?? null;
     }
 
     // Fetch real-time market data from Supabase
