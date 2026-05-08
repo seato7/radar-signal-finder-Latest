@@ -1,318 +1,148 @@
-# Opportunity Radar
+# InsiderPulse
 
-**Real-time investment opportunity detection powered by multi-signal analysis**
+> AI-powered market signal discovery platform. Track themes, surface opportunities, get scored insights across stocks, ETFs, forex, crypto, and commodities.
 
-[![CI](https://github.com/your-org/opportunity-radar/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/opportunity-radar/actions/workflows/ci.yml)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+**Live at:** [insiderpulse.org](https://insiderpulse.org)
 
-Opportunity Radar is a production-ready investment analysis platform that aggregates signals from policy changes, institutional holdings (13F), insider transactions (Form 4), ETF flows, dark pool activity, options flow, and social sentiment to identify high-conviction opportunities before they become obvious.
+InsiderPulse is a **data tool**, not a financial advisor. We provide general market information and analytical signals; we do not provide personalised investment advice or recommend specific transactions.
 
 ---
 
-## 🎯 Key Features
+## What it does
 
-- **Multi-Signal Analysis**: 20+ data sources including SEC filings, social sentiment, dark pool activity
-- **AI-Powered Insights**: Lovable AI integration for natural language analysis and recommendations
-- **Automated Trading Bots**: Connect to Alpaca, IBKR, Coinbase, Binance, Kraken
-- **Real-time Alerts**: Slack integration with configurable thresholds
-- **27,000+ Assets**: Stocks, ETFs, Forex, Crypto via TwelveData
-- **Production-Ready**: Comprehensive logging, metrics, rate limiting, retry logic
+InsiderPulse combines breaking-news sentiment, theme-based clustering, and AI-driven scoring to surface market opportunities across asset classes. Users can:
+
+- **Browse Asset Radar** — score-ranked view of 16,000+ assets across stocks, ETFs, forex, crypto, and commodities
+- **Subscribe to themes** — receive alerts when scores cross thresholds on themes you care about (e.g. AI infrastructure, energy transition, defence)
+- **Track active signals** — see entry prices, projected returns, and signal explanations for high-confidence trade ideas
+- **Build a watchlist** — pin tickers for quick access
+- **Chat with the AI Assistant** — ask questions about themes, signals, and market opportunities; get structured analysis (no advice)
 
 ---
 
-## 🏗️ Architecture
+## Plan tiers
+
+All prices in USD.
+
+| Tier | Monthly | Annual | Trial | Asset access | AI msgs/day | Watchlist | Alerts |
+|---|---|---|---|---|---|---|---|
+| **Free** | $0 | $0 | — | 3 demo tickers | 1 | 1 | 0 |
+| **Starter** | $9.99 | $89/yr | 7 days (monthly only) | Stocks | 5 | 3 | 1 |
+| **Pro** | $34.99 | $299/yr | — | Stocks + ETFs + Forex | 20 | 10 | 5 |
+| **Premium** | $89.99 | $799/yr | — | All 5 asset classes | Unlimited | Unlimited | Unlimited |
+| **Enterprise** | Contact | Contact | — | All 5 asset classes | Unlimited | Unlimited | Unlimited |
+
+**Notes:**
+- Free demo tickers are F (Ford), VTI (Vanguard Total Stock Market ETF), and EUR/USD.
+- The 7-day free trial is **only available on Starter Monthly**. Starter Annual, Pro, and Premium have no trial. Card required for trial.
+- Premium adds sentiment analysis, full analytics access, and full dashboard. Trading Bots are listed in the UI as Coming Soon.
+- Enterprise contact: [support@insiderpulse.org](mailto:support@insiderpulse.org).
+- Cancel anytime through the Stripe customer portal accessible from Settings.
+
+Plan gating is enforced at the database layer via `BEFORE INSERT` triggers and SECURITY DEFINER RPCs that resolve the user's plan server-side from `auth.uid()`. Caller-supplied plan parameters cannot widen access.
+
+---
+
+## Architecture
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | React, Vite, TypeScript, Tailwind, shadcn/ui |
+| **Frontend hosting** | Lovable |
+| **Backend (lightweight)** | Supabase Edge Functions (Deno + TypeScript) |
+| **Backend (heavy compute)** | Railway-hosted Python/FastAPI |
+| **Database** | PostgreSQL via Supabase |
+| **Scheduled jobs** | `pg_cron` (77 active cron jobs covering price ingestion, scoring, signal generation, theme mapping, alert distribution) |
+| **Auth** | Supabase Auth (asymmetric JWT signing keys) |
+| **Payments** | Stripe (live mode) |
+| **AI (text)** | Google Gemini 2.5 Flash, called directly |
+| **AI (image generation)** | Lovable AI Gateway (`gemini-2.5-flash-image-preview`), used by chat-assistant only |
+| **Web search** | Tavily (conditional) and Firecrawl (always for chat-assistant context) |
+
+---
+
+## Repository layout
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      FRONTEND (Lovable Cloud)                     │
-│               React + Vite + TypeScript + Tailwind                │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-                    ▼                       ▼
-        ┌───────────────────┐   ┌───────────────────────┐
-        │  Railway Backend  │   │  Supabase Edge        │
-        │  (Python/FastAPI) │   │  Functions (90+)      │
-        │                   │   │                       │
-        │  • TwelveData     │   │  • AI Features        │
-        │    Price Ingest   │   │  • Data Ingestion     │
-        │  • Signal Storage │   │  • User APIs          │
-        │  • Bot Engine     │   │  • Payments           │
-        └───────────────────┘   └───────────────────────┘
-                    │                       │
-                    ▼                       ▼
-        ┌───────────────────┐   ┌───────────────────────┐
-        │     MongoDB       │   │  Supabase PostgreSQL  │
-        │   (Railway)       │   │  (Primary Database)   │
-        └───────────────────┘   └───────────────────────┘
+.
+├── src/                          # React frontend
+│   ├── pages/                    # Route components (Pricing, Dashboard, AssetRadar, etc.)
+│   ├── components/               # Reusable UI components
+│   ├── hooks/                    # React hooks (useAuth, useAddToWatchlist, etc.)
+│   ├── lib/                      # Utilities, plan limits, Supabase client
+│   └── integrations/supabase/    # Generated Supabase types
+├── supabase/
+│   ├── functions/                # Edge functions
+│   │   ├── chat-assistant/       # AI chat backend (Gemini + Firecrawl + Tavily)
+│   │   ├── manage-payments/      # Stripe checkout, portal, webhook
+│   │   ├── manage-alert-settings/  # Alerts subscribe/unsubscribe
+│   │   ├── _shared/              # Shared modules (gemini.ts, plan-limits.ts, etc.)
+│   │   └── ...                   # ~30 more functions for ingestion, scoring, signal generation
+│   └── migrations/               # Audit log of applied DB migrations
+├── CONTRIBUTING.md               # Development workflow (read before contributing)
+└── README.md                     # This file
 ```
 
-### Hybrid Architecture
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Frontend | React + Vite + Lovable Cloud | User interface |
-| Price Ingestion | Railway Python + TwelveData | 27,000+ assets, tiered scheduling |
-| Data Ingestion | 90+ Supabase Edge Functions | RSS, FINRA, Reddit, StockTwits, Firecrawl |
-| AI Features | Lovable AI (Gemini 2.5 Flash) | Chat, analysis, risk assessment |
-| Primary Database | Supabase PostgreSQL | Prices, signals, ingest logs |
-| Signal Storage | MongoDB (Railway) | Signals, assets, themes, users |
-| Cron Scheduling | pg_cron (45 jobs) + APScheduler | Automated ingestion |
-
 ---
 
-## 📊 Data Sources
+## Setup
 
-### Price Data
-- **TwelveData API**: 27,000+ assets (stocks, ETFs, forex, crypto)
-- **Tiered Refresh**: Hot (5min), Active (30min), Standard (24hr)
-- **Credit Budget**: 55/minute rate limiting
+This project does not support full local development. Schema changes are applied to production via Lovable; frontend changes are previewed in Lovable's hosted environment.
 
-### Signal Sources (Edge Functions)
-| Category | Sources |
-|----------|---------|
-| **Institutional** | SEC 13F Holdings, Form 4 Insiders |
-| **Political** | Congressional Trades |
-| **Market Structure** | Dark Pool (FINRA), Options Flow, Short Interest |
-| **Social Sentiment** | Reddit, StockTwits, News RSS |
-| **Alternative** | Job Postings (Adzuna), Patents (USPTO), Search Trends |
-| **Technical** | Advanced Technicals, Pattern Recognition |
-| **Economic** | FRED Economics, COT Reports, Forex Sentiment |
-| **Crypto** | On-chain Metrics |
+If you have access to the project:
 
-### AI & Web Scraping
-- **Lovable AI**: Natural language analysis, summaries, risk assessment
-- **Firecrawl**: Web scraping for sources without APIs
+1. Open the project in [Lovable](https://lovable.dev/) for frontend changes
+2. Use Claude Code in your terminal for application code work
+3. Read `CONTRIBUTING.md` to understand the workflow before making any changes
 
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Lovable Cloud account (or Supabase + Railway)
-- TwelveData API key (free tier: 800 credits/day)
-
-### 1. Clone & Configure
+To clone the repo (for read-only inspection):
 
 ```bash
-git clone https://github.com/your-org/opportunity-radar.git
-cd opportunity-radar
-```
-
-### 2. Set Environment Variables
-
-**Supabase Secrets** (via Lovable Cloud):
-- `TWELVEDATA_API_KEY` - Price data
-- `FIRECRAWL_API_KEY` - Web scraping
-- `SLACK_WEBHOOK_URL` - Alerts (optional)
-- `STRIPE_SECRET_KEY` - Payments (optional)
-
-**Railway Environment**:
-- `SUPABASE_URL` - Database connection
-- `SUPABASE_SERVICE_ROLE_KEY` - Service access
-- `MONGO_URL` - MongoDB connection
-- `TWELVEDATA_API_KEY` - Price data
-
-### 3. Deploy
-
-Frontend and Edge Functions deploy automatically via Lovable Cloud.
-
-For Railway backend:
-```bash
-cd backend
-railway up
-```
-
-### 4. Seed Data
-
-```bash
-# Seed canonical themes
-railway run python backend/scripts/seed_themes.py
-
-# Trigger initial price ingestion
-curl -X POST https://your-railway-url/api/ingest/prices/hot
+git clone https://github.com/seato7/radar-signal-finder-Latest.git
+cd radar-signal-finder-Latest
+npm install
 ```
 
 ---
 
-## 📱 Access Points
+## Development workflow
 
-| Service | URL |
-|---------|-----|
-| Frontend | `https://your-project.lovable.app` |
-| Backend API | `https://your-railway-app.up.railway.app` |
-| API Docs | `https://your-railway-app.up.railway.app/docs` |
-| Edge Functions | `https://your-project.supabase.co/functions/v1/` |
+Two paths for changes:
 
----
+- **Schema (RPCs, RLS, triggers, tables)** → Lovable applies and auto-pushes migration to GitHub
+- **Application code (frontend, edge functions)** → Claude Code commits to GitHub, Lovable Publish deploys
 
-## 💳 Plan Matrix
-
-Single source of truth for what each subscription tier sees and does. The
-canonical limits live in `src/lib/planLimits.ts`; gating is enforced
-server-side via the SECURITY DEFINER RPCs `get_assets_for_user`,
-`get_signals_for_user`, `get_themes_for_user`, and
-`get_total_signal_return`.
-
-| Feature | Free | Starter ($9.99/mo) | Pro ($34.99/mo) | Premium ($89.99/mo) | Enterprise (Contact) |
-|---------|------|--------------------|------------------|--------------------|--------------------|
-| AI messages / day | 1 | 5 | 20 | Unlimited | Unlimited |
-| Active signals | Teaser only | 1 | 3 | Unlimited | Unlimited |
-| Watchlist slots | 1 | 3 | 10 | Unlimited | Unlimited |
-| Asset Radar | 3 demo tickers | Stocks | Stocks + ETFs + Forex | All classes | All classes |
-| Themes | 1 demo (read-only) | 1 | 3 | Unlimited | Unlimited |
-| Alerts | 0 | 1 | 5 | Unlimited | Unlimited |
-| Asset scores | Visible (demo only) | Visible | Visible | Visible | Visible |
-| Trading Bots | Coming Soon | Coming Soon | Coming Soon | Coming Soon | Coming Soon |
-
-### Demo Configuration
-
-The Free tier shows a fixed-but-limited preview of every page so visitors can
-evaluate the product before paying. Demo configuration is hard-coded in the
-RPCs and `planLimits.ts`:
-
-- **Demo tickers**: `F`, `VTI`, `EUR/USD` (the only assets a Free user can
-  see on Asset Radar / Asset Detail).
-- **Demo theme**: a single theme flagged via `themes.is_demo = true`. Picked
-  by migration `20260427000001_plan-gating-rpcs.sql` from the first theme
-  whose name matches `dividend`, `blue chip`, or `consumer staples`. Check
-  the migration `RAISE NOTICE` output to confirm which theme was flagged.
-- **Signals teaser**: Free users receive masked rows from
-  `get_signals_for_user` (ticker `***`, prices nulled). The aggregate
-  total return is exposed via `get_total_signal_return` so the marketing
-  number renders even when individual signals are hidden.
-
-### Trading Bots
-
-The bots feature is disabled platform-wide. `manage-bots /create` returns
-HTTP 503 with `error: "feature_coming_soon"` for every plan, including
-admin. The frontend renders a Coming Soon state on the Trading Bots page
-and hides the Create Bot button.
+Full details in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## 💰 Cost Breakdown
+## Compliance & legal
 
-| Service | Monthly Cost |
-|---------|-------------|
-| TwelveData (Pro) | ~$29 |
-| Railway (Backend) | ~$5 |
-| Lovable Cloud | ~$20 |
-| Firecrawl | ~$20 |
-| Redis (Upstash) | ~$5 |
-| **Total** | **~$80-90** |
+InsiderPulse follows the TradingView/Finviz compliance model. We are a data tool, not a financial advisor. The site does not provide personalised investment advice, does not recommend specific securities, and does not execute trades.
 
-Free tier options available for development.
+- **Privacy Policy:** [insiderpulse.org/privacy](https://insiderpulse.org/privacy)
+- **Terms of Service:** [insiderpulse.org/terms](https://insiderpulse.org/terms)
+- **Operating entity:** Daniel Seaton (sole trader, ABN 41 859 964 692, Brisbane QLD, Australia)
 
 ---
 
-## 📚 Documentation
+## Status
 
-| Guide | Description |
-|-------|-------------|
-| [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) | Complete system architecture |
-| [QUICKSTART.md](QUICKSTART.md) | Local development setup |
-| [AI_FEATURES_GUIDE.md](AI_FEATURES_GUIDE.md) | AI features implementation |
-| [BROKER_SETUP.md](BROKER_SETUP.md) | Multi-broker integration |
-| [PAYMENT_GUIDE.md](PAYMENT_GUIDE.md) | Stripe subscription setup |
-| [AUTH_SETUP.md](AUTH_SETUP.md) | Authentication configuration |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment |
-| [docs/DATA_PIPELINE.md](docs/DATA_PIPELINE.md) | Data ingestion details |
-| [docs/MONITORING.md](docs/MONITORING.md) | Monitoring & alerting |
-| [docs/SECURITY.md](docs/SECURITY.md) | Security best practices |
-| [docs/TESTING.md](docs/TESTING.md) | Testing guide |
-| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Version history |
+Site is live at [insiderpulse.org](https://insiderpulse.org). As of 8 May 2026 the platform is feature-complete for v1.0 with paying customers actively using:
+
+- Stripe checkout and trial flow (signup → trial → role auto-update)
+- AI Assistant with rate limiting (server-side enforced via `increment_ai_usage` RPC)
+- Theme subscription and alert delivery
+- Score visibility for all paid plans tied to asset class access
+- Watchlist management with plan-gated slot limits
+- Multi-step Stripe cancellation retention flow (pause/downgrade options)
 
 ---
 
-## 🧮 Scoring System
+## Support
 
-### Component Weights
-
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| PolicyMomentum | 1.0 | Regulatory & policy signals |
-| FlowPressure | 1.0 | ETF flows & dark pool activity |
-| BigMoneyConfirm | 1.0 | 13F filings & institutional activity |
-| InsiderPoliticianConfirm | 0.8 | Form 4 insider & congressional trades |
-| Attention | 0.5 | Social & news mentions |
-| TechEdge | 0.4 | Technical/tech edge signals |
-| RiskFlags | -1.0 | Negative risk signals |
-| CapexMomentum | 0.6 | Capital expenditure momentum |
-
-### Exponential Decay
-
-Signals decay with half-life = 30 days:
-```
-decay = exp(-ln(2) * days_ago / half_life)
-```
+For bug reports, feature requests, or general questions: contact [danseaton7@gmail.com](mailto:danseaton7@gmail.com).
 
 ---
 
-## 🤖 Trading Bots
-
-Supported brokers via Model 1 (User API Keys):
-- **Alpaca** - US Stocks, Crypto (Paper + Live)
-- **Interactive Brokers** - Global markets
-- **Coinbase** - Cryptocurrency
-- **Binance** - Cryptocurrency (Testnet available)
-- **Kraken** - Cryptocurrency
-
-See [BROKER_SETUP.md](BROKER_SETUP.md) for configuration.
-
----
-
-## 🛠️ Technology Stack
-
-### Backend
-- FastAPI (Python 3.11) on Railway
-- TwelveData for price data
-- MongoDB + PostgreSQL (dual database)
-
-### Frontend
-- React 18 + Vite + TypeScript
-- Tailwind CSS + shadcn/ui
-- Deployed on Lovable Cloud
-
-### Infrastructure
-- Supabase PostgreSQL + Edge Functions
-- Railway for Python backend
-- pg_cron for scheduled jobs
-- Upstash Redis for caching
-
----
-
-## 🧪 Testing
-
-```bash
-# Backend tests
-cd backend
-pytest
-
-# Run specific test
-pytest backend/tests/test_scoring.py -v
-```
-
-See [docs/TESTING.md](docs/TESTING.md) for complete testing guide.
-
----
-
-## 📝 License
-
-MIT
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing`)
-5. Open Pull Request
-
----
-
-Built with ⚡ by Opportunity Radar team
+*© 2026 InsiderPulse. Confidential.*
