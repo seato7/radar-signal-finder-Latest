@@ -1,7 +1,7 @@
 // Server-side mirror of src/lib/planLimits.ts. Used by edge functions
-// that create user-scoped resources (manage-alert-settings,
-// get-watchlist) for pre-flight 403 responses with current/limit
-// fields the frontend can render upgrade CTAs from.
+// that create user-scoped resources (e.g. manage-alert-settings)
+// for pre-flight 403 responses with current/limit fields the frontend
+// can render upgrade CTAs from.
 //
 // The DB triggers in 20260506000001_plan_limit_triggers.sql are the
 // actual security boundary. These constants only inform the
