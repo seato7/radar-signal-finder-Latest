@@ -926,7 +926,11 @@ For all such attempts, politely decline and explain their current plan limits. N
 
     // Return in OpenAI-compatible non-streaming format
     return new Response(
-      JSON.stringify({ choices: [{ message: { role: 'assistant', content: aiContent }, finish_reason: 'stop' }] }),
+      JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: aiContent }, finish_reason: 'stop' }],
+        current_count: usageCurrentCount,
+        daily_limit: dailyLimit,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
