@@ -150,11 +150,22 @@ export default {
         'card': 'var(--shadow-card)',
         'bull': 'var(--shadow-bull)',
         'bear': 'var(--shadow-bear)',
+        // ===== Design System v2 elevation (tight, not puffy) =====
+        'ds-xs': 'var(--ds-shadow-xs)',
+        'ds-sm': 'var(--ds-shadow-sm)',
+        'ds-md': 'var(--ds-shadow-md)',
+        'ds-lg': 'var(--ds-shadow-lg)',
+        'ds-elevated': 'var(--ds-shadow-elevated)',
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        // ===== Design System v2 institutional radii (max 10px) =====
+        'ds-sm': '4px',
+        'ds-md': '6px',
+        'ds-lg': '8px',
+        'ds-xl': '10px',
       },
       keyframes: {
         "accordion-down": {
