@@ -13,6 +13,45 @@ export default {
       },
     },
     extend: {
+      // Spacing philosophy: information-dense rhythm. Spacing should feel
+      // engineered, not empty. Prefer gap-3/gap-4 over gap-6/gap-8; section
+      // padding py-16/py-24, never py-32+. (Phase 1 token foundation.)
+      fontFamily: {
+        sans: ['Geist', 'Söhne', 'system-ui', '-apple-system', 'sans-serif'],
+        // Mono is reserved for: tickers, scores, percentages, timestamps,
+        // signal IDs, prices, dates. NOT body, NOT nav, NOT buttons.
+        mono: ['"IBM Plex Mono"', '"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      fontSize: {
+        'display':   ['3.5rem',    { lineHeight: '1.05', letterSpacing: '-0.04em' }],
+        'h1':        ['2.25rem',   { lineHeight: '1.1',  letterSpacing: '-0.03em' }],
+        'h2':        ['1.75rem',   { lineHeight: '1.15', letterSpacing: '-0.025em' }],
+        'h3':        ['1.375rem',  { lineHeight: '1.25', letterSpacing: '-0.02em' }],
+        'h4':        ['1.125rem',  { lineHeight: '1.35', letterSpacing: '-0.015em' }],
+        'body-lg':   ['1.0625rem', { lineHeight: '1.55', letterSpacing: '-0.01em' }],
+        'body':      ['0.9375rem', { lineHeight: '1.55', letterSpacing: '-0.005em' }],
+        'body-sm':   ['0.8125rem', { lineHeight: '1.5',  letterSpacing: '0' }],
+        'caption':   ['0.75rem',   { lineHeight: '1.4',  letterSpacing: '0.01em' }],
+        'overline':  ['0.6875rem', { lineHeight: '1.3',  letterSpacing: '0.08em' }],
+        // Mono-only data scale — see fontFamily.mono note above.
+        'data-lg':   ['1.125rem',  { lineHeight: '1.3' }],
+        'data':      ['0.9375rem', { lineHeight: '1.3' }],
+        'data-sm':   ['0.8125rem', { lineHeight: '1.3' }],
+        'data-xs':   ['0.6875rem', { lineHeight: '1.2' }],
+      },
+      transitionDuration: {
+        'instant': '50ms',
+        'fast': '150ms',
+        'base': '200ms',
+        'slow': '300ms',
+        'deliberate': '450ms',
+      },
+      transitionTimingFunction: {
+        // Motion philosophy: usability only, no decoration.
+        'ds-out': 'cubic-bezier(0.16, 1, 0.3, 1)',
+        'ds-in-out': 'cubic-bezier(0.65, 0, 0.35, 1)',
+        'ds-spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
