@@ -11,6 +11,12 @@ const MAX_PREDICTIONS = 2000; // Maximum total predictions to store
 
 // Universe filters
 const MIN_PRICE_USD = 1.00;
+// Liquidity floor: ~100k shares average daily volume over the last 5 trading days.
+// Prevents thinly-traded names from surfacing in Active Signals where customers
+// could struggle to get a fill (credibility risk). Computed inline from the
+// `prices` table because no `avg_volume_5d` column exists on `assets` and the
+// snapshot function already bulk-fetches recent price rows for the candidate set.
+const MIN_AVG_VOLUME_5D = 100_000;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
