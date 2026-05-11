@@ -89,6 +89,59 @@
     --shadow-card: 0 1px 3px hsl(220 20% 4% / 0.5), 0 4px 20px hsl(220 20% 4% / 0.3);
     --shadow-bull: 0 0 20px hsl(160 84% 39% / 0.3);
     --shadow-bear: 0 0 20px hsl(0 75% 55% / 0.3);
+
+    /* ============================================================
+     * DESIGN SYSTEM v2 (Phase 1 — token foundation, not yet applied)
+     * Mood: Palantir × Bloomberg × Stripe × Linear.
+     * Tokens defined here are consumed by Phases 2-4.
+     * ============================================================ */
+
+    /* Brand (derived from logo.png — cyan/teal) */
+    --ds-brand-primary: 194 100% 44%;          /* #00B0E0 */
+    --ds-brand-secondary: 180 86% 44%;         /* #10D0D0 */
+    --ds-brand-primary-foreground: 220 30% 6%;
+
+    /* Background layers (cool-undertone near-black) */
+    --ds-background: 210 24% 5%;
+    --ds-surface: 212 20% 8%;
+    --ds-surface-elevated: 212 18% 11%;
+    --ds-surface-overlay: 212 16% 14%;
+
+    /* Borders (apply with /10 or /20 opacity utilities) */
+    --ds-border: 210 15% 100%;
+    --ds-border-strong: 210 15% 100%;
+    --ds-border-focus: var(--ds-brand-primary);
+
+    /* Text */
+    --ds-text-primary: 210 20% 98%;
+    --ds-text-secondary: 210 15% 75%;
+    --ds-text-muted: 210 12% 55%;
+    --ds-text-inverse: 220 30% 6%;
+
+    /* Signal colors — restrained, not neon */
+    --ds-signal-positive: 152 55% 45%;
+    --ds-signal-negative: 354 60% 55%;
+    --ds-signal-warning: 38 80% 52%;
+    --ds-signal-neutral: 215 10% 60%;
+    --ds-signal-info: var(--ds-brand-primary);
+
+    /* Motion — usability only, no decoration */
+    --duration-instant: 50ms;
+    --duration-fast: 150ms;
+    --duration-base: 200ms;
+    --duration-slow: 300ms;
+    --duration-deliberate: 450ms;
+
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Elevation — tight, not puffy */
+    --ds-shadow-xs: 0 1px 0 0 rgba(0, 0, 0, 0.05);
+    --ds-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.15);
+    --ds-shadow-md: 0 2px 4px -1px rgba(0, 0, 0, 0.2), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+    --ds-shadow-lg: 0 4px 8px -2px rgba(0, 0, 0, 0.25), 0 2px 4px -2px rgba(0, 0, 0, 0.15);
+    --ds-shadow-elevated: 0 8px 16px -4px rgba(0, 0, 0, 0.3), 0 4px 8px -4px rgba(0, 0, 0, 0.2);
   }
 }
 
