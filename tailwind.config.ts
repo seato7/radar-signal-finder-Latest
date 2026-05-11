@@ -105,6 +105,34 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // ===== Design System v2 namespaced tokens (Phase 1) =====
+        // Use these prefixed names so existing shadcn tokens above stay
+        // untouched until Phase 4 migration. Example: bg-ds-surface.
+        'ds-background': 'hsl(var(--ds-background))',
+        'ds-surface': 'hsl(var(--ds-surface))',
+        'ds-surface-elevated': 'hsl(var(--ds-surface-elevated))',
+        'ds-surface-overlay': 'hsl(var(--ds-surface-overlay))',
+        'ds-border': 'hsl(var(--ds-border) / 0.10)',
+        'ds-border-strong': 'hsl(var(--ds-border-strong) / 0.20)',
+        'ds-border-focus': 'hsl(var(--ds-border-focus))',
+        'ds-text': {
+          primary: 'hsl(var(--ds-text-primary))',
+          secondary: 'hsl(var(--ds-text-secondary))',
+          muted: 'hsl(var(--ds-text-muted))',
+          inverse: 'hsl(var(--ds-text-inverse))',
+        },
+        'ds-brand': {
+          primary: 'hsl(var(--ds-brand-primary))',
+          secondary: 'hsl(var(--ds-brand-secondary))',
+          'primary-foreground': 'hsl(var(--ds-brand-primary-foreground))',
+        },
+        'ds-signal': {
+          positive: 'hsl(var(--ds-signal-positive))',
+          negative: 'hsl(var(--ds-signal-negative))',
+          warning: 'hsl(var(--ds-signal-warning))',
+          neutral: 'hsl(var(--ds-signal-neutral))',
+          info: 'hsl(var(--ds-signal-info))',
+        },
       },
       backgroundImage: {
         'gradient-chrome': 'var(--gradient-chrome)',
