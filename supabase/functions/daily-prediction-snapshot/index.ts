@@ -11,6 +11,12 @@ const MAX_PREDICTIONS = 2000; // Maximum total predictions to store
 
 // Universe filters
 const MIN_PRICE_USD = 1.00;
+// Liquidity floor: ~100k shares average daily volume over the last 5 trading days.
+// Prevents thinly-traded names from surfacing in Active Signals where customers
+// could struggle to get a fill (credibility risk). Computed inline from the
+// `prices` table because no `avg_volume_5d` column exists on `assets` and the
+// snapshot function already bulk-fetches recent price rows for the candidate set.
+const MIN_AVG_VOLUME_5D = 100_000;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -67,43 +73,57 @@ Deno.serve(async (req) => {
 
     if (bottomError) throw bottomError;
 
-    // Bulk-fetch most recent closing price for all candidate assets in one query
+    // Bulk-fetch most recent close + volume for all candidate assets in one query.
+    // We pull `volume` here too so we can compute a 5-day average liquidity floor
+    // inline without an extra round-trip (no avg_volume_5d column exists upstream).
     const allCandidates = [...(topAssets || []), ...(bottomAssets || [])];
     const assetIds = allCandidates.map(a => a.id);
     const priceMap = new Map<string, number>();
+    const avgVolume5dMap = new Map<string, number>();
 
     if (assetIds.length > 0) {
       const { data: priceRows } = await supabase
         .from('prices')
-        .select('asset_id, close')
+        .select('asset_id, close, volume, date')
         .in('asset_id', assetIds)
         .order('date', { ascending: false })
-        .limit(10000);
+        .limit(20000); // ~5+ rows per asset for up to ~4000 candidates
 
+      // Group rows by asset_id, preserving descending-date order from the query
+      const byAsset = new Map<string, { close: number; volume: number | null }[]>();
       for (const row of priceRows || []) {
-        if (!priceMap.has(row.asset_id)) {
-          priceMap.set(row.asset_id, row.close);
+        const arr = byAsset.get(row.asset_id) ?? [];
+        arr.push({ close: row.close, volume: row.volume });
+        byAsset.set(row.asset_id, arr);
+      }
+
+      for (const [assetId, rows] of byAsset.entries()) {
+        priceMap.set(assetId, rows[0].close);
+        const recent5 = rows.slice(0, 5).map(r => r.volume).filter((v): v is number => v != null && v > 0);
+        if (recent5.length > 0) {
+          const avg = recent5.reduce((s, v) => s + v, 0) / recent5.length;
+          avgVolume5dMap.set(assetId, avg);
         }
       }
     }
 
-    console.log(`Fetched closing prices for ${priceMap.size} of ${assetIds.length} assets`);
+    console.log(`Fetched closing prices for ${priceMap.size} of ${assetIds.length} assets (avg-vol computed for ${avgVolume5dMap.size})`);
 
-    // Filter by price threshold using real closing prices
-    const filteredTopAssets = (topAssets || []).filter(a => {
-      const price = priceMap.get(a.id) ?? null;
-      if (price === null) return true; // No price data yet — include, grader will handle
-      return price >= MIN_PRICE_USD;
-    });
+    // Eligibility filter: price floor AND 5-day average volume floor.
+    // Missing data is treated as pass-through (grader handles it) — same policy
+    // as the pre-existing price filter, to avoid silently dropping new tickers.
+    const passesUniverse = (assetId: string): boolean => {
+      const price = priceMap.get(assetId);
+      if (price != null && price < MIN_PRICE_USD) return false;
+      const avgVol = avgVolume5dMap.get(assetId);
+      if (avgVol != null && avgVol < MIN_AVG_VOLUME_5D) return false;
+      return true;
+    };
 
-    console.log(`After price filter: ${filteredTopAssets.length} bullish assets`);
+    const filteredTopAssets = (topAssets || []).filter(a => passesUniverse(a.id));
+    console.log(`After price+volume filter: ${filteredTopAssets.length} bullish assets`);
 
-    // Filter bottom assets by price
-    const filteredBottomAssets = (bottomAssets || []).filter(a => {
-      const price = priceMap.get(a.id) ?? null;
-      if (price === null) return true;
-      return price >= MIN_PRICE_USD;
-    });
+    const filteredBottomAssets = (bottomAssets || []).filter(a => passesUniverse(a.id));
 
     const allAssets = [...filteredTopAssets, ...filteredBottomAssets];
 
