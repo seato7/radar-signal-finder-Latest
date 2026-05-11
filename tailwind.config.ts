@@ -13,6 +13,45 @@ export default {
       },
     },
     extend: {
+      // Spacing philosophy: information-dense rhythm. Spacing should feel
+      // engineered, not empty. Prefer gap-3/gap-4 over gap-6/gap-8; section
+      // padding py-16/py-24, never py-32+. (Phase 1 token foundation.)
+      fontFamily: {
+        sans: ['Geist', 'Söhne', 'system-ui', '-apple-system', 'sans-serif'],
+        // Mono is reserved for: tickers, scores, percentages, timestamps,
+        // signal IDs, prices, dates. NOT body, NOT nav, NOT buttons.
+        mono: ['"IBM Plex Mono"', '"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
+      fontSize: {
+        'display':   ['3.5rem',    { lineHeight: '1.05', letterSpacing: '-0.04em' }],
+        'h1':        ['2.25rem',   { lineHeight: '1.1',  letterSpacing: '-0.03em' }],
+        'h2':        ['1.75rem',   { lineHeight: '1.15', letterSpacing: '-0.025em' }],
+        'h3':        ['1.375rem',  { lineHeight: '1.25', letterSpacing: '-0.02em' }],
+        'h4':        ['1.125rem',  { lineHeight: '1.35', letterSpacing: '-0.015em' }],
+        'body-lg':   ['1.0625rem', { lineHeight: '1.55', letterSpacing: '-0.01em' }],
+        'body':      ['0.9375rem', { lineHeight: '1.55', letterSpacing: '-0.005em' }],
+        'body-sm':   ['0.8125rem', { lineHeight: '1.5',  letterSpacing: '0' }],
+        'caption':   ['0.75rem',   { lineHeight: '1.4',  letterSpacing: '0.01em' }],
+        'overline':  ['0.6875rem', { lineHeight: '1.3',  letterSpacing: '0.08em' }],
+        // Mono-only data scale — see fontFamily.mono note above.
+        'data-lg':   ['1.125rem',  { lineHeight: '1.3' }],
+        'data':      ['0.9375rem', { lineHeight: '1.3' }],
+        'data-sm':   ['0.8125rem', { lineHeight: '1.3' }],
+        'data-xs':   ['0.6875rem', { lineHeight: '1.2' }],
+      },
+      transitionDuration: {
+        'instant': '50ms',
+        'fast': '150ms',
+        'base': '200ms',
+        'slow': '300ms',
+        'deliberate': '450ms',
+      },
+      transitionTimingFunction: {
+        // Motion philosophy: usability only, no decoration.
+        'ds-out': 'cubic-bezier(0.16, 1, 0.3, 1)',
+        'ds-in-out': 'cubic-bezier(0.65, 0, 0.35, 1)',
+        'ds-spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -66,6 +105,34 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // ===== Design System v2 namespaced tokens (Phase 1) =====
+        // Use these prefixed names so existing shadcn tokens above stay
+        // untouched until Phase 4 migration. Example: bg-ds-surface.
+        'ds-background': 'hsl(var(--ds-background))',
+        'ds-surface': 'hsl(var(--ds-surface))',
+        'ds-surface-elevated': 'hsl(var(--ds-surface-elevated))',
+        'ds-surface-overlay': 'hsl(var(--ds-surface-overlay))',
+        'ds-border': 'hsl(var(--ds-border) / 0.10)',
+        'ds-border-strong': 'hsl(var(--ds-border-strong) / 0.20)',
+        'ds-border-focus': 'hsl(var(--ds-border-focus))',
+        'ds-text': {
+          primary: 'hsl(var(--ds-text-primary))',
+          secondary: 'hsl(var(--ds-text-secondary))',
+          muted: 'hsl(var(--ds-text-muted))',
+          inverse: 'hsl(var(--ds-text-inverse))',
+        },
+        'ds-brand': {
+          primary: 'hsl(var(--ds-brand-primary))',
+          secondary: 'hsl(var(--ds-brand-secondary))',
+          'primary-foreground': 'hsl(var(--ds-brand-primary-foreground))',
+        },
+        'ds-signal': {
+          positive: 'hsl(var(--ds-signal-positive))',
+          negative: 'hsl(var(--ds-signal-negative))',
+          warning: 'hsl(var(--ds-signal-warning))',
+          neutral: 'hsl(var(--ds-signal-neutral))',
+          info: 'hsl(var(--ds-signal-info))',
+        },
       },
       backgroundImage: {
         'gradient-chrome': 'var(--gradient-chrome)',
@@ -83,11 +150,22 @@ export default {
         'card': 'var(--shadow-card)',
         'bull': 'var(--shadow-bull)',
         'bear': 'var(--shadow-bear)',
+        // ===== Design System v2 elevation (tight, not puffy) =====
+        'ds-xs': 'var(--ds-shadow-xs)',
+        'ds-sm': 'var(--ds-shadow-sm)',
+        'ds-md': 'var(--ds-shadow-md)',
+        'ds-lg': 'var(--ds-shadow-lg)',
+        'ds-elevated': 'var(--ds-shadow-elevated)',
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        // ===== Design System v2 institutional radii (max 10px) =====
+        'ds-sm': '4px',
+        'ds-md': '6px',
+        'ds-lg': '8px',
+        'ds-xl': '10px',
       },
       keyframes: {
         "accordion-down": {
