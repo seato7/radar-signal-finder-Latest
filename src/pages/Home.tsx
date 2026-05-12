@@ -1,7 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Badge } from "@/components/ui/badge";
-import { Zap } from "lucide-react";
 
 // Dashboard components
 import MarketRadar from "@/components/dashboard/MarketRadar";
@@ -30,44 +28,41 @@ const Home = () => {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Hero Header */}
-      <div className="relative">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              <span className="gradient-text">Insider Pulse</span>
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Multi-asset momentum signals from 30+ alternative data sources
-            </p>
-          </div>
-          <Badge 
-            variant="outline" 
-            className="border-primary/30 text-primary capitalize hidden sm:flex items-center gap-1.5"
-          >
-            <Zap className="h-3 w-3" />
+      {/* Page Header */}
+      <div className="flex items-start justify-between gap-4 pb-2">
+        <div className="min-w-0">
+          <h1 className="text-h2 md:text-h1 font-semibold text-ds-text-primary tracking-tight">
+            Insider Pulse
+          </h1>
+          <p className="text-body text-ds-text-secondary mt-2 max-w-2xl">
+            Multi-asset momentum signals from 30+ alternative data sources
+          </p>
+        </div>
+        <div className="hidden sm:flex shrink-0">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary text-caption font-medium capitalize">
+            <span className="h-1.5 w-1.5 rounded-full bg-ds-brand-primary" />
             {userPlan} Plan
-          </Badge>
+          </span>
         </div>
       </div>
 
-      {/* AI Assistant Hero */}
+      {/* AI Assistant */}
       <AIAssistantHero />
 
       {/* Signal Spotlight */}
       <SignalSpotlight />
-      <p className="text-xs text-muted-foreground text-center -mt-3">
+      <p className="text-caption text-ds-text-muted text-center -mt-3">
         Algorithmically generated data output only. Not financial advice.
       </p>
 
       {/* Main Grid */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <TopThemesCard />
         <TopAssetsCard />
       </div>
 
       {/* Market Radar + Alerts Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <MarketRadar />
         <RecentAlertsCard />
       </div>

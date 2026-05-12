@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Flame, TrendingUp, ChevronRight } from "lucide-react";
+import { Flame, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,7 +18,7 @@ const TopThemesCard = () => {
   const navigate = useNavigate();
   const { limits } = useAuth();
   const themesLimit = limits().themes;
-  
+
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['top-themes-dashboard'],
     queryFn: async (): Promise<ThemeScore[]> => {
@@ -27,7 +26,7 @@ const TopThemesCard = () => {
 
       if (themesError) throw themesError;
       if (!allThemes || allThemes.length === 0) return [];
-      
+
       const themeScores = await Promise.all(
         allThemes.slice(0, 10).map(async (theme) => {
           const { data } = await supabase
@@ -37,9 +36,9 @@ const TopThemesCard = () => {
             .order('computed_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          
+
           if (!data) return null;
-          
+
           return {
             id: theme.id,
             name: theme.name,
@@ -48,7 +47,7 @@ const TopThemesCard = () => {
           };
         })
       );
-      
+
       return themeScores
         .filter((theme): theme is ThemeScore => theme !== null)
         .sort((a, b) => b.score - a.score)
@@ -58,15 +57,8 @@ const TopThemesCard = () => {
   });
 
   const getScoreColor = (score: number) => {
-    if (score >= 70) return 'text-success';
-    if (score >= 50) return 'text-warning';
-    return 'text-muted-foreground';
-  };
-
-  const getScoreBarColor = (score: number) => {
-    if (score >= 70) return 'bg-gradient-bull';
-    if (score >= 50) return 'bg-gradient-gold';
-    return 'bg-muted';
+    if (score >= 70) return 'text-ds-signal-positive';
+    return 'text-ds-text-muted';
   };
 
   const getTopSignals = (components: Record<string, number>) => {
@@ -78,28 +70,28 @@ const TopThemesCard = () => {
   };
 
   return (
-    <Card className="card-glow border-border/50 bg-card/80 backdrop-blur h-full">
-      <CardHeader className="pb-3">
+    <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none h-full">
+      <CardHeader className="pb-3 px-5 pt-5">
         <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-lg">
-            <Flame className="h-5 w-5 text-warning" />
+          <div className="flex items-center gap-2 text-h4 font-semibold text-ds-text-primary">
+            <Flame className="h-5 w-5 text-ds-text-secondary" />
             Market Themes
           </div>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="text-xs text-muted-foreground hover:text-primary"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-caption text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated"
             onClick={() => navigate('/themes')}
           >
             View All <ChevronRight className="h-3 w-3 ml-1" />
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 px-5 pb-5">
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-3">
+              <div key={i} className="p-4 rounded-ds-md bg-ds-surface-elevated space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="h-5 w-32 skeleton-pulse rounded" />
                   <div className="h-6 w-16 skeleton-pulse rounded" />
@@ -119,26 +111,26 @@ const TopThemesCard = () => {
                 { name: "Clean Energy Transition", score: 74 },
                 { name: "Defence Spending Surge", score: 67 },
               ].map((t, i) => (
-                <div key={i} className="p-4 rounded-lg bg-surface-1 border border-border/50">
+                <div key={i} className="p-4 rounded-ds-md bg-ds-surface-elevated border border-ds-border">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-full bg-gradient-chrome flex items-center justify-center text-xs font-bold text-primary-foreground">
+                      <div className="w-6 h-6 rounded-full bg-ds-brand-primary flex items-center justify-center text-caption font-semibold text-ds-brand-primary-foreground">
                         {i + 1}
                       </div>
-                      <span className="font-semibold">{t.name}</span>
+                      <span className="text-body-lg text-ds-text-primary">{t.name}</span>
                     </div>
-                    <span className="text-2xl font-bold tabular-nums text-success">{t.score}</span>
+                    <span className="text-data-lg font-mono font-semibold text-ds-signal-positive">{t.score}</span>
                   </div>
-                  <div className="h-1.5 w-full bg-muted/50 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-bull" style={{ width: `${t.score}%` }} />
+                  <div className="h-1.5 w-full bg-ds-surface-overlay rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-ds-brand-primary" style={{ width: `${t.score}%` }} />
                   </div>
                 </div>
               ))}
             </div>
           </BlurredUpgradeOverlay>
         ) : themes.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm">Theme scores are being computed...</p>
+          <div className="text-center py-8 text-ds-text-muted text-body-sm">
+            <p>Theme scores are being computed...</p>
           </div>
         ) : (
           (themesLimit === -1 ? themes : themes.slice(0, themesLimit)).map((theme, index) => {
@@ -146,40 +138,39 @@ const TopThemesCard = () => {
             return (
               <div
                 key={theme.id}
-                className="group p-4 rounded-lg bg-surface-1 border border-border/50 hover:border-primary/30 transition-all cursor-pointer animate-fade-in"
-                style={{ animationDelay: `${index * 100}ms` }}
+                className="group p-4 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer"
                 onClick={() => navigate(`/themes`)}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-chrome flex items-center justify-center text-xs font-bold text-primary-foreground">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-ds-brand-primary flex items-center justify-center text-caption font-semibold text-ds-brand-primary-foreground">
                       {index + 1}
                     </div>
-                    <span className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                    <span className="text-body-lg font-medium text-ds-text-primary truncate">
                       {theme.name}
                     </span>
                   </div>
-                  <div className={`text-2xl font-bold tabular-nums counter-animate ${getScoreColor(theme.score)}`}>
+                  <div className={`text-data-lg font-mono font-semibold tabular-nums ${getScoreColor(theme.score)}`}>
                     {theme.score.toFixed(0)}
                   </div>
                 </div>
-                
-                {/* Score bar */}
-                <div className="h-1.5 w-full bg-muted/50 rounded-full overflow-hidden mb-3">
-                  <div 
-                    className={`h-full rounded-full score-bar ${getScoreBarColor(theme.score)}`}
+
+                <div className="h-1.5 w-full bg-ds-surface-overlay rounded-full overflow-hidden mb-3">
+                  <div
+                    className="h-full rounded-full bg-ds-brand-primary transition-all duration-slow"
                     style={{ width: `${Math.min(theme.score, 100)}%` }}
                   />
                 </div>
-                
-                {/* Signal badges */}
+
                 {topSignals.length > 0 && (
                   <div className="flex items-center gap-2">
-                    <TrendingUp className="h-3 w-3 text-muted-foreground" />
                     {topSignals.map((signal) => (
-                      <Badge key={signal} variant="secondary" className="text-xs px-2 py-0.5">
+                      <span
+                        key={signal}
+                        className="text-caption px-2 py-0.5 rounded-ds-sm bg-ds-surface-overlay border border-ds-border text-ds-text-secondary"
+                      >
                         {signal}
-                      </Badge>
+                      </span>
                     ))}
                   </div>
                 )}

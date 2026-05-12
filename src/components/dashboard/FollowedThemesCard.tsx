@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Eye, ChevronRight, Plus, Lock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 
@@ -14,7 +13,7 @@ interface FollowedTheme {
 
 const FollowedThemesCard = () => {
   const navigate = useNavigate();
-  
+
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['followed-themes-dashboard'],
     queryFn: async (): Promise<FollowedTheme[]> => {
@@ -51,29 +50,35 @@ const FollowedThemesCard = () => {
     staleTime: 10 * 60 * 1000,
   });
 
+  const scoreColor = (score: number | null) => {
+    if (score === null) return "text-ds-text-muted";
+    if (score >= 70) return "text-ds-signal-positive";
+    return "text-ds-text-muted";
+  };
+
   return (
-    <Card className="card-glow border-border/50 bg-card/80 backdrop-blur">
-      <CardHeader className="pb-3">
+    <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+      <CardHeader className="pb-3 px-5 pt-5">
         <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-lg">
-            <Eye className="h-5 w-5 text-primary" />
+          <div className="flex items-center gap-2 text-h4 font-semibold text-ds-text-primary">
+            <Eye className="h-5 w-5 text-ds-text-secondary" />
             Themes You Follow
           </div>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="text-xs text-muted-foreground hover:text-primary"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-caption text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated"
             onClick={() => navigate('/themes')}
           >
             Browse <ChevronRight className="h-3 w-3 ml-1" />
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-5 pb-5">
         {isLoading ? (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-2">
+              <div key={i} className="p-4 rounded-ds-md bg-ds-surface-elevated space-y-2">
                 <div className="h-4 w-full skeleton-pulse rounded" />
                 <div className="h-8 w-16 skeleton-pulse rounded" />
               </div>
@@ -81,10 +86,11 @@ const FollowedThemesCard = () => {
           </div>
         ) : themes.length === 0 ? (
           <div className="text-center py-6 space-y-3">
-            <p className="text-sm text-muted-foreground">Start following themes to track their performance</p>
-            <Button 
-              variant="outline" 
+            <p className="text-body-sm text-ds-text-secondary">Start following themes to track their performance</p>
+            <Button
+              variant="outline"
               size="sm"
+              className="border-ds-border text-ds-text-primary hover:bg-ds-surface-elevated hover:border-ds-border-strong rounded-ds-md"
               onClick={() => navigate('/themes')}
             >
               <Plus className="h-4 w-4 mr-1" />
@@ -92,31 +98,28 @@ const FollowedThemesCard = () => {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {themes.map((theme, index) => {
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {themes.map((theme) => {
               const hasScore = theme.currentScore !== null;
               return (
                 <div
                   key={theme.id}
-                  className="p-4 rounded-lg bg-surface-1 border border-border/50 hover:border-primary/30 transition-all cursor-pointer animate-fade-in text-center"
-                  style={{ animationDelay: `${index * 100}ms` }}
+                  className="p-4 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer text-center"
                   onClick={() => navigate('/themes')}
                 >
-                  <p className="text-sm font-medium text-foreground truncate mb-2" title={theme.name}>
+                  <p className="text-h4 font-medium text-ds-text-primary truncate mb-2" title={theme.name}>
                     {theme.name}
                   </p>
-                  <div className={`text-2xl font-bold tabular-nums mb-1 ${hasScore ? '' : 'text-muted-foreground/60 font-mono'}`}>
+                  <div className={`text-data-lg font-mono font-semibold tabular-nums mb-2 ${scoreColor(theme.currentScore)}`}>
                     {hasScore ? theme.currentScore!.toFixed(0) : '__/100'}
                   </div>
                   {hasScore ? (
-                    <Badge variant="outline" className="text-xs text-muted-foreground border-border/50">
-                      -
-                    </Badge>
+                    <span className="text-caption font-mono text-ds-text-muted">-</span>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-1 border-border/50 text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 text-caption px-1.5 py-0.5 rounded-ds-sm border border-ds-border text-ds-text-muted">
                       <Lock className="h-2.5 w-2.5" />
                       Unscored
-                    </Badge>
+                    </span>
                   )}
                 </div>
               );
