@@ -986,7 +986,7 @@ const AssetRadar = () => {
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                   
-                  <span className="text-sm text-muted-foreground ml-3">
+                  <span className="text-caption font-mono text-ds-text-muted ml-3">
                     {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
                   </span>
                 </div>
