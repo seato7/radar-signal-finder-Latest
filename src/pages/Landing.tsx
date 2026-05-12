@@ -18,7 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 /* ---------- Motion primitives ---------- */
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] as const } },
 };
 
 const stagger = {
@@ -326,7 +326,7 @@ const Landing = () => {
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] as const }}
           >
             <div className="inline-flex items-center gap-2 mb-6 px-3 py-1 rounded-ds-sm border border-ds-brand-primary/40 bg-ds-brand-primary/5 text-ds-brand-primary text-caption font-medium">
               <span className="ds-live-dot inline-block w-1.5 h-1.5 rounded-full bg-ds-brand-primary" />
@@ -338,7 +338,7 @@ const Landing = () => {
             className="text-h1 md:text-display font-semibold leading-[1.05] tracking-tight mb-5 text-ds-text-primary"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.5, delay: 0.05, ease: [0.16, 1, 0.3, 1] as const }}
           >
             The Market Moves.
             <br />
@@ -349,7 +349,7 @@ const Landing = () => {
             className="text-body md:text-body-lg text-ds-text-secondary max-w-2xl mx-auto mb-8"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] as const }}
           >
             InsiderPulse monitors 26,000+ assets across insider filings, dark pool activity,
             congressional trades, options flow and momentum signals. Our proprietary scoring
@@ -360,7 +360,7 @@ const Landing = () => {
             className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 mb-6"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] as const }}
           >
             <Button
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
