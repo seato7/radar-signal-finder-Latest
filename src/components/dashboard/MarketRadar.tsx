@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, TrendingDown, Activity, Zap } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { TickerLink } from "@/lib/tickerLink";
 
 interface TopMover {
@@ -22,7 +21,7 @@ const MarketRadar = () => {
         .in('trend_strength', ['strong_uptrend', 'strong_downtrend'])
         .order('timestamp', { ascending: false })
         .limit(8);
-      
+
       if (error) throw error;
       return (data || []).map(d => ({
         ticker: d.ticker,
@@ -38,28 +37,27 @@ const MarketRadar = () => {
   const bears = topMovers.filter(m => m.trend === 'strong_downtrend').slice(0, 4);
 
   const SkeletonCard = () => (
-    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+    <div className="flex items-center justify-between p-3 rounded-ds-md bg-ds-surface-elevated">
       <div className="flex items-center gap-3">
-        <div className="h-8 w-16 skeleton-pulse rounded" />
-        <div className="h-4 w-20 skeleton-pulse rounded" />
+        <div className="h-5 w-16 skeleton-pulse rounded" />
       </div>
-      <div className="h-6 w-14 skeleton-pulse rounded" />
+      <div className="h-5 w-14 skeleton-pulse rounded" />
     </div>
   );
 
   return (
-    <Card className="card-glow border-border/50 bg-card/80 backdrop-blur">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Activity className="h-5 w-5 text-primary" />
+    <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+      <CardHeader className="pb-3 px-5 pt-5">
+        <CardTitle className="flex items-center gap-2 text-h4 font-semibold text-ds-text-primary">
+          <Activity className="h-5 w-5 text-ds-text-secondary" />
           Today's Market Radar
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Bullish Section */}
+      <CardContent className="space-y-4 px-5 pb-5">
+        {/* Bullish */}
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-medium text-success">
-            <TrendingUp className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 text-overline text-ds-signal-positive">
+            <TrendingUp className="h-3.5 w-3.5" />
             <span>Strong Momentum</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -69,34 +67,29 @@ const MarketRadar = () => {
                 <SkeletonCard />
               </>
             ) : bulls.length === 0 ? (
-              <div className="col-span-2 text-center py-4 text-muted-foreground text-sm">
+              <div className="col-span-2 text-center py-4 text-ds-text-muted text-body-sm">
                 No strong bullish signals detected
               </div>
             ) : (
               bulls.map((mover) => (
                 <div
                   key={mover.ticker}
-                  className="flex items-center justify-between p-3 rounded-lg bg-success/5 border border-success/20 hover:border-success/40 transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer"
                 >
-                  <div className="flex items-center gap-2">
-                    <TickerLink ticker={mover.ticker} className="font-mono font-bold text-foreground" />
-                    {mover.breakout === 'resistance_break' && (
-                      <Zap className="h-3 w-3 text-warning" />
-                    )}
-                  </div>
-                  <Badge className="signal-badge-bull text-xs">
+                  <TickerLink ticker={mover.ticker} className="font-mono font-semibold text-ds-text-primary text-data-sm" />
+                  <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-positive/40 text-ds-signal-positive">
                     +{Math.abs(mover.change).toFixed(1)}%
-                  </Badge>
+                  </span>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        {/* Bearish Section */}
+        {/* Bearish */}
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-            <TrendingDown className="h-4 w-4" />
+          <div className="flex items-center gap-1.5 text-overline text-ds-signal-negative">
+            <TrendingDown className="h-3.5 w-3.5" />
             <span>Under Pressure</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -106,24 +99,19 @@ const MarketRadar = () => {
                 <SkeletonCard />
               </>
             ) : bears.length === 0 ? (
-              <div className="col-span-2 text-center py-4 text-muted-foreground text-sm">
+              <div className="col-span-2 text-center py-4 text-ds-text-muted text-body-sm">
                 No strong bearish signals detected
               </div>
             ) : (
               bears.map((mover) => (
                 <div
                   key={mover.ticker}
-                  className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20 hover:border-destructive/40 transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer"
                 >
-                  <div className="flex items-center gap-2">
-                    <TickerLink ticker={mover.ticker} className="font-mono font-bold text-foreground" />
-                    {mover.breakout === 'support_break' && (
-                      <Zap className="h-3 w-3 text-warning" />
-                    )}
-                  </div>
-                  <Badge className="signal-badge-bear text-xs">
+                  <TickerLink ticker={mover.ticker} className="font-mono font-semibold text-ds-text-primary text-data-sm" />
+                  <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
                     {mover.change.toFixed(1)}%
-                  </Badge>
+                  </span>
                 </div>
               ))
             )}
