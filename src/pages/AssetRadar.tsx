@@ -80,10 +80,16 @@ const getSentiment = (score: number): { label: string; variant: "default" | "sec
 // Signal strength based on mass thresholds (calibrated from actual distribution)
 // M50=0.0032, M75=0.0067, M90=0.017, M95=0.020 for massy assets
 const getSignalStrength = (mass: number): { level: "high" | "medium" | "low" | "none"; label: string; className: string } => {
-  if (mass >= 0.017) return { level: "high", label: "High", className: "bg-success/20 text-success border-success/30" }; // Top 10%
-  if (mass >= 0.0067) return { level: "medium", label: "Med", className: "bg-primary/20 text-primary border-primary/30" }; // Top 25%
-  if (mass >= 0.001) return { level: "low", label: "Low", className: "bg-muted text-muted-foreground border-border" }; // Scored
-  return { level: "none", label: "None", className: "bg-muted/50 text-muted-foreground/50 border-border/50" };
+  if (mass >= 0.017) return { level: "high", label: "High", className: "border-ds-signal-positive/40 text-ds-signal-positive" };
+  if (mass >= 0.0067) return { level: "medium", label: "Med", className: "border-ds-signal-warning/40 text-ds-signal-warning" };
+  if (mass >= 0.001) return { level: "low", label: "Low", className: "border-ds-border text-ds-text-muted" };
+  return { level: "none", label: "None", className: "border-ds-border/50 text-ds-text-muted/60" };
+};
+
+const getScoreClasses = (score: number): string => {
+  if (score >= 70) return "border-ds-signal-positive/40 text-ds-signal-positive";
+  if (score >= 50) return "border-ds-signal-warning/40 text-ds-signal-warning";
+  return "border-ds-border text-ds-text-muted";
 };
 
 // Extract signal mass from score_explanation jsonb array
@@ -760,25 +766,28 @@ const AssetRadar = () => {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className={`grid w-full mb-4`} style={{ gridTemplateColumns: `repeat(${ASSET_CLASS_TABS.length}, minmax(0, 1fr))` }}>
+        <TabsList
+          className="grid w-full mb-4 bg-ds-surface border border-ds-border rounded-ds-md h-auto p-1"
+          style={{ gridTemplateColumns: `repeat(${ASSET_CLASS_TABS.length}, minmax(0, 1fr))` }}
+        >
           {ASSET_CLASS_TABS.map((tab) => {
             const locked = isTabLocked(tab.filter);
             return (
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
-                className="flex items-center gap-1 px-2 text-xs sm:text-sm"
+                className="flex items-center gap-1.5 px-2 py-1.5 text-caption sm:text-body-sm font-medium text-ds-text-secondary data-[state=active]:bg-ds-surface-elevated data-[state=active]:text-ds-text-primary data-[state=active]:shadow-none rounded-ds-sm transition-colors duration-fast ease-ds-out"
                 title={locked ? "Upgrade to unlock" : undefined}
               >
                 {tab.icon}
                 <span className="hidden sm:inline">{tab.label}</span>
-                {locked && <Lock className="h-3 w-3 text-muted-foreground ml-0.5" aria-label="Locked" />}
+                {locked && <Lock className="h-3 w-3 text-ds-text-muted ml-0.5" aria-label="Locked" />}
               </TabsTrigger>
             );
           })}
         </TabsList>
 
-        <Card className="shadow-data">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
           <CardHeader>
             <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -875,33 +884,31 @@ const AssetRadar = () => {
                       state={{ rank: displayRank, score: asset.score, totalLoaded: sortedAssets.length }}
                       className="block"
                     >
-                      <div className="p-4 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors h-full">
-                        <div className="flex items-start justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-lg text-primary">{asset.ticker}</h3>
+                      <div className="p-4 rounded-ds-md border border-ds-border bg-ds-surface-elevated hover:border-ds-border-strong transition-colors duration-fast ease-ds-out h-full">
+                        <div className="flex items-start justify-between mb-1.5 gap-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            <h3 className="font-mono font-semibold text-data-lg text-ds-brand-primary">{asset.ticker}</h3>
                             <TickerLink ticker={asset.ticker} iconOnly />
                             {activeSignalTickers.has(asset.ticker) && (
-                              <Badge className="bg-success/20 text-success border-success/30 border text-[10px] px-1.5 py-0 flex items-center gap-0.5">
+                              <span className="inline-flex items-center gap-0.5 text-caption font-medium px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-positive/40 text-ds-signal-positive">
                                 <Crosshair className="h-2.5 w-2.5" />
                                 Signal
-                              </Badge>
+                              </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {/* Signal strength badge */}
+                          <div className="flex items-center gap-1.5 shrink-0">
                             {asset.signalStrength !== "none" && (
-                              <Badge 
-                                variant="outline" 
-                                className={`text-[10px] px-1.5 py-0 ${signalStrengthInfo.className}`}
+                              <span
+                                className={`inline-flex items-center text-caption font-medium px-1.5 py-0.5 rounded-ds-sm border ${signalStrengthInfo.className}`}
                                 title={`Signal strength: ${signalStrengthInfo.label}`}
                               >
                                 <Zap className="h-2.5 w-2.5 mr-0.5" />
                                 {signalStrengthInfo.label}
-                              </Badge>
+                              </span>
                             )}
-                            <Badge variant={sentiment.variant} className="text-xs">
+                            <span className={`text-caption font-mono font-medium px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}>
                               {asset.score}
-                            </Badge>
+                            </span>
                             <button
                               type="button"
                               aria-label={`Add ${asset.ticker} to watchlist`}
@@ -912,31 +919,30 @@ const AssetRadar = () => {
                                 e.stopPropagation();
                                 addToWatchlist(asset.ticker);
                               }}
-                              className="text-muted-foreground hover:text-yellow-500 transition-colors disabled:opacity-50"
+                              className="text-ds-text-muted hover:text-ds-signal-warning transition-colors duration-fast ease-ds-out disabled:opacity-50"
                             >
                               <Star className="h-4 w-4" />
                             </button>
-                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground mb-2">{asset.name}</p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-primary text-primary-foreground">
+                        <p className="text-body-sm text-ds-text-secondary mb-3 line-clamp-1">{asset.name}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-caption font-medium px-1.5 py-0.5 rounded-ds-sm border border-ds-border text-ds-text-secondary">
                               {formatExchange(asset.exchange)}
-                            </Badge>
+                            </span>
                             {asset.priceChange !== null && typeof asset.priceChange === 'number' && (
-                              <span className={`text-xs font-medium ${asset.priceChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                              <span className={`text-caption font-mono font-medium ${asset.priceChange >= 0 ? 'text-ds-signal-positive' : 'text-ds-signal-negative'}`}>
                                 {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1 text-caption text-ds-text-muted shrink-0">
                             <Clock className="h-3 w-3" />
                             {asset.lastUpdated ? (
-                              <span>{formatDistanceToNow(new Date(asset.lastUpdated), { addSuffix: true })}</span>
+                              <span className="font-mono">{formatDistanceToNow(new Date(asset.lastUpdated), { addSuffix: true })}</span>
                             ) : (
-                              <span className="text-destructive/70">No data</span>
+                              <span className="text-ds-signal-negative/70">No data</span>
                             )}
                           </div>
                         </div>
@@ -980,7 +986,7 @@ const AssetRadar = () => {
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                   
-                  <span className="text-sm text-muted-foreground ml-3">
+                  <span className="text-caption font-mono text-ds-text-muted ml-3">
                     {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
                   </span>
                 </div>
