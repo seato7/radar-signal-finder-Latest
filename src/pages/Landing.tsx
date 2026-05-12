@@ -16,12 +16,12 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 
 /* ---------- Motion primitives ---------- */
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 16 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] as const } },
 };
 
-const stagger = {
+const stagger: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.06 } },
 };
