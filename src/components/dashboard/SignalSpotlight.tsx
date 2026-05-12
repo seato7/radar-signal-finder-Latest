@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Sparkles, ExternalLink } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { TickerLink } from "@/lib/tickerLink";
@@ -17,13 +16,10 @@ interface SpotlightSignal {
 
 const SignalSpotlight = () => {
   const navigate = useNavigate();
-  
+
   const { data: spotlight, isLoading } = useQuery({
     queryKey: ['signal-spotlight'],
     queryFn: async (): Promise<SpotlightSignal | null> => {
-      // Two-step lookup: signals (no embedded join, assets is RPC-only
-      // since the plan-gating REVOKE landed) then asset metadata via
-      // get_asset_tickers_by_ids_for_user.
       const { data: signals, error } = await supabase
         .from('signals')
         .select('signal_type, direction, magnitude, asset_id')
@@ -47,11 +43,8 @@ const SignalSpotlight = () => {
         const match = (assetRows ?? []).find((r: any) => r.id === top.asset_id);
         if (match?.ticker) ticker = match.ticker;
       }
-      // Free users (or any user the asset is hidden from) get the demo
-      // teaser experience: bail rather than leak the real ticker.
       if (ticker === 'Unknown') return null;
-      
-      // Generate a compelling headline based on signal type
+
       const headlines: Record<string, string> = {
         'insider_trade': `Unusual insider activity detected in ${ticker}`,
         'dark_pool': `Dark pool volume spike in ${ticker}`,
@@ -60,7 +53,7 @@ const SignalSpotlight = () => {
         'supply_chain_indicator': `Supply chain signal for ${ticker}`,
         'economic_indicator': `Economic indicator affecting ${ticker}`,
       };
-      
+
       return {
         ticker,
         type: top.signal_type,
@@ -74,10 +67,10 @@ const SignalSpotlight = () => {
 
   if (isLoading) {
     return (
-      <Card className="bg-gradient-hero border-primary/20 overflow-hidden">
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
-            <div className="h-12 w-12 skeleton-pulse rounded-full" />
+            <div className="h-10 w-10 skeleton-pulse rounded-ds-md" />
             <div className="flex-1 space-y-2">
               <div className="h-5 w-48 skeleton-pulse rounded" />
               <div className="h-4 w-full skeleton-pulse rounded" />
@@ -90,15 +83,15 @@ const SignalSpotlight = () => {
 
   if (!spotlight) {
     return (
-      <Card className="bg-gradient-hero border-primary/20 overflow-hidden">
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-              <Sparkles className="h-6 w-6 text-primary" />
+            <div className="h-10 w-10 rounded-ds-md bg-ds-surface-elevated border border-ds-border flex items-center justify-center">
+              <Sparkles className="h-5 w-5 text-ds-brand-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Signal Spotlight</p>
-              <p className="font-medium">Analyzing signals for today's highlight...</p>
+              <p className="text-overline text-ds-text-muted">Signal Spotlight</p>
+              <p className="text-body text-ds-text-primary mt-1">Analyzing signals for today's highlight...</p>
             </div>
           </div>
         </CardContent>
@@ -106,34 +99,27 @@ const SignalSpotlight = () => {
     );
   }
 
-  const isUp = spotlight.direction === 'up';
-
   return (
-    <Card className="bg-gradient-hero border-primary/20 overflow-hidden relative card-glow">
-      {/* Glow effect */}
-      <div className="absolute inset-0 bg-gradient-glow opacity-50" />
-      
-      <CardContent className="p-6 relative">
+    <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+      <CardContent className="p-6">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className={`h-12 w-12 rounded-full flex items-center justify-center ${isUp ? 'bg-success/20' : 'bg-destructive/20'}`}>
-              <Sparkles className={`h-6 w-6 ${isUp ? 'text-success' : 'text-destructive'}`} />
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="h-10 w-10 rounded-ds-md bg-ds-surface-elevated border border-ds-border flex items-center justify-center shrink-0">
+              <Sparkles className="h-5 w-5 text-ds-brand-primary" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-muted-foreground">Signal Spotlight</span>
-                <Badge variant="outline" className="text-xs border-warning/30 text-warning">
+                <span className="text-overline text-ds-text-muted">Signal Spotlight</span>
+                <span className="text-caption font-medium px-2 py-0.5 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary">
                   Today
-                </Badge>
+                </span>
               </div>
-              <p className="font-semibold text-lg text-foreground">{spotlight.headline}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <Badge 
-                  className={`text-xs ${isUp ? 'signal-badge-bull' : 'signal-badge-bear'}`}
-                >
+              <p className="text-h3 font-semibold text-ds-text-primary">{spotlight.headline}</p>
+              <div className="flex flex-wrap items-center gap-3 mt-1">
+                <span className="text-caption font-medium px-2 py-0.5 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary">
                   {spotlight.type.replace(/_/g, ' ')}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
+                </span>
+                <span className="text-data-sm font-mono text-ds-text-primary">
                   Magnitude: {(spotlight.magnitude * 100).toFixed(0)}%
                 </span>
               </div>
@@ -144,9 +130,10 @@ const SignalSpotlight = () => {
             <Button
               variant="outline"
               size="sm"
+              className="h-9 border-ds-border text-ds-text-primary hover:bg-ds-surface-elevated hover:border-ds-border-strong rounded-ds-md"
               onClick={() => navigate(`/asset/${encodeURIComponent(spotlight.ticker)}`)}
             >
-              Explore <ExternalLink className="h-3 w-3 ml-1" />
+              Explore <ExternalLink className="h-3.5 w-3.5 ml-1.5" />
             </Button>
           </div>
         </div>
