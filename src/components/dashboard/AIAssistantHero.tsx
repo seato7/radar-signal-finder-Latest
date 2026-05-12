@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, Send, Sparkles } from "lucide-react";
+import { Bot, Send } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,22 +28,17 @@ const AIAssistantHero = () => {
   };
 
   return (
-    <Card className="bg-gradient-hero border-primary/30 overflow-hidden relative">
-      {/* Animated glow background */}
-      <div className="absolute inset-0 bg-gradient-glow" />
-      <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl" />
-      
-      <CardContent className="p-6 relative">
+    <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+      <CardContent className="p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="h-10 w-10 rounded-full bg-gradient-chrome flex items-center justify-center shadow-chrome">
-            <Bot className="h-5 w-5 text-primary-foreground" />
+          <div className="h-9 w-9 rounded-ds-md bg-ds-surface-elevated border border-ds-border flex items-center justify-center">
+            <Bot className="h-4 w-4 text-ds-text-secondary" />
           </div>
           <div>
-            <h3 className="font-semibold text-lg flex items-center gap-2">
+            <h3 className="text-h3 font-semibold text-ds-text-primary">
               InsiderPulse AI Assistant
-              <Sparkles className="h-4 w-4 text-warning" />
             </h3>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body-sm text-ds-text-secondary mt-0.5">
               Analyze signals across 30+ data sources with real-time validation
             </p>
           </div>
@@ -54,20 +49,23 @@ const AIAssistantHero = () => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask about any asset, theme, or market signal..."
-            className="flex-1 bg-background/50 border-border/50 focus:border-primary"
+            className="flex-1 h-10 bg-ds-surface-elevated border-ds-border text-ds-text-primary placeholder:text-ds-text-muted rounded-ds-md focus-visible:ring-1 focus-visible:ring-ds-border-focus focus-visible:ring-offset-0 focus-visible:border-ds-border-focus"
           />
-          <Button type="submit" className="bg-gradient-chrome hover:opacity-90">
+          <Button
+            type="submit"
+            className="h-10 px-4 bg-ds-brand-primary hover:bg-ds-brand-primary/90 text-ds-brand-primary-foreground rounded-ds-md"
+          >
             <Send className="h-4 w-4" />
           </Button>
         </form>
 
-        <div className="flex flex-wrap gap-2">
-          <span className="text-xs text-muted-foreground">Try:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-caption text-ds-text-muted">Try:</span>
           {EXAMPLE_PROMPTS.map((prompt) => (
             <button
               key={prompt}
               onClick={() => handleExampleClick(prompt)}
-              className="text-xs px-3 py-1.5 rounded-full bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border border-transparent hover:border-border"
+              className="text-body-sm px-2.5 py-1 rounded-ds-sm bg-ds-surface-elevated border border-ds-border text-ds-text-secondary hover:text-ds-text-primary hover:border-ds-border-strong transition-colors duration-fast ease-ds-out"
             >
               {prompt}
             </button>
