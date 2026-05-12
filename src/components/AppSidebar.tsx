@@ -1,9 +1,29 @@
-import { Home, Bell, TrendingUp, Tag, Radar, Star, HelpCircle, Bot, CreditCard, Shield, LogOut, User, Settings, BarChart3, RefreshCw, Sparkles, Database, Download, Activity, DollarSign, Crosshair } from "lucide-react";
-import { isPremiumOrAbove } from "@/lib/planLimits";
+import {
+  Home,
+  Bell,
+  Tag,
+  Radar,
+  Star,
+  HelpCircle,
+  Bot,
+  CreditCard,
+  Shield,
+  LogOut,
+  User,
+  Settings,
+  BarChart3,
+  Sparkles,
+  Database,
+  Download,
+  Activity,
+  DollarSign,
+  Crosshair,
+  type LucideIcon,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Sidebar,
   SidebarContent,
@@ -11,14 +31,14 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const navigationItems = [
+type NavItem = { title: string; url: string; icon: LucideIcon };
+
+const navigationItems: NavItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "AI Assistant", url: "/assistant", icon: Sparkles },
   { title: "Alerts", url: "/alerts", icon: Bell },
@@ -32,75 +52,103 @@ const navigationItems = [
   { title: "Help", url: "/help", icon: HelpCircle },
 ];
 
+const premiumItems: NavItem[] = [
+  { title: "Analytics", url: "/analytics", icon: BarChart3 },
+];
+
+const adminItems: NavItem[] = [
+  { title: "Admin Panel", url: "/admin", icon: Shield },
+  { title: "Data Sources", url: "/data-sources", icon: Database },
+  { title: "Data Ingestion", url: "/data-ingestion", icon: Download },
+  { title: "API Usage", url: "/api-usage", icon: DollarSign },
+  { title: "Health Monitor", url: "/ingestion-health", icon: Activity },
+];
+
+function DsNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+  const Icon = item.icon;
+  return (
+    <SidebarMenuItem>
+      <NavLink
+        to={item.url}
+        end={item.url === "/"}
+        className={({ isActive }) =>
+          cn(
+            "group relative flex items-center gap-3 h-9 px-3 rounded-ds-sm",
+            "text-[14px] font-medium transition-colors duration-fast ease-ds-out",
+            "border-l-[3px] border-transparent",
+            isActive
+              ? "text-ds-text-primary bg-ds-brand-primary/[0.07] border-l-ds-brand-primary"
+              : "text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated hover:border-l-ds-brand-primary/40",
+          )
+        }
+      >
+        <Icon className="h-[18px] w-[18px] shrink-0" />
+        {!collapsed && <span className="truncate">{item.title}</span>}
+      </NavLink>
+    </SidebarMenuItem>
+  );
+}
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const { user, logout, userPlan, isAdmin, isPremium } = useAuth();
   const isCollapsed = state === "collapsed";
 
-  const getPlanBadgeVariant = (plan: string) => {
-    switch (plan) {
-      case 'enterprise':
-      case 'premium':
-        return 'default';
-      case 'pro':
-      case 'starter':
-        return 'secondary';
-      default:
-        return 'outline';
-    }
-  };
-
   return (
-    <Sidebar collapsible="icon" className="border-r border-border">
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        {!isCollapsed && (
-          <h2 className="text-lg font-bold bg-gradient-chrome bg-clip-text text-transparent">
-            InsiderPulse
-          </h2>
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-ds-border bg-ds-surface"
+    >
+      {/* Logo + system status */}
+      <div className="flex items-center gap-2 px-4 h-14 border-b border-ds-border">
+        {!isCollapsed ? (
+          <>
+            <span className="font-sans font-semibold text-[15px] tracking-tight">
+              <span className="text-ds-brand-primary">Insider</span>
+              <span className="text-ds-text-primary">Pulse</span>
+            </span>
+            <span
+              className="ds-status-pulse ml-auto h-1.5 w-1.5 rounded-full bg-ds-signal-positive"
+              aria-label="System online"
+              title="System online"
+            />
+          </>
+        ) : (
+          <span
+            className="ds-status-pulse mx-auto h-1.5 w-1.5 rounded-full bg-ds-signal-positive"
+            aria-label="System online"
+          />
         )}
-        <SidebarTrigger className="ml-auto" />
       </div>
 
-      <SidebarContent>
+      <SidebarContent className="bg-ds-surface px-2 py-3">
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          {!isCollapsed && (
+            <SidebarGroupLabel className="text-overline text-ds-text-muted px-3 mb-1">
+              Navigation
+            </SidebarGroupLabel>
+          )}
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               {navigationItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/"}
-                      className={({ isActive }) =>
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                          : "hover:bg-sidebar-accent/50"
-                      }
-                    >
-                      <item.icon className="h-4 w-4" />
-                      {!isCollapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <DsNavItem key={item.title} item={item} collapsed={isCollapsed} />
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        
+
         {isPremium() && (
           <SidebarGroup>
-            <SidebarGroupLabel>Premium</SidebarGroupLabel>
+            {!isCollapsed && (
+              <SidebarGroupLabel className="text-overline text-ds-text-muted px-3 mb-1 mt-2">
+                Premium
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/analytics">
-                      <BarChart3 className="h-4 w-4" />
-                      {!isCollapsed && <span>Analytics</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+              <SidebarMenu className="gap-0.5">
+                {premiumItems.map((item) => (
+                  <DsNavItem key={item.title} item={item} collapsed={isCollapsed} />
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -108,95 +156,55 @@ export function AppSidebar() {
 
         {isAdmin() && (
           <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            {!isCollapsed && (
+              <SidebarGroupLabel className="text-overline text-ds-text-muted px-3 mb-1 mt-2">
+                Admin
+              </SidebarGroupLabel>
+            )}
             <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/admin">
-                      <Shield className="h-4 w-4" />
-                      {!isCollapsed && <span>Admin Panel</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/data-sources">
-                      <Database className="h-4 w-4" />
-                      {!isCollapsed && <span>Data Sources</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/data-ingestion">
-                      <Download className="h-4 w-4" />
-                      {!isCollapsed && <span>Data Ingestion</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/api-usage">
-                      <DollarSign className="h-4 w-4" />
-                      {!isCollapsed && <span>API Usage</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <NavLink to="/ingestion-health">
-                      <Activity className="h-4 w-4" />
-                      {!isCollapsed && <span>Health Monitor</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+              <SidebarMenu className="gap-0.5">
+                {adminItems.map((item) => (
+                  <DsNavItem key={item.title} item={item} collapsed={isCollapsed} />
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-border p-4">
-        {!isCollapsed && (
-          <div className="space-y-2">
-            <div className="flex flex-col gap-2 text-sm">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                <span className="font-medium truncate">{user?.email}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={getPlanBadgeVariant(userPlan)} className="w-fit capitalize">
-                  {userPlan} Plan
-                </Badge>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => window.location.reload()}
-                  title="Refresh plan status"
-                  className="h-6 px-2"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </Button>
-              </div>
+      <SidebarFooter className="border-t border-ds-border bg-ds-surface p-3">
+        {!isCollapsed ? (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2 text-[13px] text-ds-text-secondary">
+              <User className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{user?.email}</span>
             </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <span
+              className={cn(
+                "inline-flex items-center rounded-ds-sm px-2 py-0.5",
+                "text-[11px] font-medium uppercase tracking-wider",
+                "border border-ds-brand-primary/40 text-ds-brand-primary capitalize",
+              )}
+            >
+              {userPlan} Plan
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={logout}
-              className="w-full"
+              className="w-full justify-start text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated h-8"
             >
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
           </div>
-        )}
-        {isCollapsed && (
-          <Button 
-            variant="ghost" 
-            size="icon" 
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={logout}
             title="Logout"
+            className="text-ds-text-secondary hover:text-ds-text-primary"
           >
             <LogOut className="h-4 w-4" />
           </Button>

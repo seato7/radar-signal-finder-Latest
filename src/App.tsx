@@ -72,14 +72,15 @@ const App = () => (
               path="/*"
               element={
                 <ProtectedRoute>
-                  <SidebarProvider>
-                    <div className="min-h-screen flex w-full bg-background">
+                  <SidebarProvider style={{ "--sidebar-width": "240px" } as React.CSSProperties}>
+                    <div className="min-h-screen flex w-full bg-ds-background">
                       <AppSidebar />
-                      <div className="flex-1 flex flex-col">
-                        <header className="h-14 border-b border-border flex items-center px-6 sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10">
-                          <SidebarTrigger className="lg:hidden" />
+                      <div className="flex-1 flex flex-col min-w-0">
+                        <header className="h-[52px] md:h-14 border-b border-ds-border flex items-center px-4 md:px-6 sticky top-0 bg-ds-background/90 backdrop-blur supports-[backdrop-filter]:bg-ds-background/70 z-10">
+                          <SidebarTrigger className="lg:hidden text-ds-text-secondary hover:text-ds-text-primary" />
                         </header>
-                        <main className="flex-1 p-6">
+                        <main className="flex-1 p-4 md:p-6 lg:p-8">
+                          <div className="max-w-screen-2xl mx-auto w-full">
                           <Routes>
                             <Route path="/dashboard" element={<Home />} />
                             <Route path="/alerts" element={<Alerts />} />
@@ -123,14 +124,15 @@ const App = () => (
                             />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
+                          </div>
                         </main>
-                        <footer className="border-t border-white/5 bg-background/40 backdrop-blur-sm py-3 px-6">
-                          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                        <footer className="border-t border-ds-border bg-ds-background/60 py-3 px-4 md:px-6">
+                          <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-2 text-[12px] text-ds-text-muted">
                             <span>InsiderPulse © 2026</span>
                             <div className="flex items-center gap-4">
-                              <Link to="/help" className="hover:text-slate-300 transition-colors">Help</Link>
-                              <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy</Link>
-                              <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms</Link>
+                              <Link to="/help" className="hover:text-ds-text-primary transition-colors duration-fast">Help</Link>
+                              <Link to="/privacy" className="hover:text-ds-text-primary transition-colors duration-fast">Privacy</Link>
+                              <Link to="/terms" className="hover:text-ds-text-primary transition-colors duration-fast">Terms</Link>
                             </div>
                           </div>
                         </footer>

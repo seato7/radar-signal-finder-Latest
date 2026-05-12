@@ -158,6 +158,24 @@
 }
 
 @layer components {
+  /* DS v2 typography helpers */
+  .text-overline {
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* DS v2 system-online indicator (slow, subtle pulse) */
+  .ds-status-pulse {
+    animation: ds-status-pulse 5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes ds-status-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+  }
+
   /* Animated pulse for live indicators */
   .pulse-live {
     animation: pulse-live 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
