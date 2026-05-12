@@ -76,7 +76,7 @@ const App = () => (
                     <div className="min-h-screen flex w-full bg-ds-background">
                       <AppSidebar />
                       <div className="flex-1 flex flex-col min-w-0">
-                        <header className="h-13 md:h-14 border-b border-ds-border flex items-center px-4 md:px-6 sticky top-0 bg-ds-background/90 backdrop-blur supports-[backdrop-filter]:bg-ds-background/70 z-10">
+                        <header className="h-[52px] md:h-14 border-b border-ds-border flex items-center px-4 md:px-6 sticky top-0 bg-ds-background/90 backdrop-blur supports-[backdrop-filter]:bg-ds-background/70 z-10">
                           <SidebarTrigger className="lg:hidden text-ds-text-secondary hover:text-ds-text-primary" />
                         </header>
                         <main className="flex-1 p-4 md:p-6 lg:p-8">
