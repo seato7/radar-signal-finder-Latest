@@ -766,25 +766,28 @@ const AssetRadar = () => {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className={`grid w-full mb-4`} style={{ gridTemplateColumns: `repeat(${ASSET_CLASS_TABS.length}, minmax(0, 1fr))` }}>
+        <TabsList
+          className="grid w-full mb-4 bg-ds-surface border border-ds-border rounded-ds-md h-auto p-1"
+          style={{ gridTemplateColumns: `repeat(${ASSET_CLASS_TABS.length}, minmax(0, 1fr))` }}
+        >
           {ASSET_CLASS_TABS.map((tab) => {
             const locked = isTabLocked(tab.filter);
             return (
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
-                className="flex items-center gap-1 px-2 text-xs sm:text-sm"
+                className="flex items-center gap-1.5 px-2 py-1.5 text-caption sm:text-body-sm font-medium text-ds-text-secondary data-[state=active]:bg-ds-surface-elevated data-[state=active]:text-ds-text-primary data-[state=active]:shadow-none rounded-ds-sm transition-colors duration-fast ease-ds-out"
                 title={locked ? "Upgrade to unlock" : undefined}
               >
                 {tab.icon}
                 <span className="hidden sm:inline">{tab.label}</span>
-                {locked && <Lock className="h-3 w-3 text-muted-foreground ml-0.5" aria-label="Locked" />}
+                {locked && <Lock className="h-3 w-3 text-ds-text-muted ml-0.5" aria-label="Locked" />}
               </TabsTrigger>
             );
           })}
         </TabsList>
 
-        <Card className="shadow-data">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
           <CardHeader>
             <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
