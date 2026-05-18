@@ -17,6 +17,9 @@ interface ThemeScore {
   score: number;
   is_demo: boolean;
   ai_summary: string | null;
+  tickers: string[];
+  signal_count: number;
+  is_tracking: boolean;
 }
 
 const Themes = () => {
@@ -39,9 +42,30 @@ const Themes = () => {
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
-      const { data, error } = await (supabase.rpc as any)('get_themes_for_user');
+      const [{ data, error }, tickersRes, scoresRes] = await Promise.all([
+        (supabase.rpc as any)('get_themes_for_user'),
+        supabase.from('themes').select('id, tickers'),
+        supabase
+          .from('theme_scores')
+          .select('theme_id, signal_count, computed_at')
+          .order('computed_at', { ascending: false }),
+      ]);
 
       if (error) throw error;
+
+      const tickersMap = new Map<string, string[]>(
+        ((tickersRes.data ?? []) as Array<{ id: string; tickers: string[] | null }>).map((t) => [
+          t.id,
+          Array.isArray(t.tickers) ? t.tickers : [],
+        ]),
+      );
+
+      const signalCountMap = new Map<string, number>();
+      for (const s of (scoresRes.data ?? []) as Array<{ theme_id: string; signal_count: number | null }>) {
+        if (!signalCountMap.has(s.theme_id)) {
+          signalCountMap.set(s.theme_id, Number(s.signal_count ?? 0));
+        }
+      }
 
       const rows = (data ?? []) as Array<{
         id: string;
@@ -51,21 +75,39 @@ const Themes = () => {
         ai_summary: string | null;
       }>;
 
-      const mapped: ThemeScore[] = rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        score: Number(r.score ?? 0),
-        is_demo: Boolean(r.is_demo),
-        ai_summary: r.ai_summary,
-      }));
+      const mapped: ThemeScore[] = rows.map((r) => {
+        const tickers = tickersMap.get(r.id) ?? [];
+        const signalCount = signalCountMap.get(r.id) ?? 0;
+        const score = Number(r.score ?? 0);
+        // B3 "tracking" state: no tickers, no signals, default neutral score
+        const isTracking = tickers.length === 0 && signalCount === 0 && score === 50;
+        return {
+          id: r.id,
+          name: r.name,
+          score,
+          is_demo: Boolean(r.is_demo),
+          ai_summary: r.ai_summary,
+          tickers,
+          signal_count: signalCount,
+          is_tracking: isTracking,
+        };
+      });
+
+      // Sort: scored themes first (desc by score), tracking themes last
+      mapped.sort((a, b) => {
+        if (a.is_tracking !== b.is_tracking) return a.is_tracking ? 1 : -1;
+        return b.score - a.score;
+      });
 
       setThemes(mapped);
 
-      // Fetch "why now?" for accessible themes
+      // Fetch "why now?" for accessible, scored themes only
       const accessibleThemes = hasUnlimitedThemes ? mapped : mapped.slice(0, userThemeLimit);
-      accessibleThemes.forEach((theme) => {
-        fetchWhyNow(theme.id, theme.name);
-      });
+      accessibleThemes
+        .filter((t) => !t.is_tracking)
+        .forEach((theme) => {
+          fetchWhyNow(theme.id, theme.name);
+        });
     } catch (error) {
       console.error("Failed to fetch themes:", error);
       toast({
