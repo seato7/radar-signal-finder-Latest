@@ -314,29 +314,31 @@ export default function TradingSignals() {
       </div>
 
       {/* Active positions */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-success" />
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+        <CardHeader className="pb-3 px-5 pt-5">
+          <CardTitle className="text-h4 font-semibold text-ds-text-primary flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-ds-signal-positive" />
             Active Positions
             {active.length > 0 && (
-              <Badge variant="secondary" className="ml-1">{active.length}</Badge>
+              <span className="ml-1 inline-flex items-center rounded-ds-sm border border-ds-border px-1.5 py-0.5 text-caption font-mono text-ds-text-secondary">
+                {active.length}
+              </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-5 pb-5">
           {isLoading ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : active.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No active positions</p>
+            <p className="text-body-sm text-ds-text-muted py-4 text-center">No active positions</p>
           ) : (
             <div className="relative">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-body-sm">
                   <thead>
-                    <tr className="border-b border-border text-muted-foreground text-xs">
+                    <tr className="border-b border-ds-border text-overline text-ds-text-muted">
                       <th className="text-left py-2 pr-4 font-medium">Ticker</th>
                       <th className="text-right py-2 px-4 font-medium">Entry Price</th>
                       <th className="text-right py-2 px-4 font-medium">Target</th>
@@ -360,24 +362,24 @@ export default function TradingSignals() {
                         ? ((currentPrice - s.entry_price) / s.entry_price) * 100
                         : null;
                       return (
-                        <tr key={s.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                        <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4 align-top">
                             {s.ticker === '***'
                               ? <MaskedTicker />
-                              : <TickerLink ticker={s.ticker} className="font-semibold" />}
+                              : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
                             {s.reason && (
-                              <div className="text-xs text-slate-500 mt-1 leading-snug max-w-xs font-normal">
+                              <div className="text-caption text-ds-text-muted mt-1 leading-snug max-w-xs font-normal">
                                 {s.reason}
                               </div>
                             )}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-success">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-positive">
                             {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-negative">
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}
                           </td>
                           <td className="text-right py-2.5 px-4">
@@ -386,19 +388,19 @@ export default function TradingSignals() {
                               <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
                             </span>
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.score_at_entry != null ? s.score_at_entry.toFixed(1) : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.ai_score_at_entry != null ? s.ai_score_at_entry.toFixed(1) : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
                             {expiresFormatted}
                           </td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
                             {daysActive}d
                           </td>
                         </tr>
@@ -413,28 +415,28 @@ export default function TradingSignals() {
                   feature={`${active.length - visibleActive.length} more active signals`}
                   description="Upgrade your plan to unlock all active signals."
                 >
-                  <table className="w-full text-sm">
+                  <table className="w-full text-body-sm">
                     <tbody>
                       {active.slice(signalLimit, Math.min(signalLimit + 3, active.length)).map((s) => (
-                        <tr key={s.id} className="border-b border-border/50">
-                          <td className="py-2.5 pr-4 font-semibold">
+                        <tr key={s.id} className="border-b border-ds-border">
+                          <td className="py-2.5 pr-4 font-mono font-semibold text-ds-brand-primary">
                             {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-success">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-positive">
                             {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-negative">
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">-</td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">-</td>
                         </tr>
                       ))}
                     </tbody>
@@ -443,120 +445,6 @@ export default function TradingSignals() {
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Recent exits */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            Recent Exits
-            {exits.length > 0 && (
-              <Badge variant="secondary" className="ml-1">{exits.length}</Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-            </div>
-          ) : exits.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No closed positions yet</p>
-          ) : (
-            <div className="relative">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground text-xs">
-                      <th className="text-left py-2 pr-4 font-medium">Ticker</th>
-                      <th className="text-right py-2 px-4 font-medium">Entry</th>
-                      <th className="text-right py-2 px-4 font-medium">Exit Price</th>
-                      <th className="text-right py-2 px-4 font-medium">P&amp;L %</th>
-                      <th className="text-right py-2 px-4 font-medium">Result</th>
-                      <th className="text-right py-2 pl-4 font-medium">Days Held</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleExits.map((s) => {
-                      const daysHeld = s.exit_date
-                        ? differenceInDays(new Date(s.exit_date), new Date(s.created_at))
-                        : null;
-                      const rowClass = cn(
-                        "border-b border-border/50 transition-colors",
-                        s.status === 'triggered' && "bg-success/5 hover:bg-success/10",
-                        s.status === 'stopped' && "bg-destructive/5 hover:bg-destructive/10",
-                        s.status === 'expired' && "bg-amber-500/5 hover:bg-amber-500/10",
-                      );
-                      return (
-                        <tr key={s.id} className={rowClass}>
-                          <td className="py-2.5 pr-4">
-                            {s.ticker === '***'
-                              ? <MaskedTicker />
-                              : <TickerLink ticker={s.ticker} className="font-semibold" />}
-                          </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
-                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
-                          </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
-                            {s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}
-                          </td>
-                          <td className="text-right py-2.5 px-4">
-                            <PnlCell pnl={s.pnl_pct} />
-                          </td>
-                          <td className="text-right py-2.5 px-4">
-                            <ResultBadge status={s.status} />
-                          </td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">
-                            {daysHeld != null ? `${daysHeld}d` : "-"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {exitsBlurred && (
-                <BlurredUpgradeOverlay
-                  feature={`${exits.length - visibleExits.length} more closed signals`}
-                  description="Upgrade your plan to unlock the full trade history."
-                >
-                  <table className="w-full text-sm">
-                    <tbody>
-                      {exits.slice(signalLimit, Math.min(signalLimit + 3, exits.length)).map((s) => (
-                        <tr key={s.id} className="border-b border-border/50">
-                          <td className="py-2.5 pr-4 font-semibold">
-                            {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
-                          </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
-                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
-                          </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4">-</td>
-                          <td className="text-right py-2.5 px-4">-</td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">-</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </BlurredUpgradeOverlay>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {isFreeTeaser && (active.length > 0 || exits.length > 0) && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <p className="flex-1 text-sm">
-            Tickers, prices and entry levels are hidden on the Free plan. Upgrade
-            to see every active signal in full.
-          </p>
-          <Button onClick={() => setPaywallOpen(true)}>Upgrade plan</Button>
-        </div>
-      )}
 
       {error && (
         <p className="text-sm text-destructive text-center">
