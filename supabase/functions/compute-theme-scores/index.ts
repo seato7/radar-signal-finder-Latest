@@ -663,8 +663,17 @@ serve(async (req) => {
       const { sentimentScore, bullishCount, bearishCount } = computeNewsSentiment(newsSignalsForTheme);
       // sentimentScore is in -10..+10; map to -20..+20 score adjustment
       const newsSentimentAdjustment = sentimentScore * 2;
-      const blendedScore = mechanicalScore * 0.6 + newsSentimentAdjustment * 0.4;
-      const finalScore = Math.max(0, Math.min(100, Math.round(blendedScore * 100) / 100));
+      // mechanicalScore is a 0-100 score on its own scale.
+      // newsSentimentAdjustment is a ±20 delta. Apply
+      // additively (not as a convex blend) so news sentiment
+      // modulates the mechanical baseline rather than
+      // replacing 40% of it. Previous code mistakenly used
+      // convex weighting which mapped all themes into the
+      // 30-range deterministically.
+      const finalScore = Math.max(
+        0,
+        Math.min(100, Math.round((mechanicalScore + newsSentimentAdjustment * 0.4) * 100) / 100),
+      );
 
       // Calculate total signal mass for display
       let totalSignalMass = 0;
