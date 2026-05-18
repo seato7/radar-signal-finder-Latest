@@ -278,16 +278,24 @@ const Themes = () => {
     else if (filter === "tracking") list = list.filter((t) => t.is_tracking);
     else if (filter === "subscribed") list = list.filter((t) => subscribedIds.has(t.id));
 
-    // Search
+    // Search — tokenize by whitespace; every token must match at least one field
     if (debouncedQuery) {
-      const q = debouncedQuery;
-      list = list.filter((t) => {
-        if (t.name.toLowerCase().includes(q)) return true;
-        if (t.ai_summary && t.ai_summary.toLowerCase().includes(q)) return true;
-        if (t.keywords.some((k) => k.toLowerCase().includes(q))) return true;
-        if (t.tickers.some((tk) => tk.toLowerCase().includes(q))) return true;
-        return false;
-      });
+      const tokens = debouncedQuery.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        list = list.filter((t) => {
+          const name = t.name.toLowerCase();
+          const summary = (t.ai_summary ?? "").toLowerCase();
+          const keywords = t.keywords.map((k) => k.toLowerCase());
+          const tickers = t.tickers.map((tk) => tk.toLowerCase());
+          return tokens.every(
+            (tok) =>
+              name.includes(tok) ||
+              summary.includes(tok) ||
+              keywords.some((k) => k.includes(tok)) ||
+              tickers.some((tk) => tk.includes(tok)),
+          );
+        });
+      }
     }
 
     // Sort
