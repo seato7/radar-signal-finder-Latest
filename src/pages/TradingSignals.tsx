@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaywallModal } from "@/components/PaywallModal";
@@ -42,23 +42,24 @@ interface TradeSignal {
 const FREE_ROW_LIMIT = 3;
 
 const ResultBadge = ({ status }: { status: string }) => {
+  const base = "inline-flex items-center rounded-ds-sm border px-2 py-0.5 text-caption font-medium bg-transparent";
   if (status === 'triggered') {
-    return <Badge className="bg-success/20 text-success border-success/30 border">Target Hit</Badge>;
+    return <span className={cn(base, "border-ds-signal-positive/40 text-ds-signal-positive")}>Target Hit</span>;
   }
   if (status === 'stopped') {
-    return <Badge variant="destructive" className="bg-destructive/20 text-destructive border-destructive/30 border">Stop Loss</Badge>;
+    return <span className={cn(base, "border-ds-signal-negative/40 text-ds-signal-negative")}>Stop Loss</span>;
   }
   if (status === 'expired') {
-    return <Badge className="bg-amber-500/20 text-amber-600 border-amber-500/30 border">Expired</Badge>;
+    return <span className={cn(base, "border-ds-signal-warning/40 text-ds-signal-warning")}>Expired</span>;
   }
-  return <Badge variant="outline">{status}</Badge>;
+  return <span className={cn(base, "border-ds-border text-ds-text-muted")}>{status}</span>;
 };
 
 const PnlCell = ({ pnl }: { pnl: number | null }) => {
-  if (pnl == null) return <span className="text-muted-foreground">-</span>;
+  if (pnl == null) return <span className="text-ds-text-muted font-mono">-</span>;
   const positive = pnl > 0;
   return (
-    <span className={cn("font-medium tabular-nums", positive ? "text-success" : "text-destructive")}>
+    <span className={cn("font-mono text-data-sm", positive ? "text-ds-signal-positive" : "text-ds-signal-negative")}>
       {positive ? "+" : ""}{pnl.toFixed(2)}%
     </span>
   );
@@ -69,7 +70,7 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Circle className="h-2 w-2 fill-muted-foreground text-muted-foreground shrink-0" />
+          <Circle className="h-2 w-2 fill-ds-text-muted text-ds-text-muted shrink-0" />
         </TooltipTrigger>
         <TooltipContent>Daily close</TooltipContent>
       </Tooltip>
@@ -81,13 +82,13 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
   let color: string;
   let label: string;
   if (ageMin < 10) {
-    color = "fill-success text-success";
+    color = "fill-ds-signal-positive text-ds-signal-positive";
     label = `Live, updated ${ageMin}m ago`;
   } else if (ageMin < 60 * 24) {
-    color = "fill-amber-500 text-amber-500";
+    color = "fill-ds-signal-warning text-ds-signal-warning";
     label = ageHr >= 1 ? `Delayed, updated ${ageHr}h ago` : `Delayed, updated ${ageMin}m ago`;
   } else {
-    color = "fill-muted-foreground text-muted-foreground";
+    color = "fill-ds-text-muted text-ds-text-muted";
     label = "Daily close";
   }
   return (
@@ -101,7 +102,7 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
 };
 
 const MaskedTicker = () => (
-  <span className="font-semibold tracking-widest text-muted-foreground select-none">
+  <span className="font-mono font-semibold tracking-widest text-ds-text-muted select-none">
     {'\u2022 \u2022 \u2022 \u2022 \u2022'}
   </span>
 );
@@ -190,8 +191,8 @@ export default function TradingSignals() {
 
       {/* Disclaimer banner */}
       {!disclaimerDismissed && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 rounded-ds-lg border border-ds-border bg-ds-surface px-4 py-3 text-body-sm text-ds-text-secondary">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-ds-signal-warning" />
           <p className="flex-1">
             These are algorithmically calculated data outputs only and do not constitute financial advice
             or a recommendation to trade. Entry prices, targets and stop losses are reference points
@@ -201,7 +202,7 @@ export default function TradingSignals() {
           </p>
           <button
             onClick={() => setDisclaimerDismissed(true)}
-            className="shrink-0 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+            className="shrink-0 text-ds-text-muted hover:text-ds-text-primary transition-colors duration-fast"
             aria-label="Dismiss"
           >
             <X className="h-4 w-4" />
@@ -211,94 +212,100 @@ export default function TradingSignals() {
 
       {/* Summary stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <BarChart3 className="h-3.5 w-3.5" />
               Active Positions
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-12" />
             ) : (
-              <p className="text-2xl font-bold">{active.length}</p>
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">{active.length}</p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <TrendingUp className="h-3.5 w-3.5" />
               Avg Score at Entry
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-2xl font-bold">
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
                 {avgScoreAtEntry != null ? avgScoreAtEntry.toFixed(1) : "-"}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <Percent className="h-3.5 w-3.5" />
               Avg Position Size
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-2xl font-bold">
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
                 {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "-"}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <TrendingUp className="h-3.5 w-3.5" />
               Avg Return
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className={`text-2xl font-bold ${totalReturn == null ? '' : totalReturn >= 0 ? 'text-success' : 'text-destructive'}`}>
+              <p className={cn(
+                "text-data-lg font-mono font-semibold",
+                totalReturn == null ? "text-ds-text-primary" : totalReturn >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
+              )}>
                 {totalReturn == null ? "-" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <Percent className="h-3.5 w-3.5" />
               Total Return
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className={`text-2xl font-bold ${totalReturnSum == null ? '' : totalReturnSum >= 0 ? 'text-success' : 'text-destructive'}`}>
+              <p className={cn(
+                "text-data-lg font-mono font-semibold",
+                totalReturnSum == null ? "text-ds-text-primary" : totalReturnSum >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
+              )}>
                 {totalReturnSum == null ? "-" : `${totalReturnSum >= 0 ? '+' : ''}${totalReturnSum.toFixed(2)}%`}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <Target className="h-3.5 w-3.5" />
               Win Rate
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-2xl font-bold">
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
                 {winRate != null ? `${winRate.toFixed(1)}%` : "-"}
               </p>
             )}
@@ -307,29 +314,31 @@ export default function TradingSignals() {
       </div>
 
       {/* Active positions */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-success" />
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+        <CardHeader className="pb-3 px-5 pt-5">
+          <CardTitle className="text-h4 font-semibold text-ds-text-primary flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-ds-signal-positive" />
             Active Positions
             {active.length > 0 && (
-              <Badge variant="secondary" className="ml-1">{active.length}</Badge>
+              <span className="ml-1 inline-flex items-center rounded-ds-sm border border-ds-border px-1.5 py-0.5 text-caption font-mono text-ds-text-secondary">
+                {active.length}
+              </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-5 pb-5">
           {isLoading ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : active.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No active positions</p>
+            <p className="text-body-sm text-ds-text-muted py-4 text-center">No active positions</p>
           ) : (
             <div className="relative">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-body-sm">
                   <thead>
-                    <tr className="border-b border-border text-muted-foreground text-xs">
+                    <tr className="border-b border-ds-border text-overline text-ds-text-muted">
                       <th className="text-left py-2 pr-4 font-medium">Ticker</th>
                       <th className="text-right py-2 px-4 font-medium">Entry Price</th>
                       <th className="text-right py-2 px-4 font-medium">Target</th>
@@ -353,24 +362,24 @@ export default function TradingSignals() {
                         ? ((currentPrice - s.entry_price) / s.entry_price) * 100
                         : null;
                       return (
-                        <tr key={s.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                        <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4 align-top">
                             {s.ticker === '***'
                               ? <MaskedTicker />
-                              : <TickerLink ticker={s.ticker} className="font-semibold" />}
+                              : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
                             {s.reason && (
-                              <div className="text-xs text-slate-500 mt-1 leading-snug max-w-xs font-normal">
+                              <div className="text-caption text-ds-text-muted mt-1 leading-snug max-w-xs font-normal">
                                 {s.reason}
                               </div>
                             )}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-success">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-positive">
                             {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-negative">
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}
                           </td>
                           <td className="text-right py-2.5 px-4">
@@ -379,19 +388,19 @@ export default function TradingSignals() {
                               <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
                             </span>
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.score_at_entry != null ? s.score_at_entry.toFixed(1) : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.ai_score_at_entry != null ? s.ai_score_at_entry.toFixed(1) : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
                             {expiresFormatted}
                           </td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
                             {daysActive}d
                           </td>
                         </tr>
@@ -406,28 +415,28 @@ export default function TradingSignals() {
                   feature={`${active.length - visibleActive.length} more active signals`}
                   description="Upgrade your plan to unlock all active signals."
                 >
-                  <table className="w-full text-sm">
+                  <table className="w-full text-body-sm">
                     <tbody>
                       {active.slice(signalLimit, Math.min(signalLimit + 3, active.length)).map((s) => (
-                        <tr key={s.id} className="border-b border-border/50">
-                          <td className="py-2.5 pr-4 font-semibold">
+                        <tr key={s.id} className="border-b border-ds-border">
+                          <td className="py-2.5 pr-4 font-mono font-semibold text-ds-brand-primary">
                             {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-success">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-positive">
                             {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-destructive">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-negative">
                             {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">-</td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">-</td>
                         </tr>
                       ))}
                     </tbody>
@@ -440,29 +449,31 @@ export default function TradingSignals() {
       </Card>
 
       {/* Recent exits */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+        <CardHeader className="pb-3 px-5 pt-5">
+          <CardTitle className="text-h4 font-semibold text-ds-text-primary flex items-center gap-2">
+            <Clock className="h-4 w-4 text-ds-text-muted" />
             Recent Exits
             {exits.length > 0 && (
-              <Badge variant="secondary" className="ml-1">{exits.length}</Badge>
+              <span className="ml-1 inline-flex items-center rounded-ds-sm border border-ds-border px-1.5 py-0.5 text-caption font-mono text-ds-text-secondary">
+                {exits.length}
+              </span>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-5 pb-5">
           {isLoading ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : exits.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No closed positions yet</p>
+            <p className="text-body-sm text-ds-text-muted py-4 text-center">No closed positions yet</p>
           ) : (
             <div className="relative">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-body-sm">
                   <thead>
-                    <tr className="border-b border-border text-muted-foreground text-xs">
+                    <tr className="border-b border-ds-border text-overline text-ds-text-muted">
                       <th className="text-left py-2 pr-4 font-medium">Ticker</th>
                       <th className="text-right py-2 px-4 font-medium">Entry</th>
                       <th className="text-right py-2 px-4 font-medium">Exit Price</th>
@@ -476,23 +487,17 @@ export default function TradingSignals() {
                       const daysHeld = s.exit_date
                         ? differenceInDays(new Date(s.exit_date), new Date(s.created_at))
                         : null;
-                      const rowClass = cn(
-                        "border-b border-border/50 transition-colors",
-                        s.status === 'triggered' && "bg-success/5 hover:bg-success/10",
-                        s.status === 'stopped' && "bg-destructive/5 hover:bg-destructive/10",
-                        s.status === 'expired' && "bg-amber-500/5 hover:bg-amber-500/10",
-                      );
                       return (
-                        <tr key={s.id} className={rowClass}>
+                        <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4">
                             {s.ticker === '***'
                               ? <MaskedTicker />
-                              : <TickerLink ticker={s.ticker} className="font-semibold" />}
+                              : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
                             {s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}
                           </td>
                           <td className="text-right py-2.5 px-4">
@@ -501,7 +506,7 @@ export default function TradingSignals() {
                           <td className="text-right py-2.5 px-4">
                             <ResultBadge status={s.status} />
                           </td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
                             {daysHeld != null ? `${daysHeld}d` : "-"}
                           </td>
                         </tr>
@@ -516,20 +521,20 @@ export default function TradingSignals() {
                   feature={`${exits.length - visibleExits.length} more closed signals`}
                   description="Upgrade your plan to unlock the full trade history."
                 >
-                  <table className="w-full text-sm">
+                  <table className="w-full text-body-sm">
                     <tbody>
                       {exits.slice(signalLimit, Math.min(signalLimit + 3, exits.length)).map((s) => (
-                        <tr key={s.id} className="border-b border-border/50">
-                          <td className="py-2.5 pr-4 font-semibold">
+                        <tr key={s.id} className="border-b border-ds-border">
+                          <td className="py-2.5 pr-4 font-mono font-semibold text-ds-brand-primary">
                             {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums text-muted-foreground">
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
                             {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
                           </td>
-                          <td className="text-right py-2.5 px-4 tabular-nums">-</td>
-                          <td className="text-right py-2.5 px-4">-</td>
-                          <td className="text-right py-2.5 px-4">-</td>
-                          <td className="text-right py-2.5 pl-4 tabular-nums text-muted-foreground">-</td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">-</td>
                         </tr>
                       ))}
                     </tbody>
@@ -542,17 +547,23 @@ export default function TradingSignals() {
       </Card>
 
       {isFreeTeaser && (active.length > 0 || exits.length > 0) && (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <p className="flex-1 text-sm">
+        <div className="rounded-ds-lg border border-ds-brand-primary/30 bg-ds-surface p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <p className="flex-1 text-body-sm text-ds-text-secondary">
             Tickers, prices and entry levels are hidden on the Free plan. Upgrade
             to see every active signal in full.
           </p>
-          <Button onClick={() => setPaywallOpen(true)}>Upgrade plan</Button>
+          <Button
+            onClick={() => setPaywallOpen(true)}
+            variant="outline"
+            className="border-ds-brand-primary/40 text-ds-brand-primary hover:bg-ds-brand-primary/10 hover:text-ds-brand-primary"
+          >
+            Upgrade plan
+          </Button>
         </div>
       )}
 
       {error && (
-        <p className="text-sm text-destructive text-center">
+        <p className="text-body-sm text-ds-signal-negative text-center">
           Failed to load signals: {(error as Error).message}
         </p>
       )}
