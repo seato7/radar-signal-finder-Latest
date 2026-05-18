@@ -25,14 +25,14 @@ export const BlurredUpgradeOverlay = ({
       </div>
 
       {/* Glassmorphism overlay */}
-      <div className="absolute inset-0 flex items-center justify-center rounded-xl backdrop-blur-md bg-black/40">
+      <div className="absolute inset-0 flex items-center justify-center rounded-ds-lg backdrop-blur-sm bg-ds-surface/60">
         <div className="text-center px-6 py-5 max-w-xs">
-          <div className="h-11 w-11 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto mb-3">
-            <Lock className="h-5 w-5 text-primary" />
+          <div className="h-11 w-11 rounded-full bg-ds-brand-primary/10 border border-ds-brand-primary/20 flex items-center justify-center mx-auto mb-3">
+            <Lock className="h-5 w-5 text-ds-brand-primary" />
           </div>
-          <h3 className="font-semibold text-sm text-foreground mb-1.5">{feature}</h3>
-          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{description}</p>
-          <Button asChild size="sm" className="text-xs">
+          <h3 className="font-semibold text-body-sm text-ds-text-primary mb-1.5">{feature}</h3>
+          <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">{description}</p>
+          <Button asChild size="sm" variant="outline" className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent">
             <Link to="/pricing">View Plans</Link>
           </Button>
         </div>
