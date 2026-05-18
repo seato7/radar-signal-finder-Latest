@@ -445,9 +445,125 @@ export default function TradingSignals() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Recent exits */}
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+        <CardHeader className="pb-3 px-5 pt-5">
+          <CardTitle className="text-h4 font-semibold text-ds-text-primary flex items-center gap-2">
+            <Clock className="h-4 w-4 text-ds-text-muted" />
+            Recent Exits
+            {exits.length > 0 && (
+              <span className="ml-1 inline-flex items-center rounded-ds-sm border border-ds-border px-1.5 py-0.5 text-caption font-mono text-ds-text-secondary">
+                {exits.length}
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5">
+          {isLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : exits.length === 0 ? (
+            <p className="text-body-sm text-ds-text-muted py-4 text-center">No closed positions yet</p>
+          ) : (
+            <div className="relative">
+              <div className="overflow-x-auto">
+                <table className="w-full text-body-sm">
+                  <thead>
+                    <tr className="border-b border-ds-border text-overline text-ds-text-muted">
+                      <th className="text-left py-2 pr-4 font-medium">Ticker</th>
+                      <th className="text-right py-2 px-4 font-medium">Entry</th>
+                      <th className="text-right py-2 px-4 font-medium">Exit Price</th>
+                      <th className="text-right py-2 px-4 font-medium">P&amp;L %</th>
+                      <th className="text-right py-2 px-4 font-medium">Result</th>
+                      <th className="text-right py-2 pl-4 font-medium">Days Held</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleExits.map((s) => {
+                      const daysHeld = s.exit_date
+                        ? differenceInDays(new Date(s.exit_date), new Date(s.created_at))
+                        : null;
+                      return (
+                        <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
+                          <td className="py-2.5 pr-4">
+                            {s.ticker === '***'
+                              ? <MaskedTicker />
+                              : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
+                          </td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
+                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
+                          </td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
+                            {s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}
+                          </td>
+                          <td className="text-right py-2.5 px-4">
+                            <PnlCell pnl={s.pnl_pct} />
+                          </td>
+                          <td className="text-right py-2.5 px-4">
+                            <ResultBadge status={s.status} />
+                          </td>
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
+                            {daysHeld != null ? `${daysHeld}d` : "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {exitsBlurred && (
+                <BlurredUpgradeOverlay
+                  feature={`${exits.length - visibleExits.length} more closed signals`}
+                  description="Upgrade your plan to unlock the full trade history."
+                >
+                  <table className="w-full text-body-sm">
+                    <tbody>
+                      {exits.slice(signalLimit, Math.min(signalLimit + 3, exits.length)).map((s) => (
+                        <tr key={s.id} className="border-b border-ds-border">
+                          <td className="py-2.5 pr-4 font-mono font-semibold text-ds-brand-primary">
+                            {s.ticker === '***' ? <MaskedTicker /> : s.ticker}
+                          </td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
+                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
+                          </td>
+                          <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 px-4 text-ds-text-muted">-</td>
+                          <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">-</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </BlurredUpgradeOverlay>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {isFreeTeaser && (active.length > 0 || exits.length > 0) && (
+        <div className="rounded-ds-lg border border-ds-brand-primary/30 bg-ds-surface p-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <p className="flex-1 text-body-sm text-ds-text-secondary">
+            Tickers, prices and entry levels are hidden on the Free plan. Upgrade
+            to see every active signal in full.
+          </p>
+          <Button
+            onClick={() => setPaywallOpen(true)}
+            variant="outline"
+            className="border-ds-brand-primary/40 text-ds-brand-primary hover:bg-ds-brand-primary/10 hover:text-ds-brand-primary"
+          >
+            Upgrade plan
+          </Button>
+        </div>
+      )}
 
       {error && (
-        <p className="text-sm text-destructive text-center">
+        <p className="text-body-sm text-ds-signal-negative text-center">
           Failed to load signals: {(error as Error).message}
         </p>
       )}
