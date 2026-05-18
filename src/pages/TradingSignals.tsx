@@ -191,8 +191,8 @@ export default function TradingSignals() {
 
       {/* Disclaimer banner */}
       {!disclaimerDismissed && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 rounded-ds-lg border border-ds-border bg-ds-surface px-4 py-3 text-body-sm text-ds-text-secondary">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-ds-signal-warning" />
           <p className="flex-1">
             These are algorithmically calculated data outputs only and do not constitute financial advice
             or a recommendation to trade. Entry prices, targets and stop losses are reference points
@@ -202,7 +202,7 @@ export default function TradingSignals() {
           </p>
           <button
             onClick={() => setDisclaimerDismissed(true)}
-            className="shrink-0 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+            className="shrink-0 text-ds-text-muted hover:text-ds-text-primary transition-colors duration-fast"
             aria-label="Dismiss"
           >
             <X className="h-4 w-4" />
@@ -212,94 +212,100 @@ export default function TradingSignals() {
 
       {/* Summary stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <BarChart3 className="h-3.5 w-3.5" />
               Active Positions
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-12" />
             ) : (
-              <p className="text-2xl font-bold">{active.length}</p>
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">{active.length}</p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <TrendingUp className="h-3.5 w-3.5" />
               Avg Score at Entry
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-2xl font-bold">
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
                 {avgScoreAtEntry != null ? avgScoreAtEntry.toFixed(1) : "-"}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <Percent className="h-3.5 w-3.5" />
               Avg Position Size
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-2xl font-bold">
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
                 {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "-"}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <TrendingUp className="h-3.5 w-3.5" />
               Avg Return
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className={`text-2xl font-bold ${totalReturn == null ? '' : totalReturn >= 0 ? 'text-success' : 'text-destructive'}`}>
+              <p className={cn(
+                "text-data-lg font-mono font-semibold",
+                totalReturn == null ? "text-ds-text-primary" : totalReturn >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
+              )}>
                 {totalReturn == null ? "-" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <Percent className="h-3.5 w-3.5" />
               Total Return
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className={`text-2xl font-bold ${totalReturnSum == null ? '' : totalReturnSum >= 0 ? 'text-success' : 'text-destructive'}`}>
+              <p className={cn(
+                "text-data-lg font-mono font-semibold",
+                totalReturnSum == null ? "text-ds-text-primary" : totalReturnSum >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
+              )}>
                 {totalReturnSum == null ? "-" : `${totalReturnSum >= 0 ? '+' : ''}${totalReturnSum.toFixed(2)}%`}
               </p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2 text-ds-text-secondary text-caption mb-1">
               <Target className="h-3.5 w-3.5" />
               Win Rate
             </div>
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-2xl font-bold">
+              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
                 {winRate != null ? `${winRate.toFixed(1)}%` : "-"}
               </p>
             )}
