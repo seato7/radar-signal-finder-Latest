@@ -42,23 +42,24 @@ interface TradeSignal {
 const FREE_ROW_LIMIT = 3;
 
 const ResultBadge = ({ status }: { status: string }) => {
+  const base = "inline-flex items-center rounded-ds-sm border px-2 py-0.5 text-caption font-medium bg-transparent";
   if (status === 'triggered') {
-    return <Badge className="bg-success/20 text-success border-success/30 border">Target Hit</Badge>;
+    return <span className={cn(base, "border-ds-signal-positive/40 text-ds-signal-positive")}>Target Hit</span>;
   }
   if (status === 'stopped') {
-    return <Badge variant="destructive" className="bg-destructive/20 text-destructive border-destructive/30 border">Stop Loss</Badge>;
+    return <span className={cn(base, "border-ds-signal-negative/40 text-ds-signal-negative")}>Stop Loss</span>;
   }
   if (status === 'expired') {
-    return <Badge className="bg-amber-500/20 text-amber-600 border-amber-500/30 border">Expired</Badge>;
+    return <span className={cn(base, "border-ds-signal-warning/40 text-ds-signal-warning")}>Expired</span>;
   }
-  return <Badge variant="outline">{status}</Badge>;
+  return <span className={cn(base, "border-ds-border text-ds-text-muted")}>{status}</span>;
 };
 
 const PnlCell = ({ pnl }: { pnl: number | null }) => {
-  if (pnl == null) return <span className="text-muted-foreground">-</span>;
+  if (pnl == null) return <span className="text-ds-text-muted font-mono">-</span>;
   const positive = pnl > 0;
   return (
-    <span className={cn("font-medium tabular-nums", positive ? "text-success" : "text-destructive")}>
+    <span className={cn("font-mono text-data-sm", positive ? "text-ds-signal-positive" : "text-ds-signal-negative")}>
       {positive ? "+" : ""}{pnl.toFixed(2)}%
     </span>
   );
