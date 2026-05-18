@@ -243,31 +243,53 @@ const Themes = () => {
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {themes.map((theme, index) => {
           const isLocked = isThemeLocked(index, theme);
-          const scoreLabel = showScore ? theme.score.toFixed(1) : '__';
-          const strengthLabel = showScore
-            ? (theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak')
-            : 'Premium only';
-          const strengthClass = showScore
-            ? getStrengthBadgeClass(theme.score)
-            : 'border-ds-border text-ds-text-muted';
+          const isTracking = theme.is_tracking;
+          const scoreLabel = isTracking
+            ? '—'
+            : showScore
+              ? theme.score.toFixed(1)
+              : '__';
+          const strengthLabel = isTracking
+            ? 'Tracking'
+            : showScore
+              ? (theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak')
+              : 'Premium only';
+          const strengthClass = isTracking
+            ? 'border-ds-border text-ds-text-muted'
+            : showScore
+              ? getStrengthBadgeClass(theme.score)
+              : 'border-ds-border text-ds-text-muted';
+          const scoreClass = isTracking
+            ? 'text-ds-text-muted'
+            : showScore
+              ? getScoreColor(theme.score)
+              : 'text-ds-text-muted';
 
           const cardContent = (
-            <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md hover:shadow-ds-lg hover:border-ds-border-strong transition-all duration-fast ease-ds-out h-full flex flex-col">
+            <Card className={`bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md hover:shadow-ds-lg hover:border-ds-border-strong transition-all duration-fast ease-ds-out h-full flex flex-col ${isTracking ? 'opacity-70' : ''}`}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-h3 font-semibold text-ds-text-primary tracking-tight mb-1 truncate">
                       {theme.name}
                     </CardTitle>
-                    <CardDescription className="text-caption text-ds-text-muted">
+                    <CardDescription className="text-caption text-ds-text-muted flex items-center gap-1">
                       Score
+                      {isTracking && (
+                        <span
+                          title="This theme is being monitored. A score will appear once enough asset data is available."
+                          className="inline-flex"
+                        >
+                          <Info className="h-3 w-3 text-ds-text-muted" />
+                        </span>
+                      )}
                     </CardDescription>
-                    <div className={`font-mono text-data-lg font-semibold tracking-tight ${showScore ? getScoreColor(theme.score) : 'text-ds-text-muted'}`}>
+                    <div className={`font-mono text-data-lg font-semibold tracking-tight ${scoreClass}`}>
                       {scoreLabel}
                     </div>
                   </div>
                   <Badge variant="outline" className={`shrink-0 mt-1 text-caption font-medium ${strengthClass}`}>
-                    <TrendingUp className="mr-1 h-3 w-3" />
+                    {!isTracking && <TrendingUp className="mr-1 h-3 w-3" />}
                     {strengthLabel}
                   </Badge>
                 </div>
@@ -298,14 +320,14 @@ const Themes = () => {
                 <div className="space-y-2 mt-auto pt-2">
                   <div className="flex justify-between text-caption">
                     <span className="text-ds-text-muted">Theme Strength</span>
-                    <span className={`font-mono font-semibold ${showScore ? getScoreColor(theme.score) : 'text-ds-text-muted'}`}>
+                    <span className={`font-mono font-semibold ${scoreClass}`}>
                       {scoreLabel}
                     </span>
                   </div>
                   <div className="h-1.5 bg-ds-surface-elevated rounded-full overflow-hidden">
                     <div
-                      className={`h-full ${showScore ? getProgressColor(theme.score) : 'bg-ds-text-muted/30'}`}
-                      style={{ width: `${showScore ? Math.min(theme.score, 100) : 0}%` }}
+                      className={`h-full ${isTracking ? 'bg-ds-text-muted/20' : showScore ? getProgressColor(theme.score) : 'bg-ds-text-muted/30'}`}
+                      style={{ width: `${isTracking ? 0 : showScore ? Math.min(theme.score, 100) : 0}%` }}
                     />
                   </div>
                 </div>
