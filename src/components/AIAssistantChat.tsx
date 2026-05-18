@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Sparkles, Volume2 } from 'lucide-react';
+import { Send, Sparkles, Volume2, Hand } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { getPlanLimits } from '@/lib/planLimits';
@@ -38,8 +38,6 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
 
   const historyKey = user?.id ? `ai-chat-history-${user.id}` : null;
 
-  // Fetch authoritative server-side count from ai_usage_daily on mount /
-  // when the user changes. RLS policy permits users to read their own row.
   useEffect(() => {
     if (!user?.id) {
       setTodayCount(0);
@@ -90,7 +88,6 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     }
   }, [messages]);
 
-  // Auto-trigger chat for initial query from URL
   useEffect(() => {
     if (initialQuery && !hasProcessedInitialQuery.current && messages.length === 0) {
       hasProcessedInitialQuery.current = true;
@@ -191,7 +188,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
 
   const speakMessage = async (text: string) => {
     if (isSpeaking) return;
-    
+
     setIsSpeaking(true);
     try {
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
@@ -214,12 +211,17 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     }
   };
 
+  const inputDisabled =
+    isLoading ||
+    (dailyLimit !== -1 && dailyLimit > 0 && todayCount >= dailyLimit) ||
+    dailyLimit === 0;
+
   return (
-    <Card className="h-[calc(100vh-14rem)] max-h-[700px] min-h-[400px] flex flex-col">
-      <CardHeader className="border-b">
+    <Card className="h-[calc(100vh-14rem)] max-h-[700px] min-h-[400px] flex flex-col bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+      <CardHeader className="border-b border-ds-border px-5 py-4">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+          <CardTitle className="flex items-center gap-2 text-h4 font-semibold text-ds-text-primary">
+            <Sparkles className="h-4 w-4 text-ds-brand-primary" />
             InsiderPulse AI Assistant
           </CardTitle>
           {messages.length > 0 && (
@@ -227,7 +229,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               variant="ghost"
               size="sm"
               onClick={clearHistory}
-              className="text-xs"
+              className="text-caption text-ds-text-muted hover:text-ds-text-primary"
             >
               Clear History
             </Button>
@@ -235,15 +237,27 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col p-0 min-h-0">
-        <ScrollArea ref={scrollRef} className="flex-1 p-4">
+        <ScrollArea ref={scrollRef} className="flex-1 p-5">
           {messages.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">
-              <p className="mb-2">👋 Hi! I'm the InsiderPulse AI Assistant.</p>
-              <p className="text-sm">Ask me about themes, signals, or market opportunities across all asset classes!</p>
-              <p className="text-xs mt-4">✨ I can also generate charts and visualizations!</p>
-              <p className="text-xs text-slate-500 mt-3">
-                General market information only, not financial advice. See our{" "}
-                <Link to="/terms" className="text-cyan-500 hover:underline">Terms of Service</Link>.
+            <div className="text-center text-ds-text-secondary py-10 max-w-md mx-auto">
+              <div className="inline-flex items-center justify-center w-10 h-10 rounded-ds-md border border-ds-border bg-ds-surface-elevated mb-4">
+                <Hand className="h-4 w-4 text-ds-brand-primary" />
+              </div>
+              <p className="text-body text-ds-text-primary mb-2">
+                Hi, I'm the InsiderPulse AI Assistant.
+              </p>
+              <p className="text-body-sm text-ds-text-secondary">
+                Ask me about themes, signals, or market opportunities across all asset classes.
+              </p>
+              <p className="text-caption text-ds-text-muted mt-4">
+                I can also generate charts and visualizations.
+              </p>
+              <p className="text-caption text-ds-text-muted mt-6">
+                General market information only, not financial advice. See our{' '}
+                <Link to="/terms" className="text-ds-brand-primary hover:underline">
+                  Terms of Service
+                </Link>
+                .
               </p>
             </div>
           ) : (
@@ -254,21 +268,25 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-lg p-3 ${
+                    className={
                       msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
-                    }`}
+                        ? 'max-w-[70%] rounded-ds-md px-4 py-2.5 bg-ds-brand-primary text-white'
+                        : 'max-w-[80%] rounded-ds-md px-4 py-2.5 bg-ds-surface-elevated border border-ds-border text-ds-text-primary'
+                    }
                   >
-                    {msg.content && <p className="text-sm whitespace-pre-wrap">{msg.content}</p>}
+                    {msg.content && (
+                      <p className="text-body-sm whitespace-pre-wrap leading-relaxed">
+                        {msg.content}
+                      </p>
+                    )}
                     {msg.images && msg.images.length > 0 && (
                       <div className="mt-2 space-y-2">
                         {msg.images.map((imgUrl, imgIdx) => (
-                          <img 
+                          <img
                             key={imgIdx}
-                            src={imgUrl} 
-                            alt="Generated visualization" 
-                            className="rounded-lg max-w-full"
+                            src={imgUrl}
+                            alt="Generated visualization"
+                            className="rounded-ds-sm max-w-full border border-ds-border"
                           />
                         ))}
                       </div>
@@ -277,7 +295,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="mt-2 h-6 px-2"
+                        className="mt-2 h-6 px-2 text-ds-text-muted hover:text-ds-text-primary"
                         onClick={() => speakMessage(msg.content)}
                         disabled={isSpeaking}
                       >
@@ -289,11 +307,11 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               ))}
               {isLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-muted rounded-lg p-3 max-w-[80%]">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce delay-100" />
-                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce delay-200" />
+                  <div className="bg-ds-surface-elevated border border-ds-border rounded-ds-md px-4 py-3">
+                    <div className="flex gap-1.5">
+                      <div className="w-1.5 h-1.5 bg-ds-brand-primary rounded-full animate-bounce" />
+                      <div className="w-1.5 h-1.5 bg-ds-brand-primary rounded-full animate-bounce delay-100" />
+                      <div className="w-1.5 h-1.5 bg-ds-brand-primary rounded-full animate-bounce delay-200" />
                     </div>
                   </div>
                 </div>
@@ -301,30 +319,44 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
             </div>
           )}
         </ScrollArea>
-        <div className="border-t p-4">
+        <div className="border-t border-ds-border-strong bg-ds-surface-elevated p-4">
           <div className="flex gap-2">
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSend()}
               placeholder="Ask about themes, signals, or opportunities..."
-              disabled={isLoading || (dailyLimit !== -1 && dailyLimit > 0 && todayCount >= dailyLimit) || dailyLimit === 0}
+              disabled={inputDisabled}
+              className="bg-ds-surface border-ds-border text-ds-text-primary placeholder:text-ds-text-muted h-11 md:h-10"
             />
-            <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
+            <Button
+              onClick={handleSend}
+              disabled={isLoading || !input.trim()}
+              className="bg-ds-brand-primary hover:bg-ds-brand-primary/90 text-white h-11 w-11 md:h-10 md:w-10 p-0 shrink-0"
+            >
               <Send className="h-4 w-4" />
             </Button>
           </div>
           {dailyLimit > 0 && dailyLimit !== -1 && (
-            <p className="text-xs text-muted-foreground mt-2 text-right">
+            <p className="text-caption font-mono text-ds-text-muted mt-2 text-right">
               {todayCount} of {dailyLimit} messages used today
               {todayCount >= dailyLimit && (
-                <>. <Link to="/pricing" className="text-primary underline underline-offset-2">Upgrade</Link> for more</>
+                <>
+                  .{' '}
+                  <Link to="/pricing" className="text-ds-brand-primary hover:underline">
+                    Upgrade
+                  </Link>{' '}
+                  for more
+                </>
               )}
             </p>
           )}
           {dailyLimit === 0 && (
-            <p className="text-xs text-muted-foreground mt-2 text-right">
-              <Link to="/pricing" className="text-primary underline underline-offset-2">Upgrade</Link> to use the AI Assistant
+            <p className="text-caption font-mono text-ds-text-muted mt-2 text-right">
+              <Link to="/pricing" className="text-ds-brand-primary hover:underline">
+                Upgrade
+              </Link>{' '}
+              to use the AI Assistant
             </p>
           )}
         </div>
