@@ -640,16 +640,34 @@ const Themes = () => {
                     </div>
                   ) : (
                     <div className="flex gap-2 pt-2">
-                      <Button
-                        asChild
-                        className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
-                        variant="outline"
-                      >
-                        <Link to="/asset-radar">
-                          View Signals
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </Link>
-                      </Button>
+                      {isTracking ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="flex-1">
+                              <Button
+                                disabled
+                                className="w-full border-ds-border text-ds-text-muted bg-transparent cursor-not-allowed"
+                                variant="outline"
+                              >
+                                View Signals
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>No signals yet to view</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Button
+                          asChild
+                          className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
+                          variant="outline"
+                        >
+                          <Link to="/asset-radar">
+                            View Signals
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                          </Link>
+                        </Button>
+                      )}
                       <Button
                         onClick={() => handleSubscribe(theme.id, theme.name)}
                         disabled={subscribing === theme.id}
