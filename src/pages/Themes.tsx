@@ -136,15 +136,34 @@ const Themes = () => {
     return index >= userThemeLimit;
   };
 
+  const getScoreColor = (score: number) => {
+    if (score >= 70) return 'text-ds-signal-positive';
+    if (score >= 60) return 'text-ds-signal-warning';
+    if (score >= 50) return 'text-ds-text-muted';
+    return 'text-ds-text-muted';
+  };
+
+  const getStrengthBadgeClass = (score: number) => {
+    if (score >= 75) return 'border-ds-signal-positive/40 text-ds-signal-positive';
+    if (score >= 60) return 'border-ds-signal-warning/40 text-ds-signal-warning';
+    return 'border-ds-border text-ds-text-muted';
+  };
+
+  const getProgressColor = (score: number) => {
+    if (score >= 70) return 'bg-ds-signal-positive';
+    if (score >= 60) return 'bg-ds-signal-warning';
+    return 'bg-ds-text-muted';
+  };
+
   if (loadingThemes) {
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Investment Themes"
+          title="Theme Tracker"
           description="Multi-signal data points across all data sources"
         />
         <div className="text-center py-12">
-          <p className="text-muted-foreground">Loading themes...</p>
+          <p className="text-caption text-ds-text-muted">Loading themes...</p>
         </div>
       </div>
     );
@@ -153,23 +172,23 @@ const Themes = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Investment Themes"
+        title="Theme Tracker"
         description={`Multi-signal data points across all data sources ${hasUnlimitedThemes ? '(Unlimited)' : `(${userThemeLimit} of ${themes.length} available)`}`}
       />
 
       {!hasUnlimitedThemes && themes.length > userThemeLimit && (
-        <Card className="border-primary/50 bg-gradient-to-r from-primary/5 to-accent/5">
+        <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              <CardTitle>Unlock All {themes.length} Investment Themes</CardTitle>
+              <Sparkles className="h-5 w-5 text-ds-brand-primary" />
+              <CardTitle className="text-h4 font-semibold text-ds-text-primary">Unlock All {themes.length} Investment Themes</CardTitle>
             </div>
-            <CardDescription>
+            <CardDescription className="text-body-sm text-ds-text-secondary mt-1">
               You're currently viewing {userThemeLimit} of {themes.length} themes. Upgrade to Pro or Premium for unlimited access to all themes.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button asChild className="w-full sm:w-auto">
+            <Button asChild className="w-full sm:w-auto border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent" variant="outline">
               <Link to="/pricing">
                 View Plans
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -179,7 +198,7 @@ const Themes = () => {
         </Card>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {themes.map((theme, index) => {
           const isLocked = isThemeLocked(index, theme);
           const scoreLabel = showScore ? theme.score.toFixed(1) : '__';
@@ -187,65 +206,70 @@ const Themes = () => {
             ? (theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak')
             : 'Premium only';
           const strengthClass = showScore
-            ? (theme.score >= 75 ? 'border-success text-success'
-              : theme.score >= 60 ? 'border-accent text-accent'
-              : 'border-warning text-warning')
-            : 'border-muted-foreground text-muted-foreground';
+            ? getStrengthBadgeClass(theme.score)
+            : 'border-ds-border text-ds-text-muted';
 
           const cardContent = (
-            <Card className="shadow-data">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="mb-2">{theme.name}</CardTitle>
-                    <CardDescription>
-                      Score: {scoreLabel}
+            <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md hover:shadow-ds-lg hover:border-ds-border-strong transition-all duration-fast ease-ds-out h-full flex flex-col">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="text-h3 font-semibold text-ds-text-primary tracking-tight mb-1 truncate">
+                      {theme.name}
+                    </CardTitle>
+                    <CardDescription className="text-caption text-ds-text-muted">
+                      Score
                     </CardDescription>
+                    <div className={`font-mono text-data-lg font-semibold tracking-tight ${showScore ? getScoreColor(theme.score) : 'text-ds-text-muted'}`}>
+                      {scoreLabel}
+                    </div>
                   </div>
-                  <Badge variant="outline" className={strengthClass}>
+                  <Badge variant="outline" className={`shrink-0 mt-1 text-caption font-medium ${strengthClass}`}>
                     <TrendingUp className="mr-1 h-3 w-3" />
                     {strengthLabel}
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 flex-1 flex flex-col">
                 {theme.ai_summary && (
-                  <div className="p-3 rounded-md bg-muted/30 border border-border">
+                  <div className="p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border">
                     <div className="flex items-start gap-2 mb-2">
-                      <Info className="h-4 w-4 text-primary mt-0.5" />
-                      <span className="text-sm font-medium text-foreground">Summary</span>
+                      <Info className="h-4 w-4 text-ds-brand-primary mt-0.5 shrink-0" />
+                      <span className="text-body-sm font-medium text-ds-text-primary">Summary</span>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
+                    <p className="text-body-sm text-ds-text-secondary leading-relaxed">
                       {theme.ai_summary}
                     </p>
                   </div>
                 )}
                 {whyNowData[theme.name]?.summary && (
-                  <div className="p-3 rounded-md bg-muted/30 border border-border">
+                  <div className="p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border">
                     <div className="flex items-start gap-2 mb-2">
-                      <Info className="h-4 w-4 text-primary mt-0.5" />
-                      <span className="text-sm font-medium text-foreground">Why now?</span>
+                      <Info className="h-4 w-4 text-ds-brand-primary mt-0.5 shrink-0" />
+                      <span className="text-body-sm font-medium text-ds-text-primary">Why now?</span>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
+                    <p className="text-body-sm text-ds-text-secondary leading-relaxed">
                       {whyNowData[theme.name].summary}
                     </p>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Theme Strength</span>
-                    <span className="font-bold text-primary">{scoreLabel}</span>
+                <div className="space-y-2 mt-auto pt-2">
+                  <div className="flex justify-between text-caption">
+                    <span className="text-ds-text-muted">Theme Strength</span>
+                    <span className={`font-mono font-semibold ${showScore ? getScoreColor(theme.score) : 'text-ds-text-muted'}`}>
+                      {scoreLabel}
+                    </span>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-ds-surface-elevated rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-chrome"
+                      className={`h-full ${showScore ? getProgressColor(theme.score) : 'bg-ds-text-muted/30'}`}
                       style={{ width: `${showScore ? Math.min(theme.score, 100) : 0}%` }}
                     />
                   </div>
                 </div>
                 {isFree && theme.is_demo ? (
-                  <div className="flex gap-2">
-                    <Button asChild className="flex-1">
+                  <div className="flex gap-2 pt-2">
+                    <Button asChild className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent" variant="outline">
                       <Link to="/pricing">
                         Subscribe to Starter to see all assets
                         <ArrowRight className="ml-2 h-4 w-4" />
@@ -253,8 +277,8 @@ const Themes = () => {
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
-                    <Button asChild className="flex-1" variant="outline">
+                  <div className="flex gap-2 pt-2">
+                    <Button asChild className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent" variant="outline">
                       <Link to="/asset-radar">
                         View Signals
                         <ArrowRight className="ml-2 h-4 w-4" />
@@ -263,7 +287,7 @@ const Themes = () => {
                     <Button
                       onClick={() => handleSubscribe(theme.id, theme.name)}
                       disabled={subscribing === theme.id}
-                      className="flex-1"
+                      className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
                       variant="outline"
                     >
                       <Bell className="mr-2 h-4 w-4" />
