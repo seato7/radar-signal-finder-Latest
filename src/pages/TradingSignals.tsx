@@ -70,7 +70,7 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Circle className="h-2 w-2 fill-muted-foreground text-muted-foreground shrink-0" />
+          <Circle className="h-2 w-2 fill-ds-text-muted text-ds-text-muted shrink-0" />
         </TooltipTrigger>
         <TooltipContent>Daily close</TooltipContent>
       </Tooltip>
@@ -82,13 +82,13 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
   let color: string;
   let label: string;
   if (ageMin < 10) {
-    color = "fill-success text-success";
+    color = "fill-ds-signal-positive text-ds-signal-positive";
     label = `Live, updated ${ageMin}m ago`;
   } else if (ageMin < 60 * 24) {
-    color = "fill-amber-500 text-amber-500";
+    color = "fill-ds-signal-warning text-ds-signal-warning";
     label = ageHr >= 1 ? `Delayed, updated ${ageHr}h ago` : `Delayed, updated ${ageMin}m ago`;
   } else {
-    color = "fill-muted-foreground text-muted-foreground";
+    color = "fill-ds-text-muted text-ds-text-muted";
     label = "Daily close";
   }
   return (
@@ -102,7 +102,7 @@ const FreshnessDot = ({ lastLivePriceAt }: { lastLivePriceAt?: string | null }) 
 };
 
 const MaskedTicker = () => (
-  <span className="font-semibold tracking-widest text-muted-foreground select-none">
+  <span className="font-mono font-semibold tracking-widest text-ds-text-muted select-none">
     {'\u2022 \u2022 \u2022 \u2022 \u2022'}
   </span>
 );
