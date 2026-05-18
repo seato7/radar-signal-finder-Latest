@@ -17,6 +17,9 @@ interface ThemeScore {
   score: number;
   is_demo: boolean;
   ai_summary: string | null;
+  tickers: string[];
+  signal_count: number;
+  is_tracking: boolean;
 }
 
 const Themes = () => {
@@ -39,9 +42,30 @@ const Themes = () => {
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
-      const { data, error } = await (supabase.rpc as any)('get_themes_for_user');
+      const [{ data, error }, tickersRes, scoresRes] = await Promise.all([
+        (supabase.rpc as any)('get_themes_for_user'),
+        supabase.from('themes').select('id, tickers'),
+        supabase
+          .from('theme_scores')
+          .select('theme_id, signal_count, computed_at')
+          .order('computed_at', { ascending: false }),
+      ]);
 
       if (error) throw error;
+
+      const tickersMap = new Map<string, string[]>(
+        ((tickersRes.data ?? []) as Array<{ id: string; tickers: string[] | null }>).map((t) => [
+          t.id,
+          Array.isArray(t.tickers) ? t.tickers : [],
+        ]),
+      );
+
+      const signalCountMap = new Map<string, number>();
+      for (const s of (scoresRes.data ?? []) as Array<{ theme_id: string; signal_count: number | null }>) {
+        if (!signalCountMap.has(s.theme_id)) {
+          signalCountMap.set(s.theme_id, Number(s.signal_count ?? 0));
+        }
+      }
 
       const rows = (data ?? []) as Array<{
         id: string;
@@ -51,21 +75,39 @@ const Themes = () => {
         ai_summary: string | null;
       }>;
 
-      const mapped: ThemeScore[] = rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        score: Number(r.score ?? 0),
-        is_demo: Boolean(r.is_demo),
-        ai_summary: r.ai_summary,
-      }));
+      const mapped: ThemeScore[] = rows.map((r) => {
+        const tickers = tickersMap.get(r.id) ?? [];
+        const signalCount = signalCountMap.get(r.id) ?? 0;
+        const score = Number(r.score ?? 0);
+        // B3 "tracking" state: no tickers, no signals, default neutral score
+        const isTracking = tickers.length === 0 && signalCount === 0 && score === 50;
+        return {
+          id: r.id,
+          name: r.name,
+          score,
+          is_demo: Boolean(r.is_demo),
+          ai_summary: r.ai_summary,
+          tickers,
+          signal_count: signalCount,
+          is_tracking: isTracking,
+        };
+      });
+
+      // Sort: scored themes first (desc by score), tracking themes last
+      mapped.sort((a, b) => {
+        if (a.is_tracking !== b.is_tracking) return a.is_tracking ? 1 : -1;
+        return b.score - a.score;
+      });
 
       setThemes(mapped);
 
-      // Fetch "why now?" for accessible themes
+      // Fetch "why now?" for accessible, scored themes only
       const accessibleThemes = hasUnlimitedThemes ? mapped : mapped.slice(0, userThemeLimit);
-      accessibleThemes.forEach((theme) => {
-        fetchWhyNow(theme.id, theme.name);
-      });
+      accessibleThemes
+        .filter((t) => !t.is_tracking)
+        .forEach((theme) => {
+          fetchWhyNow(theme.id, theme.name);
+        });
     } catch (error) {
       console.error("Failed to fetch themes:", error);
       toast({
@@ -201,31 +243,53 @@ const Themes = () => {
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {themes.map((theme, index) => {
           const isLocked = isThemeLocked(index, theme);
-          const scoreLabel = showScore ? theme.score.toFixed(1) : '__';
-          const strengthLabel = showScore
-            ? (theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak')
-            : 'Premium only';
-          const strengthClass = showScore
-            ? getStrengthBadgeClass(theme.score)
-            : 'border-ds-border text-ds-text-muted';
+          const isTracking = theme.is_tracking;
+          const scoreLabel = isTracking
+            ? '—'
+            : showScore
+              ? theme.score.toFixed(1)
+              : '__';
+          const strengthLabel = isTracking
+            ? 'Tracking'
+            : showScore
+              ? (theme.score >= 75 ? 'Strong' : theme.score >= 60 ? 'Moderate' : 'Weak')
+              : 'Premium only';
+          const strengthClass = isTracking
+            ? 'border-ds-border text-ds-text-muted'
+            : showScore
+              ? getStrengthBadgeClass(theme.score)
+              : 'border-ds-border text-ds-text-muted';
+          const scoreClass = isTracking
+            ? 'text-ds-text-muted'
+            : showScore
+              ? getScoreColor(theme.score)
+              : 'text-ds-text-muted';
 
           const cardContent = (
-            <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md hover:shadow-ds-lg hover:border-ds-border-strong transition-all duration-fast ease-ds-out h-full flex flex-col">
+            <Card className={`bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md hover:shadow-ds-lg hover:border-ds-border-strong transition-all duration-fast ease-ds-out h-full flex flex-col ${isTracking ? 'opacity-70' : ''}`}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-h3 font-semibold text-ds-text-primary tracking-tight mb-1 truncate">
                       {theme.name}
                     </CardTitle>
-                    <CardDescription className="text-caption text-ds-text-muted">
+                    <CardDescription className="text-caption text-ds-text-muted flex items-center gap-1">
                       Score
+                      {isTracking && (
+                        <span
+                          title="This theme is being monitored. A score will appear once enough asset data is available."
+                          className="inline-flex"
+                        >
+                          <Info className="h-3 w-3 text-ds-text-muted" />
+                        </span>
+                      )}
                     </CardDescription>
-                    <div className={`font-mono text-data-lg font-semibold tracking-tight ${showScore ? getScoreColor(theme.score) : 'text-ds-text-muted'}`}>
+                    <div className={`font-mono text-data-lg font-semibold tracking-tight ${scoreClass}`}>
                       {scoreLabel}
                     </div>
                   </div>
                   <Badge variant="outline" className={`shrink-0 mt-1 text-caption font-medium ${strengthClass}`}>
-                    <TrendingUp className="mr-1 h-3 w-3" />
+                    {!isTracking && <TrendingUp className="mr-1 h-3 w-3" />}
                     {strengthLabel}
                   </Badge>
                 </div>
@@ -256,14 +320,14 @@ const Themes = () => {
                 <div className="space-y-2 mt-auto pt-2">
                   <div className="flex justify-between text-caption">
                     <span className="text-ds-text-muted">Theme Strength</span>
-                    <span className={`font-mono font-semibold ${showScore ? getScoreColor(theme.score) : 'text-ds-text-muted'}`}>
+                    <span className={`font-mono font-semibold ${scoreClass}`}>
                       {scoreLabel}
                     </span>
                   </div>
                   <div className="h-1.5 bg-ds-surface-elevated rounded-full overflow-hidden">
                     <div
-                      className={`h-full ${showScore ? getProgressColor(theme.score) : 'bg-ds-text-muted/30'}`}
-                      style={{ width: `${showScore ? Math.min(theme.score, 100) : 0}%` }}
+                      className={`h-full ${isTracking ? 'bg-ds-text-muted/20' : showScore ? getProgressColor(theme.score) : 'bg-ds-text-muted/30'}`}
+                      style={{ width: `${isTracking ? 0 : showScore ? Math.min(theme.score, 100) : 0}%` }}
                     />
                   </div>
                 </div>

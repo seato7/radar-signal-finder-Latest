@@ -216,7 +216,8 @@ function assignAssetToThemes(
   ticker: string,
   assetName: string,
   assetClass: string | null,
-  sector: string | null
+  sector: string | null,
+  dbThemesWithTickers: Array<{ name: string; tickers: string[] }> = []
 ): { themes: string[]; weights: number[] } {
   const nameLower = (assetName || "").toLowerCase();
   const sectorLower = (sector || "").toLowerCase().trim();
@@ -261,7 +262,24 @@ function assignAssetToThemes(
     }
   }
 
-  // PRIORITY 6: Asset class fallback
+  // PRIORITY 6: dynamic match against themes.tickers (populated by
+  // discover-themes/mine-and-discover-themes for AI-discovered themes).
+  // Additive: collects ALL DB themes that explicitly list this ticker so a
+  // single asset can support multiple discovered themes simultaneously.
+  const dynamicMatches: string[] = [];
+  for (const t of dbThemesWithTickers) {
+    if (Array.isArray(t.tickers) && t.tickers.length > 0 && t.tickers.includes(tickerUpper)) {
+      dynamicMatches.push(t.name);
+    }
+  }
+  if (dynamicMatches.length > 0) {
+    return {
+      themes: dynamicMatches,
+      weights: dynamicMatches.map(() => 0.7),
+    };
+  }
+
+  // PRIORITY 7: Asset class fallback
   if (assetClass === 'crypto') {
     return { themes: ["Fintech & Crypto"], weights: [1.0] };
   } else if (assetClass === 'forex') {
@@ -417,10 +435,10 @@ serve(async (req) => {
 
     console.log('[THEME-SCORING-V3] Starting alpha-calibrated theme scoring...');
 
-    // Fetch all themes
+    // Fetch all themes (include tickers for PRIORITY 6 dynamic matching)
     const { data: themes, error: themesError } = await supabaseClient
       .from('themes')
-      .select('id, name');
+      .select('id, name, tickers');
 
     if (themesError) throw themesError;
     if (!themes || themes.length === 0) {
@@ -482,13 +500,20 @@ serve(async (req) => {
     const unmappedSectors = new Set<string>();
     const assetIdToThemes = new Map<string, string[]>();
 
+    // Build list of DB themes that have explicit tickers (PRIORITY 6 input)
+    const dbThemesWithTickers = (themes ?? [])
+      .filter((t: any) => Array.isArray(t.tickers) && t.tickers.length > 0)
+      .map((t: any) => ({ name: t.name, tickers: (t.tickers as string[]).map(s => String(s).toUpperCase()) }));
+    console.log(`[THEME-SCORING-V3] PRIORITY 6 input: ${dbThemesWithTickers.length} themes with explicit tickers`);
+
     for (const asset of scoredAssets) {
       const sector = (asset as any).sector || asset.metadata?.sector || null;
       const mapping = assignAssetToThemes(
         asset.ticker,
         asset.name,
         asset.asset_class,
-        sector
+        sector,
+        dbThemesWithTickers
       );
 
       const signalMass = extractSignalMass(asset.score_explanation);
