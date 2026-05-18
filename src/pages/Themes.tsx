@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   TrendingUp,
   Info,
@@ -278,16 +279,24 @@ const Themes = () => {
     else if (filter === "tracking") list = list.filter((t) => t.is_tracking);
     else if (filter === "subscribed") list = list.filter((t) => subscribedIds.has(t.id));
 
-    // Search
+    // Search — tokenize by whitespace; every token must match at least one field
     if (debouncedQuery) {
-      const q = debouncedQuery;
-      list = list.filter((t) => {
-        if (t.name.toLowerCase().includes(q)) return true;
-        if (t.ai_summary && t.ai_summary.toLowerCase().includes(q)) return true;
-        if (t.keywords.some((k) => k.toLowerCase().includes(q))) return true;
-        if (t.tickers.some((tk) => tk.toLowerCase().includes(q))) return true;
-        return false;
-      });
+      const tokens = debouncedQuery.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        list = list.filter((t) => {
+          const name = t.name.toLowerCase();
+          const summary = (t.ai_summary ?? "").toLowerCase();
+          const keywords = t.keywords.map((k) => k.toLowerCase());
+          const tickers = t.tickers.map((tk) => tk.toLowerCase());
+          return tokens.every(
+            (tok) =>
+              name.includes(tok) ||
+              summary.includes(tok) ||
+              keywords.some((k) => k.includes(tok)) ||
+              tickers.some((tk) => tk.includes(tok)),
+          );
+        });
+      }
     }
 
     // Sort
@@ -632,16 +641,34 @@ const Themes = () => {
                     </div>
                   ) : (
                     <div className="flex gap-2 pt-2">
-                      <Button
-                        asChild
-                        className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
-                        variant="outline"
-                      >
-                        <Link to="/asset-radar">
-                          View Signals
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </Link>
-                      </Button>
+                      {isTracking ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="flex-1">
+                              <Button
+                                disabled
+                                className="w-full border-ds-border text-ds-text-muted bg-transparent cursor-not-allowed"
+                                variant="outline"
+                              >
+                                View Signals
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>No signals yet to view</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Button
+                          asChild
+                          className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
+                          variant="outline"
+                        >
+                          <Link to="/asset-radar">
+                            View Signals
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                          </Link>
+                        </Button>
+                      )}
                       <Button
                         onClick={() => handleSubscribe(theme.id, theme.name)}
                         disabled={subscribing === theme.id}
