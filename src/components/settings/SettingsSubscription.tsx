@@ -27,7 +27,6 @@ const PLAN_PRICES: Record<string, string> = {
   pro: '$29.99 / mo',
   premium: '$99 / mo',
   enterprise: 'Custom',
-  admin: '—',
 };
 
 interface LossItem {
@@ -102,6 +101,13 @@ export default function SettingsSubscription() {
       const { data, error } = await supabase.functions.invoke('manage-payments/portal', {
         headers: { Authorization: `Bearer ${refreshed.session.access_token}` },
       });
+      // Friendly handling: no Stripe customer = no subscription to manage
+      const noSub = (data && (data as any).error === 'no_subscription')
+        || (error && /no_subscription|404/i.test(error.message || ''));
+      if (noSub) {
+        toast({ title: 'No active subscription to manage', description: 'You don\'t have a paid subscription yet.' });
+        return;
+      }
       if (error) throw new Error(error.message);
       if (data?.url) window.location.href = data.url;
       else throw new Error('No portal URL returned');

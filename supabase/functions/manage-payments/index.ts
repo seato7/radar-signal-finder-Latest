@@ -161,7 +161,7 @@ serve(async (req) => {
   if (url.pathname.endsWith('/webhook') || req.headers.get('stripe-signature')) {
     logStep('REQUEST', { method: req.method, path: url.pathname, route: 'webhook' });
     try {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2024-11-20' });
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2025-09-30.clover' });
       const signature = req.headers.get('stripe-signature') || '';
       const rawBody = await req.text();
       const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
@@ -388,7 +388,7 @@ serve(async (req) => {
         const priceId = PRICE_IDS[plan][period];
         logStep('Resolved price ID', { plan, period, priceId });
 
-        const stripe = new Stripe(stripeKey, { apiVersion: '2024-11-20' });
+        const stripe = new Stripe(stripeKey, { apiVersion: '2025-09-30.clover' });
 
         const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
         let customerId = customers.data[0]?.id;
@@ -444,7 +444,7 @@ serve(async (req) => {
 
     // Pause
     if (action === 'pause') {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2024-11-20' });
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2025-09-30.clover' });
       logStep('Pause: looking up customer', { email: user.email });
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
       if (!customers.data[0]) throw new Error('No Stripe customer found for this account');
@@ -473,9 +473,14 @@ serve(async (req) => {
 
     // Portal
     if (action === 'portal') {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2024-11-20' });
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2025-09-30.clover' });
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
-      if (!customers.data[0]) throw new Error('No subscription found');
+      if (!customers.data[0]) {
+        logStep('Portal: no Stripe customer for user', { email: user.email });
+        return new Response(JSON.stringify({ error: 'no_subscription' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const session = await stripe.billingPortal.sessions.create({
         customer: customers.data[0].id,
         return_url: `${safeOrigin(req)}/settings`,
