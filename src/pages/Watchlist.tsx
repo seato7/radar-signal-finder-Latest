@@ -67,58 +67,6 @@ const Watchlist = () => {
     fetchWatchlist();
   }, [isAuthenticated, user]);
 
-  const handleAdd = async () => {
-    if (!newTicker.trim()) {
-      toast({ title: "Error", description: "Please enter a ticker symbol", variant: "destructive" });
-      return;
-    }
-    if (!isAuthenticated || !user) return;
-    const tickerToAdd = newTicker.toUpperCase().trim();
-
-    if (slotsLimit !== -1 && tickers.length >= slotsLimit) {
-      toast({
-        title: "Watchlist limit reached",
-        description: slotsLimit === 0
-          ? "Upgrade to a paid plan to use the watchlist."
-          : `Your plan allows ${slotsLimit} assets. Upgrade to add more.`,
-        variant: "destructive",
-      });
-      return;
-    }
-    if (tickers.includes(tickerToAdd)) {
-      toast({ title: "Already added", description: `${tickerToAdd} is already in your watchlist`, variant: "destructive" });
-      return;
-    }
-
-    setAdding(true);
-    try {
-      const newTickers = [...tickers, tickerToAdd];
-      if (watchlistId) {
-        const { error } = await supabase
-          .from("watchlist")
-          .update({ tickers: newTickers, updated_at: new Date().toISOString() })
-          .eq("id", watchlistId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from("watchlist")
-          .insert({ user_id: user.id, tickers: newTickers })
-          .select()
-          .single();
-        if (error) throw error;
-        setWatchlistId(data.id);
-      }
-      setTickers(newTickers);
-      setNewTicker("");
-      setDialogOpen(false);
-      toast({ title: "Added to Watchlist", description: `${tickerToAdd} has been added` });
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to add", variant: "destructive" });
-    } finally {
-      setAdding(false);
-    }
-  };
-
   const handleRemove = async (tickerToRemove: string) => {
     if (!watchlistId) return;
     try {
