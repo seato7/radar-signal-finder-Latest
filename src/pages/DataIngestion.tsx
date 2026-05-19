@@ -276,7 +276,7 @@ const DataIngestion = () => {
                   </CardDescription>
                 </div>
                 <Badge className={getCategoryColor(source.category)} variant="secondary">
-                  {source.category}
+                  {toDisplayLabel(source.category)}
                 </Badge>
               </div>
             </CardHeader>

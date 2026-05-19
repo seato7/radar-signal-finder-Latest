@@ -838,7 +838,7 @@ export default function DataSources() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge variant="outline">{signal.ticker}</Badge>
-                                <Badge variant="secondary" className="capitalize">{signal.signal_type}</Badge>
+                                <Badge variant="secondary">{toDisplayLabel(signal.signal_type)}</Badge>
                               </div>
                               <h4 className="font-semibold mb-1">{signal.metric_name}</h4>
                               <p className="text-sm text-muted-foreground">
