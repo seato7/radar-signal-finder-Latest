@@ -8,15 +8,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getPlanLimits } from "@/lib/planLimits";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -33,17 +24,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { TickerLink } from "@/lib/tickerLink";
 import { cn } from "@/lib/utils";
+import { AssetPickerModal } from "@/components/AssetPickerModal";
 
 const Watchlist = () => {
   const [tickers, setTickers] = useState<string[]>([]);
   const [watchlistId, setWatchlistId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newTicker, setNewTicker] = useState("");
-  const [adding, setAdding] = useState(false);
+  
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const { toast } = useToast();
@@ -76,58 +66,6 @@ const Watchlist = () => {
     };
     fetchWatchlist();
   }, [isAuthenticated, user]);
-
-  const handleAdd = async () => {
-    if (!newTicker.trim()) {
-      toast({ title: "Error", description: "Please enter a ticker symbol", variant: "destructive" });
-      return;
-    }
-    if (!isAuthenticated || !user) return;
-    const tickerToAdd = newTicker.toUpperCase().trim();
-
-    if (slotsLimit !== -1 && tickers.length >= slotsLimit) {
-      toast({
-        title: "Watchlist limit reached",
-        description: slotsLimit === 0
-          ? "Upgrade to a paid plan to use the watchlist."
-          : `Your plan allows ${slotsLimit} assets. Upgrade to add more.`,
-        variant: "destructive",
-      });
-      return;
-    }
-    if (tickers.includes(tickerToAdd)) {
-      toast({ title: "Already added", description: `${tickerToAdd} is already in your watchlist`, variant: "destructive" });
-      return;
-    }
-
-    setAdding(true);
-    try {
-      const newTickers = [...tickers, tickerToAdd];
-      if (watchlistId) {
-        const { error } = await supabase
-          .from("watchlist")
-          .update({ tickers: newTickers, updated_at: new Date().toISOString() })
-          .eq("id", watchlistId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from("watchlist")
-          .insert({ user_id: user.id, tickers: newTickers })
-          .select()
-          .single();
-        if (error) throw error;
-        setWatchlistId(data.id);
-      }
-      setTickers(newTickers);
-      setNewTicker("");
-      setDialogOpen(false);
-      toast({ title: "Added to Watchlist", description: `${tickerToAdd} has been added` });
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to add", variant: "destructive" });
-    } finally {
-      setAdding(false);
-    }
-  };
 
   const handleRemove = async (tickerToRemove: string) => {
     if (!watchlistId) return;
@@ -184,39 +122,19 @@ const Watchlist = () => {
           title="Watchlist"
           description="Track your selected opportunities at a glance."
           action={
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Star className="mr-2 h-4 w-4" />
-                  Add Asset
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Asset to Watchlist</DialogTitle>
-                  <DialogDescription>Enter the ticker symbol to track</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="ticker">Ticker Symbol</Label>
-                    <Input
-                      id="ticker"
-                      placeholder="BTC, ETH, AAPL..."
-                      value={newTicker}
-                      onChange={(e) => setNewTicker(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handleAdd} disabled={adding}>
-                    {adding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    Add to Watchlist
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => setDialogOpen(true)}>
+              <Star className="mr-2 h-4 w-4" />
+              Add Asset
+            </Button>
           }
+        />
+
+        <AssetPickerModal
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          existingTickers={tickers}
+          slotsLimit={slotsLimit}
+          onAdded={(t) => setTickers((prev) => (prev.includes(t) ? prev : [...prev, t]))}
         />
 
         {/* Meta row: count + plan limit pill + search */}
