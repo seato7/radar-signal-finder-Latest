@@ -237,6 +237,7 @@ const Alerts = () => {
   }
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="space-y-6">
       <PageHeader
         title="Alerts"
@@ -322,29 +323,18 @@ const Alerts = () => {
         ) : (
           alertsList.map((alert) => {
             const isPaused = pausedIds.has(alert.id);
-            const threshold = Math.floor(alert.score / 10) * 10;
 
             return (
               <div
                 key={alert.id}
                 className="bg-ds-surface border border-ds-border rounded-ds-lg p-5 hover:border-ds-border-strong hover:shadow-ds-lg transition-all duration-fast ease-ds-out group"
               >
-                <div className="flex flex-col gap-4">
-                  {/* Top row */}
+                <div className="flex flex-col gap-3">
+                  {/* Row 1: Theme name + Status pill */}
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-h4 font-semibold text-ds-text-primary tracking-tight truncate">
-                        {alert.theme_name}
-                      </h3>
-                      <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center font-mono text-data-xs border border-ds-brand-primary text-ds-brand-primary px-1.5 py-0.5 rounded-ds-sm">
-                          &gt;{threshold}
-                        </span>
-                        <span className="text-caption font-mono text-ds-text-muted">
-                          {formatTimeAgo(alert.created_at)}
-                        </span>
-                      </div>
-                    </div>
+                    <h3 className="text-h4 font-semibold text-ds-text-primary tracking-tight truncate min-w-0">
+                      {alert.theme_name}
+                    </h3>
                     <span
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-medium border shrink-0 ${
                         isPaused
@@ -356,50 +346,63 @@ const Alerts = () => {
                     </span>
                   </div>
 
-                  {/* Positives */}
+                  {/* Row 2: Signal-type filter chips */}
                   {alert.positives && alert.positives.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {alert.positives.slice(0, 4).map((p, i) => (
                         <span
                           key={i}
-                          className="px-2 py-0.5 rounded-ds-sm bg-ds-surface-elevated border border-ds-border text-caption text-ds-text-secondary"
+                          className="px-2 py-0.5 rounded-ds-sm bg-ds-surface-elevated border border-ds-border text-caption font-mono text-ds-text-secondary"
                         >
-                          {p}
+                          {toDisplayLabel(p)}
                         </span>
                       ))}
                     </div>
                   )}
 
-                  {/* Actions row */}
+                  {/* Row 3: Last-triggered timestamp */}
+                  <div className="text-caption font-mono text-ds-text-muted">
+                    {formatTimeAgo(alert.created_at)}
+                  </div>
+
+                  {/* Row 4: Action icons */}
                   <div className="flex items-center gap-1 pt-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated"
-                      onClick={handleEdit}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated"
-                      onClick={() => togglePause(alert.id)}
-                    >
-                      {isPaused ? (
-                        <Play className="h-4 w-4" />
-                      ) : (
-                        <Pause className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-ds-text-muted hover:text-ds-signal-negative hover:bg-ds-surface-elevated"
-                      onClick={() => handleDismiss(alert.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated"
+                          onClick={() => togglePause(alert.id)}
+                          aria-label={isPaused ? "Resume notifications" : "Pause notifications"}
+                        >
+                          {isPaused ? (
+                            <Play className="h-4 w-4" />
+                          ) : (
+                            <Pause className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-ds-surface-elevated border border-ds-border text-caption text-ds-text-primary">
+                        {isPaused ? "Resume notifications" : "Pause notifications"}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-ds-text-muted hover:text-ds-signal-negative hover:bg-ds-surface-elevated"
+                          onClick={() => setConfirmRemoveId(alert.id)}
+                          aria-label="Remove alert permanently"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="bg-ds-surface-elevated border border-ds-border text-caption text-ds-text-primary">
+                        Remove alert permanently
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
               </div>
@@ -407,8 +410,33 @@ const Alerts = () => {
           })
         )}
       </div>
+
+      <AlertDialog open={confirmRemoveId !== null} onOpenChange={(open) => !open && setConfirmRemoveId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this alert?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You'll need to re-subscribe to {confirmAlert?.theme_name ?? "this theme"} to bring it back. Your alert history will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="text-ds-text-secondary">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmRemoveId) handleDismiss(confirmRemoveId);
+                setConfirmRemoveId(null);
+              }}
+              className="bg-ds-signal-negative text-white hover:bg-ds-signal-negative/90"
+            >
+              Remove alert
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+    </TooltipProvider>
   );
 };
 
 export default Alerts;
+
