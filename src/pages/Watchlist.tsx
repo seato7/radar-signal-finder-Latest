@@ -8,15 +8,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getPlanLimits } from "@/lib/planLimits";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -33,9 +24,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { TickerLink } from "@/lib/tickerLink";
 import { cn } from "@/lib/utils";
+import { AssetPickerModal } from "@/components/AssetPickerModal";
 
 const Watchlist = () => {
   const [tickers, setTickers] = useState<string[]>([]);
