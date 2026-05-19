@@ -27,7 +27,6 @@ const PLAN_PRICES: Record<string, string> = {
   pro: '$29.99 / mo',
   premium: '$99 / mo',
   enterprise: 'Custom',
-  admin: '—',
 };
 
 interface LossItem {
