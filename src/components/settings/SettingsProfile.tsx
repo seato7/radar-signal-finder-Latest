@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +18,9 @@ const TIMEZONES = [
   'Asia/Tokyo',
   'Asia/Singapore',
 ];
+
+const inputClass =
+  "bg-ds-surface-elevated border-ds-border text-ds-text-primary focus-visible:ring-ds-border-focus focus-visible:ring-offset-0";
 
 export default function SettingsProfile() {
   const { user } = useAuth();
@@ -78,67 +80,78 @@ export default function SettingsProfile() {
     : '-';
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Profile</CardTitle>
-        <CardDescription>Your personal details and display preferences</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {loading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+    <div className="rounded-ds-lg border border-ds-border bg-ds-surface p-6 space-y-6">
+      <div>
+        <h2 className="text-h4 font-semibold text-ds-text-primary">Profile</h2>
+        <p className="text-body-sm text-ds-text-secondary mt-1">Your personal details and display preferences</p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-ds-text-secondary text-body-sm">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 rounded-full bg-ds-surface-elevated border border-ds-border flex items-center justify-center overflow-hidden shrink-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+              ) : (
+                <UserIcon className="h-7 w-7 text-ds-text-muted" />
+              )}
+            </div>
+            <div className="text-body-sm text-ds-text-secondary">
+              <p>Avatar uploads coming soon.</p>
+              <p>Member since <span className="font-mono">{memberSince}</span></p>
+            </div>
           </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-4">
-              <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
-                ) : (
-                  <UserIcon className="h-7 w-7 text-muted-foreground" />
-                )}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                <p>Avatar uploads coming soon.</p>
-                <p>Member since {memberSince}</p>
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" value={user?.email ?? ''} readOnly disabled />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-body-sm text-ds-text-secondary">Email</Label>
+            <Input
+              id="email"
+              value={user?.email ?? ''}
+              readOnly
+              disabled
+              className={`${inputClass} text-ds-text-muted`}
+            />
+            <p className="text-caption text-ds-text-muted">Contact support to change your email</p>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="display_name">Display name</Label>
-              <Input
-                id="display_name"
-                placeholder="How you'll appear in the app"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="display_name" className="text-body-sm text-ds-text-secondary">Display name</Label>
+            <Input
+              id="display_name"
+              placeholder="How you'll appear in the app"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className={inputClass}
+            />
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="timezone">Timezone</Label>
-              <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger id="timezone">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONES.map((tz) => (
-                    <SelectItem key={tz} value={tz}>{tz}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="timezone" className="text-body-sm text-ds-text-secondary">Timezone</Label>
+            <Select value={timezone} onValueChange={setTimezone}>
+              <SelectTrigger id="timezone" className={inputClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEZONES.map((tz) => (
+                  <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : 'Save changes'}
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="h-10 rounded-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90"
+          >
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : 'Save changes'}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

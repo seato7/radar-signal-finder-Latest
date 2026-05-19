@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -70,34 +69,39 @@ export default function SettingsNotifications() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Email notifications</CardTitle>
-        <CardDescription>Choose which emails you want to receive</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {TOGGLES.map((t) => (
-              <div key={t.key} className="flex items-start justify-between gap-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor={t.key} className="text-sm font-medium">{t.title}</Label>
-                  <p className="text-sm text-muted-foreground">{t.description}</p>
-                </div>
-                <Switch
-                  id={t.key}
-                  checked={prefs[t.key]}
-                  onCheckedChange={(v) => handleToggle(t.key, v)}
-                />
+    <div className="rounded-ds-lg border border-ds-border bg-ds-surface p-6 space-y-6">
+      <div>
+        <h2 className="text-h4 font-semibold text-ds-text-primary">Email notifications</h2>
+        <p className="text-body-sm text-ds-text-secondary mt-1">Choose which emails you want to receive</p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-ds-text-secondary text-body-sm">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {TOGGLES.map((t) => (
+            <div
+              key={t.key}
+              className="flex items-start justify-between gap-4 rounded-ds-md border border-ds-border bg-ds-surface-elevated p-4"
+            >
+              <div className="space-y-1 min-w-0">
+                <Label htmlFor={t.key} className="text-body text-ds-text-primary font-medium">
+                  {t.title}
+                </Label>
+                <p className="text-body-sm text-ds-text-secondary">{t.description}</p>
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <Switch
+                id={t.key}
+                checked={prefs[t.key]}
+                onCheckedChange={(v) => handleToggle(t.key, v)}
+                className="data-[state=checked]:bg-ds-brand-primary"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
