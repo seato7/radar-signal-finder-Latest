@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Check, Zap } from "lucide-react";
+import { Check } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 
 interface Plan {
   name: string;
@@ -115,7 +115,6 @@ const Pricing = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") {
-      // Wait 4s to give Stripe time to deliver the webhook before refreshing plan
       setTimeout(() => {
         refreshSubscription?.();
       }, 4000);
@@ -153,7 +152,6 @@ const Pricing = () => {
         return;
       }
 
-      // Refresh to ensure token is valid and not stale
       const { data: { session: freshSession }, error: refreshError } =
         await supabase.auth.refreshSession();
 
@@ -194,7 +192,6 @@ const Pricing = () => {
     } catch (err: any) {
       console.error("[Pricing] Checkout error:", err);
 
-      // Try to extract actual error message from edge function response
       let errorMessage = "Something went wrong. Please try again.";
       try {
         const body = await err.context?.json();
@@ -213,126 +210,140 @@ const Pricing = () => {
   const isCurrentPlan = (planId: string) =>
     userPlan === planId || (planId === "premium" && userPlan === "admin");
 
+  const getCtaLabel = (plan: Plan, current: boolean) => {
+    if (current) return "Current plan";
+    if (plan.plan_id === "free") return isAuthenticated ? "Switch to Free" : "Sign up free";
+    if (plan.plan_id === "starter" && !isAnnual) return "Start 7-day free trial";
+    if (plan.plan_id === "enterprise") return "Contact sales";
+    return "Get started";
+  };
+
   return (
-    <div className="space-y-10">
-      <PageHeader
-        title="Simple, Transparent Pricing"
-        description="Start with a 7-day free trial."
+    <div className="relative">
+      {/* Subtle radial brand glow behind hero — landing-page treatment */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[480px]"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 60% at 50% 0%, hsl(var(--ds-brand-primary) / 0.08), transparent 70%)",
+        }}
       />
 
-      {/* Billing toggle */}
-      <div className="flex flex-col items-center gap-2">
-        <div className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 backdrop-blur p-1">
-          <button
-            onClick={() => setIsAnnual(false)}
-            className={`rounded-full px-5 py-1.5 text-sm font-medium transition-all ${
-              !isAnnual
-                ? "bg-primary text-primary-foreground shadow"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Monthly
-          </button>
-          <button
-            onClick={() => setIsAnnual(true)}
-            className={`rounded-full px-5 py-1.5 text-sm font-medium transition-all flex items-center gap-2 ${
-              isAnnual
-                ? "bg-primary text-primary-foreground shadow"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Annual
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                isAnnual
-                  ? "bg-primary-foreground/20 text-primary-foreground"
-                  : "bg-success/20 text-success"
-              }`}
-            >
-              Save up to 29%
-            </span>
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">All prices in USD</p>
-      </div>
+      <div className="space-y-10 md:space-y-12">
+        <PageHeader
+          eyebrow="Pricing"
+          title="Simple, transparent pricing"
+          description="Start with a 7-day free trial. All prices in USD."
+        />
 
-      {/* Plan cards */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
-        {plans.map((plan) => {
-          const displayPrice = getDisplayPrice(plan);
-          const isFreePlan = plan.plan_id === "free";
-          const current = isCurrentPlan(plan.plan_id);
-
-          return (
-            <Card
-              key={plan.plan_id}
-              className={`relative flex flex-col shadow-data transition-all ${
-                plan.popular
-                  ? "border-primary bg-card/90 backdrop-blur ring-1 ring-primary/30"
-                  : "border-border/50 bg-card/80 backdrop-blur"
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
-                  <Badge className="bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold flex items-center gap-1 shadow-lg">
-                    <Zap className="h-3 w-3" />
-                    Most Popular
-                  </Badge>
-                </div>
+        {/* Billing toggle */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="inline-flex items-center gap-1 rounded-full border border-ds-border bg-ds-surface p-1">
+            <button
+              onClick={() => setIsAnnual(false)}
+              className={cn(
+                "rounded-full px-5 py-1.5 text-body-sm font-medium transition-colors duration-fast",
+                !isAnnual
+                  ? "bg-ds-surface-elevated text-ds-text-primary"
+                  : "text-ds-text-secondary hover:text-ds-text-primary",
               )}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setIsAnnual(true)}
+              className={cn(
+                "flex items-center gap-2 rounded-full px-5 py-1.5 text-body-sm font-medium transition-colors duration-fast",
+                isAnnual
+                  ? "bg-ds-surface-elevated text-ds-text-primary"
+                  : "text-ds-text-secondary hover:text-ds-text-primary",
+              )}
+            >
+              Annual
+              <span className="rounded-full border border-ds-border px-2 py-0.5 font-mono text-[10px] text-ds-text-secondary">
+                Save up to 29%
+              </span>
+            </button>
+          </div>
+        </div>
 
-              <CardHeader className="pb-4 pt-8">
-                <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
-                <CardDescription className="text-sm leading-snug">
-                  {plan.description}
-                </CardDescription>
+        {/* Plan cards */}
+        <div className="grid gap-4 md:gap-6 md:grid-cols-2 xl:grid-cols-5">
+          {plans.map((plan) => {
+            const displayPrice = getDisplayPrice(plan);
+            const isFreePlan = plan.plan_id === "free";
+            const current = isCurrentPlan(plan.plan_id);
 
-                <div className="pt-4">
+            return (
+              <Card
+                key={plan.plan_id}
+                className={cn(
+                  "relative flex flex-col rounded-ds-lg border bg-ds-surface p-6 transition-all duration-fast",
+                  "hover:border-ds-border-strong hover:shadow-ds-md",
+                  plan.popular
+                    ? "border-ds-brand-primary shadow-ds-md"
+                    : "border-ds-border",
+                )}
+              >
+                {plan.popular && (
+                  <div className="absolute -top-2.5 left-6">
+                    <span className="rounded-full border border-ds-brand-primary bg-ds-surface px-2.5 py-0.5 text-overline text-ds-brand-primary">
+                      Most popular
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h3 className="text-h3 font-semibold text-ds-text-primary">
+                    {plan.name}
+                  </h3>
+                  <p className="text-body-sm text-ds-text-secondary leading-snug min-h-[2.5rem]">
+                    {plan.description}
+                  </p>
+                </div>
+
+                <div className="pt-5 pb-6 border-b border-ds-border">
                   {isFreePlan ? (
-                    <div className="flex items-end gap-1">
-                      <span className="text-4xl font-extrabold text-foreground">
-                        Free
+                    <div className="flex items-baseline gap-1">
+                      <span className="font-mono text-4xl font-semibold text-ds-text-primary tabular-nums">
+                        $0
                       </span>
+                      <span className="text-body-sm text-ds-text-secondary">/month</span>
                     </div>
                   ) : displayPrice !== null ? (
                     <div>
-                      <div className="flex items-end gap-1">
-                        <span className="text-4xl font-extrabold text-foreground">
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-mono text-4xl font-semibold text-ds-text-primary tabular-nums">
                           ${displayPrice}
                         </span>
-                        <span className="text-muted-foreground pb-1">/mo</span>
+                        <span className="text-body-sm text-ds-text-secondary">/month</span>
                       </div>
                       {isAnnual && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          ${plan.annual}/yr
+                        <p className="mt-1.5 text-body-sm text-ds-text-secondary">
+                          <span className="font-mono tabular-nums">${plan.annual}</span>/year
                           {plan.annualSaving && (
-                            <span className="ml-1.5 text-success font-medium">
-                              · save {plan.annualSaving}
+                            <span className="ml-1.5 text-ds-text-muted">
+                              · save <span className="font-mono">{plan.annualSaving}</span>
                             </span>
                           )}
                         </p>
                       )}
                     </div>
                   ) : (
-                    <div className="flex items-end gap-1">
-                      <span className="text-4xl font-extrabold text-foreground">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-semibold text-ds-text-primary">
                         Custom
                       </span>
                     </div>
                   )}
                 </div>
-              </CardHeader>
 
-              <CardContent className="flex flex-col flex-1 gap-6">
-                <ul className="space-y-2.5 flex-1">
+                <ul className="flex-1 space-y-2.5 pt-6">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2.5 text-sm">
-                      <Check
-                        className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
-                          plan.popular ? "text-primary" : "text-success"
-                        }`}
-                      />
-                      <span className="text-muted-foreground leading-snug">
+                    <li key={feature} className="flex items-start gap-2.5 text-body-sm">
+                      <Check className="h-4 w-4 mt-0.5 flex-shrink-0 text-signal-positive" strokeWidth={2.5} />
+                      <span className="text-ds-text-primary leading-snug">
                         {feature}
                       </span>
                     </li>
@@ -340,51 +351,45 @@ const Pricing = () => {
                 </ul>
 
                 <Button
-                  className={`w-full font-semibold ${
-                    plan.popular && !current
-                      ? "bg-gradient-to-r from-primary to-accent hover:opacity-90"
-                      : ""
-                  }`}
-                  variant={current ? "outline" : plan.popular ? "default" : "outline"}
+                  className="w-full mt-6"
+                  variant={current || isFreePlan || plan.plan_id === "enterprise" ? "outline" : "default"}
                   onClick={() => handleCheckout(plan.plan_id)}
                   disabled={current}
                 >
-                  {current
-                    ? "Current Plan"
-                    : plan.plan_id === "free"
-                    ? (isAuthenticated ? "Switch to Free" : "Sign Up Free")
-                    : plan.plan_id === "starter" && !isAnnual
-                    ? "Start 7-Day Free Trial"
-                    : plan.plan_id === "enterprise"
-                    ? "Contact Us"
-                    : "Get Started"}
+                  {getCtaLabel(plan, current)}
                 </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              </Card>
+            );
+          })}
+        </div>
 
-      {/* Footer note */}
-      <p className="text-center text-sm text-muted-foreground">
-        Starter plan includes a 7-day free trial. Card required, cancel anytime.
-      </p>
-      <div className="mx-auto max-w-3xl rounded-md border border-border/50 bg-muted/20 p-4 text-xs text-muted-foreground leading-relaxed">
-        <p>
-          InsiderPulse provides general financial information and analytical tools only. It is
-          not personal financial product advice and does not take into account your objectives,
-          financial situation or needs. Scores, signals and themes are based on publicly
-          available data and proprietary models that may be incomplete or wrong. Past
-          performance is not a reliable indicator of future performance. You should consider
-          obtaining advice from a licensed financial adviser and read the relevant Product
-          Disclosure Statement before making any investment decision. Trading carries risk of
-          loss; you are responsible for your own decisions and outcomes.
+        {/* Footer note */}
+        <p className="text-center text-body-sm text-ds-text-secondary">
+          Starter plan includes a 7-day free trial. Card required, cancel anytime.
         </p>
-      </div>
-      <div className="flex items-center justify-center gap-4 mt-4 text-xs text-slate-500">
-        <Link to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
-        <span aria-hidden>·</span>
-        <Link to="/terms" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
+
+        <div className="mx-auto max-w-3xl rounded-ds-md border border-ds-border bg-ds-surface p-4 text-body-sm text-ds-text-secondary leading-relaxed">
+          <p>
+            InsiderPulse provides general financial information and analytical tools only. It is
+            not personal financial product advice and does not take into account your objectives,
+            financial situation or needs. Scores, signals and themes are based on publicly
+            available data and proprietary models that may be incomplete or wrong. Past
+            performance is not a reliable indicator of future performance. You should consider
+            obtaining advice from a licensed financial adviser and read the relevant Product
+            Disclosure Statement before making any investment decision. Trading carries risk of
+            loss; you are responsible for your own decisions and outcomes.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-center gap-4 text-body-sm text-ds-text-muted">
+          <Link to="/privacy" className="hover:text-ds-text-primary transition-colors duration-fast">
+            Privacy Policy
+          </Link>
+          <span aria-hidden>·</span>
+          <Link to="/terms" className="hover:text-ds-text-primary transition-colors duration-fast">
+            Terms of Service
+          </Link>
+        </div>
       </div>
     </div>
   );
