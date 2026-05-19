@@ -177,12 +177,10 @@ const Alerts = () => {
     });
   };
 
-  const handleEdit = () => {
-    toast({
-      title: "Coming soon",
-      description: "Edit alert settings will be available in a future update."
-    });
-  };
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const confirmAlert = alertsList.find((a) => a.id === confirmRemoveId) ?? null;
+
+
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
