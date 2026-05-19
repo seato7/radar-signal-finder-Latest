@@ -33,7 +33,7 @@ const Watchlist = () => {
   const [watchlistId, setWatchlistId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [confirmRemove2, _unused] = useState<null>(null);
+  
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const { toast } = useToast();
