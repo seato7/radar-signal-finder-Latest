@@ -62,10 +62,8 @@ export default function SettingsProfile() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .upsert(
-          { user_id: user.id, display_name: displayName, timezone },
-          { onConflict: 'user_id' },
-        );
+        .update({ display_name: displayName, timezone })
+        .eq('user_id', user.id);
       if (error) throw error;
       toast({ title: 'Profile saved' });
     } catch (err: any) {
