@@ -475,7 +475,12 @@ serve(async (req) => {
     if (action === 'portal') {
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') || '', { apiVersion: '2025-09-30.clover' });
       const customers = await stripe.customers.list({ email: user.email!, limit: 1 });
-      if (!customers.data[0]) throw new Error('No subscription found');
+      if (!customers.data[0]) {
+        logStep('Portal: no Stripe customer for user', { email: user.email });
+        return new Response(JSON.stringify({ error: 'no_subscription' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const session = await stripe.billingPortal.sessions.create({
         customer: customers.data[0].id,
         return_url: `${safeOrigin(req)}/settings`,
