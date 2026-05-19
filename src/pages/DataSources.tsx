@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toDisplayLabel } from "@/lib/displayLabel";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
