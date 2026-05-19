@@ -175,39 +175,19 @@ const Watchlist = () => {
           title="Watchlist"
           description="Track your selected opportunities at a glance."
           action={
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Star className="mr-2 h-4 w-4" />
-                  Add Asset
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Asset to Watchlist</DialogTitle>
-                  <DialogDescription>Enter the ticker symbol to track</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="ticker">Ticker Symbol</Label>
-                    <Input
-                      id="ticker"
-                      placeholder="BTC, ETH, AAPL..."
-                      value={newTicker}
-                      onChange={(e) => setNewTicker(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handleAdd} disabled={adding}>
-                    {adding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    Add to Watchlist
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => setDialogOpen(true)}>
+              <Star className="mr-2 h-4 w-4" />
+              Add Asset
+            </Button>
           }
+        />
+
+        <AssetPickerModal
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          existingTickers={tickers}
+          slotsLimit={slotsLimit}
+          onAdded={(t) => setTickers((prev) => (prev.includes(t) ? prev : [...prev, t]))}
         />
 
         {/* Meta row: count + plan limit pill + search */}
