@@ -98,7 +98,7 @@ const RecentAlertsCard = () => {
                 </div>
               ))}
             </div>
-          </BlurredUpgradeOverlay>
+          </LockedPreview>
         ) : isLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
