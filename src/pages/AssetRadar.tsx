@@ -653,7 +653,12 @@ const AssetRadar = () => {
   const activeTabLocked = activeTabConfig ? isTabLocked(activeTabConfig.filter) : false;
 
   useEffect(() => {
-    if (planLoading || planLimits.asset_radar_classes.length === 0) return;
+    // FIX (5A): include planLoading in deps so the effect re-runs once the
+    // plan finishes resolving. Without this, first-load on /asset-radar
+    // would early-bail on planLoading=true and never trigger a fetch until
+    // the user switched tabs and back.
+    if (planLoading) return;
+    if (planLimits.asset_radar_classes.length === 0) return;
     if (activeTabLocked) {
       setAssets([]);
       setTotal(0);
@@ -663,7 +668,7 @@ const AssetRadar = () => {
     setPage(0);
     const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 250);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy, userPlan, activeTabLocked]);
+  }, [searchTerm, activeTab, sortBy, userPlan, activeTabLocked, planLoading]);
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
@@ -674,7 +679,7 @@ const AssetRadar = () => {
     }, REFRESH_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy, userPlan, activeTabLocked]);
+  }, [page, activeTab, sortBy, userPlan, activeTabLocked, planLoading]);
 
   // Fetch active trade signal tickers once on mount for Signal badges
   useEffect(() => {
