@@ -121,9 +121,17 @@ const MarketRadar = () => {
                   className="flex items-center justify-between p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer"
                 >
                   <TickerLink ticker={mover.ticker} className="font-mono font-semibold text-ds-text-primary text-data-sm" />
-                  <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
-                    {mover.change.toFixed(1)}%
-                  </span>
+                  {isFree ? (
+                    <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_market_radar">
+                      <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
+                        {mover.change.toFixed(1)}%
+                      </span>
+                    </LockedPreview>
+                  ) : (
+                    <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
+                      {mover.change.toFixed(1)}%
+                    </span>
+                  )}
                 </div>
               ))
             )}
