@@ -152,14 +152,22 @@ const TopThemesCard = () => {
                       {theme.name}
                     </span>
                   </div>
-                  <div className={`text-data-lg font-mono font-semibold tabular-nums ${getScoreColor(theme.score)}`}>
-                    {theme.score.toFixed(0)}
-                  </div>
+                  {isFree ? (
+                    <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_top_themes">
+                      <div className={`text-data-lg font-mono font-semibold tabular-nums ${getScoreColor(theme.score)}`}>
+                        {theme.score.toFixed(0)}
+                      </div>
+                    </LockedPreview>
+                  ) : (
+                    <div className={`text-data-lg font-mono font-semibold tabular-nums ${getScoreColor(theme.score)}`}>
+                      {theme.score.toFixed(0)}
+                    </div>
+                  )}
                 </div>
 
                 <div className="h-1.5 w-full bg-ds-surface-overlay rounded-full overflow-hidden mb-3">
                   <div
-                    className="h-full rounded-full bg-ds-brand-primary transition-all duration-slow"
+                    className={`h-full rounded-full bg-ds-brand-primary transition-all duration-slow ${isFree ? 'blur-[4px]' : ''}`}
                     style={{ width: `${Math.min(theme.score, 100)}%` }}
                   />
                 </div>
