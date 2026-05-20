@@ -245,9 +245,25 @@ const Watchlist = () => {
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
+
+        {slotsLimit !== -1 && tickers.length >= slotsLimit && (() => {
+          const t = getUpgradeTarget(userPlan || "free", "watchlist");
+          return (
+            <TierCeiling
+              currentUsage={tickers.length}
+              limit={slotsLimit}
+              limitUnit="watchlist slots"
+              currentTier={(userPlan as any) || "free"}
+              nextTier={t.nextTier}
+              nextTierBenefit={t.benefit}
+              trackingLabel="watchlist_full"
+            />
+          );
+        })()}
 
         <AlertDialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
           <AlertDialogContent>
