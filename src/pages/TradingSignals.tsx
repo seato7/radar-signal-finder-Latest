@@ -530,27 +530,28 @@ export default function TradingSignals() {
                       const daysHeld = s.exit_date
                         ? differenceInDays(new Date(s.exit_date), new Date(s.created_at))
                         : null;
+                      const tickerHidden = isFree || s.ticker == null || s.ticker === '***';
                       return (
                         <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4">
-                            {s.ticker === '***'
-                              ? <MaskedTicker />
+                            {tickerHidden
+                              ? <BlurCell isFree={isFree}><MaskedTicker /></BlurCell>
                               : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
-                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4">
-                            <PnlCell pnl={s.pnl_pct} />
+                            <BlurCell isFree={isFree}><PnlCell pnl={s.pnl_pct} /></BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4">
                             <ResultBadge status={s.status} />
                           </td>
                           <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
-                            {daysHeld != null ? `${daysHeld}d` : "-"}
+                            <BlurCell isFree={isFree}>{daysHeld != null ? `${daysHeld}d` : "-"}</BlurCell>
                           </td>
                         </tr>
                       );
