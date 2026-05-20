@@ -14,6 +14,8 @@ interface TopMover {
 }
 
 const MarketRadar = () => {
+  const { userPlan } = useAuth();
+  const isFree = userPlan === 'free' || !userPlan;
   const { data: topMovers = [], isLoading } = useQuery({
     queryKey: ['market-radar-movers'],
     queryFn: async (): Promise<TopMover[]> => {
