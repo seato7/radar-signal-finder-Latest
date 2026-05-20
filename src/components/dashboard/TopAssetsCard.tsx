@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { TickerLink } from "@/lib/tickerLink";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface TopAsset {
   ticker: string;
@@ -42,8 +43,9 @@ const extractFromExplanation = (scoreExplanation: any, key: string): number => {
 
 const TopAssetsCard = () => {
   const navigate = useNavigate();
-  const { limits } = useAuth();
+  const { limits, userPlan } = useAuth();
   const planLimits = limits();
+  const isFree = userPlan === 'free' || !userPlan;
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['top-assets-dashboard-scored'],
@@ -153,11 +155,17 @@ const TopAssetsCard = () => {
                         {asset.signalStrength === "high" ? "High" : asset.signalStrength === "medium" ? "Med" : "Low"}
                       </span>
                       {planLimits.show_scores && (
-                        <span
-                          className={`text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}
-                        >
-                          {asset.score}
-                        </span>
+                        isFree ? (
+                          <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_top_assets">
+                            <span className={`text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}>
+                              {asset.score}
+                            </span>
+                          </LockedPreview>
+                        ) : (
+                          <span className={`text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}>
+                            {asset.score}
+                          </span>
+                        )
                       )}
                     </div>
                     <div className="text-caption font-mono text-ds-text-secondary">
