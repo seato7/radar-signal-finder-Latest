@@ -357,7 +357,8 @@ export default function TradingSignals() {
             </div>
           ) : active.length === 0 ? (
             <p className="text-body-sm text-ds-text-muted py-4 text-center">No active positions</p>
-          ) : (
+          ) : (() => {
+            const tableBlock = (
             <div className="relative">
               <div className="overflow-x-auto">
                 <table className="w-full text-body-sm">
@@ -385,47 +386,50 @@ export default function TradingSignals() {
                       const livePnl = currentPrice != null && s.entry_price != null
                         ? ((currentPrice - s.entry_price) / s.entry_price) * 100
                         : null;
+                      const tickerHidden = isFree || s.ticker == null || s.ticker === '***';
                       return (
                         <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4 align-top">
-                            {s.ticker === '***'
-                              ? <MaskedTicker />
+                            {tickerHidden
+                              ? <BlurCell isFree={isFree}><MaskedTicker /></BlurCell>
                               : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
-                            {s.reason && (
+                            {s.reason && !isFree && (
                               <div className="text-caption text-ds-text-muted mt-1 leading-snug max-w-xs font-normal">
                                 {s.reason}
                               </div>
                             )}
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-positive">
-                            {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-negative">
-                            {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4">
-                            <span className="inline-flex items-center gap-1.5 justify-end">
-                              <PnlCell pnl={livePnl} />
-                              <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
-                            </span>
+                            <BlurCell isFree={isFree}>
+                              <span className="inline-flex items-center gap-1.5 justify-end">
+                                <PnlCell pnl={livePnl} />
+                                <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
+                              </span>
+                            </BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "-"}
+                            <BlurCell isFree={isFree}>{s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.score_at_entry != null ? s.score_at_entry.toFixed(1) : "-"}
+                            <BlurCell isFree={isFree}>{s.score_at_entry != null ? s.score_at_entry.toFixed(1) : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.ai_score_at_entry != null ? s.ai_score_at_entry.toFixed(1) : "-"}
+                            <BlurCell isFree={isFree}>{s.ai_score_at_entry != null ? s.ai_score_at_entry.toFixed(1) : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
-                            {expiresFormatted}
+                            <BlurCell isFree={isFree}>{expiresFormatted}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
-                            {daysActive}d
+                            <BlurCell isFree={isFree}>{daysActive}d</BlurCell>
                           </td>
                         </tr>
                       );
@@ -433,6 +437,7 @@ export default function TradingSignals() {
                   </tbody>
                 </table>
               </div>
+
 
               {activeBlurred && (
                 <BlurredUpgradeOverlay
