@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { TrendingUp, TrendingDown, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TickerLink } from "@/lib/tickerLink";
+import { useAuth } from "@/hooks/useAuth";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface TopMover {
   ticker: string;
