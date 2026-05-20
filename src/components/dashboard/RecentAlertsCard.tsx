@@ -72,9 +72,11 @@ const RecentAlertsCard = () => {
       </CardHeader>
       <CardContent className="px-5 pb-5">
         {!alertsAllowed ? (
-          <BlurredUpgradeOverlay
-            feature="Alerts"
-            description="Receive notifications when investment themes reach your thresholds."
+          <LockedPreview
+            mode="card"
+            intensity="medium"
+            targetTier="starter"
+            trackingLabel="dashboard_alerts"
           >
             <div className="space-y-2">
               {[
