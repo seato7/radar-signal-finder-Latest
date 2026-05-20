@@ -27,6 +27,9 @@ import { Input } from "@/components/ui/input";
 import { TickerLink } from "@/lib/tickerLink";
 import { cn } from "@/lib/utils";
 import { AssetPickerModal } from "@/components/AssetPickerModal";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
+import { TierCeiling } from "@/components/conversion/TierCeiling";
+import { getUpgradeTarget } from "@/lib/upgradeTarget";
 
 const Watchlist = () => {
   const [tickers, setTickers] = useState<string[]>([]);
