@@ -176,6 +176,19 @@
     50%      { opacity: 0.55; }
   }
 
+  /* Subtle CTA pulse for primary upgrade buttons (scale 1.0 → 1.02) */
+  .cta-upgrade-pulse {
+    animation: cta-upgrade-pulse 2.5s ease-in-out infinite;
+    transform-origin: center;
+  }
+  .cta-upgrade-pulse:hover {
+    animation: none;
+  }
+  @keyframes cta-upgrade-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.02); }
+  }
+
   /* Animated pulse for live indicators */
   .pulse-live {
     animation: pulse-live 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
