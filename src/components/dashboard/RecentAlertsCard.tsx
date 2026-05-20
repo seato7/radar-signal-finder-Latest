@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface Alert {
   id: string;
@@ -72,9 +72,11 @@ const RecentAlertsCard = () => {
       </CardHeader>
       <CardContent className="px-5 pb-5">
         {!alertsAllowed ? (
-          <BlurredUpgradeOverlay
-            feature="Alerts"
-            description="Receive notifications when investment themes reach your thresholds."
+          <LockedPreview
+            mode="card"
+            intensity="medium"
+            targetTier="starter"
+            trackingLabel="dashboard_alerts"
           >
             <div className="space-y-2">
               {[
@@ -96,7 +98,7 @@ const RecentAlertsCard = () => {
                 </div>
               ))}
             </div>
-          </BlurredUpgradeOverlay>
+          </LockedPreview>
         ) : isLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (

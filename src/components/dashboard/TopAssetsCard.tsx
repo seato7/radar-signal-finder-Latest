@@ -130,9 +130,56 @@ const TopAssetsCard = () => {
             ))}
           </div>
         ) : assets.length === 0 ? (
-          <div className="text-center py-8 text-ds-text-muted text-body-sm">
-            <p>No scored assets available yet</p>
-          </div>
+          isFree ? (
+            <div className="relative">
+              <LockedPreview
+                mode="section"
+                intensity="medium"
+                targetTier="starter"
+                trackingLabel="dashboard_scored_assets"
+                showOverlay={false}
+              >
+                <div className="space-y-3">
+                  {[
+                    { ticker: "AAPL", score: 82, expectedReturn: 0.0421 },
+                    { ticker: "NVDA", score: 78, expectedReturn: 0.0612 },
+                    { ticker: "TSLA", score: 71, expectedReturn: -0.0185 },
+                  ].map((a) => (
+                    <div key={a.ticker} className="p-4 rounded-ds-md bg-ds-surface-elevated border border-ds-border flex items-center justify-between">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-data-lg text-ds-brand-primary">{a.ticker}</span>
+                          <span className={`text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(a.score)}`}>{a.score}</span>
+                        </div>
+                        <div className="text-caption font-mono text-ds-text-secondary">
+                          Expected: <span className={a.expectedReturn > 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"}>{a.expectedReturn > 0 ? '+' : ''}{(a.expectedReturn * 100).toFixed(2)}%</span>
+                        </div>
+                      </div>
+                      <MiniSparkline expectedReturn={a.expectedReturn} />
+                    </div>
+                  ))}
+                </div>
+              </LockedPreview>
+              <div className="absolute inset-0 flex items-center justify-center rounded-ds-lg border border-ds-border backdrop-blur-sm bg-ds-surface/60">
+                <div className="text-center px-6 py-5 max-w-xs">
+                  <p className="text-body-sm font-semibold text-ds-text-primary mb-1">Today's top-scored assets</p>
+                  <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">Unlock all scored assets — start free trial</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
+                    onClick={() => navigate('/pricing?upgrade_from=dashboard_scored_assets')}
+                  >
+                    Upgrade to Starter
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-ds-text-muted text-body-sm">
+              <p>No scored assets available yet</p>
+            </div>
+          )
         ) : (
           (planLimits.full_dashboard ? assets : assets.slice(0, 1)).map((asset) => {
             const isUp = asset.expectedReturn > 0;
