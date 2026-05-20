@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface ThemeScore {
   id: string;
