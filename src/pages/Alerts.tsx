@@ -27,6 +27,7 @@ import { getPlanLimits } from "@/lib/planLimits";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { toDisplayLabel } from "@/lib/displayLabel";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface Alert {
   id: string;
