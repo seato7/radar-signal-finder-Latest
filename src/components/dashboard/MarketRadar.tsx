@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { TrendingUp, TrendingDown, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TickerLink } from "@/lib/tickerLink";
+import { useAuth } from "@/hooks/useAuth";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface TopMover {
   ticker: string;
@@ -12,6 +14,8 @@ interface TopMover {
 }
 
 const MarketRadar = () => {
+  const { userPlan } = useAuth();
+  const isFree = userPlan === 'free' || !userPlan;
   const { data: topMovers = [], isLoading } = useQuery({
     queryKey: ['market-radar-movers'],
     queryFn: async (): Promise<TopMover[]> => {
@@ -77,9 +81,17 @@ const MarketRadar = () => {
                   className="flex items-center justify-between p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer"
                 >
                   <TickerLink ticker={mover.ticker} className="font-mono font-semibold text-ds-text-primary text-data-sm" />
-                  <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-positive/40 text-ds-signal-positive">
-                    +{Math.abs(mover.change).toFixed(1)}%
-                  </span>
+                  {isFree ? (
+                    <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_market_radar">
+                      <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-positive/40 text-ds-signal-positive">
+                        +{Math.abs(mover.change).toFixed(1)}%
+                      </span>
+                    </LockedPreview>
+                  ) : (
+                    <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-positive/40 text-ds-signal-positive">
+                      +{Math.abs(mover.change).toFixed(1)}%
+                    </span>
+                  )}
                 </div>
               ))
             )}
@@ -109,9 +121,17 @@ const MarketRadar = () => {
                   className="flex items-center justify-between p-3 rounded-ds-md bg-ds-surface-elevated border border-ds-border hover:border-ds-border-strong transition-colors duration-fast ease-ds-out cursor-pointer"
                 >
                   <TickerLink ticker={mover.ticker} className="font-mono font-semibold text-ds-text-primary text-data-sm" />
-                  <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
-                    {mover.change.toFixed(1)}%
-                  </span>
+                  {isFree ? (
+                    <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_market_radar">
+                      <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
+                        {mover.change.toFixed(1)}%
+                      </span>
+                    </LockedPreview>
+                  ) : (
+                    <span className="text-caption font-mono px-1.5 py-0.5 rounded-ds-sm border border-ds-signal-negative/40 text-ds-signal-negative">
+                      {mover.change.toFixed(1)}%
+                    </span>
+                  )}
                 </div>
               ))
             )}

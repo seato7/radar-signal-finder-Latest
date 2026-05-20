@@ -8,12 +8,27 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaywallModal } from "@/components/PaywallModal";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { TickerLink } from "@/lib/tickerLink";
+
+const BlurStat = ({ children, isFree }: { children: React.ReactNode; isFree: boolean }) =>
+  isFree ? (
+    <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="active_signals_stat">
+      {children}
+    </LockedPreview>
+  ) : <>{children}</>;
+
+const BlurCell = ({ children, isFree }: { children: React.ReactNode; isFree: boolean }) =>
+  isFree ? (
+    <LockedPreview mode="row-cell" intensity="medium" targetTier="starter" trackingLabel="active_signal_row">
+      {children}
+    </LockedPreview>
+  ) : <>{children}</>;
 
 interface TradeSignal {
   id: string;
@@ -108,13 +123,14 @@ const MaskedTicker = () => (
 );
 
 export default function TradingSignals() {
-  const { planLoading, limits } = useAuth();
+  const { planLoading, limits, userPlan } = useAuth();
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false);
   const planLimits = planLoading ? null : limits();
   const signalLimit = planLimits?.active_signals ?? 0;
   const hasUnlimited = signalLimit === -1;
-  const isFreeTeaser = !!(planLimits?.can_view_signals_teaser && signalLimit === 0);
+  const isFree = !planLoading && (userPlan === 'free' || !userPlan);
+  const isFreeTeaser = !!(planLimits?.can_view_signals_teaser && signalLimit === 0) || isFree;
 
   const { data: signals, isLoading, error } = useQuery({
     queryKey: ['trade-signals'],
@@ -236,7 +252,9 @@ export default function TradingSignals() {
               <Skeleton className="h-7 w-16" />
             ) : (
               <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
-                {avgScoreAtEntry != null ? avgScoreAtEntry.toFixed(1) : "-"}
+                <BlurStat isFree={isFree}>
+                  {avgScoreAtEntry != null ? avgScoreAtEntry.toFixed(1) : "-"}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -252,7 +270,9 @@ export default function TradingSignals() {
               <Skeleton className="h-7 w-16" />
             ) : (
               <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
-                {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "-"}
+                <BlurStat isFree={isFree}>
+                  {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "-"}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -271,7 +291,9 @@ export default function TradingSignals() {
                 "text-data-lg font-mono font-semibold",
                 totalReturn == null ? "text-ds-text-primary" : totalReturn >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
               )}>
-                {totalReturn == null ? "-" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
+                <BlurStat isFree={isFree}>
+                  {totalReturn == null ? "-" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -290,7 +312,9 @@ export default function TradingSignals() {
                 "text-data-lg font-mono font-semibold",
                 totalReturnSum == null ? "text-ds-text-primary" : totalReturnSum >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
               )}>
-                {totalReturnSum == null ? "-" : `${totalReturnSum >= 0 ? '+' : ''}${totalReturnSum.toFixed(2)}%`}
+                <BlurStat isFree={isFree}>
+                  {totalReturnSum == null ? "-" : `${totalReturnSum >= 0 ? '+' : ''}${totalReturnSum.toFixed(2)}%`}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -305,7 +329,7 @@ export default function TradingSignals() {
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
+              <p className="text-data-lg font-mono font-semibold text-ds-signal-positive">
                 {winRate != null ? `${winRate.toFixed(1)}%` : "-"}
               </p>
             )}
@@ -333,7 +357,8 @@ export default function TradingSignals() {
             </div>
           ) : active.length === 0 ? (
             <p className="text-body-sm text-ds-text-muted py-4 text-center">No active positions</p>
-          ) : (
+          ) : (() => {
+            const tableBlock = (
             <div className="relative">
               <div className="overflow-x-auto">
                 <table className="w-full text-body-sm">
@@ -361,47 +386,50 @@ export default function TradingSignals() {
                       const livePnl = currentPrice != null && s.entry_price != null
                         ? ((currentPrice - s.entry_price) / s.entry_price) * 100
                         : null;
+                      const tickerHidden = isFree || s.ticker == null || s.ticker === '***';
                       return (
                         <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4 align-top">
-                            {s.ticker === '***'
-                              ? <MaskedTicker />
+                            {tickerHidden
+                              ? <BlurCell isFree={isFree}><MaskedTicker /></BlurCell>
                               : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
-                            {s.reason && (
+                            {s.reason && !isFree && (
                               <div className="text-caption text-ds-text-muted mt-1 leading-snug max-w-xs font-normal">
                                 {s.reason}
                               </div>
                             )}
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-positive">
-                            {s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.exit_target != null ? `$${s.exit_target.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-signal-negative">
-                            {s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.stop_loss != null ? `$${s.stop_loss.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4">
-                            <span className="inline-flex items-center gap-1.5 justify-end">
-                              <PnlCell pnl={livePnl} />
-                              <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
-                            </span>
+                            <BlurCell isFree={isFree}>
+                              <span className="inline-flex items-center gap-1.5 justify-end">
+                                <PnlCell pnl={livePnl} />
+                                <FreshnessDot lastLivePriceAt={s.last_live_price_at} />
+                              </span>
+                            </BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "-"}
+                            <BlurCell isFree={isFree}>{s.position_size_pct != null ? `${(s.position_size_pct * 100).toFixed(1)}%` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.score_at_entry != null ? s.score_at_entry.toFixed(1) : "-"}
+                            <BlurCell isFree={isFree}>{s.score_at_entry != null ? s.score_at_entry.toFixed(1) : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.ai_score_at_entry != null ? s.ai_score_at_entry.toFixed(1) : "-"}
+                            <BlurCell isFree={isFree}>{s.ai_score_at_entry != null ? s.ai_score_at_entry.toFixed(1) : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
-                            {expiresFormatted}
+                            <BlurCell isFree={isFree}>{expiresFormatted}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
-                            {daysActive}d
+                            <BlurCell isFree={isFree}>{daysActive}d</BlurCell>
                           </td>
                         </tr>
                       );
@@ -444,7 +472,22 @@ export default function TradingSignals() {
                 </BlurredUpgradeOverlay>
               )}
             </div>
-          )}
+            );
+            return isFree ? (
+              <LockedPreview
+                mode="section"
+                intensity="medium"
+                targetTier="starter"
+                trackingLabel="active_signals_overlay"
+                tooltipText="Today's highest-conviction trade ideas — fully spec'd. Starter shows 1, Pro shows 3, Premium unlimited."
+                ctaText="Upgrade to Starter"
+              >
+                {tableBlock}
+              </LockedPreview>
+            ) : tableBlock;
+          })()}
+
+
         </CardContent>
       </Card>
 
@@ -487,27 +530,28 @@ export default function TradingSignals() {
                       const daysHeld = s.exit_date
                         ? differenceInDays(new Date(s.exit_date), new Date(s.created_at))
                         : null;
+                      const tickerHidden = isFree || s.ticker == null || s.ticker === '***';
                       return (
                         <tr key={s.id} className="border-b border-ds-border hover:bg-ds-surface-elevated transition-colors duration-fast ease-ds-out">
                           <td className="py-2.5 pr-4">
-                            {s.ticker === '***'
-                              ? <MaskedTicker />
+                            {tickerHidden
+                              ? <BlurCell isFree={isFree}><MaskedTicker /></BlurCell>
                               : <TickerLink ticker={s.ticker} className="font-mono font-semibold text-ds-brand-primary" />}
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-muted">
-                            {s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.entry_price != null ? `$${s.entry_price.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4 font-mono text-data-sm text-ds-text-primary">
-                            {s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}
+                            <BlurCell isFree={isFree}>{s.exit_price != null ? `$${s.exit_price.toFixed(2)}` : "-"}</BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4">
-                            <PnlCell pnl={s.pnl_pct} />
+                            <BlurCell isFree={isFree}><PnlCell pnl={s.pnl_pct} /></BlurCell>
                           </td>
                           <td className="text-right py-2.5 px-4">
                             <ResultBadge status={s.status} />
                           </td>
                           <td className="text-right py-2.5 pl-4 font-mono text-data-sm text-ds-text-muted">
-                            {daysHeld != null ? `${daysHeld}d` : "-"}
+                            <BlurCell isFree={isFree}>{daysHeld != null ? `${daysHeld}d` : "-"}</BlurCell>
                           </td>
                         </tr>
                       );

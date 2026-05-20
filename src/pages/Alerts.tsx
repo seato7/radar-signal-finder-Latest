@@ -27,6 +27,7 @@ import { getPlanLimits } from "@/lib/planLimits";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { toDisplayLabel } from "@/lib/displayLabel";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface Alert {
   id: string;
@@ -213,28 +214,80 @@ const Alerts = () => {
   }
 
   if (alertsLimit === 0) {
+    const examples = [
+      { name: "Semiconductor Earnings Watch", score: 84, time: "2h ago", positives: ["insider_buying", "options_flow", "news_sentiment"] },
+      { name: "Energy Transition", score: 76, time: "6h ago", positives: ["dark_pool", "institutional_flow", "policy_signal"] },
+      { name: "Defense Spending Cycle", score: 71, time: "1d ago", positives: ["congressional_trades", "supply_chain", "news_sentiment"] },
+    ];
     return (
       <div className="space-y-6">
         <PageHeader
           title="Alerts"
           description="Real-time notifications for high-priority opportunities"
         />
-        <Card className="border-primary/50 bg-gradient-to-r from-primary/5 to-accent/5">
-          <CardHeader>
-            <CardTitle>Alerts require a paid plan</CardTitle>
-            <CardDescription>
-              Upgrade to Starter or higher to receive alerts when investment themes reach your thresholds.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link to="/pricing">View Plans</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="text-center max-w-2xl mx-auto pt-4">
+          <h2 className="text-h3 font-semibold text-ds-text-primary mb-2">Don't miss the next major mover.</h2>
+          <p className="text-body text-ds-text-secondary">
+            Alerts notify you the moment a high-score signal fires on your themes.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {examples.map((ex) => (
+            <LockedPreview
+              key={ex.name}
+              mode="card"
+              intensity="medium"
+              targetTier="starter"
+              trackingLabel="alerts_example"
+            >
+              <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-5 h-full">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <h3 className="text-h4 font-semibold text-ds-text-primary tracking-tight">{ex.name}</h3>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-medium border border-ds-signal-positive text-ds-signal-positive shrink-0">
+                    Active
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {ex.positives.map((p) => (
+                    <span key={p} className="px-2 py-0.5 rounded-ds-sm bg-ds-surface-elevated border border-ds-border text-caption font-mono text-ds-text-secondary">
+                      {toDisplayLabel(p)}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-caption font-mono text-ds-text-muted">{ex.time}</span>
+                  <span className="text-data-sm font-mono font-semibold text-ds-signal-positive">{ex.score}</span>
+                </div>
+              </div>
+            </LockedPreview>
+          ))}
+        </div>
+        <div className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md p-5 md:p-6 opacity-70 pointer-events-none">
+          <div className="flex items-center gap-2 mb-1">
+            <Settings className="h-5 w-5 text-ds-brand-primary" />
+            <h2 className="text-h4 font-semibold text-ds-text-primary">Alert Thresholds</h2>
+          </div>
+          <p className="text-body-sm text-ds-text-secondary mb-5">Configure when alerts should fire</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-body-sm text-ds-text-secondary">Minimum Score</Label>
+              <Input disabled value="60" className="bg-ds-surface-elevated border-ds-border" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-body-sm text-ds-text-secondary">Minimum Positive Components</Label>
+              <Input disabled value="3" className="bg-ds-surface-elevated border-ds-border" />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-center pt-2">
+          <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
+            <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial — full alerts access</Link>
+          </Button>
+        </div>
       </div>
     );
   }
+
 
   return (
     <TooltipProvider delayDuration={200}>
