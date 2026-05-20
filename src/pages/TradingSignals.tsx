@@ -252,7 +252,9 @@ export default function TradingSignals() {
               <Skeleton className="h-7 w-16" />
             ) : (
               <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
-                {avgScoreAtEntry != null ? avgScoreAtEntry.toFixed(1) : "-"}
+                <BlurStat isFree={isFree}>
+                  {avgScoreAtEntry != null ? avgScoreAtEntry.toFixed(1) : "-"}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -268,7 +270,9 @@ export default function TradingSignals() {
               <Skeleton className="h-7 w-16" />
             ) : (
               <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
-                {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "-"}
+                <BlurStat isFree={isFree}>
+                  {avgPositionSize != null ? `${(avgPositionSize * 100).toFixed(1)}%` : "-"}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -287,7 +291,9 @@ export default function TradingSignals() {
                 "text-data-lg font-mono font-semibold",
                 totalReturn == null ? "text-ds-text-primary" : totalReturn >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
               )}>
-                {totalReturn == null ? "-" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
+                <BlurStat isFree={isFree}>
+                  {totalReturn == null ? "-" : `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(2)}%`}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -306,7 +312,9 @@ export default function TradingSignals() {
                 "text-data-lg font-mono font-semibold",
                 totalReturnSum == null ? "text-ds-text-primary" : totalReturnSum >= 0 ? "text-ds-signal-positive" : "text-ds-signal-negative"
               )}>
-                {totalReturnSum == null ? "-" : `${totalReturnSum >= 0 ? '+' : ''}${totalReturnSum.toFixed(2)}%`}
+                <BlurStat isFree={isFree}>
+                  {totalReturnSum == null ? "-" : `${totalReturnSum >= 0 ? '+' : ''}${totalReturnSum.toFixed(2)}%`}
+                </BlurStat>
               </p>
             )}
           </CardContent>
@@ -321,7 +329,7 @@ export default function TradingSignals() {
             {isLoading ? (
               <Skeleton className="h-7 w-16" />
             ) : (
-              <p className="text-data-lg font-mono font-semibold text-ds-text-primary">
+              <p className="text-data-lg font-mono font-semibold text-ds-signal-positive">
                 {winRate != null ? `${winRate.toFixed(1)}%` : "-"}
               </p>
             )}
