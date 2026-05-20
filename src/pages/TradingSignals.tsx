@@ -8,12 +8,27 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PaywallModal } from "@/components/PaywallModal";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { TickerLink } from "@/lib/tickerLink";
+
+const BlurStat = ({ children, isFree }: { children: React.ReactNode; isFree: boolean }) =>
+  isFree ? (
+    <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="active_signals_stat">
+      {children}
+    </LockedPreview>
+  ) : <>{children}</>;
+
+const BlurCell = ({ children, isFree }: { children: React.ReactNode; isFree: boolean }) =>
+  isFree ? (
+    <LockedPreview mode="row-cell" intensity="medium" targetTier="starter" trackingLabel="active_signal_row">
+      {children}
+    </LockedPreview>
+  ) : <>{children}</>;
 
 interface TradeSignal {
   id: string;
@@ -108,13 +123,14 @@ const MaskedTicker = () => (
 );
 
 export default function TradingSignals() {
-  const { planLoading, limits } = useAuth();
+  const { planLoading, limits, userPlan } = useAuth();
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false);
   const planLimits = planLoading ? null : limits();
   const signalLimit = planLimits?.active_signals ?? 0;
   const hasUnlimited = signalLimit === -1;
-  const isFreeTeaser = !!(planLimits?.can_view_signals_teaser && signalLimit === 0);
+  const isFree = !planLoading && (userPlan === 'free' || !userPlan);
+  const isFreeTeaser = !!(planLimits?.can_view_signals_teaser && signalLimit === 0) || isFree;
 
   const { data: signals, isLoading, error } = useQuery({
     queryKey: ['trade-signals'],
