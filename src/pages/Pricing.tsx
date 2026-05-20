@@ -69,7 +69,7 @@ const plans: Plan[] = [
       "5 Alerts",
       "10 Watchlist slots",
     ],
-    popular: false,
+    popular: true,
   },
   {
     name: "Premium",
@@ -88,7 +88,7 @@ const plans: Plan[] = [
       "Analytics dashboard",
       "Trading Bots (Coming Soon)",
     ],
-    popular: true,
+    popular: false,
   },
   {
     name: "Enterprise",
@@ -105,6 +105,15 @@ const plans: Plan[] = [
     popular: false,
   },
 ];
+
+// Founding member rate locks in pricing for life — show pill for 30 days post-launch.
+const LAUNCH_DATE = new Date("2026-05-25T00:00:00Z");
+const FOUNDING_MEMBER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const isFoundingWindow = () => {
+  const now = Date.now();
+  return now >= LAUNCH_DATE.getTime() && now < LAUNCH_DATE.getTime() + FOUNDING_MEMBER_WINDOW_MS;
+};
+
 
 const Pricing = () => {
   const [isAnnual, setIsAnnual] = useState(false);
@@ -298,6 +307,11 @@ const Pricing = () => {
                   <h3 className="text-h3 font-semibold text-ds-text-primary">
                     {plan.name}
                   </h3>
+                  {isFoundingWindow() && (plan.plan_id === "starter" || plan.plan_id === "pro") && (
+                    <span className="inline-block rounded-full border border-ds-brand-primary px-2 py-0.5 font-mono text-[10px] text-ds-text-secondary">
+                      Founding member rate — locks in your price for life
+                    </span>
+                  )}
                   <p className="text-body-sm text-ds-text-secondary leading-snug min-h-[2.5rem]">
                     {plan.description}
                   </p>
@@ -351,7 +365,10 @@ const Pricing = () => {
                 </ul>
 
                 <Button
-                  className="w-full mt-6"
+                  className={cn(
+                    "w-full mt-6",
+                    !current && !isFreePlan && plan.plan_id !== "enterprise" && "cta-upgrade-pulse",
+                  )}
                   variant={current || isFreePlan || plan.plan_id === "enterprise" ? "outline" : "default"}
                   onClick={() => handleCheckout(plan.plan_id)}
                   disabled={current}
