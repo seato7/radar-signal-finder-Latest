@@ -898,6 +898,9 @@ const AssetRadar = () => {
                   const sentiment = getSentiment(asset.score);
                   const signalStrengthInfo = getSignalStrength(asset.signalMass);
                   const displayRank = index + 1;
+                  const isFreeUser = userPlan === "free";
+                  const isDemoTicker = ["F", "VTI", "EUR/USD"].includes(asset.ticker);
+                  const blurData = isFreeUser && !isDemoTicker;
                   return (
                     <Link
                       key={asset.id}
@@ -927,9 +930,17 @@ const AssetRadar = () => {
                                 {signalStrengthInfo.label}
                               </span>
                             )}
-                            <span className={`text-caption font-mono font-medium px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}>
-                              {asset.score}
-                            </span>
+                            {blurData ? (
+                              <LockedPreview mode="row-cell" intensity="medium" targetTier="starter" trackingLabel="asset_radar_row">
+                                <span className={`text-caption font-mono font-medium px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}>
+                                  {asset.score}
+                                </span>
+                              </LockedPreview>
+                            ) : (
+                              <span className={`text-caption font-mono font-medium px-1.5 py-0.5 rounded-ds-sm border ${getScoreClasses(asset.score)}`}>
+                                {asset.score}
+                              </span>
+                            )}
                             <button
                               type="button"
                               aria-label={`Add ${asset.ticker} to watchlist`}
@@ -953,9 +964,17 @@ const AssetRadar = () => {
                               {formatExchange(asset.exchange)}
                             </span>
                             {asset.priceChange !== null && typeof asset.priceChange === 'number' && (
-                              <span className={`text-caption font-mono font-medium ${asset.priceChange >= 0 ? 'text-ds-signal-positive' : 'text-ds-signal-negative'}`}>
-                                {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
-                              </span>
+                              blurData ? (
+                                <LockedPreview mode="row-cell" intensity="medium" targetTier="starter" trackingLabel="asset_radar_row_pct">
+                                  <span className={`text-caption font-mono font-medium ${asset.priceChange >= 0 ? 'text-ds-signal-positive' : 'text-ds-signal-negative'}`}>
+                                    {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
+                                  </span>
+                                </LockedPreview>
+                              ) : (
+                                <span className={`text-caption font-mono font-medium ${asset.priceChange >= 0 ? 'text-ds-signal-positive' : 'text-ds-signal-negative'}`}>
+                                  {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
+                                </span>
+                              )
                             )}
                           </div>
                           <div className="flex items-center gap-1 text-caption text-ds-text-muted shrink-0">
