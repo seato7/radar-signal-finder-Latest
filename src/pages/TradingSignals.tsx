@@ -438,7 +438,6 @@ export default function TradingSignals() {
                 </table>
               </div>
 
-
               {activeBlurred && (
                 <BlurredUpgradeOverlay
                   feature={`${active.length - visibleActive.length} more active signals`}
@@ -471,6 +470,7 @@ export default function TradingSignals() {
                     </tbody>
                   </table>
                 </BlurredUpgradeOverlay>
+              )}
             </div>
             );
             return isFree ? (
@@ -486,6 +486,7 @@ export default function TradingSignals() {
               </LockedPreview>
             ) : tableBlock;
           })()}
+
 
         </CardContent>
       </Card>
