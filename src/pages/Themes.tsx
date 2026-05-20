@@ -21,6 +21,7 @@ import {
   SearchX,
 } from "lucide-react";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -684,7 +685,17 @@ const Themes = () => {
               </Card>
             );
 
-            return isLocked ? (
+            return isFree && !theme.is_demo ? (
+              <LockedPreview
+                key={theme.id}
+                mode="card"
+                intensity="medium"
+                targetTier="starter"
+                trackingLabel="themes_locked_card"
+              >
+                {cardContent}
+              </LockedPreview>
+            ) : isLocked ? (
               <BlurredUpgradeOverlay
                 key={theme.id}
                 feature="Theme Locked"
