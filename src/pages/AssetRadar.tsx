@@ -15,6 +15,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { getPlanLimits } from "@/lib/planLimits";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { TickerLink } from "@/lib/tickerLink";
 import { RequestAssetModal } from "@/components/RequestAssetModal";
 import { useToast } from "@/hooks/use-toast";
@@ -822,22 +823,42 @@ const AssetRadar = () => {
             </div>
           </CardHeader>
         <CardContent>
-          {activeTabLocked ? (
-            <BlurredUpgradeOverlay
-              feature={`${activeTabConfig?.label ?? "This category"} requires an upgrade`}
-              description="Upgrade to Pro for ETFs and Forex, or Premium for crypto and commodities."
-            >
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="p-4 rounded-lg border border-border bg-card">
-                    <div className="h-6 w-20 mb-2 bg-muted rounded" />
-                    <div className="h-4 w-32 mb-3 bg-muted rounded" />
-                    <div className="h-5 w-16 bg-muted rounded" />
-                  </div>
-                ))}
-              </div>
-            </BlurredUpgradeOverlay>
-          ) : loading ? (
+          {activeTabLocked ? (() => {
+            const examples =
+              activeTab === "crypto"
+                ? [{ t: "BTC", n: "Bitcoin", c: "+2.3%" }, { t: "ETH", n: "Ethereum", c: "+1.8%" }, { t: "SOL", n: "Solana", c: "-0.6%" }]
+                : activeTab === "commodity"
+                ? [{ t: "XAU", n: "Gold", c: "+0.4%" }, { t: "OIL", n: "Crude Oil", c: "-1.1%" }, { t: "NG", n: "Natural Gas", c: "+3.2%" }]
+                : [{ t: "—", n: activeTabConfig?.label ?? "", c: "—" }, { t: "—", n: activeTabConfig?.label ?? "", c: "—" }, { t: "—", n: activeTabConfig?.label ?? "", c: "—" }];
+            return (
+              <LockedPreview
+                mode="section"
+                intensity="medium"
+                targetTier={activeTab === "crypto" || activeTab === "commodity" ? "premium" : "pro"}
+                trackingLabel={`asset_radar_${activeTab}`}
+                ctaText={activeTab === "crypto" || activeTab === "commodity" ? "Upgrade to Premium" : "Upgrade to Pro"}
+                tooltipText={
+                  activeTab === "crypto" || activeTab === "commodity"
+                    ? `Unlock with Premium — full Asset Radar across ${activeTabConfig?.label?.toLowerCase()} and every other asset class`
+                    : `Unlock with Pro — Asset Radar scores for ${activeTabConfig?.label?.toLowerCase()}`
+                }
+              >
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {examples.map((ex, i) => (
+                    <div key={i} className="p-4 rounded-ds-md border border-ds-border bg-ds-surface-elevated">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono font-semibold text-data-lg text-ds-brand-primary">{ex.t}</span>
+                        <span className="text-caption font-mono border border-ds-border rounded-ds-sm px-1.5 py-0.5 text-ds-text-secondary">
+                          {ex.c}
+                        </span>
+                      </div>
+                      <p className="text-body-sm text-ds-text-secondary">{ex.n}</p>
+                    </div>
+                  ))}
+                </div>
+              </LockedPreview>
+            );
+          })()
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div key={i} className="p-4 rounded-lg border border-border">
