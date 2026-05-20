@@ -17,8 +17,9 @@ interface ThemeScore {
 
 const TopThemesCard = () => {
   const navigate = useNavigate();
-  const { limits } = useAuth();
+  const { limits, userPlan } = useAuth();
   const themesLimit = limits().themes;
+  const isFree = userPlan === 'free' || !userPlan;
 
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['top-themes-dashboard'],
