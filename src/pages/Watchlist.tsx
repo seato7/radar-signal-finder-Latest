@@ -193,7 +193,11 @@ const Watchlist = () => {
               <p className="text-ds-text-secondary">No tickers match "{query}".</p>
             </div>
           ) : (
-            filtered.map((ticker) => (
+            filtered.map((ticker) => {
+              const isFree = userPlan === "free";
+              const isDemo = ["F", "VTI", "EUR/USD"].includes(ticker);
+              const blurRow = isFree && !isDemo;
+              return (
               <div
                 key={ticker}
                 className="bg-ds-surface border border-ds-border rounded-ds-lg p-4 hover:border-ds-border-strong hover:shadow-ds-lg transition-all duration-fast ease-ds-out group"
@@ -210,6 +214,19 @@ const Watchlist = () => {
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Link>
+                    {blurRow && (
+                      <LockedPreview
+                        mode="row-cell"
+                        intensity="medium"
+                        targetTier="starter"
+                        trackingLabel="watchlist_row"
+                        className="ml-2"
+                      >
+                        <span className="font-mono text-caption text-ds-text-secondary">
+                          $123.45 · +1.23% · 82
+                        </span>
+                      </LockedPreview>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <Tooltip>
