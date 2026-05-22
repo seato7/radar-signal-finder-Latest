@@ -9,6 +9,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { getPlanLimits } from '@/lib/planLimits';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { TierCeiling } from '@/components/conversion/TierCeiling';
+import { getUpgradeTarget } from '@/lib/upgradeTarget';
 
 interface Message {
   role: 'user' | 'assistant';
