@@ -15,7 +15,9 @@ interface FollowedTheme {
 
 
 const FollowedThemesCard = () => {
-  const navigate = useNavigate();
+  const { userPlan } = useAuth();
+  const isFree = userPlan === 'free' || !userPlan;
+
 
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['followed-themes-dashboard'],
