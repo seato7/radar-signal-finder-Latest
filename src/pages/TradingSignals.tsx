@@ -479,7 +479,7 @@ export default function TradingSignals() {
                 intensity="medium"
                 targetTier="starter"
                 trackingLabel="active_signals_overlay"
-                tooltipText="Today's highest-conviction trade ideas — fully spec'd. Starter shows 1, Pro shows 3, Premium unlimited."
+                tooltipText="Today's highest-conviction trade ideas, fully spec'd. Starter shows 1, Pro shows 3, Premium unlimited."
                 ctaText="Upgrade to Starter"
               >
                 {tableBlock}

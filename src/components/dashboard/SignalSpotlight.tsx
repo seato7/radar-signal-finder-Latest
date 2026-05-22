@@ -21,57 +21,9 @@ const SignalSpotlight = () => {
   const { userPlan } = useAuth();
   const isFree = userPlan === 'free' || !userPlan;
 
-  if (isFree) {
-    return (
-      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
-        <CardContent className="p-6">
-          <div className="relative">
-            <LockedPreview
-              mode="card"
-              intensity="medium"
-              targetTier="starter"
-              trackingLabel="dashboard_signal_spotlight"
-              showOverlay={false}
-            >
-              <div className="flex items-start gap-4">
-                <div className="h-10 w-10 rounded-ds-md bg-ds-surface-elevated border border-ds-border flex items-center justify-center shrink-0">
-                  <Sparkles className="h-5 w-5 text-ds-brand-primary" />
-                </div>
-                <div className="space-y-2 min-w-0">
-                  <span className="text-overline text-ds-text-muted">Signal Spotlight</span>
-                  <p className="text-h3 font-semibold text-ds-text-primary">Unusual insider activity detected in NVDA</p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-caption font-medium px-2 py-0.5 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary">
-                      insider trade
-                    </span>
-                    <span className="text-data-sm font-mono text-ds-text-primary">Magnitude: 78%</span>
-                  </div>
-                </div>
-              </div>
-            </LockedPreview>
-            <div className="absolute inset-0 flex items-center justify-center rounded-ds-lg border border-ds-border backdrop-blur-sm bg-ds-surface/60">
-              <div className="text-center px-6 py-5 max-w-xs">
-                <p className="text-body-sm font-semibold text-ds-text-primary mb-1">Today's signal spotlight</p>
-                <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">Unlock real-time signals — start free trial</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
-                  onClick={() => navigate('/pricing?upgrade_from=dashboard_signal_spotlight')}
-                >
-                  Upgrade to Starter
-                </Button>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-
   const { data: spotlight, isLoading } = useQuery({
     queryKey: ['signal-spotlight'],
+    enabled: !isFree,
     queryFn: async (): Promise<SpotlightSignal | null> => {
       const { data: signals, error } = await supabase
         .from('signals')
@@ -117,6 +69,54 @@ const SignalSpotlight = () => {
     },
     staleTime: 10 * 60 * 1000,
   });
+
+  if (isFree) {
+    return (
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+        <CardContent className="p-6">
+          <div className="relative">
+            <LockedPreview
+              mode="card"
+              intensity="medium"
+              targetTier="starter"
+              trackingLabel="dashboard_signal_spotlight"
+              showOverlay={false}
+            >
+              <div className="flex items-start gap-4">
+                <div className="h-10 w-10 rounded-ds-md bg-ds-surface-elevated border border-ds-border flex items-center justify-center shrink-0">
+                  <Sparkles className="h-5 w-5 text-ds-brand-primary" />
+                </div>
+                <div className="space-y-2 min-w-0">
+                  <span className="text-overline text-ds-text-muted">Signal Spotlight</span>
+                  <p className="text-h3 font-semibold text-ds-text-primary">Unusual insider activity detected in NVDA</p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-caption font-medium px-2 py-0.5 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary">
+                      insider trade
+                    </span>
+                    <span className="text-data-sm font-mono text-ds-text-primary">Magnitude: 78%</span>
+                  </div>
+                </div>
+              </div>
+            </LockedPreview>
+            <div className="absolute inset-0 flex items-center justify-center rounded-ds-lg border border-ds-border backdrop-blur-sm bg-ds-surface/60">
+              <div className="text-center px-6 py-5 max-w-xs">
+                <p className="text-body-sm font-semibold text-ds-text-primary mb-1">Today's signal spotlight</p>
+                <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">Unlock real-time signals. Start free trial.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
+                  onClick={() => navigate('/pricing?upgrade_from=dashboard_signal_spotlight')}
+                >
+                  Upgrade to Starter
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

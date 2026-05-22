@@ -281,7 +281,7 @@ const Alerts = () => {
         </div>
         <div className="flex justify-center pt-2">
           <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-            <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial — full alerts access</Link>
+            <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial for full alerts access</Link>
           </Button>
         </div>
       </div>

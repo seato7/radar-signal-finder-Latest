@@ -844,8 +844,8 @@ const AssetRadar = () => {
                 ctaText={activeTab === "crypto" || activeTab === "commodity" ? "Upgrade to Premium" : "Upgrade to Pro"}
                 tooltipText={
                   activeTab === "crypto" || activeTab === "commodity"
-                    ? `Unlock with Premium — full Asset Radar across ${activeTabConfig?.label?.toLowerCase()} and every other asset class`
-                    : `Unlock with Pro — Asset Radar scores for ${activeTabConfig?.label?.toLowerCase()}`
+                    ? `Unlock with Premium for full Asset Radar across ${activeTabConfig?.label?.toLowerCase()} and every other asset class`
+                    : `Unlock with Pro for Asset Radar scores on ${activeTabConfig?.label?.toLowerCase()}`
                 }
               >
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

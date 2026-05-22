@@ -161,7 +161,7 @@ export function AssetPickerModal({
       {/* Full-state banner */}
       {isFull && (
         <div className="px-5 pb-2 text-caption text-ds-text-muted">
-          Watchlist full —{" "}
+          Watchlist full.{" "}
           <Link
             to="/pricing"
             className="text-ds-brand-primary hover:underline"
