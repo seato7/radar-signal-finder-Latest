@@ -1,15 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, ChevronRight, Plus, Lock } from "lucide-react";
+import { Eye, ChevronRight, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface FollowedTheme {
   id: string;
   name: string;
   currentScore: number | null;
 }
+
 
 const FollowedThemesCard = () => {
   const navigate = useNavigate();
