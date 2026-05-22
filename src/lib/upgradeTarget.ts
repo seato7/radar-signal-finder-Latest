@@ -19,8 +19,8 @@ export interface UpgradeTarget {
 
 const BENEFITS: Record<UpgradeContext, Record<"starter" | "pro" | "premium", string>> = {
   watchlist: {
-    starter: "3 watchlist slots with live scores",
-    pro: "10 watchlist slots with live scores",
+    starter: "3 watchlist slots with live prices and scores",
+    pro: "10 watchlist slots with live prices and scores",
     premium: "unlimited watchlist slots",
   },
   ai: {
