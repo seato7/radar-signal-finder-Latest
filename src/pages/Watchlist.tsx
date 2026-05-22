@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Star, Trash2, ExternalLink, Loader2, Search as SearchIcon } from "lucide-react";
+import { Star, Trash2, ExternalLink, Loader2, Search as SearchIcon, Lock } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
@@ -95,12 +95,17 @@ const Watchlist = () => {
 
   // Plan limit indicator state
   const usagePct = slotsLimit > 0 ? (tickers.length / slotsLimit) * 100 : 0;
+  const isAtLimit = slotsLimit !== -1 && tickers.length >= slotsLimit;
+  const isNearLimit =
+    slotsLimit !== -1 &&
+    !isAtLimit &&
+    (slotsLimit <= 5 ? tickers.length === slotsLimit - 1 : usagePct >= 80);
   const limitBorderClass =
     slotsLimit === -1
       ? "border-ds-border"
-      : tickers.length >= slotsLimit
+      : isAtLimit
       ? "border-ds-signal-negative text-ds-signal-negative"
-      : usagePct >= 80
+      : isNearLimit
       ? "border-ds-signal-warning text-ds-signal-warning"
       : "border-ds-border text-ds-text-secondary";
 
@@ -215,17 +220,20 @@ const Watchlist = () => {
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Link>
                     {blurRow && (
-                      <LockedPreview
-                        mode="row-cell"
-                        intensity="medium"
-                        targetTier="starter"
-                        trackingLabel="watchlist_row"
-                        className="ml-2"
-                      >
-                        <span className="font-mono text-caption text-ds-text-secondary">
-                          $123.45 · +1.23% · 82
-                        </span>
-                      </LockedPreview>
+                      <span className="relative inline-flex items-center ml-2">
+                        <LockedPreview
+                          mode="row-cell"
+                          intensity="medium"
+                          targetTier="pro"
+                          tooltipText="Upgrade to Pro for live prices and scores"
+                          className="pr-5 cursor-pointer"
+                        >
+                          <span className="font-mono text-caption text-ds-text-secondary">
+                            $123.45 · +1.23% · 82
+                          </span>
+                        </LockedPreview>
+                        <Lock className="absolute right-0 h-3.5 w-3.5 text-ds-brand-primary pointer-events-none" aria-hidden="true" />
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
