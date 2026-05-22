@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { TierCeiling } from '@/components/conversion/TierCeiling';
 import { getUpgradeTarget } from '@/lib/upgradeTarget';
+import { cn } from '@/lib/utils';
 
 interface Message {
   role: 'user' | 'assistant';
