@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Eye, ChevronRight, Plus, Lock } from "lucide-react";
+import { Eye, ChevronRight, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 interface FollowedTheme {
   id: string;
@@ -11,8 +13,13 @@ interface FollowedTheme {
   currentScore: number | null;
 }
 
+
 const FollowedThemesCard = () => {
   const navigate = useNavigate();
+  const { userPlan } = useAuth();
+  const isFree = userPlan === 'free' || !userPlan;
+
+
 
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['followed-themes-dashboard'],
@@ -110,17 +117,32 @@ const FollowedThemesCard = () => {
                   <p className="text-h4 font-medium text-ds-text-primary truncate mb-2" title={theme.name}>
                     {theme.name}
                   </p>
-                  <div className={`text-data-lg font-mono font-semibold tabular-nums mb-2 ${scoreColor(theme.currentScore)}`}>
-                    {hasScore ? theme.currentScore!.toFixed(0) : '__/100'}
-                  </div>
                   {hasScore ? (
-                    <span className="text-caption font-mono text-ds-text-muted">-</span>
+                    <>
+                      <div className={`text-data-lg font-mono font-semibold tabular-nums mb-2 ${scoreColor(theme.currentScore)}`}>
+                        {theme.currentScore!.toFixed(0)}
+                      </div>
+                      <span className="text-caption font-mono text-ds-text-muted">-</span>
+                    </>
+                  ) : isFree ? (
+                    <div className="mb-2 flex justify-center">
+                      <LockedPreview
+                        mode="inline"
+                        intensity="medium"
+                        targetTier="starter"
+                        trackingLabel="followed_themes_score"
+                      >
+                        <span className="text-data-lg font-mono font-semibold tabular-nums text-ds-signal-positive">
+                          75
+                        </span>
+                      </LockedPreview>
+                    </div>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-caption px-1.5 py-0.5 rounded-ds-sm border border-ds-border text-ds-text-muted">
-                      <Lock className="h-2.5 w-2.5" />
-                      Awaiting score
-                    </span>
+                    <div className="text-data-lg font-mono font-semibold tabular-nums mb-2 text-ds-text-muted">
+                      __/100
+                    </div>
                   )}
+
                 </div>
               );
             })}

@@ -13,7 +13,9 @@ interface ThemeScore {
   name: string;
   score: number;
   components: Record<string, number>;
+  isDemo: boolean;
 }
+
 
 const TopThemesCard = () => {
   const navigate = useNavigate();
@@ -22,15 +24,24 @@ const TopThemesCard = () => {
   const isFree = userPlan === 'free' || !userPlan;
 
   const { data: themes = [], isLoading } = useQuery({
-    queryKey: ['top-themes-dashboard'],
+    queryKey: ['top-themes-dashboard', isFree],
     queryFn: async (): Promise<ThemeScore[]> => {
       const { data: allThemes, error: themesError } = await (supabase.rpc as any)('get_themes_for_user');
 
       if (themesError) throw themesError;
       if (!allThemes || allThemes.length === 0) return [];
 
+      // For Free users: ensure the demo theme is included (floated to top) so the user always
+      // sees at least one fully-scored theme as an anchor. Pull demo themes + top non-demo by name.
+      const candidates = isFree
+        ? [
+            ...allThemes.filter((t: any) => t.is_demo),
+            ...allThemes.filter((t: any) => !t.is_demo).slice(0, 10),
+          ]
+        : allThemes.slice(0, 10);
+
       const themeScores = await Promise.all(
-        allThemes.slice(0, 10).map(async (theme) => {
+        candidates.map(async (theme: any) => {
           const { data } = await supabase
             .from('theme_scores')
             .select('score, component_scores')
@@ -46,17 +57,28 @@ const TopThemesCard = () => {
             name: theme.name,
             score: data.score,
             components: data.component_scores || {},
+            isDemo: Boolean(theme.is_demo),
           };
         })
       );
 
-      return themeScores
-        .filter((theme): theme is ThemeScore => theme !== null)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3);
+      const scored = themeScores.filter((theme): theme is ThemeScore => theme !== null);
+
+      if (isFree) {
+        // Demo first, then by score desc
+        return scored
+          .sort((a, b) => {
+            if (a.isDemo !== b.isDemo) return a.isDemo ? -1 : 1;
+            return b.score - a.score;
+          })
+          .slice(0, 3);
+      }
+
+      return scored.sort((a, b) => b.score - a.score).slice(0, 3);
     },
     staleTime: 10 * 60 * 1000,
   });
+
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return 'text-ds-signal-positive';
@@ -152,7 +174,7 @@ const TopThemesCard = () => {
                       {theme.name}
                     </span>
                   </div>
-                  {isFree ? (
+                  {isFree && !theme.isDemo ? (
                     <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_top_themes">
                       <div className={`text-data-lg font-mono font-semibold tabular-nums ${getScoreColor(theme.score)}`}>
                         {theme.score.toFixed(0)}
@@ -167,10 +189,11 @@ const TopThemesCard = () => {
 
                 <div className="h-1.5 w-full bg-ds-surface-overlay rounded-full overflow-hidden mb-3">
                   <div
-                    className={`h-full rounded-full bg-ds-brand-primary transition-all duration-slow ${isFree ? 'blur-[4px]' : ''}`}
+                    className={`h-full rounded-full bg-ds-brand-primary transition-all duration-slow ${isFree && !theme.isDemo ? 'blur-[4px]' : ''}`}
                     style={{ width: `${Math.min(theme.score, 100)}%` }}
                   />
                 </div>
+
 
                 {topSignals.length > 0 && (
                   <div className="flex items-center gap-2">
