@@ -174,7 +174,7 @@ const TopThemesCard = () => {
                       {theme.name}
                     </span>
                   </div>
-                  {isFree ? (
+                  {isFree && !theme.isDemo ? (
                     <LockedPreview mode="inline" intensity="medium" targetTier="starter" trackingLabel="dashboard_top_themes">
                       <div className={`text-data-lg font-mono font-semibold tabular-nums ${getScoreColor(theme.score)}`}>
                         {theme.score.toFixed(0)}
@@ -189,10 +189,11 @@ const TopThemesCard = () => {
 
                 <div className="h-1.5 w-full bg-ds-surface-overlay rounded-full overflow-hidden mb-3">
                   <div
-                    className={`h-full rounded-full bg-ds-brand-primary transition-all duration-slow ${isFree ? 'blur-[4px]' : ''}`}
+                    className={`h-full rounded-full bg-ds-brand-primary transition-all duration-slow ${isFree && !theme.isDemo ? 'blur-[4px]' : ''}`}
                     style={{ width: `${Math.min(theme.score, 100)}%` }}
                   />
                 </div>
+
 
                 {topSignals.length > 0 && (
                   <div className="flex items-center gap-2">
