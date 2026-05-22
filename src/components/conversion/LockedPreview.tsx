@@ -46,11 +46,11 @@ export function LockedPreview({
 }: LockedPreviewProps) {
   const tooltip =
     tooltipText ??
-    `Unlock with ${targetTier.charAt(0).toUpperCase() + targetTier.slice(1)} — ${tierBenefit[targetTier]}`;
+    `Unlock with ${targetTier.charAt(0).toUpperCase() + targetTier.slice(1)} for ${tierBenefit[targetTier]}`;
   const cta = ctaText ?? `Upgrade to ${targetTier.charAt(0).toUpperCase() + targetTier.slice(1)}`;
   const href = `/pricing${trackingLabel ? `?upgrade_from=${encodeURIComponent(trackingLabel)}` : ""}`;
   const showOv = showOverlay ?? (mode === "card" || mode === "section");
-  const ariaLabel = `Locked — requires ${targetTier} plan`;
+  const ariaLabel = `Locked. Requires ${targetTier} plan.`;
 
   // Inline mode: just a blurred text span, no overlay
   if (mode === "inline") {

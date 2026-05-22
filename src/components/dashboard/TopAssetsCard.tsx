@@ -163,7 +163,7 @@ const TopAssetsCard = () => {
               <div className="absolute inset-0 flex items-center justify-center rounded-ds-lg border border-ds-border backdrop-blur-sm bg-ds-surface/60">
                 <div className="text-center px-6 py-5 max-w-xs">
                   <p className="text-body-sm font-semibold text-ds-text-primary mb-1">Today's top-scored assets</p>
-                  <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">Unlock all scored assets — start free trial</p>
+                  <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">Unlock all scored assets. Start free trial.</p>
                   <Button
                     size="sm"
                     variant="outline"

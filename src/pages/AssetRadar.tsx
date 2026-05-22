@@ -771,6 +771,27 @@ const AssetRadar = () => {
         description={getTabDescription()}
       />
 
+      {userPlan === "free" && (
+        <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3 md:gap-5">
+          <div className="flex-1 min-w-0">
+            <p className="text-overline text-ds-text-muted mb-1">Free preview</p>
+            <p className="text-body-sm font-semibold text-ds-text-primary">You're seeing 3 demo tickers fully unlocked.</p>
+            <p className="text-caption text-ds-text-secondary mt-0.5">
+              Real top-scored assets are revealed with Starter. Start a 7-day trial to see scores sorted by actual ranking.
+            </p>
+          </div>
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent shrink-0"
+          >
+            <Link to="/pricing?upgrade_from=asset_radar_free_banner">Start trial</Link>
+          </Button>
+        </div>
+      )}
+
+
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList
           className="grid w-full mb-4 bg-ds-surface border border-ds-border rounded-ds-md h-auto p-1"
@@ -844,8 +865,8 @@ const AssetRadar = () => {
                 ctaText={activeTab === "crypto" || activeTab === "commodity" ? "Upgrade to Premium" : "Upgrade to Pro"}
                 tooltipText={
                   activeTab === "crypto" || activeTab === "commodity"
-                    ? `Unlock with Premium — full Asset Radar across ${activeTabConfig?.label?.toLowerCase()} and every other asset class`
-                    : `Unlock with Pro — Asset Radar scores for ${activeTabConfig?.label?.toLowerCase()}`
+                    ? `Unlock with Premium for full Asset Radar across ${activeTabConfig?.label?.toLowerCase()} and every other asset class`
+                    : `Unlock with Pro for Asset Radar scores on ${activeTabConfig?.label?.toLowerCase()}`
                 }
               >
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

@@ -118,7 +118,7 @@ const FollowedThemesCard = () => {
                   ) : (
                     <span className="inline-flex items-center gap-1 text-caption px-1.5 py-0.5 rounded-ds-sm border border-ds-border text-ds-text-muted">
                       <Lock className="h-2.5 w-2.5" />
-                      Unscored
+                      Awaiting score
                     </span>
                   )}
                 </div>

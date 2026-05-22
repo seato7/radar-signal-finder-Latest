@@ -225,64 +225,66 @@ const Alerts = () => {
           title="Alerts"
           description="Real-time notifications for high-priority opportunities"
         />
-        <div className="text-center max-w-2xl mx-auto pt-4">
-          <h2 className="text-h3 font-semibold text-ds-text-primary mb-2">Don't miss the next major mover.</h2>
-          <p className="text-body text-ds-text-secondary">
-            Alerts notify you the moment a high-score signal fires on your themes.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {examples.map((ex) => (
-            <LockedPreview
-              key={ex.name}
-              mode="card"
-              intensity="medium"
-              targetTier="starter"
-              trackingLabel="alerts_example"
-            >
-              <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-5 h-full">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <h3 className="text-h4 font-semibold text-ds-text-primary tracking-tight">{ex.name}</h3>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-medium border border-ds-signal-positive text-ds-signal-positive shrink-0">
-                    Active
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {ex.positives.map((p) => (
-                    <span key={p} className="px-2 py-0.5 rounded-ds-sm bg-ds-surface-elevated border border-ds-border text-caption font-mono text-ds-text-secondary">
-                      {toDisplayLabel(p)}
+        <div className="max-w-5xl mx-auto w-full space-y-6">
+          <div className="text-center max-w-2xl mx-auto pt-4">
+            <h2 className="text-h3 font-semibold text-ds-text-primary mb-2">Don't miss the next major mover.</h2>
+            <p className="text-body text-ds-text-secondary">
+              Alerts notify you the moment a high-score signal fires on your themes.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {examples.map((ex) => (
+              <LockedPreview
+                key={ex.name}
+                mode="card"
+                intensity="medium"
+                targetTier="starter"
+                trackingLabel="alerts_example"
+              >
+                <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-5 h-full">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <h3 className="text-h4 font-semibold text-ds-text-primary tracking-tight">{ex.name}</h3>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-caption font-medium border border-ds-signal-positive text-ds-signal-positive shrink-0">
+                      Active
                     </span>
-                  ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {ex.positives.map((p) => (
+                      <span key={p} className="px-2 py-0.5 rounded-ds-sm bg-ds-surface-elevated border border-ds-border text-caption font-mono text-ds-text-secondary">
+                        {toDisplayLabel(p)}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-caption font-mono text-ds-text-muted">{ex.time}</span>
+                    <span className="text-data-sm font-mono font-semibold text-ds-signal-positive">{ex.score}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-caption font-mono text-ds-text-muted">{ex.time}</span>
-                  <span className="text-data-sm font-mono font-semibold text-ds-signal-positive">{ex.score}</span>
-                </div>
+              </LockedPreview>
+            ))}
+          </div>
+          <div className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md p-5 md:p-6 opacity-70 pointer-events-none">
+            <div className="flex items-center gap-2 mb-1">
+              <Settings className="h-5 w-5 text-ds-brand-primary" />
+              <h2 className="text-h4 font-semibold text-ds-text-primary">Alert Thresholds</h2>
+            </div>
+            <p className="text-body-sm text-ds-text-secondary mb-5">Configure when alerts should fire</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-body-sm text-ds-text-secondary">Minimum Score</Label>
+                <Input disabled value="60" className="bg-ds-surface-elevated border-ds-border" />
               </div>
-            </LockedPreview>
-          ))}
-        </div>
-        <div className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md p-5 md:p-6 opacity-70 pointer-events-none">
-          <div className="flex items-center gap-2 mb-1">
-            <Settings className="h-5 w-5 text-ds-brand-primary" />
-            <h2 className="text-h4 font-semibold text-ds-text-primary">Alert Thresholds</h2>
-          </div>
-          <p className="text-body-sm text-ds-text-secondary mb-5">Configure when alerts should fire</p>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-body-sm text-ds-text-secondary">Minimum Score</Label>
-              <Input disabled value="60" className="bg-ds-surface-elevated border-ds-border" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-body-sm text-ds-text-secondary">Minimum Positive Components</Label>
-              <Input disabled value="3" className="bg-ds-surface-elevated border-ds-border" />
+              <div className="space-y-2">
+                <Label className="text-body-sm text-ds-text-secondary">Minimum Positive Components</Label>
+                <Input disabled value="3" className="bg-ds-surface-elevated border-ds-border" />
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex justify-center pt-2">
-          <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-            <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial — full alerts access</Link>
-          </Button>
+          <div className="flex justify-center pt-2">
+            <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
+              <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial for full alerts access</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
