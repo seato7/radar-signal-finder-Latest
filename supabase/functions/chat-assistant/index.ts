@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { sendErrorAlert } from '../_shared/error-alerter.ts';
 import { callGeminiPro } from '../_shared/gemini.ts';
+import { getPlanLimits } from '../_shared/plan-limits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,18 +17,6 @@ const corsHeaders = {
 const logStep = (step: string, details?: Record<string, unknown>) => {
   const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
   console.log(`[CHAT-ASSISTANT] ${step}${detailsStr}`);
-};
-
-// Per-plan daily message limits. Mirrors src/lib/planLimits.ts and the
-// copy on /pricing. -1 means unlimited. Enforced server-side here; the
-// client-side localStorage counter is kept only as a display hint.
-const DAILY_MESSAGE_LIMITS: Record<string, number> = {
-  free: 1,
-  starter: 5,
-  pro: 20,
-  premium: -1,
-  enterprise: -1,
-  admin: -1,
 };
 
 // Best-effort prompt injection guard. Strips lines that mimic our own
@@ -253,7 +242,7 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     // fetch, web search, Tavily call, or Gemini invocation so a blocked
     // request costs effectively nothing. The client still keeps a
     // localStorage counter for display but it is no longer authoritative.
-    const dailyLimit = DAILY_MESSAGE_LIMITS[normalizedPlan] ?? 0;
+    const dailyLimit = getPlanLimits(normalizedPlan).ai_messages_per_day;
     logStep('RATE_LIMIT_BRANCH', {
       dailyLimit,
       branch: dailyLimit === -1 ? 'unlimited_skip' : 'enforce',
