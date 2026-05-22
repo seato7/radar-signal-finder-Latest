@@ -217,6 +217,12 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     isLoading ||
     (dailyLimit !== -1 && dailyLimit > 0 && todayCount >= dailyLimit) ||
     dailyLimit === 0;
+  const isAtDailyLimit = dailyLimit !== -1 && dailyLimit > 0 && todayCount >= dailyLimit;
+  const isNearDailyLimit =
+    dailyLimit !== -1 &&
+    dailyLimit > 0 &&
+    !isAtDailyLimit &&
+    (dailyLimit <= 5 ? todayCount === dailyLimit - 1 : (todayCount / dailyLimit) * 100 >= 80);
 
   return (
     <Card className="h-[calc(100vh-14rem)] max-h-[700px] min-h-[400px] flex flex-col bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
@@ -340,7 +346,16 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
             </Button>
           </div>
           {dailyLimit > 0 && dailyLimit !== -1 && (
-            <p className="text-caption font-mono text-ds-text-muted mt-2 text-right">
+            <p
+              className={cn(
+                "text-caption font-mono mt-2 text-right",
+                isAtDailyLimit
+                  ? "text-ds-signal-negative"
+                  : isNearDailyLimit
+                  ? "text-ds-signal-warning"
+                  : "text-ds-text-muted"
+              )}
+            >
               {todayCount} of {dailyLimit} messages used today
               {todayCount >= dailyLimit && (
                 <>
