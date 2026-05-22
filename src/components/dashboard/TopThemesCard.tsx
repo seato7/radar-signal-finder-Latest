@@ -13,7 +13,9 @@ interface ThemeScore {
   name: string;
   score: number;
   components: Record<string, number>;
+  isDemo: boolean;
 }
+
 
 const TopThemesCard = () => {
   const navigate = useNavigate();
