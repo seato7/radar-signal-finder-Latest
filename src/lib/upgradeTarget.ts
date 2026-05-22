@@ -67,7 +67,8 @@ export function getUpgradeTarget(
   else nextTier = "premium"; // pro / premium / enterprise / admin all hook to Premium
 
   // Context-specific overrides where the next-tier benefit is identical to current
-  if (context === "watchlist" && tier === "free") nextTier = "pro"; // Starter has 3 slots same as... actually Free=1, Starter=3, so starter is upgrade
+  // Free=3 and Starter=3 watchlist slots post-5B widening, so route Free→Pro for slot quantity.
+  if (context === "watchlist" && tier === "free") nextTier = "pro";
   if (context === "alerts" && tier === "free") nextTier = "starter";
   if (context === "themes" && tier === "free") nextTier = "starter";
 

@@ -9,6 +9,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { getPlanLimits } from '@/lib/planLimits';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { TierCeiling } from '@/components/conversion/TierCeiling';
+import { getUpgradeTarget } from '@/lib/upgradeTarget';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -359,6 +361,23 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               to use the AI Assistant
             </p>
           )}
+          {dailyLimit > 0 && dailyLimit !== -1 && todayCount >= dailyLimit && (() => {
+            const t = getUpgradeTarget(userPlan || 'free', 'ai');
+            return (
+              <div className="mt-3">
+                <TierCeiling
+                  currentUsage={todayCount}
+                  limit={dailyLimit}
+                  limitUnit="messages"
+                  currentTier={(userPlan as any) || 'free'}
+                  nextTier={t.nextTier}
+                  nextTierBenefit={t.benefit}
+                  timeScope="daily"
+                  trackingLabel="ai_chat_daily_limit"
+                />
+              </div>
+            );
+          })()}
         </div>
       </CardContent>
     </Card>

@@ -20,9 +20,9 @@ export interface PlanLimits {
 export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
   free: {
     active_signals: 0,
-    ai_messages_per_day: 1,
+    ai_messages_per_day: 3,
     alerts: 0,
-    watchlist_slots: 1,
+    watchlist_slots: 3,
     themes: 1,
     asset_radar_classes: ['stock', 'etf', 'forex'],
     show_scores: true,
