@@ -31,8 +31,8 @@ const plans: Plan[] = [
     features: [
       "1 demo theme (read only)",
       "3 demo tickers (F, VTI, EUR/USD) with scores",
-      "AI Assistant: 1 message/day",
-      "1 Watchlist slot",
+      "AI Assistant: 3 messages/day",
+      "3 Watchlist slots",
       "No alerts or active signals",
     ],
     popular: false,

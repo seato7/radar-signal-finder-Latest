@@ -26,7 +26,7 @@ export interface PlanLimits {
 }
 
 export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
-  free:       { active_signals: 0,  ai_messages_per_day: 1,  alerts: 0,  watchlist_slots: 1,  themes: 1 },
+  free:       { active_signals: 0,  ai_messages_per_day: 3,  alerts: 0,  watchlist_slots: 3,  themes: 1 },
   starter:    { active_signals: 1,  ai_messages_per_day: 5,  alerts: 1,  watchlist_slots: 3,  themes: 1 },
   pro:        { active_signals: 3,  ai_messages_per_day: 20, alerts: 5,  watchlist_slots: 10, themes: 3 },
   premium:    { active_signals: -1, ai_messages_per_day: -1, alerts: -1, watchlist_slots: -1, themes: -1 },
