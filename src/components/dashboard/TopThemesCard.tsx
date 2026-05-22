@@ -24,15 +24,24 @@ const TopThemesCard = () => {
   const isFree = userPlan === 'free' || !userPlan;
 
   const { data: themes = [], isLoading } = useQuery({
-    queryKey: ['top-themes-dashboard'],
+    queryKey: ['top-themes-dashboard', isFree],
     queryFn: async (): Promise<ThemeScore[]> => {
       const { data: allThemes, error: themesError } = await (supabase.rpc as any)('get_themes_for_user');
 
       if (themesError) throw themesError;
       if (!allThemes || allThemes.length === 0) return [];
 
+      // For Free users: ensure the demo theme is included (floated to top) so the user always
+      // sees at least one fully-scored theme as an anchor. Pull demo themes + top non-demo by name.
+      const candidates = isFree
+        ? [
+            ...allThemes.filter((t: any) => t.is_demo),
+            ...allThemes.filter((t: any) => !t.is_demo).slice(0, 10),
+          ]
+        : allThemes.slice(0, 10);
+
       const themeScores = await Promise.all(
-        allThemes.slice(0, 10).map(async (theme) => {
+        candidates.map(async (theme: any) => {
           const { data } = await supabase
             .from('theme_scores')
             .select('score, component_scores')
@@ -48,17 +57,28 @@ const TopThemesCard = () => {
             name: theme.name,
             score: data.score,
             components: data.component_scores || {},
+            isDemo: Boolean(theme.is_demo),
           };
         })
       );
 
-      return themeScores
-        .filter((theme): theme is ThemeScore => theme !== null)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3);
+      const scored = themeScores.filter((theme): theme is ThemeScore => theme !== null);
+
+      if (isFree) {
+        // Demo first, then by score desc
+        return scored
+          .sort((a, b) => {
+            if (a.isDemo !== b.isDemo) return a.isDemo ? -1 : 1;
+            return b.score - a.score;
+          })
+          .slice(0, 3);
+      }
+
+      return scored.sort((a, b) => b.score - a.score).slice(0, 3);
     },
     staleTime: 10 * 60 * 1000,
   });
+
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return 'text-ds-signal-positive';
