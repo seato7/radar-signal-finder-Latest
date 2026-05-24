@@ -25,31 +25,12 @@ const SignalSpotlight = () => {
     queryKey: ['signal-spotlight'],
     enabled: !isFree,
     queryFn: async (): Promise<SpotlightSignal | null> => {
-      const { data: signals, error } = await supabase
-        .from('signals')
-        .select('signal_type, direction, magnitude, asset_id')
-        .not('direction', 'eq', 'neutral')
-        .order('observed_at', { ascending: false })
-        .limit(10);
-
+      const { data, error } = await (supabase.rpc as any)('get_signal_spotlight_for_user');
       if (error) throw error;
-      if (!signals || signals.length === 0) return null;
+      const row = ((data ?? []) as any[])[0];
+      if (!row || !row.ticker) return null;
 
-      const sorted = signals.sort((a, b) => (b.magnitude || 0) - (a.magnitude || 0));
-      const top = sorted[0];
-
-      const assetIds = [top.asset_id].filter(Boolean) as string[];
-      let ticker = 'Unknown';
-      if (assetIds.length > 0) {
-        const { data: assetRows } = await (supabase.rpc as any)(
-          'get_asset_tickers_by_ids_for_user',
-          { _ids: assetIds }
-        );
-        const match = (assetRows ?? []).find((r: any) => r.id === top.asset_id);
-        if (match?.ticker) ticker = match.ticker;
-      }
-      if (ticker === 'Unknown') return null;
-
+      const ticker: string = row.ticker;
       const headlines: Record<string, string> = {
         'insider_trade': `Unusual insider activity detected in ${ticker}`,
         'dark_pool': `Dark pool volume spike in ${ticker}`,
@@ -61,10 +42,10 @@ const SignalSpotlight = () => {
 
       return {
         ticker,
-        type: top.signal_type,
-        headline: headlines[top.signal_type] || `Notable signal detected for ${ticker}`,
-        direction: top.direction || 'neutral',
-        magnitude: top.magnitude || 0
+        type: row.signal_type,
+        headline: headlines[row.signal_type] || `Notable signal detected for ${ticker}`,
+        direction: row.direction || 'neutral',
+        magnitude: row.magnitude == null ? 0 : Number(row.magnitude),
       };
     },
     staleTime: 10 * 60 * 1000,
