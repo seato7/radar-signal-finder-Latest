@@ -19,19 +19,13 @@ const MarketRadar = () => {
   const { data: topMovers = [], isLoading } = useQuery({
     queryKey: ['market-radar-movers'],
     queryFn: async (): Promise<TopMover[]> => {
-      const { data, error } = await supabase
-        .from('advanced_technicals')
-        .select('ticker, trend_strength, price_vs_vwap_pct, breakout_signal')
-        .in('trend_strength', ['strong_uptrend', 'strong_downtrend'])
-        .order('timestamp', { ascending: false })
-        .limit(8);
-
+      const { data, error } = await (supabase.rpc as any)('get_market_radar_for_user');
       if (error) throw error;
-      return (data || []).map(d => ({
+      return ((data ?? []) as any[]).map((d) => ({
         ticker: d.ticker,
         trend: d.trend_strength,
-        change: d.price_vs_vwap_pct || 0,
-        breakout: d.breakout_signal || 'range_bound'
+        change: d.price_vs_vwap_pct == null ? 0 : Number(d.price_vs_vwap_pct),
+        breakout: d.breakout_signal || 'range_bound',
       }));
     },
     staleTime: 5 * 60 * 1000,

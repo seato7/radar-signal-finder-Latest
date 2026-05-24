@@ -26,55 +26,27 @@ const TopThemesCard = () => {
   const { data: themes = [], isLoading } = useQuery({
     queryKey: ['top-themes-dashboard', isFree],
     queryFn: async (): Promise<ThemeScore[]> => {
-      const { data: allThemes, error: themesError } = await (supabase.rpc as any)('get_themes_for_user');
+      const { data, error } = await (supabase.rpc as any)('get_top_themes_with_scores_for_user', { p_limit: 10 });
+      if (error) throw error;
+      if (!data || data.length === 0) return [];
 
-      if (themesError) throw themesError;
-      if (!allThemes || allThemes.length === 0) return [];
-
-      // For Free users: ensure the demo theme is included (floated to top) so the user always
-      // sees at least one fully-scored theme as an anchor. Pull demo themes + top non-demo by name.
-      const candidates = isFree
-        ? [
-            ...allThemes.filter((t: any) => t.is_demo),
-            ...allThemes.filter((t: any) => !t.is_demo).slice(0, 10),
-          ]
-        : allThemes.slice(0, 10);
-
-      const themeScores = await Promise.all(
-        candidates.map(async (theme: any) => {
-          const { data } = await supabase
-            .from('theme_scores')
-            .select('score, component_scores')
-            .eq('theme_id', theme.id)
-            .order('computed_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (!data) return null;
-
-          return {
-            id: theme.id,
-            name: theme.name,
-            score: data.score,
-            components: data.component_scores || {},
-            isDemo: Boolean(theme.is_demo),
-          };
-        })
-      );
-
-      const scored = themeScores.filter((theme): theme is ThemeScore => theme !== null);
+      const mapped: ThemeScore[] = (data as any[]).map((t) => ({
+        id: t.id,
+        name: t.name,
+        score: t.score == null ? 0 : Number(t.score),
+        components: (t.component_scores as Record<string, number>) || {},
+        isDemo: Boolean(t.is_demo),
+      }));
 
       if (isFree) {
-        // Demo first, then by score desc
-        return scored
+        return mapped
           .sort((a, b) => {
             if (a.isDemo !== b.isDemo) return a.isDemo ? -1 : 1;
             return b.score - a.score;
           })
           .slice(0, 3);
       }
-
-      return scored.sort((a, b) => b.score - a.score).slice(0, 3);
+      return mapped.sort((a, b) => b.score - a.score).slice(0, 3);
     },
     staleTime: 10 * 60 * 1000,
   });
