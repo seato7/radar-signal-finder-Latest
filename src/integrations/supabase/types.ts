@@ -4271,6 +4271,15 @@ export type Database = {
           signal_count: number
         }[]
       }
+      get_market_radar_for_user: {
+        Args: never
+        Returns: {
+          breakout_signal: string
+          price_vs_vwap_pct: number
+          ticker: string
+          trend_strength: string
+        }[]
+      }
       get_price_aggregates: {
         Args: { p_freshness_days?: number; p_snapshot_date: string }
         Returns: {
@@ -4297,6 +4306,15 @@ export type Database = {
         Returns: {
           cnt: number
           global_mean: number
+        }[]
+      }
+      get_signal_spotlight_for_user: {
+        Args: never
+        Returns: {
+          direction: string
+          magnitude: number
+          signal_type: string
+          ticker: string
         }[]
       }
       get_signals_for_user: {
@@ -4367,6 +4385,16 @@ export type Database = {
           score: number
           tickers: string[]
           updated_at: string
+        }[]
+      }
+      get_top_themes_with_scores_for_user: {
+        Args: { p_limit?: number }
+        Returns: {
+          component_scores: Json
+          id: string
+          is_demo: boolean
+          name: string
+          score: number
         }[]
       }
       get_total_asset_count: { Args: never; Returns: number }
