@@ -2344,6 +2344,30 @@ export type Database = {
         }
         Relationships: []
       }
+      log_error_events: {
+        Row: {
+          created_at: string
+          error_hash: string
+          id: string
+          slack_notified: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_hash: string
+          id?: string
+          slack_notified?: boolean
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_hash?: string
+          id?: string
+          slack_notified?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       model_daily_metrics: {
         Row: {
           created_at: string | null
