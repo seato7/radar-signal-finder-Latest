@@ -56,7 +56,7 @@ serve(async (req) => {
     .from('theme_analyses')
     .select('id', { count: 'exact', head: true })
     .eq('requested_by', userId)
-    .gte('created_at', oneHourAgo);
+    .gte('generated_at', oneHourAgo);
   if ((recentCount ?? 0) >= RATE_LIMIT_PER_HOUR) {
     return new Response(JSON.stringify({ error: 'Rate limit exceeded (10/hour)' }), {
       status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
