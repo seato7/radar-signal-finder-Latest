@@ -1,12 +1,8 @@
-// redeployed 2026-03-17
+// Phase 6D: admin-or-service-role only.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logHeartbeat } from "../_shared/heartbeat.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAdminOrService } from "../_shared/auth.ts";
 
 interface TestResult {
   name: string;
@@ -25,12 +21,11 @@ serve(async (req) => {
   const startTime = Date.now();
   const results: TestResult[] = [];
 
-  try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
+  const auth = await verifyAdminOrService(req);
+  if (!auth.ok) return auth.response;
+  const supabaseClient = auth.admin;
 
+  try {
     console.log('[VALIDATE-SCORING] Starting comprehensive scoring validation...');
 
     // ========================================================================

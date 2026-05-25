@@ -1,32 +1,16 @@
-// redeployed 2026-03-17
+// Phase 6D: admin-or-service-role only.
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-/**
- * API Data Staleness Monitor
- * 
- * SLA: All tickers must have data ≤5 seconds old
- * 
- * Endpoints:
- * - GET / → All stale tickers across all asset classes
- * - GET /?asset_class=crypto → Stale tickers for specific asset class
- * - GET /?ticker=BTC/USD → Staleness status for specific ticker
- */
+import { corsHeaders, verifyAdminOrService } from "../_shared/auth.ts";
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-  );
+  const auth = await verifyAdminOrService(req);
+  if (!auth.ok) return auth.response;
+  const supabaseClient = auth.admin;
+
 
   try {
     const url = new URL(req.url);
