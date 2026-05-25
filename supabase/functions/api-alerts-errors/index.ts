@@ -21,18 +21,48 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Auth check — only admins/service callers should access system-wide alert data
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader) {
+  // Auth check — restrict system-wide alert feed to admins only.
+  // Accepts EITHER a constant-time shared-secret header (ADMIN_DIAG_TOKEN) for
+  // cron / Slack / internal monitors, OR a valid admin-role JWT for dashboards.
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const diagToken = req.headers.get('x-admin-diag-token') ?? '';
+  const expectedDiag = Deno.env.get('ADMIN_DIAG_TOKEN') ?? '';
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+  function timingSafeEqual(a: string, b: string): boolean {
+    if (!a || !b || a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  }
+
+  let authorized = false;
+  if (expectedDiag && timingSafeEqual(diagToken, expectedDiag)) {
+    authorized = true;
+  } else if (authHeader.startsWith('Bearer ')) {
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData } = await userClient.auth.getClaims(token);
+    const userId = claimsData?.claims?.sub as string | undefined;
+    if (userId) {
+      const adminClient = createClient(supabaseUrl, serviceKey);
+      const { data: isAdmin } = await adminClient.rpc('has_role', { _user_id: userId, _role: 'admin' });
+      if (isAdmin === true) authorized = true;
+    }
+  }
+
+  if (!authorized) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-  );
+  const supabaseClient = createClient(supabaseUrl, serviceKey);
 
   try {
     const alerts: any[] = [];
