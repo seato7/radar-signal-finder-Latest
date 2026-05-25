@@ -95,7 +95,7 @@ Provide a clear, professional summary suitable for investors.`;
 
     // Best-effort persist; failure does not block response.
     // requested_by may not exist in the legacy table; rely on column-add or use metadata fallback.
-    const insertPayload: any = {
+    await supabase.from('theme_analyses').insert({
       theme_name: themeName,
       analysis_type: 'why_now',
       summary,
@@ -103,13 +103,7 @@ Provide a clear, professional summary suitable for investors.`;
       days_window: days,
       model: 'gemini-2.0-flash',
       requested_by: userId,
-    };
-    const { error: insErr } = await supabase.from('theme_analyses').insert(insertPayload);
-    if (insErr && /requested_by/.test(insErr.message ?? '')) {
-      // Column not present — drop and retry without it; user attribution survives in alert_history dedup
-      delete insertPayload.requested_by;
-      await supabase.from('theme_analyses').insert(insertPayload);
-    }
+    });
 
     return new Response(JSON.stringify({ summary }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
