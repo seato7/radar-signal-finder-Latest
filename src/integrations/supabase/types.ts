@@ -2344,6 +2344,30 @@ export type Database = {
         }
         Relationships: []
       }
+      log_error_events: {
+        Row: {
+          created_at: string
+          error_hash: string
+          id: string
+          slack_notified: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_hash: string
+          id?: string
+          slack_notified?: boolean
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_hash?: string
+          id?: string
+          slack_notified?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
       model_daily_metrics: {
         Row: {
           created_at: string | null
@@ -3491,6 +3515,7 @@ export type Database = {
           id: string
           key_drivers: Json | null
           model: string | null
+          requested_by: string | null
           signal_count: number | null
           strength: string | null
           summary: string | null
@@ -3504,6 +3529,7 @@ export type Database = {
           id?: string
           key_drivers?: Json | null
           model?: string | null
+          requested_by?: string | null
           signal_count?: number | null
           strength?: string | null
           summary?: string | null
@@ -3517,6 +3543,7 @@ export type Database = {
           id?: string
           key_drivers?: Json | null
           model?: string | null
+          requested_by?: string | null
           signal_count?: number | null
           strength?: string | null
           summary?: string | null

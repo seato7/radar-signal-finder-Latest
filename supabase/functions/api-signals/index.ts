@@ -1,4 +1,4 @@
-// redeployed 2026-03-17
+// Phase 6B: requires authenticated paid-tier user (server-verified plan).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -7,25 +7,55 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const PAID_PLANS = new Set(['starter', 'pro', 'premium', 'enterprise', 'admin']);
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
-    // Parse query parameters
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const token = authHeader.replace('Bearer ', '');
+  const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+  if (claimsErr || !claimsData?.claims?.sub) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  const userId = claimsData.claims.sub as string;
+
+  const admin = createClient(supabaseUrl, serviceKey);
+
+  // Server-side plan check — never trust client claims
+  const { data: planRow } = await admin.rpc('_effective_plan', { _user_id: userId });
+  const plan = (planRow as string | null) ?? 'free';
+  if (!PAID_PLANS.has(plan)) {
+    return new Response(JSON.stringify({ error: 'Upgrade required', plan, upgrade_required: true }), {
+      status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    const supabase = admin;
     const url = new URL(req.url);
     const scoreMin = parseFloat(url.searchParams.get('score_min') || '0');
     const signalType = url.searchParams.get('signal_type');
     const assetClass = url.searchParams.get('asset_class');
-    const limit = parseInt(url.searchParams.get('limit') || '100');
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
 
-    // Build query
-    // FIX: Remove signal_classification (column doesn't exist in signals table - use signal_type)
     let query = supabase
       .from('signals')
       .select(`
@@ -40,68 +70,41 @@ serve(async (req) => {
         created_at,
         citation,
         value_text,
-        assets (
-          id,
-          ticker,
-          name,
-          exchange,
-          asset_class
-        )
+        assets (id, ticker, name, exchange, asset_class)
       `)
       .not('composite_score', 'is', null)
       .gte('composite_score', scoreMin)
       .order('composite_score', { ascending: false })
       .limit(limit);
 
-    // Apply filters
-    // FIX: Use signal_type column (signal_classification doesn't exist in signals table)
-    if (signalType) {
-      query = query.eq('signal_type', signalType);
-    }
-
-    if (assetClass) {
-      query = query.eq('asset_class', assetClass);
-    }
+    if (signalType) query = query.eq('signal_type', signalType);
+    if (assetClass) query = query.eq('asset_class', assetClass);
 
     const { data: signals, error } = await query;
-
     if (error) throw error;
 
-    // Compute summary statistics
     const summary = {
       total_signals: signals?.length || 0,
-      avg_score: signals?.length ? 
-        (signals.reduce((sum, s) => sum + (s.composite_score || 0), 0) / signals.length).toFixed(2) : 0,
+      avg_score: signals?.length
+        ? (signals.reduce((sum, s: any) => sum + (s.composite_score || 0), 0) / signals.length).toFixed(2)
+        : 0,
       by_classification: {} as Record<string, number>,
       by_asset_class: {} as Record<string, number>,
       top_assets: [] as any[],
     };
 
     if (signals && signals.length > 0) {
-      // Count by signal_type (was signal_classification - column doesn't exist)
-      signals.forEach(s => {
-        if (s.signal_type) {
-          summary.by_classification[s.signal_type] = 
-            (summary.by_classification[s.signal_type] || 0) + 1;
-        }
-        if (s.asset_class) {
-          summary.by_asset_class[s.asset_class] = 
-            (summary.by_asset_class[s.asset_class] || 0) + 1;
-        }
+      signals.forEach((s: any) => {
+        if (s.signal_type) summary.by_classification[s.signal_type] = (summary.by_classification[s.signal_type] || 0) + 1;
+        if (s.asset_class) summary.by_asset_class[s.asset_class] = (summary.by_asset_class[s.asset_class] || 0) + 1;
       });
 
-      // Get top assets by average signal score
-      const assetScores = new Map<string, { ticker: string; name: string; scores: number[]; }>();
-      
-      signals.forEach(s => {
+      const assetScores = new Map<string, { ticker: string; name: string; scores: number[] }>();
+      signals.forEach((s: any) => {
         if (s.assets && s.composite_score) {
           const asset = s.assets as any;
           if (!assetScores.has(asset.ticker)) {
-            assetScores.set(asset.ticker, {
-              ticker: asset.ticker,
-              name: asset.name,
-              scores: [],
-            });
+            assetScores.set(asset.ticker, { ticker: asset.ticker, name: asset.name, scores: [] });
           }
           assetScores.get(asset.ticker)!.scores.push(s.composite_score);
         }
@@ -109,8 +112,7 @@ serve(async (req) => {
 
       summary.top_assets = Array.from(assetScores.values())
         .map(a => ({
-          ticker: a.ticker,
-          name: a.name,
+          ticker: a.ticker, name: a.name,
           avg_score: (a.scores.reduce((sum, s) => sum + s, 0) / a.scores.length).toFixed(2),
           signal_count: a.scores.length,
         }))
@@ -120,19 +122,12 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        summary,
-        signals,
-        filters: {
-          score_min: scoreMin,
-          signal_type: signalType,
-          asset_class: assetClass,
-          limit,
-        },
+        summary, signals,
+        filters: { score_min: scoreMin, signal_type: signalType, asset_class: assetClass, limit },
         timestamp: new Date().toISOString(),
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
   } catch (error) {
     console.error('Error fetching signals:', error);
     return new Response(
