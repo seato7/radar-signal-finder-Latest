@@ -27,18 +27,23 @@ export class ErrorBoundary extends Component<Props, State> {
   public async componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
     
-    // Send error to backend for Slack alerting
+    // Send error to backend for Slack alerting — only when signed in.
+    // log-error requires a Bearer JWT (Phase 6B). Anonymous errors stay in
+    // the browser console.
     try {
-      await supabase.functions.invoke('log-error', {
-        body: {
-          error: error.message,
-          errorInfo: errorInfo.componentStack,
-          location: 'ErrorBoundary',
-          url: window.location.href,
-          userAgent: navigator.userAgent,
-          timestamp: new Date().toISOString()
-        }
-      });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await supabase.functions.invoke('log-error', {
+          body: {
+            error: error.message,
+            errorInfo: errorInfo.componentStack,
+            location: 'ErrorBoundary',
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
     } catch (e) {
       console.error('Failed to log error to backend:', e);
     }
