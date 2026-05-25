@@ -129,9 +129,8 @@ const Themes = () => {
   const fetchThemes = async () => {
     setLoadingThemes(true);
     try {
-      const [{ data, error }, themesRes, scoresRes] = await Promise.all([
+      const [{ data, error }, scoresRes] = await Promise.all([
         (supabase.rpc as any)("get_themes_for_user"),
-        supabase.from("themes").select("id, tickers, keywords, created_at"),
         supabase
           .from("theme_scores")
           .select("theme_id, signal_count, computed_at")
@@ -139,25 +138,6 @@ const Themes = () => {
       ]);
 
       if (error) throw error;
-
-      const metaMap = new Map<
-        string,
-        { tickers: string[]; keywords: string[]; created_at: string | null }
-      >(
-        ((themesRes.data ?? []) as Array<{
-          id: string;
-          tickers: string[] | null;
-          keywords: string[] | null;
-          created_at: string | null;
-        }>).map((t) => [
-          t.id,
-          {
-            tickers: Array.isArray(t.tickers) ? t.tickers : [],
-            keywords: Array.isArray(t.keywords) ? t.keywords : [],
-            created_at: t.created_at,
-          },
-        ]),
-      );
 
       const signalCountMap = new Map<string, number>();
       const lastCalcMap = new Map<string, string>();
@@ -178,26 +158,31 @@ const Themes = () => {
         score: number | null;
         is_demo: boolean;
         ai_summary: string | null;
+        tickers: string[] | null;
+        keywords: string[] | null;
+        created_at: string | null;
       }>;
 
       const mapped: ThemeScore[] = rows.map((r) => {
-        const meta = metaMap.get(r.id) ?? { tickers: [], keywords: [], created_at: null };
+        const tickers = Array.isArray(r.tickers) ? r.tickers : [];
+        const keywords = Array.isArray(r.keywords) ? r.keywords : [];
         const signalCount = signalCountMap.get(r.id) ?? 0;
         const score = Number(r.score ?? 0);
-        const isTracking = meta.tickers.length === 0 && signalCount === 0 && score === 50;
+        const isTracking = tickers.length === 0 && signalCount === 0 && score === 50;
         return {
           id: r.id,
           name: r.name,
           score,
           is_demo: Boolean(r.is_demo),
           ai_summary: r.ai_summary,
-          tickers: meta.tickers,
-          keywords: meta.keywords,
+          tickers,
+          keywords,
           signal_count: signalCount,
           is_tracking: isTracking,
           last_calculated_at: lastCalcMap.get(r.id) ?? null,
-          created_at: meta.created_at,
+          created_at: r.created_at,
         };
+
       });
 
       setThemes(mapped);
