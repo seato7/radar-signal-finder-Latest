@@ -1,20 +1,18 @@
-// redeployed 2026-03-17
+// Phase 6D: paid-tier auth gate.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { callGemini } from "../_shared/gemini.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAuth } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await verifyAuth(req, { requirePaid: true });
+  if (!auth.ok) return auth.response;
+
   try {
     const { reportData, reportType } = await req.json();
-
     if (!reportData || typeof reportData !== 'object') {
       return new Response(JSON.stringify({ error: 'reportData object is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -26,8 +24,7 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    
-    // Generate report content with AI
+
     const prompt = `Create a professional investment report in markdown format:
 
 Report Type: ${reportType}
@@ -65,18 +62,10 @@ Use markdown formatting for easy conversion to PDF.`;
     const reportMarkdown = await callGemini(fullPrompt, 2000, 'text');
     if (!reportMarkdown) throw new Error('Gemini returned no content');
 
-    // Return markdown (client can convert to PDF using libraries like jsPDF or html2pdf)
-    return new Response(
-      JSON.stringify({ 
-        reportMarkdown,
-        metadata: {
-          generatedAt: new Date().toISOString(),
-          reportType
-        }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({
+      reportMarkdown,
+      metadata: { generatedAt: new Date().toISOString(), reportType }
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('Error in generate-pdf-report:', error);
     return new Response(

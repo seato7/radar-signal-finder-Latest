@@ -1,26 +1,20 @@
+// Phase 6D: paid-tier auth gate.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { callGemini } from "../_shared/gemini.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAuth } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  );
+  const auth = await verifyAuth(req, { requirePaid: true });
+  if (!auth.ok) return auth.response;
+  const supabase = auth.admin;
 
   try {
     const { theme, signals, marketConditions } = await req.json();
 
-    // Input validation
     if (!theme || typeof theme !== 'object' || !theme.name) {
       return new Response(JSON.stringify({ error: 'theme object with name is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -31,16 +25,11 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    
-    // Analyze signal diversity
+
     const signalTypes = [...new Set(signals.map((s: any) => s.signal_type))];
     const hasMultipleSignalTypes = signalTypes.length >= 3;
-    const hasInstitutionalSupport = signals.some((s: any) => 
-      s.signal_type.includes('bigmoney')
-    );
-    const hasInsiderBuying = signals.some((s: any) => 
-      s.signal_type === 'insider_buy'
-    );
+    const hasInstitutionalSupport = signals.some((s: any) => s.signal_type.includes('bigmoney'));
+    const hasInsiderBuying = signals.some((s: any) => s.signal_type === 'insider_buy');
 
     const prompt = `Assess the investment risk and conviction level for this opportunity:
 
@@ -65,38 +54,26 @@ Format as a structured analysis that's easy to scan.`;
     const assessment = await callGemini(fullPrompt, 600, 'text');
     if (!assessment) throw new Error('Gemini returned no content');
 
-    // Persist to ai_research_reports (theme-scoped; ticker field uses theme name as surrogate key)
-    await supabase
-      .from('ai_research_reports')
-      .upsert({
-        ticker: theme?.name || 'THEME',
-        asset_class: 'theme',
-        report_type: 'risk_assessment',
-        executive_summary: assessment.substring(0, 500),
-        risk_assessment: assessment,
-        generated_by: 'gemini-2.5-flash',
-        metadata: {
-          signalCount: signals.length,
-          signalDiversity: signalTypes.length,
-          hasInstitutionalSupport,
-          hasInsiderBuying,
-          theme_name: theme?.name || null,
-        },
-      }, { onConflict: 'ticker,report_type' });
+    await supabase.from('ai_research_reports').upsert({
+      ticker: theme?.name || 'THEME',
+      asset_class: 'theme',
+      report_type: 'risk_assessment',
+      executive_summary: assessment.substring(0, 500),
+      risk_assessment: assessment,
+      generated_by: 'gemini-2.5-flash',
+      metadata: {
+        signalCount: signals.length,
+        signalDiversity: signalTypes.length,
+        hasInstitutionalSupport,
+        hasInsiderBuying,
+        theme_name: theme?.name || null,
+      },
+    }, { onConflict: 'ticker,report_type' });
 
-    return new Response(
-      JSON.stringify({
-        assessment,
-        metadata: {
-          signalCount: signals.length,
-          signalDiversity: signalTypes.length,
-          hasInstitutionalSupport,
-          hasInsiderBuying
-        }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({
+      assessment,
+      metadata: { signalCount: signals.length, signalDiversity: signalTypes.length, hasInstitutionalSupport, hasInsiderBuying }
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('Error in assess-risk:', error);
     return new Response(

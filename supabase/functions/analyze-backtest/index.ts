@@ -1,32 +1,25 @@
-// redeployed 2026-03-17
+// Phase 6D: paid-tier auth gate.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { callGemini } from "../_shared/gemini.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAuth } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  );
+  const auth = await verifyAuth(req, { requirePaid: true });
+  if (!auth.ok) return auth.response;
+  const supabase = auth.admin;
 
   try {
     const { backtestResults, strategy } = await req.json();
-
     if (!backtestResults || (Array.isArray(backtestResults) && backtestResults.length === 0)) {
       return new Response(JSON.stringify({ error: 'backtestResults is required and must be non-empty' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    
+
     const prompt = `Analyze these backtest results and provide actionable insights:
 
 Strategy: ${strategy}
@@ -45,21 +38,16 @@ Keep it practical and actionable for traders.`;
     const insights = await callGemini(fullPrompt, 600, 'text');
     if (!insights) throw new Error('Gemini returned no content');
 
-    // Persist to backtest_analyses
-    await supabase
-      .from('backtest_analyses')
-      .insert({
-        strategy_name: strategy,
-        insights,
-        backtest_result_snapshot: backtestResults,
-        model: 'gemini-2.0-flash',
-      });
+    await supabase.from('backtest_analyses').insert({
+      strategy_name: strategy,
+      insights,
+      backtest_result_snapshot: backtestResults,
+      model: 'gemini-2.0-flash',
+    });
 
-    return new Response(
-      JSON.stringify({ insights }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({ insights }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   } catch (error) {
     console.error('Error in analyze-backtest:', error);
     return new Response(
