@@ -1,7 +1,7 @@
 project_id = "detxhoqiarohjevedmxh"
 
 [functions.chat-assistant]
-verify_jwt = false
+verify_jwt = true
 
 [functions.custom-auth-email]
 verify_jwt = false
@@ -12,8 +12,7 @@ verify_jwt = false
 [functions.ingest-orchestrator]
 verify_jwt = false
 
-[functions.test-pipeline-sla]
-verify_jwt = false
+
 
 [functions.cleanup-orphaned-logs]
 verify_jwt = false

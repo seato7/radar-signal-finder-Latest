@@ -1,21 +1,16 @@
+// Phase 6D: paid-tier auth gate.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { callGemini } from "../_shared/gemini.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAuth } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  );
+  const auth = await verifyAuth(req, { requirePaid: true });
+  if (!auth.ok) return auth.response;
+  const supabase = auth.admin;
 
   try {
     const { signal } = await req.json();
@@ -25,7 +20,7 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    
+
     const signalTypeExplanations: Record<string, string> = {
       'policy_approval': 'government approvals or regulatory changes',
       'policy_keyword': 'policy mentions in official documents',
@@ -57,19 +52,13 @@ Keep it actionable and educational.`;
     const explanation = await callGemini(fullPrompt, 300, 'text');
     if (!explanation) throw new Error('Gemini returned no content');
 
-    // Persist explanation back to signals table if signal.id was provided
     if (signal.id) {
-      await supabase
-        .from('signals')
-        .update({ ai_explanation: explanation })
-        .eq('id', signal.id);
+      await supabase.from('signals').update({ ai_explanation: explanation }).eq('id', signal.id);
     }
 
-    return new Response(
-      JSON.stringify({ explanation }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({ explanation }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   } catch (error) {
     console.error('Error in explain-signal:', error);
     return new Response(

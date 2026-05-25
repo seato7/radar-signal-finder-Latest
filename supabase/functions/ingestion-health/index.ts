@@ -1,13 +1,8 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+// Phase 6D: admin-or-service-role only.
 import { CircuitBreaker } from "../_shared/circuit-breaker.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAdminOrService } from "../_shared/auth.ts";
 
 // @guard: Expected function intervals for freshness monitoring
-// NOTE: ingest-prices-yahoo REMOVED - price ingestion handled by Railway backend (Twelve Data)
 const FUNCTION_INTERVALS: Record<string, number> = {
   'ingest-breaking-news': 180,
   'ingest-news-sentiment': 180,
@@ -64,11 +59,11 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await verifyAdminOrService(req);
+  if (!auth.ok) return auth.response;
+  const supabaseClient = auth.admin;
+
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
 
     const url = new URL(req.url);
     const failedOnly = url.searchParams.get('failedOnly') === 'true';

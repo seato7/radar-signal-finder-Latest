@@ -1,27 +1,18 @@
-// redeployed 2026-03-17
+// Phase 6D: paid-tier auth gate.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 import { callGemini } from "../_shared/gemini.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAuth } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    // Service role: themes/signals tables have SELECT revoked from anon/authenticated
-    // (plan-gating migration). Reads must use service-role; this function is read-only
-    // and the data it surfaces is already plan-gated upstream by get_themes_for_user.
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+  const auth = await verifyAuth(req, { requirePaid: true });
+  if (!auth.ok) return auth.response;
+  const supabaseClient = auth.admin;
 
+  try {
     let themeId: string | null = null;
     try {
       const body = await req.json();
@@ -31,7 +22,6 @@ serve(async (req) => {
       const pathParts = url.pathname.split('/').filter(Boolean);
       themeId = pathParts[pathParts.length - 2];
     }
-
     if (!themeId) throw new Error('Theme ID required');
 
     const { data: theme, error: themeError } = await supabaseClient
@@ -42,14 +32,12 @@ serve(async (req) => {
       .from('signals').select('signal_type, value_text, magnitude, observed_at')
       .eq('theme_id', themeId).order('observed_at', { ascending: false }).limit(15);
 
-    // If signals exist, generate AI explanation
     if (signals && signals.length > 0) {
       const signalSummary = signals.slice(0, 10).map(s =>
         `${s.signal_type} (magnitude: ${s.magnitude?.toFixed(2)}): ${s.value_text?.substring(0, 100)}`
       ).join('\n');
 
       const aiPrompt = `You are a financial analyst. Explain in 2-3 sentences WHY this investment theme is relevant RIGHT NOW based on these recent signals:\n\nTheme: ${theme.name}\n\nRecent signals:\n${signalSummary}\n\nBe specific and data-driven. Focus on what's driving the opportunity.`;
-
       const aiSummary = await callGemini(aiPrompt, 300, 'text');
 
       if (aiSummary) {
@@ -69,7 +57,6 @@ serve(async (req) => {
       }
     }
 
-    // Fallback: data-driven (no AI) but still meaningful
     const signalTypes = signals ? [...new Set(signals.map(s => s.signal_type))] : [];
     const topSignals = signals?.slice(0, 3).map(s => s.value_text?.substring(0, 100)).filter(Boolean) || [];
     return new Response(JSON.stringify({
@@ -86,7 +73,6 @@ serve(async (req) => {
       strength: (signals?.length || 0) > 5 ? 'Strong' : 'Moderate',
       ai_generated: false
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
   } catch (error) {
     console.error('Theme explanation error:', error);
     return new Response(JSON.stringify({ error: (error as Error).message }), {

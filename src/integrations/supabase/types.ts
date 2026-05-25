@@ -1643,6 +1643,30 @@ export type Database = {
         }
         Relationships: []
       }
+      edge_function_rate_limits: {
+        Row: {
+          count: number
+          function_name: string
+          updated_at: string
+          user_id: string
+          window_start: string
+        }
+        Insert: {
+          count?: number
+          function_name: string
+          updated_at?: string
+          user_id: string
+          window_start: string
+        }
+        Update: {
+          count?: number
+          function_name?: string
+          updated_at?: string
+          user_id?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       eps_revisions: {
         Row: {
           asset_id: string | null
@@ -4452,6 +4476,19 @@ export type Database = {
           allowed: boolean
           current_count: number
           daily_limit: number
+        }[]
+      }
+      increment_rate_limit: {
+        Args: {
+          _function_name: string
+          _limit: number
+          _user_id: string
+          _window_seconds?: number
+        }
+        Returns: {
+          allowed: boolean
+          current_count: number
+          window_start: string
         }[]
       }
       is_subscribed_to_theme: {

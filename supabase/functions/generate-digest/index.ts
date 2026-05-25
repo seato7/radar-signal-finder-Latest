@@ -1,19 +1,20 @@
+// Phase 6D: any-authenticated user with per-user hourly rate limit.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { callGemini } from "../_shared/gemini.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders, verifyAuth, enforceRateLimit } from "../_shared/auth.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const auth = await verifyAuth(req);
+  if (!auth.ok) return auth.response;
+  const rl = await enforceRateLimit(auth.admin, auth.userId, 'generate-digest', 10, 3600);
+  if (rl) return rl;
+
   try {
     const { userWatchlist, recentSignals, userActivity } = await req.json();
-    
     const prompt = `Create a personalized daily investment digest for this user:
 
 Watchlist: ${userWatchlist.map((t: any) => t.name).join(', ')}
@@ -42,11 +43,9 @@ Style: Like a smart friend giving you the morning market brief.`;
     const digest = await callGemini(fullPrompt, 400, 'text');
     if (!digest) throw new Error('Gemini returned no content');
 
-    return new Response(
-      JSON.stringify({ digest }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({ digest }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   } catch (error) {
     console.error('Error in generate-digest:', error);
     return new Response(
