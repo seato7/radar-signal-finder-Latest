@@ -3515,6 +3515,7 @@ export type Database = {
           id: string
           key_drivers: Json | null
           model: string | null
+          requested_by: string | null
           signal_count: number | null
           strength: string | null
           summary: string | null
@@ -3528,6 +3529,7 @@ export type Database = {
           id?: string
           key_drivers?: Json | null
           model?: string | null
+          requested_by?: string | null
           signal_count?: number | null
           strength?: string | null
           summary?: string | null
@@ -3541,6 +3543,7 @@ export type Database = {
           id?: string
           key_drivers?: Json | null
           model?: string | null
+          requested_by?: string | null
           signal_count?: number | null
           strength?: string | null
           summary?: string | null
