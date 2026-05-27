@@ -7,6 +7,30 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Sparkles, Crosshair, BarChart3, Shield, Star, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
+const MEDIA_NAMES = [
+  "Bloomberg",
+  "Yahoo Finance",
+  "Benzinga",
+  "Seeking Alpha",
+  "Entrepreneur",
+  "Forbes",
+  "Business Insider",
+  "MarketWatch",
+  "CNBC",
+];
+
+const INSTITUTION_NAMES = [
+  "Goldman Sachs",
+  "Morgan Stanley",
+  "Citadel",
+  "Two Sigma",
+  "Bridgewater",
+  "BlackRock",
+  "Renaissance Technologies",
+  "D.E. Shaw",
+];
+
+
 /* Motion primitives */
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 16 },
