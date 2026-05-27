@@ -373,18 +373,19 @@ const Landing = () => {
                 className="bg-ds-surface border border-ds-border rounded-ds-lg p-6 text-center shadow-ds-md"
               >
                 <div className="font-mono text-h2 text-ds-text-primary mb-2 tabular-nums">
-                  156,000+ signals processed
+                  156,000+ Signals Processed
                 </div>
-                <div className="text-ds-text-muted text-body-sm">since January 2026</div>
+                <div className="text-ds-text-muted text-body-sm">Since January 2026</div>
               </motion.div>
               <motion.div
                 variants={fadeUp}
                 className="bg-ds-surface border border-ds-border rounded-ds-lg p-6 text-center shadow-ds-md"
               >
                 <div className="font-mono text-h2 text-ds-brand-primary mb-2 tabular-nums">
-                  +160.63% cumulative return
+                  +160.63% Cumulative Return
                 </div>
-                <div className="text-ds-text-muted text-body-sm">across all tracked signals</div>
+                <div className="text-ds-text-muted text-body-sm">Across All Tracked Signals</div>
+
               </motion.div>
             </div>
             <motion.p
