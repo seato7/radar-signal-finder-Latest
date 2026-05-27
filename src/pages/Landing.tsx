@@ -561,7 +561,7 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-10">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary">
-                Used by investors who track data closely
+                Used by Investors Who Track Data Closely
               </h2>
             </motion.div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
