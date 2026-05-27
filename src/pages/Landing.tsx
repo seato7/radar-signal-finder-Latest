@@ -644,7 +644,7 @@ const Landing = () => {
               variants={fadeUp}
               className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary text-center mb-10"
             >
-              Why InsiderPulse exists
+              Why InsiderPulse Exists
             </motion.h2>
             <motion.div variants={fadeUp} className="space-y-5 text-ds-text-secondary text-body leading-relaxed">
               <p>
