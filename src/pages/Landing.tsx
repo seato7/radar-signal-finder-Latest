@@ -268,7 +268,7 @@ const Landing = () => {
           >
             <div className="inline-flex items-center gap-2 mb-6 px-3 py-1 rounded-ds-sm border border-ds-brand-primary/40 bg-ds-brand-primary/5 text-ds-brand-primary text-caption font-medium">
               <span className="ds-live-dot inline-block w-1.5 h-1.5 rounded-full bg-ds-brand-primary" />
-              Real-time market data across 26,000+ assets
+              Real-Time Market Data Across 26,000+ Assets
             </div>
           </motion.div>
 
