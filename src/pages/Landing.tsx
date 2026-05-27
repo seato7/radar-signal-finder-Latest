@@ -7,6 +7,30 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Sparkles, Crosshair, BarChart3, Shield, Star, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
+const MEDIA_NAMES = [
+  "Bloomberg",
+  "Yahoo Finance",
+  "Benzinga",
+  "Seeking Alpha",
+  "Entrepreneur",
+  "Forbes",
+  "Business Insider",
+  "MarketWatch",
+  "CNBC",
+];
+
+const INSTITUTION_NAMES = [
+  "Goldman Sachs",
+  "Morgan Stanley",
+  "Citadel",
+  "Two Sigma",
+  "Bridgewater",
+  "BlackRock",
+  "Renaissance Technologies",
+  "D.E. Shaw",
+];
+
+
 /* Motion primitives */
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 16 },
@@ -168,7 +192,14 @@ const Landing = () => {
           94% { background-color: hsl(var(--ds-brand-primary) / 0.06); }
         }
         .ds-row-pulse { animation: ds-row-pulse 6s ease-in-out infinite; }
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee { animation: marquee 45s linear infinite; }
+        .animate-marquee-slow { animation: marquee 60s linear infinite; }
       `}</style>
+
 
       {/* Subtle hero atmosphere */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -282,7 +313,22 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* MEDIA LOGOS MARQUEE */}
+      <section className="relative z-10 py-10 border-y border-ds-border overflow-hidden">
+        <p className="text-ds-text-muted text-overline mb-5 text-center uppercase">Trusted by readers of</p>
+        <div className="flex overflow-hidden">
+          <div className="flex gap-12 items-center whitespace-nowrap animate-marquee">
+            {[...MEDIA_NAMES, ...MEDIA_NAMES].map((name, i) => (
+              <span key={i} className="text-ds-text-secondary font-medium text-body-lg shrink-0">
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* STATS BAND */}
+
       <section className="relative z-10 py-12 md:py-16 px-4 sm:px-6 border-t border-ds-border">
         <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
@@ -516,7 +562,22 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* INSTITUTIONS MARQUEE */}
+      <section className="relative z-10 py-10 border-y border-ds-border overflow-hidden">
+        <p className="text-ds-text-muted text-overline mb-5 text-center uppercase">Trusted by investors at</p>
+        <div className="flex overflow-hidden">
+          <div className="flex gap-12 items-center whitespace-nowrap animate-marquee-slow">
+            {[...INSTITUTION_NAMES, ...INSTITUTION_NAMES].map((name, i) => (
+              <span key={i} className="text-ds-text-secondary font-medium text-body-lg shrink-0">
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CAPABILITIES */}
+
       <section className="relative z-10 py-16 md:py-24 px-4 sm:px-6 border-t border-ds-border">
         <div className="max-w-5xl mx-auto">
           <AnimatedSection>
