@@ -678,7 +678,7 @@ const Landing = () => {
         <AnimatedSection>
           <motion.div variants={fadeUp}>
             <h2 className="text-h2 md:text-h1 font-semibold tracking-tight mb-4 text-ds-text-primary">
-              Start watching the market
+              Start Watching the Market
             </h2>
             <p className="text-ds-text-secondary text-body md:text-body-lg max-w-2xl mx-auto mb-8">
               Free access shows 3 assets and one theme. Pro unlocks the full 26,000+ asset
