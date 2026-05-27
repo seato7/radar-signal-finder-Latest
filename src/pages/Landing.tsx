@@ -268,7 +268,7 @@ const Landing = () => {
           >
             <div className="inline-flex items-center gap-2 mb-6 px-3 py-1 rounded-ds-sm border border-ds-brand-primary/40 bg-ds-brand-primary/5 text-ds-brand-primary text-caption font-medium">
               <span className="ds-live-dot inline-block w-1.5 h-1.5 rounded-full bg-ds-brand-primary" />
-              Real-time market data across 26,000+ assets
+              Real-Time Market Data Across 26,000+ Assets
             </div>
           </motion.div>
 
@@ -339,10 +339,11 @@ const Landing = () => {
       <section className="relative z-10 py-12 md:py-16 px-4 sm:px-6 border-t border-ds-border">
         <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
-            { big: `${(stats?.assetCount ?? 26868).toLocaleString()}+`, label: "assets monitored daily" },
-            { big: "100+", label: "data sources tracked" },
-            { big: "156,000+", label: "signals processed since January 2026" },
-            { big: "Real time", label: "continuous scoring" },
+            { big: `${(stats?.assetCount ?? 26868).toLocaleString()}+`, label: "Assets Monitored Daily" },
+            { big: "100+", label: "Data Sources Tracked" },
+            { big: "156,000+", label: "Signals Processed Since January 2026" },
+            { big: "Real Time", label: "Continuous Scoring" },
+
           ].map((s) => (
             <div
               key={s.label}
@@ -363,7 +364,7 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-10">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary">
-                Signal tracking overview
+                Signal Tracking Overview
               </h2>
             </motion.div>
             <div className="grid sm:grid-cols-2 gap-3 md:gap-4 mb-6">
@@ -372,18 +373,19 @@ const Landing = () => {
                 className="bg-ds-surface border border-ds-border rounded-ds-lg p-6 text-center shadow-ds-md"
               >
                 <div className="font-mono text-h2 text-ds-text-primary mb-2 tabular-nums">
-                  156,000+ signals processed
+                  156,000+ Signals Processed
                 </div>
-                <div className="text-ds-text-muted text-body-sm">since January 2026</div>
+                <div className="text-ds-text-muted text-body-sm">Since January 2026</div>
               </motion.div>
               <motion.div
                 variants={fadeUp}
                 className="bg-ds-surface border border-ds-border rounded-ds-lg p-6 text-center shadow-ds-md"
               >
                 <div className="font-mono text-h2 text-ds-brand-primary mb-2 tabular-nums">
-                  +160.63% cumulative return
+                  +160.63% Cumulative Return
                 </div>
-                <div className="text-ds-text-muted text-body-sm">across all tracked signals</div>
+                <div className="text-ds-text-muted text-body-sm">Across All Tracked Signals</div>
+
               </motion.div>
             </div>
             <motion.p
@@ -404,28 +406,30 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-12">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight mb-3 text-ds-text-primary">
-                How InsiderPulse works
+                How InsiderPulse Works
               </h2>
-              <p className="text-ds-text-secondary text-body">From raw data to structured signals</p>
+              <p className="text-ds-text-secondary text-body">From Raw Data to Structured Signals</p>
+
             </motion.div>
             <div className="grid md:grid-cols-3 gap-3 md:gap-4">
               {[
                 {
                   step: "1",
                   icon: <Eye className="h-5 w-5" />,
-                  title: "We track market activity",
+                  title: "We Track Market Activity",
                   desc: "We monitor insider filings, dark pool activity, congressional trades, options flow and momentum signals across thousands of assets.",
                 },
                 {
                   step: "2",
                   icon: <Sparkles className="h-5 w-5" />,
-                  title: "Every asset is scored",
+                  title: "Every Asset Is Scored",
                   desc: "Our system processes incoming data continuously and assigns a score to each asset as conditions change.",
                 },
                 {
                   step: "3",
                   icon: <Crosshair className="h-5 w-5" />,
-                  title: "Signals are surfaced",
+                  title: "Signals Are Surfaced",
+
                   desc: "Assets that meet scoring thresholds appear as active signals, including score, reference levels and risk indicators.",
                 },
               ].map((item) => (
@@ -453,7 +457,7 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-8">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight mb-3 text-ds-text-primary">
-                What we are watching right now
+                What We Are Watching Right Now
               </h2>
               <p className="text-ds-text-secondary text-body">
                 One asset visible. Full set available with Pro access.
@@ -557,7 +561,7 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-10">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary">
-                Used by investors who track data closely
+                Used by Investors Who Track Data Closely
               </h2>
             </motion.div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
@@ -590,29 +594,30 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-12">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary">
-                Everything in one structured view
+                Everything in One Structured View
               </h2>
             </motion.div>
             <div className="grid sm:grid-cols-2 gap-3 md:gap-4">
               {[
                 {
                   icon: <Eye className="h-5 w-5" />,
-                  title: "Multi-source coverage",
+                  title: "Multi-Source Coverage",
                   desc: "Track insider activity, options flow, dark pool data and more in one place",
                 },
                 {
                   icon: <Sparkles className="h-5 w-5" />,
-                  title: "Continuous scoring",
+                  title: "Continuous Scoring",
                   desc: "Every asset is scored dynamically as new data arrives",
                 },
                 {
                   icon: <BarChart3 className="h-5 w-5" />,
-                  title: "Live signal monitoring",
+                  title: "Live Signal Monitoring",
                   desc: "Signals update as conditions change",
                 },
                 {
                   icon: <Shield className="h-5 w-5" />,
-                  title: "Structured risk indicators",
+                  title: "Structured Risk Indicators",
+
                   desc: "View scoring data and reference levels for each signal",
                 },
               ].map((card) => (
@@ -639,7 +644,7 @@ const Landing = () => {
               variants={fadeUp}
               className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary text-center mb-10"
             >
-              Why InsiderPulse exists
+              Why InsiderPulse Exists
             </motion.h2>
             <motion.div variants={fadeUp} className="space-y-5 text-ds-text-secondary text-body leading-relaxed">
               <p>
@@ -673,7 +678,7 @@ const Landing = () => {
         <AnimatedSection>
           <motion.div variants={fadeUp}>
             <h2 className="text-h2 md:text-h1 font-semibold tracking-tight mb-4 text-ds-text-primary">
-              Start watching the market
+              Start Watching the Market
             </h2>
             <p className="text-ds-text-secondary text-body md:text-body-lg max-w-2xl mx-auto mb-8">
               Free access shows 3 assets and one theme. Pro unlocks the full 26,000+ asset
