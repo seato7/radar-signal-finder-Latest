@@ -457,7 +457,7 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-8">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight mb-3 text-ds-text-primary">
-                What we are watching right now
+                What We Are Watching Right Now
               </h2>
               <p className="text-ds-text-secondary text-body">
                 One asset visible. Full set available with Pro access.
