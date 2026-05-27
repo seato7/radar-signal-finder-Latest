@@ -339,10 +339,11 @@ const Landing = () => {
       <section className="relative z-10 py-12 md:py-16 px-4 sm:px-6 border-t border-ds-border">
         <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
-            { big: `${(stats?.assetCount ?? 26868).toLocaleString()}+`, label: "assets monitored daily" },
-            { big: "100+", label: "data sources tracked" },
-            { big: "156,000+", label: "signals processed since January 2026" },
-            { big: "Real time", label: "continuous scoring" },
+            { big: `${(stats?.assetCount ?? 26868).toLocaleString()}+`, label: "Assets Monitored Daily" },
+            { big: "100+", label: "Data Sources Tracked" },
+            { big: "156,000+", label: "Signals Processed Since January 2026" },
+            { big: "Real Time", label: "Continuous Scoring" },
+
           ].map((s) => (
             <div
               key={s.label}
