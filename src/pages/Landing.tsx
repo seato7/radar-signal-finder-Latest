@@ -594,29 +594,30 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-12">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight text-ds-text-primary">
-                Everything in one structured view
+                Everything in One Structured View
               </h2>
             </motion.div>
             <div className="grid sm:grid-cols-2 gap-3 md:gap-4">
               {[
                 {
                   icon: <Eye className="h-5 w-5" />,
-                  title: "Multi-source coverage",
+                  title: "Multi-Source Coverage",
                   desc: "Track insider activity, options flow, dark pool data and more in one place",
                 },
                 {
                   icon: <Sparkles className="h-5 w-5" />,
-                  title: "Continuous scoring",
+                  title: "Continuous Scoring",
                   desc: "Every asset is scored dynamically as new data arrives",
                 },
                 {
                   icon: <BarChart3 className="h-5 w-5" />,
-                  title: "Live signal monitoring",
+                  title: "Live Signal Monitoring",
                   desc: "Signals update as conditions change",
                 },
                 {
                   icon: <Shield className="h-5 w-5" />,
-                  title: "Structured risk indicators",
+                  title: "Structured Risk Indicators",
+
                   desc: "View scoring data and reference levels for each signal",
                 },
               ].map((card) => (
