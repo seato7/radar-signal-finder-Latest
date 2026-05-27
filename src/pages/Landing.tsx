@@ -406,9 +406,10 @@ const Landing = () => {
           <AnimatedSection>
             <motion.div variants={fadeUp} className="text-center mb-12">
               <h2 className="text-h2 md:text-h1 font-semibold tracking-tight mb-3 text-ds-text-primary">
-                How InsiderPulse works
+                How InsiderPulse Works
               </h2>
-              <p className="text-ds-text-secondary text-body">From raw data to structured signals</p>
+              <p className="text-ds-text-secondary text-body">From Raw Data to Structured Signals</p>
+
             </motion.div>
             <div className="grid md:grid-cols-3 gap-3 md:gap-4">
               {[
