@@ -416,19 +416,20 @@ const Landing = () => {
                 {
                   step: "1",
                   icon: <Eye className="h-5 w-5" />,
-                  title: "We track market activity",
+                  title: "We Track Market Activity",
                   desc: "We monitor insider filings, dark pool activity, congressional trades, options flow and momentum signals across thousands of assets.",
                 },
                 {
                   step: "2",
                   icon: <Sparkles className="h-5 w-5" />,
-                  title: "Every asset is scored",
+                  title: "Every Asset Is Scored",
                   desc: "Our system processes incoming data continuously and assigns a score to each asset as conditions change.",
                 },
                 {
                   step: "3",
                   icon: <Crosshair className="h-5 w-5" />,
-                  title: "Signals are surfaced",
+                  title: "Signals Are Surfaced",
+
                   desc: "Assets that meet scoring thresholds appear as active signals, including score, reference levels and risk indicators.",
                 },
               ].map((item) => (
