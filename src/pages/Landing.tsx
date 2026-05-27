@@ -192,7 +192,14 @@ const Landing = () => {
           94% { background-color: hsl(var(--ds-brand-primary) / 0.06); }
         }
         .ds-row-pulse { animation: ds-row-pulse 6s ease-in-out infinite; }
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee { animation: marquee 45s linear infinite; }
+        .animate-marquee-slow { animation: marquee 60s linear infinite; }
       `}</style>
+
 
       {/* Subtle hero atmosphere */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
