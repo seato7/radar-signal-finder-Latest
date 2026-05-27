@@ -681,7 +681,7 @@ const Landing = () => {
               Start Watching the Market
             </h2>
             <p className="text-ds-text-secondary text-body md:text-body-lg max-w-2xl mx-auto mb-8">
-              Free access shows 3 assets and one theme. Pro unlocks the full 26,000+ asset
+              Free access shows 3 assets and one theme. Premium unlocks the full 26,000+ asset
               universe with live scoring and signal data.
             </p>
             <Button
