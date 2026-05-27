@@ -562,7 +562,22 @@ const Landing = () => {
         </div>
       </section>
 
+      {/* INSTITUTIONS MARQUEE */}
+      <section className="relative z-10 py-10 border-y border-ds-border overflow-hidden">
+        <p className="text-ds-text-muted text-overline mb-5 text-center uppercase">Trusted by investors at</p>
+        <div className="flex overflow-hidden">
+          <div className="flex gap-12 items-center whitespace-nowrap animate-marquee-slow">
+            {[...INSTITUTION_NAMES, ...INSTITUTION_NAMES].map((name, i) => (
+              <span key={i} className="text-ds-text-secondary font-medium text-body-lg shrink-0">
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* CAPABILITIES */}
+
       <section className="relative z-10 py-16 md:py-24 px-4 sm:px-6 border-t border-ds-border">
         <div className="max-w-5xl mx-auto">
           <AnimatedSection>
