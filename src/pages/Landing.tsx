@@ -370,27 +370,27 @@ const Landing = () => {
             <div className="grid sm:grid-cols-2 gap-3 md:gap-4 mb-6">
               <motion.div
                 variants={fadeUp}
-                className="bg-ds-surface border border-ds-border rounded-ds-lg p-6 md:p-8 text-center shadow-ds-md flex flex-col justify-center"
+                className="bg-ds-surface border border-ds-border rounded-ds-lg p-6 md:p-7 text-center shadow-ds-md flex flex-col justify-center"
               >
-                <div className="font-mono text-display-sm md:text-display text-ds-text-primary mb-1 tabular-nums leading-none">
+                <div className="text-h1 font-semibold text-ds-text-primary mb-2 tabular-nums leading-none tracking-tight">
                   156,000+
                 </div>
-                <div className="text-ds-text-primary text-body-sm font-medium mb-3">Signals Processed</div>
-                <div className="text-ds-text-muted text-caption uppercase tracking-wider">Since January 2026</div>
+                <div className="text-ds-text-primary text-body-sm font-medium mb-1">Signals Processed</div>
+                <div className="text-ds-text-muted text-caption">Since January 2026</div>
               </motion.div>
               <motion.div
                 variants={fadeUp}
-                className="relative overflow-hidden rounded-ds-lg p-6 md:p-8 text-center flex flex-col justify-center border border-ds-brand-primary/40 bg-gradient-to-br from-ds-brand-primary/[0.08] via-ds-surface to-ds-surface"
-                style={{ boxShadow: "0 0 0 1px hsl(var(--ds-brand-primary) / 0.15), 0 12px 40px -12px hsl(var(--ds-brand-primary) / 0.45)" }}
+                className="relative bg-ds-surface border border-ds-brand-primary/40 rounded-ds-lg p-6 md:p-7 text-center flex flex-col justify-center shadow-ds-md"
+                style={{ boxShadow: "0 8px 32px -12px hsl(var(--ds-brand-primary) / 0.35)" }}
               >
-                <div aria-hidden className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full bg-ds-brand-primary/20 blur-3xl" />
-                <div className="relative font-mono text-display md:text-[4rem] lg:text-[4.5rem] font-bold text-ds-brand-primary mb-1 tabular-nums leading-none drop-shadow-[0_0_24px_hsl(var(--ds-brand-primary)/0.35)]">
+                <div className="text-h1 font-semibold text-ds-brand-primary mb-2 tabular-nums leading-none tracking-tight">
                   +160.63%
                 </div>
-                <div className="relative text-ds-text-primary text-body-sm font-medium mb-3">Cumulative Return</div>
-                <div className="relative text-ds-text-muted text-caption uppercase tracking-wider">Across All Tracked Signals</div>
+                <div className="text-ds-text-primary text-body-sm font-medium mb-1">Cumulative Return</div>
+                <div className="text-ds-text-muted text-caption">Across All Tracked Signals</div>
               </motion.div>
             </div>
+
 
             <motion.p
               variants={fadeUp}
