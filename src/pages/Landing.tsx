@@ -237,19 +237,26 @@ const Landing = () => {
       </nav>
 
       {/* STICKY BAR */}
-      <div className="fixed top-14 left-0 right-0 z-40 bg-ds-brand-primary/10 border-b border-ds-brand-primary/20 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-11 flex items-center justify-center gap-4 text-caption sm:text-body-sm">
-          <span className="text-ds-text-primary">
-            Free access shows 3 assets. Premium unlocks 26,000+.
+      <div
+        className="fixed top-14 left-0 right-0 z-40 bg-ds-brand-primary border-b border-ds-brand-primary/60"
+        style={{ boxShadow: "0 4px 24px -4px hsl(var(--ds-brand-primary) / 0.55)" }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-center gap-3 sm:gap-4 text-body-sm">
+          <span className="ds-live-dot inline-block w-2 h-2 rounded-full bg-ds-brand-primary-foreground shrink-0" />
+          <span className="text-ds-brand-primary-foreground font-medium tracking-tight text-center">
+            Free access shows 3 assets.{" "}
+            <span className="font-semibold">Premium unlocks 26,000+.</span>
           </span>
           <Link
             to="/auth"
-            className="text-ds-brand-primary font-medium hover:underline whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-ds-brand-primary-foreground text-ds-brand-primary text-caption sm:text-body-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
           >
             Start Free Access
+            <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
       </div>
+
 
       {/* HERO */}
       <section className="relative z-10 px-4 sm:px-6 pt-36 pb-16 md:pt-48 md:pb-28">
