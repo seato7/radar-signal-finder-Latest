@@ -51,6 +51,17 @@ export function LockedPreview({
   const showOv = showOverlay ?? (mode === "card" || mode === "section");
   const ariaLabel = isAuthenticated ? `Locked. Requires ${targetTier} plan.` : "Locked. Start Free Access to unlock.";
 
+  const handleLockClick = () => {
+    trackOnce("first_locked_interaction", { field_type: fieldType, target_tier: targetTier, label: trackingLabel });
+    track("locked_content_cta_clicked", {
+      field_type: fieldType,
+      target_tier: targetTier,
+      label: trackingLabel,
+      mode,
+    });
+  };
+
+
   if (mode === "inline") {
     return (
       <TooltipProvider delayDuration={150}>
