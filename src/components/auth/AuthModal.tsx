@@ -15,10 +15,10 @@ export function AuthModal() {
           border: "1px solid rgba(255,255,255,0.10)",
         }}
       >
-        <VisuallyHidden>
+        <div className="sr-only">
           <DialogTitle>{mode === "signup" ? "Sign Up" : mode === "forgot" ? "Reset Password" : "Sign In"}</DialogTitle>
           <DialogDescription>Authenticate to InsiderPulse</DialogDescription>
-        </VisuallyHidden>
+        </div>
         <div className="p-6">
           <div className="flex flex-col items-center mb-5">
             <svg width="40" height="40" viewBox="0 0 52 52" fill="none">
