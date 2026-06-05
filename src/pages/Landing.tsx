@@ -224,7 +224,7 @@ const Landing = () => {
               className="h-10 px-3 text-body-sm text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface"
               asChild
             >
-              <Link to="/auth">Sign In</Link>
+              <Link to="/auth?mode=signin">Sign In</Link>
             </Button>
             {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
                 /auth?mode=signup. See mem://constraints/preview-first-funnel */}
