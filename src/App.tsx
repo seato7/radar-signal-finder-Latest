@@ -114,8 +114,10 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <AuthModalProvider>
             <AnalyticsBridge />
             <BrokerKeyRotationModal />
+            <AuthModal />
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/reset-password" element={<ResetPassword />} />
