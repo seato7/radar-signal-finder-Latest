@@ -11,6 +11,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrokerKeyRotationModal } from "@/components/BrokerKeyRotationModal";
 import { initGlobalPriceSubscription } from "@/hooks/useRealtimePrices";
 import { useAuth } from "@/hooks/useAuth";
+import { initAnalytics } from "@/lib/analytics";
+import { useRoutePageView } from "@/hooks/useAnalytics";
 import Home from "./pages/Home";
 import Alerts from "./pages/Alerts";
 import AssetRadar from "./pages/AssetRadar";
