@@ -50,7 +50,7 @@ const PublicAssetRadar = () => {
             trackingLabel="public_asset_radar"
           />
 
-          <Card className="bg-ds-surface border-ds-border">
+          <Card ref={demoCardRef} className="bg-ds-surface border-ds-border">
             <CardHeader className="border-b border-ds-border">
               <h2 className="text-body font-semibold text-ds-text-primary">
                 Demo Assets <span className="text-ds-text-muted font-normal">— Full Data</span>
@@ -58,7 +58,11 @@ const PublicAssetRadar = () => {
             </CardHeader>
             <CardContent className="p-0 divide-y divide-ds-border">
               {data.demo_assets.map((a) => (
-                <div key={a.id} className="flex items-center gap-4 p-4">
+                <div
+                  key={a.id}
+                  className="flex items-center gap-4 p-4 cursor-pointer hover:bg-ds-surface-elevated"
+                  onClick={() => track("preview_asset_clicked", { ticker: a.ticker, surface: "demo" })}
+                >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-mono font-semibold text-ds-text-primary">{a.ticker}</span>
