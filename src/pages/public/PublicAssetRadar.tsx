@@ -22,6 +22,7 @@ const scoreClasses = (s: number) =>
 
 const PublicAssetRadar = () => {
   const { data, isLoading } = usePublicPreview();
+  const { openAuthModal } = useAuthModal();
   const demoCardRef = useRef<HTMLDivElement>(null);
   usePreviewEngagement();
   useViewportOnceEvent(demoCardRef, "demo_asset_viewed");
