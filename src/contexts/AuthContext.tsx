@@ -45,12 +45,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = async () => {
+    track('session_logout');
     const { error } = await supabase.auth.signOut();
     if (error) {
       toast.error(error.message);
     } else {
       toast.success('Logged out successfully');
     }
+    resetAnalytics();
     // Preview-first funnel: signed-out users land on the marketing page, not /auth.
     // See mem://constraints/preview-first-funnel
     window.location.assign('/');
