@@ -103,6 +103,7 @@ function DsNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 export function AppSidebar() {
   const { state } = useSidebar();
   const { user, logout, userPlan, isAdmin, isPremium, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const isCollapsed = state === "collapsed";
 
   const items = isAuthenticated ? navigationItems : publicItems;
