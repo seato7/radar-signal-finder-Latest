@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { toast } from 'sonner';
+import { identifyUser, resetAnalytics, track } from '@/lib/analytics';
 
 interface AuthContextType {
   user: User | null;
