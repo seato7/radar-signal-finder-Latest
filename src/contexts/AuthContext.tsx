@@ -26,6 +26,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        // Analytics: merge anonymous distinct_id trail into the user_id on signup/login.
+        if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+          identifyUser(session.user.id, { email: session.user.email });
+          if (event === 'SIGNED_IN') track('signup_completed', { user_id: session.user.id });
+        }
       }
     );
 
