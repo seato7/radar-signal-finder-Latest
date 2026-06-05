@@ -224,9 +224,9 @@ const Landing = () => {
             <Button
               variant="ghost"
               className="h-10 px-3 text-body-sm text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface"
-              asChild
+              onClick={() => openAuthModal("signin", { ref: "landing_nav" })}
             >
-              <Link to="/auth?mode=signin">Sign In</Link>
+              Sign In
             </Button>
             {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
                 /auth?mode=signup. See mem://constraints/preview-first-funnel */}
