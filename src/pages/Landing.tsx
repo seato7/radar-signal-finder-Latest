@@ -302,11 +302,12 @@ const Landing = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] as const }}
           >
+            {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/auth?mode=signup&ref=landing">Start Free Access</Link>
+              <Link to="/asset-radar">Start Free Access</Link>
             </Button>
           </motion.div>
 
