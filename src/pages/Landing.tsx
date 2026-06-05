@@ -152,6 +152,7 @@ const TestimonialCard = ({
 /* Page */
 const Landing = () => {
   const { isAuthenticated, loading } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const navigate = useNavigate();
   const [stats, setStats] = useState<LiveStats | null>(null);
 
