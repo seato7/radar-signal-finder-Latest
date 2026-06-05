@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { toast } from 'sonner';
+import { identifyUser, resetAnalytics, track } from '@/lib/analytics';
 
 interface AuthContextType {
   user: User | null;
@@ -25,6 +26,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        // Analytics: merge anonymous distinct_id trail into the user_id on signup/login.
+        if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+          identifyUser(session.user.id, { email: session.user.email });
+          if (event === 'SIGNED_IN') track('signup_completed', { user_id: session.user.id });
+        }
       }
     );
 
@@ -39,12 +45,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = async () => {
+    track('session_logout');
     const { error } = await supabase.auth.signOut();
     if (error) {
       toast.error(error.message);
     } else {
       toast.success('Logged out successfully');
     }
+    resetAnalytics();
     // Preview-first funnel: signed-out users land on the marketing page, not /auth.
     // See mem://constraints/preview-first-funnel
     window.location.assign('/');

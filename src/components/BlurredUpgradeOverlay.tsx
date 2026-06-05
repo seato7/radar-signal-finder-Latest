@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
+import { track, trackOnce } from "@/lib/analytics";
 
 interface BlurredUpgradeOverlayProps {
   feature: string;
@@ -22,6 +23,11 @@ export const BlurredUpgradeOverlay = ({
   const cta = getCTAText(isAuthenticated, userPlan);
   const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
 
+  const handleClick = () => {
+    trackOnce("first_locked_interaction", { feature, label: trackingLabel });
+    track("locked_content_cta_clicked", { feature, label: trackingLabel, surface: "blurred_overlay" });
+  };
+
   return (
     <div className="relative">
       <div
@@ -39,7 +45,7 @@ export const BlurredUpgradeOverlay = ({
           <h3 className="font-semibold text-body-sm text-ds-text-primary mb-1.5">{feature}</h3>
           <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">{description}</p>
           <Button asChild size="sm" variant="outline" className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent">
-            <Link to={href}>{cta}</Link>
+            <Link to={href} onClick={handleClick}>{cta}</Link>
           </Button>
         </div>
       </div>

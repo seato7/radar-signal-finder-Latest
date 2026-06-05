@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 
 interface Plan {
   name: string;
@@ -124,6 +125,7 @@ const Pricing = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") {
+      track("upgrade_completed");
       setTimeout(() => {
         refreshSubscription?.();
       }, 4000);
@@ -137,6 +139,7 @@ const Pricing = () => {
   };
 
   const handleCheckout = async (planId: string) => {
+    track("upgrade_started", { plan: planId, period: isAnnual ? "annual" : "monthly" });
     if (planId === "enterprise") {
       window.location.href = "mailto:support@insiderpulse.org";
       return;

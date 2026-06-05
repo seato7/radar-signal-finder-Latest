@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
+import { track, trackOnce } from "@/lib/analytics";
 
 type Mode = "inline" | "card" | "section" | "row-cell";
 type Intensity = "light" | "medium" | "heavy";
@@ -50,6 +51,17 @@ export function LockedPreview({
   const showOv = showOverlay ?? (mode === "card" || mode === "section");
   const ariaLabel = isAuthenticated ? `Locked. Requires ${targetTier} plan.` : "Locked. Start Free Access to unlock.";
 
+  const handleLockClick = () => {
+    trackOnce("first_locked_interaction", { field_type: fieldType, target_tier: targetTier, label: trackingLabel });
+    track("locked_content_cta_clicked", {
+      field_type: fieldType,
+      target_tier: targetTier,
+      label: trackingLabel,
+      mode,
+    });
+  };
+
+
   if (mode === "inline") {
     return (
       <TooltipProvider delayDuration={150}>
@@ -57,6 +69,7 @@ export function LockedPreview({
           <TooltipTrigger asChild>
             <Link
               to={href}
+              onClick={handleLockClick}
               aria-label={ariaLabel}
               className={cn(
                 "inline-block align-baseline cursor-pointer select-none transition-opacity duration-fast hover:opacity-80",
@@ -80,6 +93,7 @@ export function LockedPreview({
           <TooltipTrigger asChild>
             <Link
               to={href}
+              onClick={handleLockClick}
               aria-label={ariaLabel}
               className={cn("inline-block cursor-pointer transition-opacity duration-fast hover:opacity-80", className)}
               style={{ filter: blurPx[intensity], pointerEvents: "auto" }}
@@ -122,7 +136,7 @@ export function LockedPreview({
               variant="outline"
               className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
             >
-              <Link to={href}>{cta}</Link>
+              <Link to={href} onClick={handleLockClick}>{cta}</Link>
             </Button>
           </div>
         </div>

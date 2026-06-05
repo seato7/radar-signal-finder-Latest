@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,8 @@ import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { ProgressionLabel } from "@/components/conversion/ProgressionLabel";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
+import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 
 const scoreClasses = (s: number) =>
   s >= 70
@@ -19,6 +22,10 @@ const scoreClasses = (s: number) =>
 
 const PublicThemes = () => {
   const { data, isLoading } = usePublicPreview();
+  const demoRef = useRef<HTMLDivElement>(null);
+  usePreviewEngagement();
+  useViewportOnceEvent(demoRef, "demo_theme_viewed");
+
 
   return (
     <div className="space-y-6">
@@ -43,9 +50,13 @@ const PublicThemes = () => {
             trackingLabel="public_themes"
           />
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div ref={demoRef} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {data.demo_themes.map((t) => (
-              <Card key={t.id} className="bg-ds-surface border-ds-brand-primary/40">
+              <Card
+                key={t.id}
+                className="bg-ds-surface border-ds-brand-primary/40 cursor-pointer hover:border-ds-brand-primary"
+                onClick={() => track("preview_theme_clicked", { theme: t.name })}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">

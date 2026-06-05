@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +10,15 @@ import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { ProgressionLabel } from "@/components/conversion/ProgressionLabel";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
+import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 
 const PublicTradingSignals = () => {
   const { data, isLoading } = usePublicPreview();
+  const sigRef = useRef<HTMLDivElement>(null);
+  usePreviewEngagement();
+  useViewportOnceEvent(sigRef, "demo_signal_viewed");
+
 
   if (isLoading || !data) {
     return (
@@ -41,7 +48,11 @@ const PublicTradingSignals = () => {
       />
 
       {sig && (
-        <Card className="bg-ds-surface border-ds-brand-primary/40">
+        <Card
+          ref={sigRef}
+          className="bg-ds-surface border-ds-brand-primary/40 cursor-pointer hover:border-ds-brand-primary"
+          onClick={() => track("preview_signal_clicked", { ticker: sig.ticker })}
+        >
           <CardHeader className="border-b border-ds-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
