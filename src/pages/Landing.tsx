@@ -226,11 +226,13 @@ const Landing = () => {
             >
               <Link to="/auth">Sign In</Link>
             </Button>
+            {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
+                /auth?mode=signup. See mem://constraints/preview-first-funnel */}
             <Button
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/auth?mode=signup&ref=landing">Start Free</Link>
+              <Link to="/asset-radar">Start Free</Link>
             </Button>
           </div>
         </div>
