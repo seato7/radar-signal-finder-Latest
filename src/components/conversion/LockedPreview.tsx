@@ -69,6 +69,7 @@ export function LockedPreview({
           <TooltipTrigger asChild>
             <Link
               to={href}
+              onClick={handleLockClick}
               aria-label={ariaLabel}
               className={cn(
                 "inline-block align-baseline cursor-pointer select-none transition-opacity duration-fast hover:opacity-80",
