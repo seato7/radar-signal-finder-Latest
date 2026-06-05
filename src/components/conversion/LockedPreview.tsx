@@ -4,6 +4,8 @@ import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/useAuth";
+import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
 
 type Mode = "inline" | "card" | "section" | "row-cell";
 type Intensity = "light" | "medium" | "heavy";
@@ -19,18 +21,13 @@ export interface LockedPreviewProps {
   showOverlay?: boolean;
   trackingLabel?: string;
   className?: string;
+  fieldType?: FieldType;
 }
 
 const blurPx: Record<Intensity, string> = {
   light: "blur(2px)",
   medium: "blur(4px)",
   heavy: "blur(6px)",
-};
-
-const tierBenefit: Record<Tier, string> = {
-  starter: "live scores, prices & one active signal",
-  pro: "scores across ETFs/forex and 3 active signals",
-  premium: "full universe, unlimited signals & alerts",
 };
 
 export function LockedPreview({
@@ -43,16 +40,16 @@ export function LockedPreview({
   showOverlay,
   trackingLabel,
   className,
+  fieldType = "generic",
 }: LockedPreviewProps) {
-  const tooltip =
-    tooltipText ??
-    `Unlock with ${targetTier.charAt(0).toUpperCase() + targetTier.slice(1)} for ${tierBenefit[targetTier]}`;
-  const cta = ctaText ?? `Upgrade to ${targetTier.charAt(0).toUpperCase() + targetTier.slice(1)}`;
-  const href = `/pricing${trackingLabel ? `?upgrade_from=${encodeURIComponent(trackingLabel)}` : ""}`;
-  const showOv = showOverlay ?? (mode === "card" || mode === "section");
-  const ariaLabel = `Locked. Requires ${targetTier} plan.`;
+  const { isAuthenticated, userPlan } = useAuth();
 
-  // Inline mode: just a blurred text span, no overlay
+  const tooltip = tooltipText ?? getLockTooltip(isAuthenticated, userPlan, fieldType);
+  const cta = ctaText ?? getCTAText(isAuthenticated, userPlan);
+  const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
+  const showOv = showOverlay ?? (mode === "card" || mode === "section");
+  const ariaLabel = isAuthenticated ? `Locked. Requires ${targetTier} plan.` : "Locked. Start Free Access to unlock.";
+
   if (mode === "inline") {
     return (
       <TooltipProvider delayDuration={150}>
@@ -76,7 +73,6 @@ export function LockedPreview({
     );
   }
 
-  // Row-cell mode: blur the cell contents without an overlay (tooltip only)
   if (mode === "row-cell") {
     return (
       <TooltipProvider delayDuration={150}>
@@ -97,7 +93,6 @@ export function LockedPreview({
     );
   }
 
-  // Card / Section modes: frosted-glass overlay
   return (
     <div className={cn("relative", className)}>
       <div

@@ -230,7 +230,7 @@ const Landing = () => {
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/auth">Start Free</Link>
+              <Link to="/auth?mode=signup&ref=landing">Start Free</Link>
             </Button>
           </div>
         </div>
@@ -248,10 +248,10 @@ const Landing = () => {
             <span className="font-semibold">Premium unlocks 26,000+.</span>
           </span>
           <Link
-            to="/auth"
+            to="/asset-radar"
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-ds-brand-primary-foreground text-ds-brand-primary text-caption sm:text-body-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
           >
-            Start Free Access
+            See Live Preview
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
@@ -304,7 +304,7 @@ const Landing = () => {
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/auth">Start Free Access</Link>
+              <Link to="/auth?mode=signup&ref=landing">Start Free Access</Link>
             </Button>
           </motion.div>
 
@@ -547,7 +547,7 @@ const Landing = () => {
                   className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
                   asChild
                 >
-                  <Link to="/auth">Unlock Full Access</Link>
+                  <Link to="/auth?mode=signup&ref=landing_pricing">Unlock Full Access</Link>
                 </Button>
               </div>
             </motion.div>
@@ -692,7 +692,7 @@ const Landing = () => {
               className="h-11 px-8 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/auth">Start Free Access</Link>
+              <Link to="/auth?mode=signup&ref=landing">Start Free Access</Link>
             </Button>
           </motion.div>
         </AnimatedSection>

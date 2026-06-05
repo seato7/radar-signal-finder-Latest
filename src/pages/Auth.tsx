@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,7 +29,9 @@ const TICKERS = [
 ];
 
 export default function Auth() {
-  const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("mode") === "signup" ? "signup" : "signin";
+  const [activeTab, setActiveTab] = useState<"signin" | "signup">(initialTab);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
