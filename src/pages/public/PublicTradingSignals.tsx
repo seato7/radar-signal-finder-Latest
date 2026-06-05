@@ -48,7 +48,11 @@ const PublicTradingSignals = () => {
       />
 
       {sig && (
-        <Card className="bg-ds-surface border-ds-brand-primary/40">
+        <Card
+          ref={sigRef}
+          className="bg-ds-surface border-ds-brand-primary/40 cursor-pointer hover:border-ds-brand-primary"
+          onClick={() => track("preview_signal_clicked", { ticker: sig.ticker })}
+        >
           <CardHeader className="border-b border-ds-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
