@@ -5,16 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Lock, Target, TrendingUp, ArrowRight, Crosshair } from "lucide-react";
-import { Link } from "react-router-dom";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { ProgressionLabel } from "@/components/conversion/ProgressionLabel";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 
 const PublicTradingSignals = () => {
   const { data, isLoading } = usePublicPreview();
+  const { openAuthModal } = useAuthModal();
   const sigRef = useRef<HTMLDivElement>(null);
   usePreviewEngagement();
   useViewportOnceEvent(sigRef, "demo_signal_viewed");
