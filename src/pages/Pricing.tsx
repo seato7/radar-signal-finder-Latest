@@ -148,12 +148,13 @@ const Pricing = () => {
     }
 
     if (planId === "free") {
-      navigate(isAuthenticated ? "/dashboard" : "/auth");
+      if (isAuthenticated) navigate("/dashboard");
+      else openAuthModal("signup", { ref: "pricing_free" });
       return;
     }
 
     if (!isAuthenticated) {
-      navigate("/auth");
+      openAuthModal("signup", { ref: `pricing_${planId}` });
       return;
     }
 
