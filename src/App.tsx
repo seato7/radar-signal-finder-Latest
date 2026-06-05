@@ -112,6 +112,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <AnalyticsBridge />
             <BrokerKeyRotationModal />
             <Routes>
               <Route path="/auth" element={<Auth />} />
