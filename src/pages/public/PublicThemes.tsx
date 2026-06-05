@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,8 @@ import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { ProgressionLabel } from "@/components/conversion/ProgressionLabel";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
+import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 
 const scoreClasses = (s: number) =>
   s >= 70
@@ -19,6 +22,10 @@ const scoreClasses = (s: number) =>
 
 const PublicThemes = () => {
   const { data, isLoading } = usePublicPreview();
+  const demoRef = useRef<HTMLDivElement>(null);
+  usePreviewEngagement();
+  useViewportOnceEvent(demoRef, "demo_theme_viewed");
+
 
   return (
     <div className="space-y-6">
