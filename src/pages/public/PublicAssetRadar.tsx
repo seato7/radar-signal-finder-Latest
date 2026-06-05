@@ -130,11 +130,13 @@ const PublicAssetRadar = () => {
           </Card>
 
           <div className="flex justify-center">
-            <Button asChild size="lg" className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-              <Link to="/auth?mode=signup&ref=public_radar_footer">
-                Start Free Access to See All {data.total_asset_count.toLocaleString()} Assets
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
+            <Button
+              size="lg"
+              onClick={() => { track("locked_content_cta_clicked", { surface: "footer", label: "public_radar_footer" }); openAuthModalRef.current?.("signup", { ref: "public_radar_footer" }); }}
+              className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
+            >
+              Start Free Access to See All {data.total_asset_count.toLocaleString()} Assets
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
         </>
