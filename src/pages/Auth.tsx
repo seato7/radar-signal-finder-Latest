@@ -152,6 +152,21 @@ export default function Auth() {
         }}
       />
 
+      {/* Preview-first funnel back link — anonymous visitors must always be able
+          to return to a product surface. See mem://constraints/preview-first-funnel */}
+      <Link
+        to="/asset-radar"
+        className="absolute top-4 left-4 z-30 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors"
+        style={{
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(6,182,212,0.3)",
+          color: "#06B6D4",
+          backdropFilter: "blur(8px)",
+        }}
+      >
+        ← See live preview
+      </Link>
+
       {/* ── Radar rings ── */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         {[1, 2, 3, 4, 5].map((i) => (
