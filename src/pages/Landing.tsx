@@ -691,11 +691,12 @@ const Landing = () => {
               Free access shows 3 assets and one theme. Premium unlocks the full 26,000+ asset
               universe with live scoring and signal data.
             </p>
+            {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
               className="h-11 px-8 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/auth?mode=signup&ref=landing">Start Free Access</Link>
+              <Link to="/asset-radar">Start Free Access</Link>
             </Button>
           </motion.div>
         </AnimatedSection>
