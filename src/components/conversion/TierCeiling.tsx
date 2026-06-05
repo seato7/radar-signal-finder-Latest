@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
+import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
 
 type Tier = "free" | "starter" | "pro" | "premium";
 
@@ -22,7 +24,6 @@ export function TierCeiling({
   currentUsage,
   limit,
   limitUnit,
-  currentTier,
   nextTier,
   nextTierBenefit,
   compact = false,
@@ -30,13 +31,17 @@ export function TierCeiling({
   className,
   trackingLabel,
 }: TierCeilingProps) {
+  const { isAuthenticated, userPlan } = useAuth();
   const atCeiling = currentUsage >= limit;
   const scope = timeScope ? ` ${timeScope}` : "";
   const headline = atCeiling
     ? `You've used all ${limit} ${limitUnit}`
     : `${currentUsage}/${limit} ${limitUnit} used${scope}`;
-  const subhead = `${nextTier[0].toUpperCase()}${nextTier.slice(1)} unlocks ${nextTierBenefit}`;
-  const href = `/pricing${trackingLabel ? `?upgrade_from=${encodeURIComponent(trackingLabel)}` : ""}`;
+  const cta = getCTAText(isAuthenticated, userPlan);
+  const subhead = isAuthenticated
+    ? `${nextTier[0].toUpperCase()}${nextTier.slice(1)} unlocks ${nextTierBenefit}`
+    : `Free Access unlocks ${nextTierBenefit}`;
+  const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
 
   if (compact) {
     return (
@@ -74,7 +79,7 @@ export function TierCeiling({
         className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary shrink-0 cta-upgrade-pulse"
       >
         <Link to={href}>
-          {`Upgrade to ${nextTier[0].toUpperCase()}${nextTier.slice(1)}`}
+          {cta}
           <ArrowRight className="ml-2 h-4 w-4" />
         </Link>
       </Button>
