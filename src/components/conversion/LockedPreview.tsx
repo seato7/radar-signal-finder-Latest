@@ -136,7 +136,7 @@ export function LockedPreview({
               variant="outline"
               className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
             >
-              <Link to={href}>{cta}</Link>
+              <Link to={href} onClick={handleLockClick}>{cta}</Link>
             </Button>
           </div>
         </div>
