@@ -1,7 +1,6 @@
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuthModal } from "@/contexts/AuthModalContext";
 import { AuthForm } from "./AuthForm";
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 export function AuthModal() {
   const { open, mode, closeAuthModal } = useAuthModal();
