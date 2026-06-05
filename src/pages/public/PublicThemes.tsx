@@ -22,6 +22,7 @@ const scoreClasses = (s: number) =>
 
 const PublicThemes = () => {
   const { data, isLoading } = usePublicPreview();
+  const { openAuthModal } = useAuthModal();
   const demoRef = useRef<HTMLDivElement>(null);
   usePreviewEngagement();
   useViewportOnceEvent(demoRef, "demo_theme_viewed");
