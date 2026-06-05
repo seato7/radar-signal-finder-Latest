@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
 import { track, trackOnce } from "@/lib/analytics";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 
 interface BlurredUpgradeOverlayProps {
   feature: string;
@@ -20,12 +21,19 @@ export const BlurredUpgradeOverlay = ({
   trackingLabel,
 }: BlurredUpgradeOverlayProps) => {
   const { isAuthenticated, userPlan } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const cta = getCTAText(isAuthenticated, userPlan);
   const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
 
   const handleClick = () => {
     trackOnce("first_locked_interaction", { feature, label: trackingLabel });
     track("locked_content_cta_clicked", { feature, label: trackingLabel, surface: "blurred_overlay" });
+  };
+
+  const handleAnonClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    handleClick();
+    openAuthModal("signup", { ref: trackingLabel });
   };
 
   return (
@@ -44,9 +52,15 @@ export const BlurredUpgradeOverlay = ({
           </div>
           <h3 className="font-semibold text-body-sm text-ds-text-primary mb-1.5">{feature}</h3>
           <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">{description}</p>
-          <Button asChild size="sm" variant="outline" className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent">
-            <Link to={href} onClick={handleClick}>{cta}</Link>
-          </Button>
+          {isAuthenticated ? (
+            <Button asChild size="sm" variant="outline" className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent">
+              <Link to={href} onClick={handleClick}>{cta}</Link>
+            </Button>
+          ) : (
+            <Button onClick={handleAnonClick} size="sm" variant="outline" className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent">
+              {cta}
+            </Button>
+          )}
         </div>
       </div>
     </div>
