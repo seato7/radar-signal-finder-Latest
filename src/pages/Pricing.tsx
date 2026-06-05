@@ -138,6 +138,7 @@ const Pricing = () => {
   };
 
   const handleCheckout = async (planId: string) => {
+    track("upgrade_started", { plan: planId, period: isAnnual ? "annual" : "monthly" });
     if (planId === "enterprise") {
       window.location.href = "mailto:support@insiderpulse.org";
       return;
