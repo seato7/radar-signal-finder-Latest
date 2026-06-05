@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { TOS_VERSION, PRIVACY_VERSION } from "@/lib/policyVersions";
+import { track } from "@/lib/analytics";
 
 const emailSchema = z.string().email("Invalid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
