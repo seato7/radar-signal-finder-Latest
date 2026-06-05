@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -120,6 +121,7 @@ const Pricing = () => {
   const [isAnnual, setIsAnnual] = useState(false);
   const navigate = useNavigate();
   const { userPlan, isAuthenticated, refreshSubscription } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -146,12 +148,13 @@ const Pricing = () => {
     }
 
     if (planId === "free") {
-      navigate(isAuthenticated ? "/dashboard" : "/auth");
+      if (isAuthenticated) navigate("/dashboard");
+      else openAuthModal("signup", { ref: "pricing_free" });
       return;
     }
 
     if (!isAuthenticated) {
-      navigate("/auth");
+      openAuthModal("signup", { ref: `pricing_${planId}` });
       return;
     }
 

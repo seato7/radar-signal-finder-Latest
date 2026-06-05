@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 import { motion, useInView, type Variants } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -151,6 +152,7 @@ const TestimonialCard = ({
 /* Page */
 const Landing = () => {
   const { isAuthenticated, loading } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const navigate = useNavigate();
   const [stats, setStats] = useState<LiveStats | null>(null);
 
@@ -222,9 +224,9 @@ const Landing = () => {
             <Button
               variant="ghost"
               className="h-10 px-3 text-body-sm text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface"
-              asChild
+              onClick={() => openAuthModal("signin", { ref: "landing_nav" })}
             >
-              <Link to="/auth?mode=signin">Sign In</Link>
+              Sign In
             </Button>
             {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
                 /auth?mode=signup. See mem://constraints/preview-first-funnel */}
@@ -548,9 +550,9 @@ const Landing = () => {
                 </p>
                 <Button
                   className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
-                  asChild
+                  onClick={() => openAuthModal("signup", { ref: "landing_pricing" })}
                 >
-                  <Link to="/auth?mode=signup&ref=landing_pricing">Unlock Full Access</Link>
+                  Unlock Full Access
                 </Button>
               </div>
             </motion.div>

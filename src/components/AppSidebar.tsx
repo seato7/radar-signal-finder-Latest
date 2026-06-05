@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { NavLink, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -102,6 +103,7 @@ function DsNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 export function AppSidebar() {
   const { state } = useSidebar();
   const { user, logout, userPlan, isAdmin, isPremium, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const isCollapsed = state === "collapsed";
 
   const items = isAuthenticated ? navigationItems : publicItems;
@@ -228,26 +230,24 @@ export function AppSidebar() {
               Free access in 30 seconds. No credit card.
             </p>
             <Button
-              asChild
               size="sm"
+              onClick={() => openAuthModal("signup", { ref: "sidebar" })}
               className="w-full bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
             >
-              <Link to="/auth?mode=signup&ref=sidebar">Start Free Access</Link>
+              Start Free Access
             </Button>
             <Button
-              asChild
               variant="ghost"
               size="sm"
+              onClick={() => openAuthModal("signin", { ref: "sidebar" })}
               className="w-full justify-center text-ds-text-secondary hover:text-ds-text-primary h-8"
             >
-              <Link to="/auth">
-                <LogIn className="h-4 w-4 mr-2" /> Sign In
-              </Link>
+              <LogIn className="h-4 w-4 mr-2" /> Sign In
             </Button>
           </div>
         ) : (
-          <Button asChild variant="ghost" size="icon" title="Sign in" className="text-ds-text-secondary hover:text-ds-text-primary">
-            <Link to="/auth"><LogIn className="h-4 w-4" /></Link>
+          <Button variant="ghost" size="icon" onClick={() => openAuthModal("signin", { ref: "sidebar" })} title="Sign in" className="text-ds-text-secondary hover:text-ds-text-primary">
+            <LogIn className="h-4 w-4" />
           </Button>
         )}
       </SidebarFooter>

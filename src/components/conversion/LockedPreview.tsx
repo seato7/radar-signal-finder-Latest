@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, forwardRef, MouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
 import { track, trackOnce } from "@/lib/analytics";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 
 type Mode = "inline" | "card" | "section" | "row-cell";
 type Intensity = "light" | "medium" | "heavy";
@@ -30,6 +31,57 @@ const blurPx: Record<Intensity, string> = {
   medium: "blur(4px)",
   heavy: "blur(6px)",
 };
+
+// Renders a button (opens auth modal) when anonymous, a Link to /pricing otherwise.
+// Preserves the analytics handler (locked_content_cta_clicked fires BEFORE the
+// modal opens). See mem://constraints/preview-first-funnel
+interface CtaProps {
+  isAuthenticated: boolean;
+  href: string;
+  onClick: () => void;
+  ariaLabel: string;
+  className?: string;
+  style?: React.CSSProperties;
+  children: ReactNode;
+  trackingLabel?: string;
+}
+
+const Cta = forwardRef<HTMLElement, CtaProps>(function Cta(
+  { isAuthenticated, href, onClick, ariaLabel, className, style, children, trackingLabel },
+  ref,
+) {
+  const { openAuthModal } = useAuthModal();
+  if (isAuthenticated) {
+    return (
+      <Link
+        ref={ref as React.Ref<HTMLAnchorElement>}
+        to={href}
+        onClick={onClick}
+        aria-label={ariaLabel}
+        className={className}
+        style={style}
+      >
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button
+      ref={ref as React.Ref<HTMLButtonElement>}
+      type="button"
+      onClick={(e: MouseEvent) => {
+        e.preventDefault();
+        onClick();
+        openAuthModal("signup", { ref: trackingLabel });
+      }}
+      aria-label={ariaLabel}
+      className={className}
+      style={style}
+    >
+      {children}
+    </button>
+  );
+});
 
 export function LockedPreview({
   mode,
@@ -61,16 +113,17 @@ export function LockedPreview({
     });
   };
 
-
   if (mode === "inline") {
     return (
       <TooltipProvider delayDuration={150}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link
-              to={href}
+            <Cta
+              isAuthenticated={isAuthenticated}
+              href={href}
               onClick={handleLockClick}
-              aria-label={ariaLabel}
+              ariaLabel={ariaLabel}
+              trackingLabel={trackingLabel}
               className={cn(
                 "inline-block align-baseline cursor-pointer select-none transition-opacity duration-fast hover:opacity-80",
                 className,
@@ -78,7 +131,7 @@ export function LockedPreview({
               style={{ filter: blurPx[intensity] }}
             >
               {children}
-            </Link>
+            </Cta>
           </TooltipTrigger>
           <TooltipContent>{tooltip}</TooltipContent>
         </Tooltip>
@@ -91,15 +144,17 @@ export function LockedPreview({
       <TooltipProvider delayDuration={150}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link
-              to={href}
+            <Cta
+              isAuthenticated={isAuthenticated}
+              href={href}
               onClick={handleLockClick}
-              aria-label={ariaLabel}
+              ariaLabel={ariaLabel}
+              trackingLabel={trackingLabel}
               className={cn("inline-block cursor-pointer transition-opacity duration-fast hover:opacity-80", className)}
               style={{ filter: blurPx[intensity], pointerEvents: "auto" }}
             >
               {children}
-            </Link>
+            </Cta>
           </TooltipTrigger>
           <TooltipContent>{tooltip}</TooltipContent>
         </Tooltip>
@@ -136,7 +191,15 @@ export function LockedPreview({
               variant="outline"
               className="text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
             >
-              <Link to={href} onClick={handleLockClick}>{cta}</Link>
+              <Cta
+                isAuthenticated={isAuthenticated}
+                href={href}
+                onClick={handleLockClick}
+                ariaLabel={ariaLabel}
+                trackingLabel={trackingLabel}
+              >
+                {cta}
+              </Cta>
             </Button>
           </div>
         </div>

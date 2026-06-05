@@ -5,13 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Lock, Tag, ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { ProgressionLabel } from "@/components/conversion/ProgressionLabel";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 
 const scoreClasses = (s: number) =>
   s >= 70
@@ -22,6 +22,7 @@ const scoreClasses = (s: number) =>
 
 const PublicThemes = () => {
   const { data, isLoading } = usePublicPreview();
+  const { openAuthModal } = useAuthModal();
   const demoRef = useRef<HTMLDivElement>(null);
   usePreviewEngagement();
   useViewportOnceEvent(demoRef, "demo_theme_viewed");
@@ -123,11 +124,13 @@ const PublicThemes = () => {
           </div>
 
           <div className="flex justify-center pt-4">
-            <Button asChild size="lg" className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-              <Link to="/auth?mode=signup&ref=public_themes_footer">
-                Start Free Access to See All {data.total_theme_count} Themes
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
+            <Button
+              size="lg"
+              onClick={() => { track("locked_content_cta_clicked", { surface: "footer", label: "public_themes_footer" }); openAuthModal("signup", { ref: "public_themes_footer" }); }}
+              className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
+            >
+              Start Free Access to See All {data.total_theme_count} Themes
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
         </>
