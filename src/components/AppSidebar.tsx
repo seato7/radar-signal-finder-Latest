@@ -9,6 +9,7 @@ import {
   CreditCard,
   Shield,
   LogOut,
+  LogIn,
   User,
   Settings,
   BarChart3,
@@ -20,7 +21,7 @@ import {
   Crosshair,
   type LucideIcon,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,15 @@ const navigationItems: NavItem[] = [
   { title: "Themes", url: "/themes", icon: Tag },
   { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Help", url: "/help", icon: HelpCircle },
+];
+
+// Anonymous visitors see only public-preview surfaces.
+const publicItems: NavItem[] = [
+  { title: "Asset Radar", url: "/asset-radar", icon: Radar },
+  { title: "Active Signals", url: "/trading-signals", icon: Crosshair },
+  { title: "Themes", url: "/themes", icon: Tag },
+  { title: "Pricing", url: "/pricing", icon: CreditCard },
   { title: "Help", url: "/help", icon: HelpCircle },
 ];
 
@@ -91,22 +101,24 @@ function DsNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const { user, logout, userPlan, isAdmin, isPremium } = useAuth();
+  const { user, logout, userPlan, isAdmin, isPremium, isAuthenticated } = useAuth();
   const isCollapsed = state === "collapsed";
+
+  const items = isAuthenticated ? navigationItems : publicItems;
+  const groupLabel = isAuthenticated ? "Navigation" : "Preview";
 
   return (
     <Sidebar
       collapsible="icon"
       className="border-r border-ds-border bg-ds-surface"
     >
-      {/* Logo + system status */}
       <div className="flex items-center gap-2 px-4 h-14 border-b border-ds-border">
         {!isCollapsed ? (
           <>
-            <span className="font-sans font-semibold text-[15px] tracking-tight">
+            <Link to="/" className="font-sans font-semibold text-[15px] tracking-tight">
               <span className="text-ds-brand-primary">Insider</span>
               <span className="text-ds-text-primary">Pulse</span>
-            </span>
+            </Link>
             <span
               className="ds-status-pulse ml-auto h-1.5 w-1.5 rounded-full bg-ds-signal-positive"
               aria-label="System online"
@@ -125,19 +137,19 @@ export function AppSidebar() {
         <SidebarGroup>
           {!isCollapsed && (
             <SidebarGroupLabel className="text-overline text-ds-text-muted px-3 mb-1">
-              Navigation
+              {groupLabel}
             </SidebarGroupLabel>
           )}
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
-              {navigationItems.map((item) => (
+              {items.map((item) => (
                 <DsNavItem key={item.title} item={item} collapsed={isCollapsed} />
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isPremium() && (
+        {isAuthenticated && isPremium() && (
           <SidebarGroup>
             {!isCollapsed && (
               <SidebarGroupLabel className="text-overline text-ds-text-muted px-3 mb-1 mt-2">
@@ -154,7 +166,7 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {isAdmin() && (
+        {isAuthenticated && isAdmin() && (
           <SidebarGroup>
             {!isCollapsed && (
               <SidebarGroupLabel className="text-overline text-ds-text-muted px-3 mb-1 mt-2">
@@ -173,40 +185,69 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-ds-border bg-ds-surface p-3">
-        {!isCollapsed ? (
-          <div className="space-y-2.5">
-            <div className="flex items-center gap-2 text-[13px] text-ds-text-secondary">
-              <User className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{user?.email}</span>
+        {isAuthenticated ? (
+          !isCollapsed ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 text-[13px] text-ds-text-secondary">
+                <User className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{user?.email}</span>
+              </div>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-ds-sm px-2 py-0.5",
+                  "text-[11px] font-medium uppercase tracking-wider",
+                  "border border-ds-brand-primary/40 text-ds-brand-primary capitalize",
+                )}
+              >
+                {userPlan} Plan
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={logout}
+                className="w-full justify-start text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated h-8"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
             </div>
-            <span
-              className={cn(
-                "inline-flex items-center rounded-ds-sm px-2 py-0.5",
-                "text-[11px] font-medium uppercase tracking-wider",
-                "border border-ds-brand-primary/40 text-ds-brand-primary capitalize",
-              )}
-            >
-              {userPlan} Plan
-            </span>
+          ) : (
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={logout}
-              className="w-full justify-start text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface-elevated h-8"
+              title="Logout"
+              className="text-ds-text-secondary hover:text-ds-text-primary"
             >
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
+              <LogOut className="h-4 w-4" />
+            </Button>
+          )
+        ) : !isCollapsed ? (
+          <div className="space-y-2">
+            <p className="text-caption text-ds-text-secondary">
+              Free access in 30 seconds. No credit card.
+            </p>
+            <Button
+              asChild
+              size="sm"
+              className="w-full bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
+            >
+              <Link to="/auth?mode=signup&ref=sidebar">Start Free Access</Link>
+            </Button>
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="w-full justify-center text-ds-text-secondary hover:text-ds-text-primary h-8"
+            >
+              <Link to="/auth">
+                <LogIn className="h-4 w-4 mr-2" /> Sign In
+              </Link>
             </Button>
           </div>
         ) : (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={logout}
-            title="Logout"
-            className="text-ds-text-secondary hover:text-ds-text-primary"
-          >
-            <LogOut className="h-4 w-4" />
+          <Button asChild variant="ghost" size="icon" title="Sign in" className="text-ds-text-secondary hover:text-ds-text-primary">
+            <Link to="/auth"><LogIn className="h-4 w-4" /></Link>
           </Button>
         )}
       </SidebarFooter>
