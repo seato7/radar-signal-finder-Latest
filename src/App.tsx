@@ -210,6 +210,7 @@ const App = () => (
                 }
               />
             </Routes>
+            </AuthModalProvider>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
