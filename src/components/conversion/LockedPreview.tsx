@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
+import { track, trackOnce } from "@/lib/analytics";
 
 type Mode = "inline" | "card" | "section" | "row-cell";
 type Intensity = "light" | "medium" | "heavy";
