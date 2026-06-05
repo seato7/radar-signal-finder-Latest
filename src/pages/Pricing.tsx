@@ -125,6 +125,7 @@ const Pricing = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") {
+      track("upgrade_completed");
       setTimeout(() => {
         refreshSubscription?.();
       }, 4000);
