@@ -248,10 +248,10 @@ const Landing = () => {
             <span className="font-semibold">Premium unlocks 26,000+.</span>
           </span>
           <Link
-            to="/auth"
+            to="/asset-radar"
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-ds-brand-primary-foreground text-ds-brand-primary text-caption sm:text-body-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
           >
-            Start Free Access
+            See Live Preview
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
