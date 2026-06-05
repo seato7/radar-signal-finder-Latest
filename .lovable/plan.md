@@ -1,68 +1,107 @@
-## Diagnostic findings
+# Public Preview Architecture — Implementation Plan
 
-The scoring pipeline is **healthy**. The "every asset = 50" issue is a **plan-gating bug in the database RPC**, not a data/cron/billing failure.
+## 1. Decision: Conditional Public Routes (NOT new /preview routes)
 
-### Evidence the pipeline is working
+**Chosen approach:** Make `/asset-radar`, `/trading-signals`, `/themes` conditionally public. The existing pages already render the Phase 5A blur model for `userPlan === "free"`. By removing the `ProtectedRoute` wrapper and treating anonymous as "free", we get the exact same surface with zero code duplication.
 
-| Check | Result |
-|---|---|
-| `MAX(score_computed_at)` on `assets` | **~1 minute ago** (live) |
-| `compute-asset-scores-cycle` cron | Active, every 5 min |
-| Assets with `computed_score != 50` | **25,399 / 27,004** (94%) |
-| Assets with `computed_score = 50` exactly | 748 (3%) |
-| Score range | min 18.9, max 81, **avg 49.1** |
-| Recent edge function logs | Clean — "Score computation complete. Ranked: 493…" |
-| `hybrid_score` populated | 26,149 / 27,004 |
-| `generate-signals-*` crons (28 of them) | All active |
-| `hourly-compute-theme-scores` | Active |
+**Why not new `/preview` routes:** AssetRadar (1076 lines), TradingSignals (623), Themes (701) each have their own data hooks, query state, and blur logic. Mirroring them would create two divergent surfaces — guaranteed drift, double the maintenance, and breaks the "real product, real data, real restrictions" requirement.
 
-So scores exist and update every 5 minutes.
+**Risk:** These pages currently assume an authenticated session in places (RLS queries, watchlist hooks, AI hooks). Anonymous requests to RLS-protected tables may return empty arrays instead of demo data. **I will audit each page's queries before flipping the gate** and report what I find — if anonymous-vs-authed-free returns different data, that's a blocker and I'll stop and surface it rather than silently shipping a broken preview.
 
-### Actual root cause
+## 2. Routing changes (`src/App.tsx`)
 
-User `danseatonbusiness@gmail.com` has role `starter`. The RPC `public.get_assets_for_user` (and sibling `get_asset_for_user_by_ticker`, `get_themes_for_user`) gates score visibility:
+Move these out of the `<ProtectedRoute>` block, into a new public block that still uses the sidebar layout:
 
-```sql
-_show_scores boolean := _plan IN ('premium', 'enterprise', 'admin');
-...
-CASE WHEN _show_scores THEN b.computed_score::numeric ELSE NULL END,
-CASE WHEN _show_scores THEN b.hybrid_score::numeric  ELSE NULL END,
-```
+- `/asset-radar` → public
+- `/trading-signals` → public
+- `/themes` → public
 
-Verified by calling the RPC: it returned `computed_score: NULL, hybrid_score: NULL` for every row.
+Stay auth-gated: `/dashboard`, `/watchlist`, `/alerts`, `/assistant`, `/settings`, `/admin`, `/api-usage`, `/ingestion-health`, `/data-sources`, `/bots`, `/analytics`, `/data-ingestion`, `/pipeline-tests`, `/asset/*` (detail pages — these expose paid data and are not in scope).
 
-The frontend (`src/pages/AssetRadar.tsx`, 5 occurrences) then does:
+Sidebar (`AppSidebar`) needs an anonymous-mode variant: show only the public links + a "Sign in" CTA at the bottom. Without this, anonymous visitors see a sidebar of broken links.
+
+## 3. Session-aware CTA utility (`src/lib/getUpgradeCTA.ts`)
+
+New file exporting:
 
 ```ts
-const score = asset.hybrid_score ?? asset.computed_score ?? 50;
+getCTAText(isAuthenticated, userPlan, context?) // "Start Free Access" | "Upgrade to Starter" | "Upgrade to Pro" | "Upgrade to Premium"
+getCTAHref(isAuthenticated, userPlan)           // "/auth" | "/pricing"
+getLockTooltip(isAuthenticated, fieldType)      // "Score visible with Free Access" | "Score visible with Starter"
+getProgressionLabel(...)                        // "Viewing 3 of 26,000+ assets. Start Free Access..." etc.
 ```
 
-→ Every asset displays as **50 / Neutral** for free, lite, starter, and pro users. Only premium/enterprise/admin see real scores. This is consistent with the user report.
+This composes with the existing `getUpgradeTarget()` for logged-in users — does NOT replace it.
 
-### Decision needed
+## 4. Primitives updated to consume the utility
 
-Two clean fixes; pick one (or both):
+- `src/components/conversion/LockedPreview.tsx` — read `useAuth()` internally; pick CTA text/href via utility. New optional `fieldType` prop (`"score" | "price" | "pnl" | "generic"`) drives the tooltip text.
+- `src/components/conversion/TierCeiling.tsx` — same treatment.
+- `src/components/BlurredUpgradeOverlay.tsx` — same.
+- Sticky bar in `src/pages/Landing.tsx` — already uses "Start Free Access" since user is anonymous on Landing; no change needed there.
 
-**Option A — Loosen the RPC gate** (fastest, matches what most SaaS does)
-Allow `starter` and `pro` to see scores too. Keep `free` gated (or show only the 3 demo tickers' scores). Edit `_show_scores` predicate in the three RPCs.
+Because all 8 files that reference "Upgrade to Starter/Pro/Premium" route through these primitives or through `getUpgradeTarget`, the global swap happens automatically.
 
-**Option B — Fix the frontend fallback** (defense in depth)
-Replace `?? 50` with explicit handling: if score is `null`, render an "Upgrade to see score" pill / lock badge instead of a fake 50. Apply to AssetRadar plus any other place reading `computed_score`.
+## 5. Progression framing labels
 
-Recommended: **A + B together**. A unblocks paying Starter customers immediately; B prevents future "fake 50" confusion if any plan ever has scores hidden again.
+New tiny component `src/components/conversion/ProgressionLabel.tsx`. Mounted at the top of:
 
-### Open questions for you
+- AssetRadar table: "Viewing 3 of 26,000+ assets. [Start Free Access] to track unlimited."
+- Themes grid: "Viewing 1 of 72 themes with full data. [Start Free Access]."
+- TradingSignals list: "1 signal visible. 21 hidden. [Start Free Access] to see all."
 
-1. Which plans should see real scores? Current code says only premium+. The Starter user paying for the product clearly expects to see scores.
-2. For free users, should they see real scores on the 3 demo tickers (F, VTI, EUR/USD) or stay locked behind the upgrade overlay?
-3. Should `expected_return` and `score_explanation` follow the same gating as the score itself, or stay premium-only?
+Copy swaps to "Upgrade to Starter" for logged-in Free via the utility.
 
-### Things explicitly ruled out
+## 6. Tooltip orientation copy
 
-- ❌ Not a cron failure (all jobs active, last run minutes ago)
-- ❌ Not stale data (assets.score_computed_at = ~1 min ago)
-- ❌ Not an API key / billing issue (TwelveData credits flowing, Gemini/Lovable AI working — see compute-asset-scores logs showing 493 assets ranked, sector percentiles computed, volatility computed)
-- ❌ Not the breaking-news pipeline (signals generating; `generate-signals-from-breaking-news-hourly` active; `map-signal-to-theme-15min` mapped 1000 signals successfully 5 min ago)
-- ❌ Not RLS on the `assets` table (RPC returns rows, just with nulled score columns)
+`LockedPreview` already wraps blurred content in a `<Tooltip>`. Extend its `tooltipText` resolution to use `fieldType` + session state. Audit the three pages and pass `fieldType="score" | "price" | "pnl"` at each call site.
 
-Confirm which option(s) you want and which plans should see scores, and I'll implement.
+## 7. Activation speed (demo data)
+
+I will inspect what each page renders for `userPlan === "free"` with no session:
+
+- **AssetRadar**: confirm the 3 demo tickers (F, VTI, EUR/USD) come from a public query or RLS-readable row set. If gated behind authenticated RLS, will need a public RPC or `anon`-readable demo flag — **I will report findings before changing schema**.
+- **TradingSignals**: same audit on the demo signal.
+- **Themes**: same audit on the Congressional Bipartisan Trading theme.
+
+If any demo data is unreachable anonymously, I will **stop and surface the blocker** rather than fabricate fake data or relax RLS unilaterally — per your no-mock-data and security rules.
+
+## 8. Out of scope (untouched)
+
+- Phase 5A blur primitives' internals (intensity, demo dataset definition)
+- Phase 6 RLS / auth / RPC security
+- Auth flow, Stripe, pricing page, plan limits
+- Landing page copy (already updated last commits)
+- `/asset/*` detail pages — paid surface, not in the public preview scope you listed
+
+## 9. Files modified (estimate)
+
+1. `src/App.tsx` — route gating
+2. `src/components/AppSidebar.tsx` — anonymous variant
+3. `src/lib/getUpgradeCTA.ts` — NEW
+4. `src/components/conversion/LockedPreview.tsx` — session-aware CTA + tooltip
+5. `src/components/conversion/TierCeiling.tsx` — session-aware CTA
+6. `src/components/BlurredUpgradeOverlay.tsx` — session-aware CTA
+7. `src/components/conversion/ProgressionLabel.tsx` — NEW
+8. `src/pages/AssetRadar.tsx` — mount ProgressionLabel, pass fieldType to LockedPreview, treat anonymous as free
+9. `src/pages/TradingSignals.tsx` — same
+10. `src/pages/Themes.tsx` — same
+11. `src/pages/Landing.tsx` — re-point preview links from `/auth` to `/asset-radar` where appropriate
+
+## 10. Verification I will perform before declaring done
+
+- Build passes (I will NOT auto-fix type errors per your rule; if they appear I stop and report)
+- Manual route test in preview: anonymous load of `/asset-radar`, `/trading-signals`, `/themes` does not redirect to `/auth`
+- Anonymous CTA copy is "Start Free Access" everywhere via grep
+- Audit query: confirm anonymous queries return demo data, or report the blocker
+- Screenshot anonymous + logged-in Free side-by-side on `/asset-radar` to verify CTA copy delta
+- Lighthouse first-paint estimate on `/asset-radar` anonymous
+
+## Open questions before I proceed
+
+1. **Anonymous data access blocker**: If the audit in §7 finds demo data is RLS-blocked for anon, what would you like? (a) I stop and report, you decide on policy. (b) I propose a minimal RLS read-only policy for `is_demo = true` rows and you approve before migration. **My default is (a).**
+2. **Sidebar for anonymous**: OK to show the sidebar with just `/asset-radar`, `/trading-signals`, `/themes`, `/pricing`, and a prominent "Sign in" button, or do you want a stripped header-only chrome on public preview routes?
+3. **`/asset/*` detail pages**: You did not list these. Confirm they stay auth-gated (clicking a ticker on the public radar would route an anon user to `/auth`).
+4. **Signup route**: Spec says route anonymous CTAs to `/auth/signup`. The existing route is `/auth` (single page with both login + signup tabs). Do you want me to add `?mode=signup` query param so `/auth` auto-selects the signup tab, or just route to `/auth`?
+
+Awaiting your answers on these four before implementation.
