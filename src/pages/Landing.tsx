@@ -550,9 +550,9 @@ const Landing = () => {
                 </p>
                 <Button
                   className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
-                  asChild
+                  onClick={() => openAuthModal("signup", { ref: "landing_pricing" })}
                 >
-                  <Link to="/auth?mode=signup&ref=landing_pricing">Unlock Full Access</Link>
+                  Unlock Full Access
                 </Button>
               </div>
             </motion.div>
