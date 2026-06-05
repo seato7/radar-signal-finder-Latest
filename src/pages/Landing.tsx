@@ -224,13 +224,15 @@ const Landing = () => {
               className="h-10 px-3 text-body-sm text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface"
               asChild
             >
-              <Link to="/auth">Sign In</Link>
+              <Link to="/auth?mode=signin">Sign In</Link>
             </Button>
+            {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
+                /auth?mode=signup. See mem://constraints/preview-first-funnel */}
             <Button
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/auth?mode=signup&ref=landing">Start Free</Link>
+              <Link to="/asset-radar">Start Free</Link>
             </Button>
           </div>
         </div>
@@ -300,11 +302,12 @@ const Landing = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] as const }}
           >
+            {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/auth?mode=signup&ref=landing">Start Free Access</Link>
+              <Link to="/asset-radar">Start Free Access</Link>
             </Button>
           </motion.div>
 
@@ -688,11 +691,12 @@ const Landing = () => {
               Free access shows 3 assets and one theme. Premium unlocks the full 26,000+ asset
               universe with live scoring and signal data.
             </p>
+            {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
               className="h-11 px-8 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/auth?mode=signup&ref=landing">Start Free Access</Link>
+              <Link to="/asset-radar">Start Free Access</Link>
             </Button>
           </motion.div>
         </AnimatedSection>
