@@ -45,6 +45,7 @@ export default function Auth() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    track('signup_started', { method: 'email' });
     try {
       emailSchema.parse(email);
       passwordSchema.parse(password);
