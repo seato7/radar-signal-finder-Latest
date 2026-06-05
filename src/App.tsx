@@ -55,6 +55,14 @@ const queryClient = new QueryClient({
 });
 
 initGlobalPriceSubscription();
+initAnalytics();
+
+// Tiny wrapper so we can call route-aware hooks inside the Router tree.
+const AnalyticsBridge = () => {
+  useRoutePageView();
+  return null;
+};
+
 
 // Switches between the public-preview component and the authenticated component
 // based on session state, so the same URL works for both visitor types.
