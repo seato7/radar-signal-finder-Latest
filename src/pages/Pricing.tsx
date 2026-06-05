@@ -121,6 +121,7 @@ const Pricing = () => {
   const [isAnnual, setIsAnnual] = useState(false);
   const navigate = useNavigate();
   const { userPlan, isAuthenticated, refreshSubscription } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const { toast } = useToast();
 
   useEffect(() => {
