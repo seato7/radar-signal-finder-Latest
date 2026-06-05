@@ -5,13 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Lock, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { ProgressionLabel } from "@/components/conversion/ProgressionLabel";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 
 const scoreClasses = (s: number) =>
   s >= 70
