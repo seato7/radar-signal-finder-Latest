@@ -45,6 +45,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       toast.success('Logged out successfully');
     }
+    // Preview-first funnel: signed-out users land on the marketing page, not /auth.
+    // See mem://constraints/preview-first-funnel
+    window.location.assign('/');
   };
 
   return (
