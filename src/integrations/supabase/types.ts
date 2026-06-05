@@ -4352,6 +4352,7 @@ export type Database = {
           ticker: string
         }[]
       }
+      get_public_preview: { Args: never; Returns: Json }
       get_scoring_global_mean: {
         Args: never
         Returns: {
