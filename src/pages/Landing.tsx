@@ -221,12 +221,16 @@ const Landing = () => {
             InsiderPulse
           </Link>
           <div className="flex items-center gap-2">
+            {/* Preview-first funnel: ANY anonymous landing CTA — including
+                Sign In — routes to /asset-radar. The auth modal is reserved for
+                interactions inside the preview surfaces (header, sticky bar,
+                lock-points, sidebar). See mem://constraints/preview-first-funnel */}
             <Button
               variant="ghost"
               className="h-10 px-3 text-body-sm text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface"
-              onClick={() => openAuthModal("signin", { ref: "landing_nav" })}
+              asChild
             >
-              Sign In
+              <Link to="/asset-radar">Sign In</Link>
             </Button>
             {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
                 /auth?mode=signup. See mem://constraints/preview-first-funnel */}
