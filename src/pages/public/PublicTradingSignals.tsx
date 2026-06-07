@@ -25,6 +25,7 @@ const PublicTradingSignals = () => {
   if (isLoading || !data) {
     return (
       <div className="space-y-6">
+        <StickySignupBar trackingLabel="public_signals_sticky" />
         <PageHeader title="Active Signals" eyebrow="Live Preview" />
         <Skeleton className="h-64 w-full" />
       </div>
