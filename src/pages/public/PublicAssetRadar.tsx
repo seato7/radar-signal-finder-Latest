@@ -112,7 +112,7 @@ const PublicAssetRadar = () => {
               </Badge>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-ds-border">
-              {data.blurred_assets.slice(0, 25).map((a) => (
+              {data.blurred_assets.map((a) => (
                 <div key={a.id} className="flex items-center gap-4 p-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
