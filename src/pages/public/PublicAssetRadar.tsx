@@ -138,7 +138,7 @@ const PublicAssetRadar = () => {
               onClick={() => { track("locked_content_cta_clicked", { surface: "footer", label: "public_radar_footer" }); openAuthModal("signup", { ref: "public_radar_footer" }); }}
               className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
             >
-              Start Free Access to See All {data.total_asset_count.toLocaleString()} Assets
+              Start Free Access to See All {(data.scored_asset_count ?? 0).toLocaleString()} Ranked Assets
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
