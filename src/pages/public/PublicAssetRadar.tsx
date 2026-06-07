@@ -31,6 +31,7 @@ const PublicAssetRadar = () => {
 
   return (
     <div className="space-y-6">
+      <StickySignupBar trackingLabel="public_asset_radar_sticky" />
       <PageHeader
         title="Asset Radar"
         eyebrow="Live Preview"
@@ -47,7 +48,7 @@ const PublicAssetRadar = () => {
         <>
           <ProgressionLabel
             visible={data.demo_assets.length}
-            total={data.total_asset_count}
+            total={data.scored_asset_count ?? data.total_asset_count}
             noun="assets"
             trackingLabel="public_asset_radar"
           />
