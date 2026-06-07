@@ -31,11 +31,13 @@ const PublicThemes = () => {
 
   return (
     <div className="space-y-6">
+      <StickySignupBar trackingLabel="public_themes_sticky" />
       <PageHeader
         title="Investment Themes"
         eyebrow="Live Preview"
         description="Curated investment themes scored daily across markets. Sign in for free to unlock full theme data."
       />
+
 
       {isLoading || !data ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
