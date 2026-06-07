@@ -97,7 +97,7 @@ const PublicThemes = () => {
               </Card>
             ))}
 
-            {data.blurred_themes.slice(0, 11).map((t) => (
+            {data.blurred_themes.map((t) => (
               <Card key={t.id} className="bg-ds-surface border-ds-border">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
@@ -118,9 +118,11 @@ const PublicThemes = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-caption text-ds-text-muted">
-                    {(t.keywords ?? []).slice(0, 4).join(", ") || "—"}
-                  </p>
+                  <LockedPreview mode="row-cell" intensity="medium" fieldType="generic" trackingLabel="public_themes_keywords">
+                    <p className="text-caption text-ds-text-muted">
+                      {(t.keywords ?? []).slice(0, 4).join(", ") || "themed keyword cluster"}
+                    </p>
+                  </LockedPreview>
                 </CardContent>
               </Card>
             ))}
