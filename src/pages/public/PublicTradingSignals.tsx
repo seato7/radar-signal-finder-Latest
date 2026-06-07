@@ -37,11 +37,13 @@ const PublicTradingSignals = () => {
 
   return (
     <div className="space-y-6">
+      <StickySignupBar trackingLabel="public_signals_sticky" />
       <PageHeader
         title="Active Signals"
         eyebrow="Live Preview"
         description="Fully spec'd trade signals with entry, target, and stop-loss. Sign in for free to see all active signals."
       />
+
 
       <ProgressionLabel
         visible={sig ? 1 : 0}
