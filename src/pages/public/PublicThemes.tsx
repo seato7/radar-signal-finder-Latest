@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { StickySignupBar } from "@/components/conversion/StickySignupBar";
 
 const scoreClasses = (s: number) =>
   s >= 70
