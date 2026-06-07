@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthModalProvider } from "@/contexts/AuthModalContext";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { HeaderAuthControls } from "@/components/auth/HeaderAuthControls";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrokerKeyRotationModal } from "@/components/BrokerKeyRotationModal";
