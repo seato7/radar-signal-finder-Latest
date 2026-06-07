@@ -89,7 +89,6 @@ const AppShell = ({ children }: { children: React.ReactNode }) => (
           <SidebarTrigger className="lg:hidden text-ds-text-secondary hover:text-ds-text-primary" />
           <HeaderAuthControls />
         </header>
-        </header>
         <main className="flex-1 p-4 md:p-6 lg:p-8">
           <div className="max-w-screen-2xl mx-auto w-full">{children}</div>
         </main>
