@@ -66,6 +66,7 @@ export interface PublicPreviewPayload {
   demo_assets: PublicDemoAsset[];
   blurred_assets: PublicBlurredAsset[];
   total_asset_count: number;
+  scored_asset_count: number;
   demo_themes: PublicDemoTheme[];
   blurred_themes: PublicBlurredTheme[];
   total_theme_count: number;

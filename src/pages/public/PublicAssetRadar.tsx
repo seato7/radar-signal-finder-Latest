@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { StickySignupBar } from "@/components/conversion/StickySignupBar";
 
 const scoreClasses = (s: number) =>
   s >= 70
@@ -30,6 +31,7 @@ const PublicAssetRadar = () => {
 
   return (
     <div className="space-y-6">
+      <StickySignupBar trackingLabel="public_asset_radar_sticky" />
       <PageHeader
         title="Asset Radar"
         eyebrow="Live Preview"
@@ -46,7 +48,7 @@ const PublicAssetRadar = () => {
         <>
           <ProgressionLabel
             visible={data.demo_assets.length}
-            total={data.total_asset_count}
+            total={data.scored_asset_count ?? data.total_asset_count}
             noun="assets"
             trackingLabel="public_asset_radar"
           />
@@ -110,7 +112,7 @@ const PublicAssetRadar = () => {
               </Badge>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-ds-border">
-              {data.blurred_assets.slice(0, 25).map((a) => (
+              {data.blurred_assets.map((a) => (
                 <div key={a.id} className="flex items-center gap-4 p-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -136,7 +138,7 @@ const PublicAssetRadar = () => {
               onClick={() => { track("locked_content_cta_clicked", { surface: "footer", label: "public_radar_footer" }); openAuthModal("signup", { ref: "public_radar_footer" }); }}
               className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
             >
-              Start Free Access to See All {data.total_asset_count.toLocaleString()} Assets
+              Start Free Access to See All {(data.scored_asset_count ?? 0).toLocaleString()} Ranked Assets
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>

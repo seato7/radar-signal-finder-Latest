@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { StickySignupBar } from "@/components/conversion/StickySignupBar";
 
 const PublicTradingSignals = () => {
   const { data, isLoading } = usePublicPreview();
@@ -24,6 +25,7 @@ const PublicTradingSignals = () => {
   if (isLoading || !data) {
     return (
       <div className="space-y-6">
+        <StickySignupBar trackingLabel="public_signals_sticky" />
         <PageHeader title="Active Signals" eyebrow="Live Preview" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -35,11 +37,13 @@ const PublicTradingSignals = () => {
 
   return (
     <div className="space-y-6">
+      <StickySignupBar trackingLabel="public_signals_sticky" />
       <PageHeader
         title="Active Signals"
         eyebrow="Live Preview"
         description="Fully spec'd trade signals with entry, target, and stop-loss. Sign in for free to see all active signals."
       />
+
 
       <ProgressionLabel
         visible={sig ? 1 : 0}

@@ -138,16 +138,20 @@ export function AuthForm({ onClose, redirectAfterSignIn = "/dashboard" }: AuthFo
   return (
     <div className="space-y-5">
       {mode !== "forgot" && (
-        <div className="flex rounded-lg p-1" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <div className="flex rounded-lg p-1" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
           {(["signin", "signup"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => switchMode(tab)}
-              className="flex-1 py-2 rounded-md text-sm font-medium transition-all duration-200"
-              style={mode === tab ? { background: "#06B6D4", color: "#fff" } : { color: "#94a3b8" }}
+              className="flex-1 py-2.5 rounded-md text-sm font-semibold transition-all duration-200"
+              style={
+                mode === tab
+                  ? { background: "linear-gradient(to right, #06B6D4, #3B82F6)", color: "#fff", boxShadow: "0 4px 12px rgba(6,182,212,0.25)" }
+                  : { color: "#94a3b8" }
+              }
             >
-              {tab === "signin" ? "Sign In" : "Sign Up"}
+              {tab === "signin" ? "Sign In" : "Sign Up Free"}
             </button>
           ))}
         </div>

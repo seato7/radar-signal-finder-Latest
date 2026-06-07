@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 import { usePreviewEngagement, useViewportOnceEvent } from "@/hooks/useAnalytics";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { StickySignupBar } from "@/components/conversion/StickySignupBar";
 
 const scoreClasses = (s: number) =>
   s >= 70
@@ -30,11 +31,13 @@ const PublicThemes = () => {
 
   return (
     <div className="space-y-6">
+      <StickySignupBar trackingLabel="public_themes_sticky" />
       <PageHeader
         title="Investment Themes"
         eyebrow="Live Preview"
         description="Curated investment themes scored daily across markets. Sign in for free to unlock full theme data."
       />
+
 
       {isLoading || !data ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -94,7 +97,7 @@ const PublicThemes = () => {
               </Card>
             ))}
 
-            {data.blurred_themes.slice(0, 11).map((t) => (
+            {data.blurred_themes.map((t) => (
               <Card key={t.id} className="bg-ds-surface border-ds-border">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
@@ -115,9 +118,11 @@ const PublicThemes = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-caption text-ds-text-muted">
-                    {(t.keywords ?? []).slice(0, 4).join(", ") || "—"}
-                  </p>
+                  <LockedPreview mode="row-cell" intensity="medium" fieldType="generic" trackingLabel="public_themes_keywords">
+                    <p className="text-caption text-ds-text-muted">
+                      {(t.keywords ?? []).slice(0, 4).join(", ") || "themed keyword cluster"}
+                    </p>
+                  </LockedPreview>
                 </CardContent>
               </Card>
             ))}
