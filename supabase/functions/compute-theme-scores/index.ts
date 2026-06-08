@@ -778,13 +778,10 @@ serve(async (req) => {
       // to this theme by compute-theme-scores' aggregation. Previously this
       // column was never written by any cron-managed function, leaving 56 of
       // 72 themes with tickers = []. Cap at 50 to keep the row small.
-      const mappedTickers = Array.from(new Set(
-        assets.map(a => (a.ticker || '').toUpperCase()).filter(Boolean)
-      )).slice(0, 50);
       const themesUpdate: Record<string, unknown> = {
         score: result.score,
         alpha: result.expected_return_centered,
-        tickers: mappedTickers,
+        tickers: result.tickers,
         updated_at: now.toISOString(),
         metadata: {
           expected_return: result.expected_return,
