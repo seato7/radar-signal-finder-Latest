@@ -687,22 +687,30 @@ serve(async (req) => {
         .slice(0, 5)
         .map(a => a.ticker);
 
-      // Step 3: Gemini summary for non-neutral themes with significant news flow
+      // Step 3: Gemini summary — generate whenever a theme has mapped assets
+      // OR any news flow. Previously gated to news>5 + non-neutral, which
+      // caused 67 of 72 themes to have ai_summary IS NULL even when they had
+      // perfectly good underlying data. Now: any theme with signal weight or
+      // news context gets a real LLM-written 1–2 sentence "why now" line.
       let aiSummary: string | null = null;
-      const hasSignificantNews = newsSignalsForTheme.length > 5;
-      const isNonNeutral = finalScore > 55 || finalScore < 45;
+      const hasMappedAssets = assets.length > 0;
+      const hasAnyNews = newsSignalsForTheme.length > 0;
 
-      if (hasSignificantNews && isNonNeutral) {
+      if (hasMappedAssets || hasAnyNews) {
         const headlines = newsSignalsForTheme
-          .slice(0, 5)
+          .slice(0, 6)
           .map(s => s.value_text)
           .filter(Boolean)
           .join('; ');
-        const prompt = `In one sentence, explain why the ${theme.name} investment theme is currently scoring ${Math.round(finalScore)}/100 based on these recent signals: ${headlines || 'recent market activity'}. Be specific about what is driving the score.`;
-        const raw = await callGemini(prompt, 150, 'text');
-        if (raw) {
-          aiSummary = raw.trim().replace(/\n/g, ' ');
-          console.log(`[THEME-SCORING-V4] Gemini summary for "${theme.name}": ${aiSummary}`);
+        const topAssetsLine = topAssets.length > 0 ? topAssets.join(', ') : 'no major contributors yet';
+        const direction = finalScore > 55 ? 'bullish' : finalScore < 45 ? 'bearish' : 'neutral';
+        const prompt = `Write 2 sentences (60–120 words total) explaining why the "${theme.name}" investment theme is currently scoring ${Math.round(finalScore)}/100 (${direction}). Top contributing tickers: ${topAssetsLine}. Recent news flow: ${headlines || 'limited recent news; rely on positioning and flow signals'}. Be specific and analytical. Do not start with the word "The".`;
+        const raw = await callGemini(prompt, 260, 'text');
+        if (raw && raw.trim().length >= 50) {
+          aiSummary = raw.trim().replace(/\s+/g, ' ');
+          console.log(`[THEME-SCORING-V4] Gemini summary for "${theme.name}" (${aiSummary.length} chars)`);
+        } else if (raw) {
+          console.warn(`[THEME-SCORING-V4] Gemini summary too short for "${theme.name}" (${raw.length} chars), discarding`);
         }
       }
 
