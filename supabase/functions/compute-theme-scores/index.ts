@@ -644,6 +644,7 @@ serve(async (req) => {
           bullish_mass: 0,
           bearish_mass: 0,
           top_assets: [],
+          tickers: [],
           ai_summary: null,
           computed_at: now.toISOString(),
         });
