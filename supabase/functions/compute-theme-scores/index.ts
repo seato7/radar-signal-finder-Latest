@@ -771,9 +771,17 @@ serve(async (req) => {
         }, { onConflict: 'theme_id' });
 
       // Update themes table (including ai_summary when present)
+      // Also write back themes.tickers — the canonical list of tickers mapped
+      // to this theme by compute-theme-scores' aggregation. Previously this
+      // column was never written by any cron-managed function, leaving 56 of
+      // 72 themes with tickers = []. Cap at 50 to keep the row small.
+      const mappedTickers = Array.from(new Set(
+        assets.map(a => (a.ticker || '').toUpperCase()).filter(Boolean)
+      )).slice(0, 50);
       const themesUpdate: Record<string, unknown> = {
         score: result.score,
         alpha: result.expected_return_centered,
+        tickers: mappedTickers,
         updated_at: now.toISOString(),
         metadata: {
           expected_return: result.expected_return,
