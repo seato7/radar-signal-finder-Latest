@@ -707,7 +707,9 @@ serve(async (req) => {
         const topAssetsLine = topAssets.length > 0 ? topAssets.join(', ') : 'no major contributors yet';
         const direction = finalScore > 55 ? 'bullish' : finalScore < 45 ? 'bearish' : 'neutral';
         const prompt = `Write 2 sentences (60–120 words total) explaining why the "${theme.name}" investment theme is currently scoring ${Math.round(finalScore)}/100 (${direction}). Top contributing tickers: ${topAssetsLine}. Recent news flow: ${headlines || 'limited recent news; rely on positioning and flow signals'}. Be specific and analytical. Do not start with the word "The".`;
-        const raw = await callGemini(prompt, 260, 'text');
+        // Gemini 2.5 Flash needs a high token budget for text mode because
+        // thinking tokens are consumed before output (see project memory).
+        const raw = await callGemini(prompt, 2500, 'text');
         if (raw && raw.trim().length >= 50) {
           aiSummary = raw.trim().replace(/\s+/g, ' ');
           console.log(`[THEME-SCORING-V4] Gemini summary for "${theme.name}" (${aiSummary.length} chars)`);
