@@ -731,6 +731,7 @@ serve(async (req) => {
         bullish_mass: bullishMass,
         bearish_mass: bearishMass,
         top_assets: topAssets,
+        tickers: Array.from(new Set(assets.map(a => (a.ticker || '').toUpperCase()).filter(Boolean))).slice(0, 50),
         ai_summary: aiSummary,
         computed_at: now.toISOString(),
       });
