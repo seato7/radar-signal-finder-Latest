@@ -616,6 +616,7 @@ serve(async (req) => {
       bullish_mass: number;
       bearish_mass: number;
       top_assets: string[];
+      tickers: string[];
       ai_summary: string | null;
       computed_at: string;
     }> = [];
