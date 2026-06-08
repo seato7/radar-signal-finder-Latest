@@ -616,6 +616,7 @@ serve(async (req) => {
       bullish_mass: number;
       bearish_mass: number;
       top_assets: string[];
+      tickers: string[];
       ai_summary: string | null;
       computed_at: string;
     }> = [];
@@ -643,6 +644,7 @@ serve(async (req) => {
           bullish_mass: 0,
           bearish_mass: 0,
           top_assets: [],
+          tickers: [],
           ai_summary: null,
           computed_at: now.toISOString(),
         });
@@ -687,22 +689,32 @@ serve(async (req) => {
         .slice(0, 5)
         .map(a => a.ticker);
 
-      // Step 3: Gemini summary for non-neutral themes with significant news flow
+      // Step 3: Gemini summary — generate whenever a theme has mapped assets
+      // OR any news flow. Previously gated to news>5 + non-neutral, which
+      // caused 67 of 72 themes to have ai_summary IS NULL even when they had
+      // perfectly good underlying data. Now: any theme with signal weight or
+      // news context gets a real LLM-written 1–2 sentence "why now" line.
       let aiSummary: string | null = null;
-      const hasSignificantNews = newsSignalsForTheme.length > 5;
-      const isNonNeutral = finalScore > 55 || finalScore < 45;
+      const hasMappedAssets = assets.length > 0;
+      const hasAnyNews = newsSignalsForTheme.length > 0;
 
-      if (hasSignificantNews && isNonNeutral) {
+      if (hasMappedAssets || hasAnyNews) {
         const headlines = newsSignalsForTheme
-          .slice(0, 5)
+          .slice(0, 6)
           .map(s => s.value_text)
           .filter(Boolean)
           .join('; ');
-        const prompt = `In one sentence, explain why the ${theme.name} investment theme is currently scoring ${Math.round(finalScore)}/100 based on these recent signals: ${headlines || 'recent market activity'}. Be specific about what is driving the score.`;
-        const raw = await callGemini(prompt, 150, 'text');
-        if (raw) {
-          aiSummary = raw.trim().replace(/\n/g, ' ');
-          console.log(`[THEME-SCORING-V4] Gemini summary for "${theme.name}": ${aiSummary}`);
+        const topAssetsLine = topAssets.length > 0 ? topAssets.join(', ') : 'no major contributors yet';
+        const direction = finalScore > 55 ? 'bullish' : finalScore < 45 ? 'bearish' : 'neutral';
+        const prompt = `Write 2 sentences (60–120 words total) explaining why the "${theme.name}" investment theme is currently scoring ${Math.round(finalScore)}/100 (${direction}). Top contributing tickers: ${topAssetsLine}. Recent news flow: ${headlines || 'limited recent news; rely on positioning and flow signals'}. Be specific and analytical. Do not start with the word "The".`;
+        // Gemini 2.5 Flash needs a high token budget for text mode because
+        // thinking tokens are consumed before output (see project memory).
+        const raw = await callGemini(prompt, 2500, 'text');
+        if (raw && raw.trim().length >= 50) {
+          aiSummary = raw.trim().replace(/\s+/g, ' ');
+          console.log(`[THEME-SCORING-V4] Gemini summary for "${theme.name}" (${aiSummary.length} chars)`);
+        } else if (raw) {
+          console.warn(`[THEME-SCORING-V4] Gemini summary too short for "${theme.name}" (${raw.length} chars), discarding`);
         }
       }
 
@@ -721,6 +733,7 @@ serve(async (req) => {
         bullish_mass: bullishMass,
         bearish_mass: bearishMass,
         top_assets: topAssets,
+        tickers: Array.from(new Set(assets.map(a => (a.ticker || '').toUpperCase()).filter(Boolean))).slice(0, 50),
         ai_summary: aiSummary,
         computed_at: now.toISOString(),
       });
@@ -763,9 +776,14 @@ serve(async (req) => {
         }, { onConflict: 'theme_id' });
 
       // Update themes table (including ai_summary when present)
+      // Also write back themes.tickers — the canonical list of tickers mapped
+      // to this theme by compute-theme-scores' aggregation. Previously this
+      // column was never written by any cron-managed function, leaving 56 of
+      // 72 themes with tickers = []. Cap at 50 to keep the row small.
       const themesUpdate: Record<string, unknown> = {
         score: result.score,
         alpha: result.expected_return_centered,
+        tickers: result.tickers,
         updated_at: now.toISOString(),
         metadata: {
           expected_return: result.expected_return,
