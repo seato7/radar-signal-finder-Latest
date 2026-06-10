@@ -27,7 +27,10 @@ import { useSearchParams, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { getPlanLimits } from "@/lib/planLimits";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
+import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { supabase } from "@/integrations/supabase/client";
+
 
 interface ThemeScore {
   id: string;
@@ -97,6 +100,8 @@ const Themes = () => {
 
   const { toast } = useToast();
   const { token, isAuthenticated, userPlan, user } = useAuth();
+  const { openAuthModal } = useAuthModal();
+  const previewQuery = usePublicPreview();
 
   const planLimits = getPlanLimits(userPlan);
   const userThemeLimit = planLimits.themes;
@@ -104,8 +109,33 @@ const Themes = () => {
   const isFree = userPlan === "free" || !userPlan;
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      // Anonymous = Free: populate from public preview snapshot.
+      if (previewQuery.isLoading || !previewQuery.data) {
+        setLoadingThemes(previewQuery.isLoading);
+        return;
+      }
+      const demo = previewQuery.data.demo_themes ?? [];
+      const blurred = previewQuery.data.blurred_themes ?? [];
+      const mappedDemo: ThemeScore[] = demo.map((t) => ({
+        id: t.id, name: t.name, score: Number(t.score ?? 0),
+        is_demo: true, ai_summary: t.ai_summary,
+        tickers: t.tickers ?? [], keywords: t.keywords ?? [],
+        signal_count: t.signal_count ?? 0, is_tracking: false,
+        last_calculated_at: t.last_calculated_at, created_at: t.created_at,
+      }));
+      const mappedBlur: ThemeScore[] = blurred.map((t) => ({
+        id: t.id, name: t.name, score: 50, is_demo: false, ai_summary: null,
+        tickers: [], keywords: t.keywords ?? [], signal_count: 0,
+        is_tracking: false, last_calculated_at: null, created_at: null,
+      }));
+      setThemes([...mappedDemo, ...mappedBlur]);
+      setLoadingThemes(false);
+      return;
+    }
     fetchThemes();
-  }, []);
+  }, [isAuthenticated, previewQuery.data, previewQuery.isLoading]);
+
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(searchInput.trim().toLowerCase()), 200);
@@ -219,13 +249,10 @@ const Themes = () => {
 
   const handleSubscribe = async (themeId: string, themeName: string) => {
     if (!isAuthenticated || !token) {
-      toast({
-        title: "Authentication required",
-        description: "Please log in to subscribe to alerts",
-        variant: "destructive",
-      });
+      openAuthModal('signup', { ref: 'themes_subscribe' });
       return;
     }
+
 
     setSubscribing(themeId);
     try {
