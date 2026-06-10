@@ -1,5 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { useAuthModal } from "@/contexts/AuthModalContext";
+
 import { Star, Trash2, ExternalLink, Loader2, Search as SearchIcon, Lock } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -109,19 +111,8 @@ const Watchlist = () => {
       ? "border-ds-signal-warning text-ds-signal-warning"
       : "border-ds-border text-ds-text-secondary";
 
-  if (!isAuthenticated) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Watchlist" description="Track your selected opportunities" />
-        <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-8 text-center">
-          <p className="text-ds-text-secondary">Please log in to view and manage your watchlist.</p>
-          <Button asChild className="mt-4">
-            <Link to="/auth">Log In</Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Anonymous = Free: render the same chrome with empty state + auth-modal CTA.
+
 
   return (
     <TooltipProvider>
