@@ -43,7 +43,9 @@ const Watchlist = () => {
   const [query, setQuery] = useState("");
   const { toast } = useToast();
   const { user, isAuthenticated, userPlan } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const slotsLimit = getPlanLimits(userPlan).watchlist_slots;
+
 
   useEffect(() => {
     const fetchWatchlist = async () => {
@@ -121,11 +123,20 @@ const Watchlist = () => {
           title="Watchlist"
           description="Track your selected opportunities at a glance."
           action={
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button
+              onClick={() => {
+                if (!isAuthenticated) {
+                  openAuthModal("signup", { ref: "watchlist_add" });
+                  return;
+                }
+                setDialogOpen(true);
+              }}
+            >
               <Star className="mr-2 h-4 w-4" />
               Add Asset
             </Button>
           }
+
         />
 
         <AssetPickerModal
