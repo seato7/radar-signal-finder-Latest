@@ -660,11 +660,36 @@ const AssetRadar = () => {
   const activeTabLocked = activeTabConfig ? isTabLocked(activeTabConfig.filter) : false;
 
   useEffect(() => {
-    // FIX (5A): include planLoading in deps so the effect re-runs once the
-    // plan finishes resolving. Without this, first-load on /asset-radar
-    // would early-bail on planLoading=true and never trigger a fetch until
-    // the user switched tabs and back.
     if (planLoading) return;
+
+    // Anonymous = Free: source rows from the public preview RPC.
+    if (!isAuthenticated) {
+      if (previewQuery.isLoading) { setLoading(true); return; }
+      const demo = previewData?.demo_assets ?? [];
+      const blurred = previewData?.blurred_assets ?? [];
+      const tabConfig = ASSET_CLASS_TABS.find(t => t.value === activeTab);
+      const classFilter = tabConfig?.filter ?? null;
+      const mapDemo = demo.map((a): AssetWithScore => ({
+        id: a.id, ticker: a.ticker, name: a.name, exchange: a.exchange,
+        asset_class: a.asset_class, score: Number(a.score ?? 50),
+        sentiment: getSentiment(Number(a.score ?? 50)).label,
+        lastUpdated: a.score_computed_at, priceChange: a.price_change_pct ?? null,
+        signalStrength: "low", signalMass: 0,
+      }));
+      const mapBlur = blurred.map((a): AssetWithScore => ({
+        id: a.id, ticker: a.ticker, name: a.name, exchange: a.exchange,
+        asset_class: a.asset_class, score: 0, sentiment: "Neutral",
+        lastUpdated: null, priceChange: null, signalStrength: "none", signalMass: 0,
+      }));
+      const combined = [...mapDemo, ...mapBlur].filter(a =>
+        classFilter == null ? true : a.asset_class === classFilter
+      );
+      setAssets(combined);
+      setTotal(previewData?.scored_asset_count ?? previewData?.total_asset_count ?? combined.length);
+      setLoading(false);
+      return;
+    }
+
     if (planLimits.asset_radar_classes.length === 0) return;
     if (activeTabLocked) {
       setAssets([]);
@@ -675,25 +700,30 @@ const AssetRadar = () => {
     setPage(0);
     const debounce = setTimeout(() => fetchAssets(0, activeTab, sortBy), 250);
     return () => clearTimeout(debounce);
-  }, [searchTerm, activeTab, sortBy, userPlan, activeTabLocked, planLoading]);
+  }, [searchTerm, activeTab, sortBy, userPlan, activeTabLocked, planLoading, isAuthenticated, previewData, previewQuery.isLoading]);
+
 
   // Auto-refresh every 30 seconds to pick up new scores
   useEffect(() => {
     if (planLoading || planLimits.asset_radar_classes.length === 0) return;
+    if (!isAuthenticated) return; // anon uses public preview snapshot; no auto-refresh
     if (activeTabLocked) return;
     const interval = setInterval(() => {
       fetchAssets(page, activeTab, sortBy);
     }, REFRESH_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [page, activeTab, sortBy, userPlan, activeTabLocked, planLoading]);
+  }, [page, activeTab, sortBy, userPlan, activeTabLocked, planLoading, isAuthenticated]);
+
 
   // Fetch active trade signal tickers once on mount for Signal badges
   useEffect(() => {
+    if (!isAuthenticated) { setActiveSignalTickers(new Set()); return; }
     (supabase.rpc as any)('get_active_signal_tickers_for_user').then(({ data }: any) => {
       setActiveSignalTickers(new Set((data ?? []).map((r: any) => r.ticker)));
     });
-  }, []);
+  }, [isAuthenticated]);
+
 
   const handleTabChange = (value: string) => {
     setActiveTab(value as AssetClassTab);
