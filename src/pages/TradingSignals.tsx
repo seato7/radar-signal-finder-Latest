@@ -620,12 +620,15 @@ export default function TradingSignals() {
             to see every active signal in full.
           </p>
           <Button
-            onClick={() => setPaywallOpen(true)}
+            onClick={() => isAuthenticated
+              ? setPaywallOpen(true)
+              : openAuthModal('signup', { ref: 'trading_signals_upgrade' })}
             variant="outline"
             className="border-ds-brand-primary/40 text-ds-brand-primary hover:bg-ds-brand-primary/10 hover:text-ds-brand-primary"
           >
-            Upgrade plan
+            {isAuthenticated ? 'Upgrade plan' : 'Sign Up Free'}
           </Button>
+
         </div>
       )}
 
