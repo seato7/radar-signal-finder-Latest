@@ -13,7 +13,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
-import { getPlanLimits } from "@/lib/planLimits";
+import { getPlanLimits, isDemoModeForClass } from "@/lib/planLimits";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { TickerLink } from "@/lib/tickerLink";
