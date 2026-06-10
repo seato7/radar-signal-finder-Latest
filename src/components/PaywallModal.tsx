@@ -2,6 +2,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Lock, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { useAuthModal } from '@/contexts/AuthModalContext';
 
 interface PaywallModalProps {
   open: boolean;
@@ -17,6 +19,17 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   requiredPlan = 'Starter',
 }) => {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
+
+  const handlePrimary = () => {
+    onOpenChange(false);
+    if (!isAuthenticated) {
+      openAuthModal('signup', { ref: 'paywall_modal' });
+    } else {
+      navigate('/pricing');
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -24,21 +37,23 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
         <DialogHeader>
           <div className="flex items-center gap-2 mb-2">
             <Lock className="h-5 w-5 text-primary" />
-            <DialogTitle>Upgrade Required</DialogTitle>
+            <DialogTitle>{isAuthenticated ? 'Upgrade Required' : 'Sign up free'}</DialogTitle>
           </div>
           <DialogDescription className="space-y-3 pt-2">
             <p>
-              <span className="font-semibold">{feature}</span> is a premium feature
-              available with the {requiredPlan} plan.
+              <span className="font-semibold">{feature}</span>{' '}
+              {isAuthenticated
+                ? `is a premium feature available with the ${requiredPlan} plan.`
+                : 'is included once you create a free account.'}
             </p>
             <div className="bg-accent/20 p-4 rounded-lg space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <span>Unlimited bots & advanced strategies</span>
+                <span>Unlimited bots &amp; advanced strategies</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <span>Real-time alerts & notifications</span>
+                <span>Real-time alerts &amp; notifications</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Sparkles className="h-4 w-4 text-primary" />
@@ -48,21 +63,11 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-3 mt-4">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => onOpenChange(false)}
-          >
+          <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
             Maybe Later
           </Button>
-          <Button
-            className="flex-1"
-            onClick={() => {
-              onOpenChange(false);
-              navigate('/pricing');
-            }}
-          >
-            View Plans
+          <Button className="flex-1" onClick={handlePrimary}>
+            {isAuthenticated ? 'View Plans' : 'Sign Up Free'}
           </Button>
         </div>
       </DialogContent>
