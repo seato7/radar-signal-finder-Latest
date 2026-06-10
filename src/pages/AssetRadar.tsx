@@ -1014,8 +1014,13 @@ const AssetRadar = () => {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                if (!isAuthenticated) {
+                                  openAuthModal('signup', { ref: 'asset_radar_watchlist' });
+                                  return;
+                                }
                                 addToWatchlist(asset.ticker);
                               }}
+
                               className="text-ds-text-muted hover:text-ds-signal-warning transition-colors duration-fast ease-ds-out disabled:opacity-50"
                             >
                               <Star className="h-4 w-4" />
