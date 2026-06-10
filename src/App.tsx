@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -12,6 +12,7 @@ import { HeaderAuthControls } from "@/components/auth/HeaderAuthControls";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrokerKeyRotationModal } from "@/components/BrokerKeyRotationModal";
+import { StickySignupBar } from "@/components/conversion/StickySignupBar";
 import { initGlobalPriceSubscription } from "@/hooks/useRealtimePrices";
 import { useAuth } from "@/hooks/useAuth";
 import { initAnalytics } from "@/lib/analytics";
@@ -43,9 +44,6 @@ import TradingSignals from "./pages/TradingSignals";
 import Landing from "./pages/Landing";
 import AccountDeleted from "./pages/AccountDeleted";
 import NotFound from "./pages/NotFound";
-import PublicAssetRadar from "./pages/public/PublicAssetRadar";
-import PublicThemes from "./pages/public/PublicThemes";
-import PublicTradingSignals from "./pages/public/PublicTradingSignals";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,25 +58,9 @@ const queryClient = new QueryClient({
 initGlobalPriceSubscription();
 initAnalytics();
 
-// Tiny wrapper so we can call route-aware hooks inside the Router tree.
 const AnalyticsBridge = () => {
   useRoutePageView();
   return null;
-};
-
-
-// Switches between the public-preview component and the authenticated component
-// based on session state, so the same URL works for both visitor types.
-const AuthSwitch = ({ anon: Anon, authed: Authed }: { anon: React.ComponentType; authed: React.ComponentType }) => {
-  const { isAuthenticated, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
-  return isAuthenticated ? <Authed /> : <Anon />;
 };
 
 const AppShell = ({ children }: { children: React.ReactNode }) => (
@@ -91,7 +73,10 @@ const AppShell = ({ children }: { children: React.ReactNode }) => (
           <HeaderAuthControls />
         </header>
         <main className="flex-1 p-4 md:p-6 lg:p-8">
-          <div className="max-w-screen-2xl mx-auto w-full">{children}</div>
+          <div className="max-w-screen-2xl mx-auto w-full">
+            <StickySignupBar />
+            {children}
+          </div>
         </main>
         <footer className="border-t border-ds-border bg-ds-background/60 py-3 px-4 md:px-6">
           <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center justify-between gap-2 text-[12px] text-ds-text-muted">
@@ -107,6 +92,14 @@ const AppShell = ({ children }: { children: React.ReactNode }) => (
     </div>
   </SidebarProvider>
 );
+
+// Anonymous visitors don't have a Settings page to configure — redirect to /asset-radar.
+const SettingsRoute = () => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  if (!isAuthenticated) return <Navigate to="/asset-radar" replace />;
+  return <Settings />;
+};
 
 const App = () => (
   <ErrorBoundary>
@@ -129,88 +122,32 @@ const App = () => (
               <Route path="/terms" element={<Terms />} />
               <Route path="/" element={<Landing />} />
 
-              {/* Public preview routes — render anonymous preview or the real
-                  authenticated page based on session, both inside the app shell. */}
-              <Route
-                path="/asset-radar"
-                element={
-                  <AppShell>
-                    <AuthSwitch anon={PublicAssetRadar} authed={AssetRadar} />
-                  </AppShell>
-                }
-              />
-              <Route
-                path="/trading-signals"
-                element={
-                  <AppShell>
-                    <AuthSwitch anon={PublicTradingSignals} authed={TradingSignals} />
-                  </AppShell>
-                }
-              />
-              <Route
-                path="/themes"
-                element={
-                  <AppShell>
-                    <AuthSwitch anon={PublicThemes} authed={Themes} />
-                  </AppShell>
-                }
-              />
-              <Route
-                path="/pricing"
-                element={
-                  <AppShell>
-                    <Pricing />
-                  </AppShell>
-                }
-              />
+              {/* Anonymous-equals-Free: every app surface renders inside AppShell
+                  for both anonymous and authenticated visitors. Self-scoped pages
+                  show empty / locked states for anonymous and route interactive
+                  actions through the auth modal. */}
+              <Route path="/asset-radar" element={<AppShell><AssetRadar /></AppShell>} />
+              <Route path="/trading-signals" element={<AppShell><TradingSignals /></AppShell>} />
+              <Route path="/themes" element={<AppShell><Themes /></AppShell>} />
+              <Route path="/pricing" element={<AppShell><Pricing /></AppShell>} />
+              <Route path="/dashboard" element={<AppShell><Home /></AppShell>} />
+              <Route path="/alerts" element={<AppShell><Alerts /></AppShell>} />
+              <Route path="/watchlist" element={<AppShell><Watchlist /></AppShell>} />
+              <Route path="/asset/*" element={<AppShell><AssetDetail /></AppShell>} />
+              <Route path="/bots" element={<AppShell><Bots /></AppShell>} />
+              <Route path="/assistant" element={<AppShell><Assistant /></AppShell>} />
+              <Route path="/settings" element={<AppShell><SettingsRoute /></AppShell>} />
+              <Route path="/analytics" element={<AppShell><Analytics /></AppShell>} />
 
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
-                    <AppShell>
-                      <Routes>
-                        <Route path="/dashboard" element={<Home />} />
-                        <Route path="/alerts" element={<Alerts />} />
-                        <Route path="/watchlist" element={<Watchlist />} />
-                        <Route path="/asset/*" element={<AssetDetail />} />
-                        <Route path="/data-sources" element={<DataSources />} />
-                        <Route path="/bots" element={<Bots />} />
-                        <Route
-                          path="/admin"
-                          element={
-                            <ProtectedRoute requireAdmin>
-                              <Admin />
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route path="/analytics" element={<Analytics />} />
-                        <Route path="/assistant" element={<Assistant />} />
-                        <Route path="/data-ingestion" element={<DataIngestion />} />
-                        <Route path="/pipeline-tests" element={<PipelineTests />} />
-                        <Route
-                          path="/api-usage"
-                          element={
-                            <ProtectedRoute requireAdmin>
-                              <APIUsage />
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route
-                          path="/ingestion-health"
-                          element={
-                            <ProtectedRoute requireAdmin>
-                              <IngestionHealth />
-                            </ProtectedRoute>
-                          }
-                        />
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
-                    </AppShell>
-                  </ProtectedRoute>
-                }
-              />
+              {/* Admin-only surfaces remain ProtectedRoute requireAdmin */}
+              <Route path="/admin" element={<ProtectedRoute requireAdmin><AppShell><Admin /></AppShell></ProtectedRoute>} />
+              <Route path="/data-sources" element={<ProtectedRoute requireAdmin><AppShell><DataSources /></AppShell></ProtectedRoute>} />
+              <Route path="/data-ingestion" element={<ProtectedRoute requireAdmin><AppShell><DataIngestion /></AppShell></ProtectedRoute>} />
+              <Route path="/pipeline-tests" element={<ProtectedRoute requireAdmin><AppShell><PipelineTests /></AppShell></ProtectedRoute>} />
+              <Route path="/api-usage" element={<ProtectedRoute requireAdmin><AppShell><APIUsage /></AppShell></ProtectedRoute>} />
+              <Route path="/ingestion-health" element={<ProtectedRoute requireAdmin><AppShell><IngestionHealth /></AppShell></ProtectedRoute>} />
+
+              <Route path="*" element={<AppShell><NotFound /></AppShell>} />
             </Routes>
             </AuthModalProvider>
           </AuthProvider>
