@@ -7,6 +7,7 @@ export interface PlanLimits {
   watchlist_slots: number;
   themes: number;
   asset_radar_classes: string[];
+  asset_radar_demo_classes?: string[];
   show_scores: boolean;
   show_sentiment: boolean;
   analytics_access: boolean;
@@ -40,7 +41,9 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     alerts: 1,
     watchlist_slots: 3,
     themes: 1,
-    asset_radar_classes: ['stock'],
+    asset_radar_classes: ['stock', 'etf', 'forex'],
+    asset_radar_demo_classes: ['etf', 'forex'],
+    demo_tickers: ['VTI', 'EUR/USD'],
     show_scores: true,
     show_sentiment: false,
     analytics_access: false,
@@ -114,4 +117,10 @@ export function isProOrAbove(plan: string): boolean {
 
 export function isStarterOrAbove(plan: string): boolean {
   return ['starter', 'pro', 'premium', 'enterprise', 'admin'].includes(plan);
+}
+
+export function isDemoModeForClass(planLimits: PlanLimits, classType: string | null | undefined): boolean {
+  if (planLimits.is_demo_only) return true;
+  if (classType && planLimits.asset_radar_demo_classes?.includes(classType)) return true;
+  return false;
 }
