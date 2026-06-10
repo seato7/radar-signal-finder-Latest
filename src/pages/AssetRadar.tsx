@@ -924,9 +924,11 @@ const AssetRadar = () => {
                   const sentiment = getSentiment(asset.score);
                   const signalStrengthInfo = getSignalStrength(asset.signalMass);
                   const displayRank = index + 1;
-                  const isFreeUser = userPlan === "free";
-                  const isDemoTicker = ["F", "VTI", "EUR/USD"].includes(asset.ticker);
-                  const blurData = isFreeUser && !isDemoTicker;
+                  const assetClass = asset.asset_class ?? null;
+                  const demoMode = isDemoModeForClass(planLimits, assetClass);
+                  const demoTickers = planLimits.demo_tickers ?? [];
+                  const isDemoTicker = demoTickers.includes(asset.ticker);
+                  const blurData = demoMode && !isDemoTicker;
                   return (
                     <Link
                       key={asset.id}
