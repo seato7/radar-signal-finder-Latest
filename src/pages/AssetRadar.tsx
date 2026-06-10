@@ -13,12 +13,15 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
+import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { getPlanLimits, isDemoModeForClass } from "@/lib/planLimits";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { TickerLink } from "@/lib/tickerLink";
 import { RequestAssetModal } from "@/components/RequestAssetModal";
 import { useToast } from "@/hooks/use-toast";
+
 
 type AssetClassTab = "all" | "stock" | "forex" | "crypto" | "commodity" | "etf";
 type SortOption = "score-desc" | "score-asc" | "recent" | "alpha-asc" | "alpha-desc" | "gainers" | "losers";
@@ -130,11 +133,15 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 const AssetRadar = () => {
-  const { user, userPlan, planLoading } = useAuth();
+  const { user, userPlan, planLoading, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const planLimits = getPlanLimits(userPlan);
   const { toast } = useToast();
   const { addTicker: addToWatchlist, adding: addingToWatchlist } = useAddToWatchlist();
   const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const previewQuery = usePublicPreview();
+  const previewData = !isAuthenticated ? previewQuery.data : null;
+
 
   const isTabLocked = (filter: string | null): boolean => {
     if (planLimits.asset_radar_classes.length === 0) return true;
