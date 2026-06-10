@@ -118,3 +118,9 @@ export function isProOrAbove(plan: string): boolean {
 export function isStarterOrAbove(plan: string): boolean {
   return ['starter', 'pro', 'premium', 'enterprise', 'admin'].includes(plan);
 }
+
+export function isDemoModeForClass(planLimits: PlanLimits, classType: string | null | undefined): boolean {
+  if (planLimits.is_demo_only) return true;
+  if (classType && planLimits.asset_radar_demo_classes?.includes(classType)) return true;
+  return false;
+}
