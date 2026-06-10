@@ -10,11 +10,14 @@ import { PaywallModal } from "@/components/PaywallModal";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
+import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle } from "lucide-react";
 import { differenceInDays, format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { TickerLink } from "@/lib/tickerLink";
+
 
 const BlurStat = ({ children, isFree }: { children: React.ReactNode; isFree: boolean }) =>
   isFree ? (
@@ -123,7 +126,9 @@ const MaskedTicker = () => (
 );
 
 export default function TradingSignals() {
-  const { planLoading, limits, userPlan } = useAuth();
+  const { planLoading, limits, userPlan, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
+  const previewQuery = usePublicPreview();
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false);
   const planLimits = planLoading ? null : limits();
@@ -133,13 +138,31 @@ export default function TradingSignals() {
   const isFreeTeaser = !!(planLimits?.can_view_signals_teaser && signalLimit === 0) || isFree;
 
   const { data: signals, isLoading, error } = useQuery({
-    queryKey: ['trade-signals'],
-    queryFn: async () => {
+    queryKey: ['trade-signals', isAuthenticated],
+    queryFn: async (): Promise<TradeSignal[]> => {
+      if (!isAuthenticated) {
+        const demo = previewQuery.data?.demo_signal;
+        if (!demo) return [];
+        return [{
+          id: demo.id, ticker: demo.ticker, asset_id: null,
+          signal_type: demo.signal_type, status: demo.status,
+          entry_price: demo.entry_price, exit_target: demo.exit_target,
+          stop_loss: demo.stop_loss, peak_price: demo.peak_price,
+          position_size_pct: demo.position_size_pct,
+          score_at_entry: demo.score_at_entry, ai_score_at_entry: demo.ai_score_at_entry,
+          exit_price: null, exit_date: null, pnl_pct: null,
+          expires_at: demo.expires_at, created_at: demo.created_at,
+          last_live_price: demo.last_live_price, last_live_price_at: demo.last_live_price_at,
+          last_live_price_source: null, reason: demo.reason,
+        }];
+      }
       const { data, error } = await (supabase.rpc as any)('get_signals_for_user');
       if (error) throw error;
       return (data ?? []) as TradeSignal[];
     },
+    enabled: isAuthenticated || !previewQuery.isLoading,
   });
+
 
   const active = (signals ?? []).filter((s) => s.status === 'active');
   const exits = (signals ?? []).filter((s) => ['triggered', 'stopped', 'expired'].includes(s.status));
