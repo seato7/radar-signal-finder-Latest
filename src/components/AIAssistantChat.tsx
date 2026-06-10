@@ -98,9 +98,14 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   useEffect(() => {
     if (initialQuery && !hasProcessedInitialQuery.current && messages.length === 0) {
       hasProcessedInitialQuery.current = true;
+      if (!isAuthenticated) {
+        openAuthModal('signup', { ref: 'assistant_initial_query' });
+        return;
+      }
       streamChat(initialQuery, false);
     }
-  }, [initialQuery]);
+  }, [initialQuery, isAuthenticated]);
+
 
   const streamChat = async (userMessage: string, countAgainstLimit = true) => {
     if (countAgainstLimit) {
