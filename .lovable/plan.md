@@ -1,76 +1,64 @@
-## Goal
+# Anonymous-Equals-Free Refactor
 
-Starter tier keeps full Stock access but additionally sees ETF and Forex tabs in demo-only mode (VTI / EUR/USD unblurred, rest blurred). Free, Pro, Premium, Enterprise, Admin untouched.
+Make anonymous visitors render the same pages, sidebar, and blur model as logged-in Free users. Interactive actions open the auth modal in signup mode instead of redirecting to `/pricing` or `/auth`. Single commit.
 
-## Files modified
+## 1. Data-layer approach: **B (frontend branching)**
 
-### 1. `src/lib/planLimits.ts`
+Chosen over A. Reasoning:
+- All `get_*_for_user` RPCs are `SECURITY DEFINER` with `auth.uid()` checks that gate per-user data. Loosening them to return public payloads on null `auth.uid()` widens the security boundary and contradicts the Phase 6 RLS work that is explicitly out of scope.
+- `get_public_preview` already exists and returns exactly the demo/blurred shapes the pages need.
+- Branching lives in 5 page-level data hooks (AssetRadar, Themes, TradingSignals, dashboard cards, AssetDetail). No SQL migration needed. Smaller blast radius and zero risk of leaking authenticated payloads.
 
-- Add optional field to `PlanLimits` interface:
-  ```ts
-  asset_radar_demo_classes?: string[];
-  ```
-- Update `starter`:
-  ```ts
-  starter: {
-    active_signals: 1,
-    ai_messages_per_day: 5,
-    alerts: 1,
-    watchlist_slots: 3,
-    themes: 1,
-    asset_radar_classes: ['stock', 'etf', 'forex'],
-    asset_radar_demo_classes: ['etf', 'forex'],
-    demo_tickers: ['VTI', 'EUR/USD'],
-    show_scores: true,
-    show_sentiment: false,
-    analytics_access: false,
-    full_dashboard: false,
-  },
-  ```
-- Add helper export:
-  ```ts
-  export function isDemoModeForClass(planLimits: PlanLimits, classType: string | null | undefined): boolean {
-    if (planLimits.is_demo_only) return true;
-    if (classType && planLimits.asset_radar_demo_classes?.includes(classType)) return true;
-    return false;
-  }
-  ```
-- No changes to free / pro / premium / enterprise / admin.
+Mechanism: each affected page checks `isAnonymous`. If anonymous, it consumes `usePublicPreview()` and maps `demo_assets + blurred_assets`, `demo_themes + blurred_themes`, `demo_signal` into the same row/card shapes the existing UI renders, with the existing blur flag forced on for blurred entries (reusing the `is_demo_only` / `demo_tickers` logic already in `planLimits`).
 
-### 2. `src/pages/AssetRadar.tsx`
+## 2. Files to modify (~20)
 
-Replace the hardcoded blur check at lines 927–929:
-```ts
-const isFreeUser = userPlan === "free";
-const isDemoTicker = ["F", "VTI", "EUR/USD"].includes(asset.ticker);
-const blurData = isFreeUser && !isDemoTicker;
-```
-with plan-aware logic using the new helper:
-```ts
-const assetClass = asset.asset_class ?? null;
-const demoMode = isDemoModeForClass(planLimits, assetClass);
-const demoTickers = planLimits.demo_tickers ?? [];
-const isDemoTicker = demoTickers.includes(asset.ticker);
-const blurData = demoMode && !isDemoTicker;
-```
-Add `isDemoModeForClass` to the import from `@/lib/planLimits`.
+**Auth / shell**
+1. `src/hooks/useAuth.ts` — when `session` is null: `userPlan='free'`, `planLoading=false`, expose `isAnonymous()` (true only when no session), keep `isFree()` true for both anon and Free, `hasPaidPlan()` false for anon, `limits()` returns `PLAN_LIMITS.free`.
+2. `src/components/AppSidebar.tsx` — delete `publicItems` branch and `groupLabel` swap. Always render the 11-item `navigationItems`. Footer logic unchanged (already correct for both auth states).
+3. `src/App.tsx` — delete `AuthSwitch`, route `/asset-radar`, `/themes`, `/trading-signals` directly to the real components inside `AppShell`. Remove the wrapping `ProtectedRoute` from `/dashboard`, `/assistant`, `/alerts`, `/watchlist`, `/bots`, `/asset/*`, `/settings`. Keep `ProtectedRoute requireAdmin` on `/admin`, `/api-usage`, `/ingestion-health`, `/data-ingestion`, `/pipeline-tests`. Mount `<StickySignupBar />` inside `AppShell` (renders only when `!isAuthenticated`). Add a `/settings` → `/asset-radar` redirect for anon.
+4. `src/components/conversion/StickySignupBar.tsx` — already self-gates on `isAuthenticated`; just confirm the global mount works (no behavior change).
 
-Behavior matrix this produces:
-- Free: `is_demo_only=true` → `demoMode=true` for every row, demo tickers `[F, VTI, EUR/USD]` unblurred. Identical to today.
-- Starter on Stock tab: not in demo list, `is_demo_only` unset → `demoMode=false`, all rows unblurred.
-- Starter on ETF tab: `'etf'` in demo list → `demoMode=true`, only VTI unblurred.
-- Starter on Forex tab: `'forex'` in demo list → only EUR/USD unblurred.
-- Pro / Premium / Enterprise / Admin: neither flag set → no rows blurred.
-- Crypto / Commodity tabs for Starter: still locked by existing `isTabLocked` (not in `asset_radar_classes`), unchanged overlay behavior.
+**Page-level anonymous data branching**
+5. `src/pages/AssetRadar.tsx` — when anon, source rows from `usePublicPreview` (demo_assets + blurred_assets mapped to the radar row shape); tab visibility and blur are already governed by `planLimits.free` + `isDemoModeForClass`. Replace any `/pricing` navigation with `openAuthModal('signup')` when anon.
+6. `src/pages/Themes.tsx` — anon: render demo + blurred themes from preview payload; click handlers → auth modal.
+7. `src/pages/TradingSignals.tsx` — anon: render `demo_signal` plus blurred teaser rows from preview payload; replace PaywallModal `/pricing` link with `openAuthModal('signup')` when anon.
+8. `src/pages/Home.tsx` (dashboard) — anon: render the same Free dashboard. The dashboard cards already render Free's blur model; they need an anon fallback for data fetch.
+9. `src/components/dashboard/TopAssetsCard.tsx`, `TopThemesCard.tsx`, `SignalSpotlight.tsx`, `MarketRadar.tsx`, `FollowedThemesCard.tsx` — when anon, swap their `get_*_for_user` query for the matching slice of `usePublicPreview`. No layout change.
 
-## Not touched
+**Self-scoped pages**
+10. `src/pages/Watchlist.tsx` — anon: render header `0 / 3 slots`, empty list, "Add to watchlist" CTA → `openAuthModal('signup', { ref: 'watchlist_add' })`. Skip the `watchlist` table fetch entirely when anon.
+11. `src/pages/Alerts.tsx` — anon: render same locked form Free sees; intercept submit / locked-overlay click → `openAuthModal('signup', { ref: 'alerts_create' })`. Skip the alerts fetch when anon.
+12. `src/pages/Assistant.tsx` + `src/components/AIAssistantChat.tsx` — anon: chat UI + suggested prompts visible, counter shows `0/3`. Send button and prompt-click handlers branch on `isAnonymous` and open auth modal with `ref: 'assistant_send'`.
+13. `src/pages/Bots.tsx` — verify anon renders the same waitlist form Free sees (no plan-gated fetches). If a fetch requires auth, short-circuit it for anon.
 
-- `supabase/functions/_shared/plan-limits.ts` (visibility-only field, frontend enforced).
-- Free / Pro / Premium / Enterprise / Admin tier configs.
-- `is_demo_only` semantics (still the global switch used by themes, signals, etc.).
-- Themes, Trading Signals, Watchlist, Assistant gating.
-- Backend RPCs.
+**Interaction CTAs**
+14. `src/components/conversion/TierCeiling.tsx` — for anon, replace `<Link to={href}>` with a `<Button onClick={openAuthModal('signup', { ref: trackingLabel })}>`. Keep the existing Link path for authenticated users.
+15. `src/lib/getUpgradeCTA.ts` — leave `getCTAHref` for authenticated paths; add an `openCTA(isAuthenticated, userPlan, trackingLabel)` helper or, simpler, keep `getCTAHref` as-is and let callers decide. (TierCeiling and PaywallModal change directly; getCTAHref's `/auth?mode=signup` return path is dead code for anon once callers switch — leave file untouched to keep diff small.)
+16. `src/pages/Pricing.tsx` — anon click on any tier → `openAuthModal('signup', { ref: 'pricing_<tier>' })` instead of Stripe checkout call.
+17. `src/components/PaywallModal.tsx` — if anon, primary CTA opens auth modal instead of routing to `/pricing`.
 
-## Verification (manual, by user)
+**Cleanup (same commit, after verification)**
+18. Delete `src/pages/public/PublicAssetRadar.tsx`
+19. Delete `src/pages/public/PublicThemes.tsx`
+20. Delete `src/pages/public/PublicTradingSignals.tsx`
 
-Steps 1–9 in the prompt: Starter sees 3 tabs with Stock fully open and ETF/Forex demo-blurred; Free unchanged; Pro/Premium unchanged.
+**Memory**
+21. Update `mem://constraints/preview-first-funnel` to the new wording supplied in the prompt.
+
+**Kept**: `get_public_preview` RPC (used by Approach B), `/auth` route as fallback redirect, AuthContext, AuthModalContext, AuthForm, AuthModal visuals, LockedPreview/BlurredUpgradeOverlay/BlurCell APIs, `planLimits.ts` (incl. the Starter fix), Landing page, admin route protection, Phase 6 RLS/edge-auth boundaries.
+
+## 3. Risk / guardrails
+
+- Any `for_user` RPC stays locked; no SQL changes. Anonymous payloads only ever come from `get_public_preview`.
+- File count target ~20, hard ceiling 30. If a dashboard card or `AIAssistantChat` requires deeper restructuring than a single anon-branch, I stop and report instead of pushing past 30.
+- `useAuth().planLoading` currently never resolves when there's no user; the fix in (1) sets `planLoading=false` immediately for anon so `ProtectedRoute` removal doesn't strand admin paths.
+- Sticky bar mounts once inside `AppShell`; the three Public* pages currently mount their own — those mounts disappear with the files in (18)-(20), so no double-render.
+
+## 4. Verification plan
+
+Build + targeted reads after edits. Browser verification of the 23 user-listed steps is reported back for user-side walkthrough; I confirm steps 1-8, 12, 22-23 in preview (the deterministic, observable ones) and flag any that need a live signup to test.
+
+## 5. Out of scope
+
+Auth contexts, AuthForm internals, AuthModal visuals, LockedPreview/TierCeiling/BlurCell APIs, Phase 6 security, planLimits values, Landing, admin routes, `/auth` fallback.
