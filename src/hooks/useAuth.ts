@@ -12,12 +12,12 @@ export const useAuth = () => {
   const token = context.session?.access_token;
 
   useEffect(() => {
-    // IMPORTANT: Supabase may emit auth events (e.g. TOKEN_REFRESHED) that recreate
-    // the user object. We only want to refetch plan when the user ID actually changes,
-    // otherwise the whole app can appear to "refresh" when you switch browser tabs.
+    // Anonymous = Free. No fetch needed; treat plan as 'free' immediately so
+    // gating components don't stall on planLoading.
     if (context.user?.id) {
       fetchSubscriptionStatus();
     } else {
+      setUserPlan('free');
       setPlanLoading(false);
     }
   }, [context.user?.id]);
@@ -26,7 +26,6 @@ export const useAuth = () => {
     try {
       setPlanLoading(true);
 
-      // Check user_roles table for subscription info
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
@@ -47,22 +46,16 @@ export const useAuth = () => {
     }
   };
 
-  const hasPaidPlan = () => {
-    return userPlan !== 'free';
-  };
-
-  const isAdmin = () => {
-    return userPlan === 'admin';
-  };
-
-  const getPlanName = () => {
-    return userPlan;
-  };
+  const isAnonymous = () => !context.isAuthenticated;
+  const hasPaidPlan = () => context.isAuthenticated && userPlan !== 'free';
+  const isAdmin = () => userPlan === 'admin';
+  const getPlanName = () => userPlan;
 
   const limits = () => getPlanLimits(userPlan);
   const isPremium = () => isPremiumOrAbove(userPlan);
   const isPro = () => isProOrAbove(userPlan);
   const isStarter = () => isStarterOrAbove(userPlan);
+  const isFree = () => userPlan === 'free' || !context.isAuthenticated;
 
   return {
     ...context,
@@ -77,5 +70,7 @@ export const useAuth = () => {
     isPremium,
     isPro,
     isStarter,
+    isFree,
+    isAnonymous,
   };
 };

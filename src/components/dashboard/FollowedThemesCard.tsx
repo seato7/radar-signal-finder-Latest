@@ -16,13 +16,15 @@ interface FollowedTheme {
 
 const FollowedThemesCard = () => {
   const navigate = useNavigate();
-  const { userPlan } = useAuth();
+  const { userPlan, isAuthenticated } = useAuth();
   const isFree = userPlan === 'free' || !userPlan;
 
 
 
   const { data: themes = [], isLoading } = useQuery({
+    enabled: isAuthenticated,
     queryKey: ['followed-themes-dashboard'],
+
     queryFn: async (): Promise<FollowedTheme[]> => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];

@@ -6,12 +6,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Sparkles, Volume2, Hand } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuthModal } from '@/contexts/AuthModalContext';
 import { getPlanLimits } from '@/lib/planLimits';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { TierCeiling } from '@/components/conversion/TierCeiling';
 import { getUpgradeTarget } from '@/lib/upgradeTarget';
 import { cn } from '@/lib/utils';
+
 
 interface Message {
   role: 'user' | 'assistant';
@@ -27,9 +29,11 @@ interface AIAssistantChatProps {
 
 export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantChatProps) => {
   const hasProcessedInitialQuery = useRef(false);
-  const { user, userPlan } = useAuth();
+  const { user, userPlan, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const planLimits = getPlanLimits(userPlan);
   const dailyLimit = planLimits.ai_messages_per_day;
+
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -94,9 +98,14 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   useEffect(() => {
     if (initialQuery && !hasProcessedInitialQuery.current && messages.length === 0) {
       hasProcessedInitialQuery.current = true;
+      if (!isAuthenticated) {
+        openAuthModal('signup', { ref: 'assistant_initial_query' });
+        return;
+      }
       streamChat(initialQuery, false);
     }
-  }, [initialQuery]);
+  }, [initialQuery, isAuthenticated]);
+
 
   const streamChat = async (userMessage: string, countAgainstLimit = true) => {
     if (countAgainstLimit) {
@@ -176,9 +185,14 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   };
 
   const handleSend = () => {
+    if (!isAuthenticated) {
+      openAuthModal('signup', { ref: 'assistant_send' });
+      return;
+    }
     if (!input.trim() || isLoading) return;
     streamChat(input);
   };
+
 
   const clearHistory = () => {
     setMessages([]);

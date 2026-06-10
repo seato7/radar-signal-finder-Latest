@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 import { TickerLink } from "@/lib/tickerLink";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+
 
 interface TopAsset {
   ticker: string;
@@ -43,12 +45,15 @@ const extractFromExplanation = (scoreExplanation: any, key: string): number => {
 
 const TopAssetsCard = () => {
   const navigate = useNavigate();
-  const { limits, userPlan } = useAuth();
+  const { limits, userPlan, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const planLimits = limits();
   const isFree = userPlan === 'free' || !userPlan;
 
   const { data: assets = [], isLoading } = useQuery({
+    enabled: isAuthenticated,
     queryKey: ['top-assets-dashboard-scored'],
+
     queryFn: async (): Promise<TopAsset[]> => {
       const { data: scoredAssets, error } = await (supabase.rpc as any)('get_assets_for_user', {
         _sort_mode: 'score-desc',
@@ -168,10 +173,13 @@ const TopAssetsCard = () => {
                     size="sm"
                     variant="outline"
                     className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
-                    onClick={() => navigate('/pricing?upgrade_from=dashboard_scored_assets')}
+                    onClick={() => isAuthenticated
+                      ? navigate('/pricing?upgrade_from=dashboard_scored_assets')
+                      : openAuthModal('signup', { ref: 'dashboard_scored_assets' })}
                   >
-                    Upgrade to Starter
+                    {isAuthenticated ? 'Upgrade to Starter' : 'Start Free Access'}
                   </Button>
+
                 </div>
               </div>
             </div>

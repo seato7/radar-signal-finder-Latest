@@ -28,6 +28,28 @@ import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+import { useAuthModal } from "@/contexts/AuthModalContext";
+
+function AlertsUpgradeCta() {
+  const { isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
+  if (isAuthenticated) {
+    return (
+      <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
+        <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial for full alerts access</Link>
+      </Button>
+    );
+  }
+  return (
+    <Button
+      onClick={() => openAuthModal("signup", { ref: "alerts_synthetic" })}
+      className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
+    >
+      Start Free Access for full alerts
+    </Button>
+  );
+}
+
 
 interface Alert {
   id: string;
@@ -196,22 +218,8 @@ const Alerts = () => {
     return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Alerts"
-          description="Real-time notifications for high-priority opportunities"
-        />
-        <div className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-ds-md p-8 text-center">
-          <p className="text-ds-text-secondary">Please log in to view your alerts.</p>
-          <Button asChild className="mt-4">
-            <Link to="/auth">Log In</Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Anonymous = Free: render the same locked form. CTA opens auth modal.
+
 
   if (alertsLimit === 0) {
     const examples = [
@@ -281,10 +289,9 @@ const Alerts = () => {
             </div>
           </div>
           <div className="flex justify-center pt-2">
-            <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-              <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial for full alerts access</Link>
-            </Button>
+            <AlertsUpgradeCta />
           </div>
+
         </div>
       </div>
     );

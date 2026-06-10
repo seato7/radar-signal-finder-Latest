@@ -54,14 +54,8 @@ const navigationItems: NavItem[] = [
   { title: "Help", url: "/help", icon: HelpCircle },
 ];
 
-// Anonymous visitors see only public-preview surfaces.
-const publicItems: NavItem[] = [
-  { title: "Asset Radar", url: "/asset-radar", icon: Radar },
-  { title: "Active Signals", url: "/trading-signals", icon: Crosshair },
-  { title: "Themes", url: "/themes", icon: Tag },
-  { title: "Pricing", url: "/pricing", icon: CreditCard },
-  { title: "Help", url: "/help", icon: HelpCircle },
-];
+// (Removed publicItems: anonymous visitors now render the same Navigation as Free.)
+
 
 const premiumItems: NavItem[] = [
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
@@ -106,8 +100,11 @@ export function AppSidebar() {
   const { openAuthModal } = useAuthModal();
   const isCollapsed = state === "collapsed";
 
-  const items = isAuthenticated ? navigationItems : publicItems;
-  const groupLabel = isAuthenticated ? "Navigation" : "Preview";
+  // Anonymous = Free: render the same 11-item Navigation for everyone.
+  const items = navigationItems;
+  const groupLabel = "Navigation";
+
+
 
   return (
     <Sidebar
