@@ -7,6 +7,7 @@ export interface PlanLimits {
   watchlist_slots: number;
   themes: number;
   asset_radar_classes: string[];
+  asset_radar_demo_classes?: string[];
   show_scores: boolean;
   show_sentiment: boolean;
   analytics_access: boolean;
