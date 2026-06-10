@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { TickerLink } from "@/lib/tickerLink";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthModal } from "@/contexts/AuthModalContext";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+
 
 interface SpotlightSignal {
   ticker: string;
@@ -18,12 +20,14 @@ interface SpotlightSignal {
 
 const SignalSpotlight = () => {
   const navigate = useNavigate();
-  const { userPlan } = useAuth();
+  const { userPlan, isAuthenticated } = useAuth();
+  const { openAuthModal } = useAuthModal();
   const isFree = userPlan === 'free' || !userPlan;
 
   const { data: spotlight, isLoading } = useQuery({
     queryKey: ['signal-spotlight'],
-    enabled: !isFree,
+    enabled: !isFree && isAuthenticated,
+
     queryFn: async (): Promise<SpotlightSignal | null> => {
       const { data, error } = await (supabase.rpc as any)('get_signal_spotlight_for_user');
       if (error) throw error;
@@ -87,10 +91,13 @@ const SignalSpotlight = () => {
                   size="sm"
                   variant="outline"
                   className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
-                  onClick={() => navigate('/pricing?upgrade_from=dashboard_signal_spotlight')}
+                  onClick={() => isAuthenticated
+                    ? navigate('/pricing?upgrade_from=dashboard_signal_spotlight')
+                    : openAuthModal('signup', { ref: 'dashboard_signal_spotlight' })}
                 >
-                  Upgrade to Starter
+                  {isAuthenticated ? 'Upgrade to Starter' : 'Start Free Access'}
                 </Button>
+
               </div>
             </div>
           </div>

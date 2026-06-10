@@ -19,15 +19,17 @@ interface ThemeScore {
 
 const TopThemesCard = () => {
   const navigate = useNavigate();
-  const { limits, userPlan } = useAuth();
+  const { limits, userPlan, isAuthenticated } = useAuth();
   const themesLimit = limits().themes;
   const isFree = userPlan === 'free' || !userPlan;
 
   const { data: themes = [], isLoading } = useQuery({
+    enabled: isAuthenticated,
     queryKey: ['top-themes-dashboard', isFree],
     queryFn: async (): Promise<ThemeScore[]> => {
       const { data, error } = await (supabase.rpc as any)('get_top_themes_with_scores_for_user', { p_limit: 10 });
       if (error) throw error;
+
       if (!data || data.length === 0) return [];
 
       const mapped: ThemeScore[] = (data as any[]).map((t) => ({

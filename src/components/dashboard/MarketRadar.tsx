@@ -14,10 +14,12 @@ interface TopMover {
 }
 
 const MarketRadar = () => {
-  const { userPlan } = useAuth();
+  const { userPlan, isAuthenticated } = useAuth();
   const isFree = userPlan === 'free' || !userPlan;
   const { data: topMovers = [], isLoading } = useQuery({
+    enabled: isAuthenticated,
     queryKey: ['market-radar-movers'],
+
     queryFn: async (): Promise<TopMover[]> => {
       const { data, error } = await (supabase.rpc as any)('get_market_radar_for_user');
       if (error) throw error;
