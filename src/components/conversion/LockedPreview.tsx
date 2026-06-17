@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
 import type { UpgradeContext } from "@/lib/upgradeTarget";
 import { track, trackOnce } from "@/lib/analytics";
-import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 type Mode = "inline" | "card" | "section" | "row-cell";
 type Intensity = "light" | "medium" | "heavy";
@@ -52,7 +52,7 @@ const Cta = forwardRef<HTMLElement, CtaProps>(function Cta(
   { isAuthenticated, href, onClick, ariaLabel, className, style, children, trackingLabel },
   ref,
 ) {
-  const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   if (isAuthenticated) {
     return (
       <Link
@@ -71,10 +71,17 @@ const Cta = forwardRef<HTMLElement, CtaProps>(function Cta(
     <button
       ref={ref as React.Ref<HTMLButtonElement>}
       type="button"
-      onClick={(e: MouseEvent) => {
-        e.preventDefault();
+      onClick={(e?: MouseEvent) => {
+        // Defensive: Radix/Slot composition or programmatic triggers may invoke
+        // onClick without an event. Guard before touching event methods so we
+        // never throw "Cannot read properties of undefined (reading 'defaultPrevented')".
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
         onClick();
-        openAuthModal("signup", { ref: trackingLabel });
+        // Route-then-modal: matches useAnonSignupCTA spec so anonymous users
+        // always land on /dashboard before the signup modal mounts.
+        // See mem://constraints/preview-first-funnel.
+        anonSignup(trackingLabel);
       }}
       aria-label={ariaLabel}
       className={className}
