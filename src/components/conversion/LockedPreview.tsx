@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
 import type { UpgradeContext } from "@/lib/upgradeTarget";
 import { track, trackOnce } from "@/lib/analytics";
-import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 type Mode = "inline" | "card" | "section" | "row-cell";
 type Intensity = "light" | "medium" | "heavy";
