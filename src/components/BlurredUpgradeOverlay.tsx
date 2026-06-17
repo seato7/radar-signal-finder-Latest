@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
 import { track, trackOnce } from "@/lib/analytics";
-import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 interface BlurredUpgradeOverlayProps {
   feature: string;
@@ -21,7 +21,7 @@ export const BlurredUpgradeOverlay = ({
   trackingLabel,
 }: BlurredUpgradeOverlayProps) => {
   const { isAuthenticated, userPlan } = useAuth();
-  const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const cta = getCTAText(isAuthenticated, userPlan);
   const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
 
@@ -30,10 +30,14 @@ export const BlurredUpgradeOverlay = ({
     track("locked_content_cta_clicked", { feature, label: trackingLabel, surface: "blurred_overlay" });
   };
 
-  const handleAnonClick = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleAnonClick = (e?: React.MouseEvent) => {
+    // Defensive event guard: avoids "Cannot read properties of undefined
+    // (reading 'defaultPrevented')" when invoked via Slot/Radix composition.
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     handleClick();
-    openAuthModal("signup", { ref: trackingLabel });
+    // Route-then-modal pattern, see mem://constraints/preview-first-funnel.
+    anonSignup(trackingLabel);
   };
 
   return (
