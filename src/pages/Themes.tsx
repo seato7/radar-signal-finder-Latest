@@ -643,16 +643,27 @@ const Themes = () => {
                   </div>
                   {isFree && theme.is_demo ? (
                     <div className="flex gap-2 pt-2">
-                      <Button
-                        asChild
-                        className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
-                        variant="outline"
-                      >
-                        <Link to="/pricing">
-                          Subscribe to Starter to see all assets
+                      {isAuthenticated ? (
+                        <Button
+                          asChild
+                          className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
+                          variant="outline"
+                        >
+                          <Link to="/pricing?upgrade_from=themes_demo_card">
+                            Upgrade to Pro for 3 full themes
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => anonSignup('themes_demo_card')}
+                          className="flex-1 border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
+                          variant="outline"
+                        >
+                          Sign Up Free
                           <ArrowRight className="ml-2 h-4 w-4" />
-                        </Link>
-                      </Button>
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <div className="flex gap-2 pt-2">
