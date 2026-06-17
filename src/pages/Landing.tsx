@@ -312,7 +312,10 @@ const Landing = () => {
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/dashboard">Sign Up Free</Link>
+              <Link to="/dashboard" className="inline-flex items-center gap-1.5">
+                Sign Up Free
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
             </Button>
           </motion.div>
 
