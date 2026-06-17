@@ -230,15 +230,15 @@ const Landing = () => {
               className="h-10 px-3 text-body-sm text-ds-text-secondary hover:text-ds-text-primary hover:bg-ds-surface"
               asChild
             >
-              <Link to="/asset-radar">Sign In</Link>
+              <Link to="/dashboard">Sign In</Link>
             </Button>
-            {/* Preview-first funnel: primary CTAs route to /asset-radar, NOT
+            {/* Preview-first funnel: primary CTAs route to /dashboard, NOT
                 /auth?mode=signup. See mem://constraints/preview-first-funnel */}
             <Button
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/asset-radar">Start Free</Link>
+              <Link to="/dashboard">Start Free</Link>
             </Button>
           </div>
         </div>
@@ -256,7 +256,7 @@ const Landing = () => {
             <span className="font-semibold">Premium unlocks 26,000+.</span>
           </span>
           <Link
-            to="/asset-radar"
+            to="/dashboard"
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-ds-brand-primary-foreground text-ds-brand-primary text-caption sm:text-body-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
           >
             See Live Preview
@@ -313,7 +313,7 @@ const Landing = () => {
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/asset-radar">Start Free Access</Link>
+              <Link to="/dashboard">Start Free Access</Link>
             </Button>
           </motion.div>
 
@@ -702,7 +702,7 @@ const Landing = () => {
               className="h-11 px-8 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/asset-radar">Start Free Access</Link>
+              <Link to="/dashboard">Start Free Access</Link>
             </Button>
           </motion.div>
         </AnimatedSection>

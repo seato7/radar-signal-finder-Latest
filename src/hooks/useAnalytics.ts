@@ -11,6 +11,7 @@ export function useRoutePageView() {
     last.current = location.pathname;
     if (location.pathname === "/") track("landing_viewed");
     if (
+      location.pathname === "/dashboard" ||
       location.pathname === "/asset-radar" ||
       location.pathname === "/trading-signals" ||
       location.pathname === "/themes"

@@ -4,7 +4,7 @@ import { useAuthModal, type AuthMode } from "@/contexts/AuthModalContext";
 
 // /auth is preserved ONLY as a fallback redirect for deep links from external
 // sources (marketing emails, legacy bookmarks, etc.). It opens the auth modal
-// in the requested mode and silently redirects the URL to /asset-radar so the
+// in the requested mode and silently redirects the URL to /dashboard so the
 // user lands on a product surface, never a standalone auth page.
 // See mem://constraints/preview-first-funnel
 export default function Auth() {
@@ -19,5 +19,5 @@ export default function Auth() {
     openAuthModal(mode, { ref });
   }, [openAuthModal, mode, ref]);
 
-  return <Navigate to="/asset-radar" replace />;
+  return <Navigate to="/dashboard" replace />;
 }
