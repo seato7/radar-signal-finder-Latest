@@ -164,6 +164,7 @@ const MarketRadar = () => {
             )}
           </div>
         </div>
+        </>)}
       </CardContent>
     </Card>
   );
