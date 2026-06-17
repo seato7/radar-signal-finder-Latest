@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Lock, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useAuthModal } from '@/contexts/AuthModalContext';
+import { useAnonSignupCTA } from '@/hooks/useAnonSignupCTA';
 
 interface PaywallModalProps {
   open: boolean;
@@ -20,12 +20,12 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 }) => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
 
   const handlePrimary = () => {
     onOpenChange(false);
     if (!isAuthenticated) {
-      openAuthModal('signup', { ref: 'paywall_modal' });
+      anonSignup('paywall_modal');
     } else {
       navigate('/pricing');
     }
