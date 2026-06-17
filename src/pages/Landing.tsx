@@ -313,7 +313,7 @@ const Landing = () => {
               asChild
             >
               <Link to="/dashboard" className="inline-flex items-center gap-1.5">
-                Sign Up Free
+                See today's signals
                 <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
