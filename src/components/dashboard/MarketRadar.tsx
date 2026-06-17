@@ -17,6 +17,7 @@ interface TopMover {
 
 const MarketRadar = () => {
   const { userPlan, isAuthenticated } = useAuth();
+  const anonSignup = useAnonSignupCTA();
   const isFree = userPlan === 'free' || !userPlan;
   const { data: topMovers = [], isLoading } = useQuery({
     enabled: isAuthenticated,
