@@ -252,14 +252,13 @@ const Landing = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-center gap-3 sm:gap-4 text-body-sm">
           <span className="ds-live-dot inline-block w-2 h-2 rounded-full bg-ds-brand-primary-foreground shrink-0" />
           <span className="text-ds-brand-primary-foreground font-medium tracking-tight text-center">
-            Free access shows 3 assets.{" "}
-            <span className="font-semibold">Premium unlocks 26,000+.</span>
+            Browse 25,536 ranked assets free. 30 seconds, no card.
           </span>
           <Link
             to="/dashboard"
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-ds-brand-primary-foreground text-ds-brand-primary text-caption sm:text-body-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
           >
-            See Live Preview
+            Sign Up Free
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
