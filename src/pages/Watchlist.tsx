@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 import { Star, Trash2, ExternalLink, Loader2, Search as SearchIcon, Lock } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
@@ -44,6 +45,7 @@ const Watchlist = () => {
   const { toast } = useToast();
   const { user, isAuthenticated, userPlan } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const slotsLimit = getPlanLimits(userPlan).watchlist_slots;
 
 
@@ -126,7 +128,7 @@ const Watchlist = () => {
             <Button
               onClick={() => {
                 if (!isAuthenticated) {
-                  openAuthModal("signup", { ref: "watchlist_add" });
+                  anonSignup("watchlist_add");
                   return;
                 }
                 setDialogOpen(true);

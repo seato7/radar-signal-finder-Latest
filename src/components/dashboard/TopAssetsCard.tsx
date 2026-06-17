@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { TickerLink } from "@/lib/tickerLink";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 
@@ -47,6 +48,7 @@ const TopAssetsCard = () => {
   const navigate = useNavigate();
   const { limits, userPlan, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const planLimits = limits();
   const isFree = userPlan === 'free' || !userPlan;
 
@@ -175,7 +177,7 @@ const TopAssetsCard = () => {
                     className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
                     onClick={() => isAuthenticated
                       ? navigate('/pricing?upgrade_from=dashboard_scored_assets')
-                      : openAuthModal('signup', { ref: 'dashboard_scored_assets' })}
+                      : anonSignup('dashboard_scored_assets')}
                   >
                     {isAuthenticated ? 'Upgrade to Starter' : 'Start Free Access'}
                   </Button>

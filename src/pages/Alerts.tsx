@@ -29,23 +29,24 @@ import { Link } from "react-router-dom";
 import { toDisplayLabel } from "@/lib/displayLabel";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 function AlertsUpgradeCta() {
   const { isAuthenticated } = useAuth();
-  const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   if (isAuthenticated) {
     return (
       <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-        <Link to="/pricing?upgrade_from=alerts_synthetic">Start 7-day trial for full alerts access</Link>
+        <Link to="/pricing?upgrade_from=alerts_synthetic">Get Started Free</Link>
       </Button>
     );
   }
   return (
     <Button
-      onClick={() => openAuthModal("signup", { ref: "alerts_synthetic" })}
+      onClick={() => anonSignup("alerts_synthetic")}
       className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
     >
-      Start Free Access for full alerts
+      Get Started Free
     </Button>
   );
 }

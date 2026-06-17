@@ -7,6 +7,7 @@ import { Send, Sparkles, Volume2, Hand } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthModal } from '@/contexts/AuthModalContext';
+import { useAnonSignupCTA } from '@/hooks/useAnonSignupCTA';
 import { getPlanLimits } from '@/lib/planLimits';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -31,6 +32,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   const hasProcessedInitialQuery = useRef(false);
   const { user, userPlan, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const planLimits = getPlanLimits(userPlan);
   const dailyLimit = planLimits.ai_messages_per_day;
 
@@ -99,7 +101,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     if (initialQuery && !hasProcessedInitialQuery.current && messages.length === 0) {
       hasProcessedInitialQuery.current = true;
       if (!isAuthenticated) {
-        openAuthModal('signup', { ref: 'assistant_initial_query' });
+        anonSignup('assistant_initial_query');
         return;
       }
       streamChat(initialQuery, false);
@@ -186,7 +188,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
 
   const handleSend = () => {
     if (!isAuthenticated) {
-      openAuthModal('signup', { ref: 'assistant_send' });
+      anonSignup('assistant_send');
       return;
     }
     if (!input.trim() || isLoading) return;

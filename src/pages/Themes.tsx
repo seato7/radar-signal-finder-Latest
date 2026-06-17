@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getPlanLimits } from "@/lib/planLimits";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -101,6 +102,7 @@ const Themes = () => {
   const { toast } = useToast();
   const { token, isAuthenticated, userPlan, user } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const previewQuery = usePublicPreview();
 
   const planLimits = getPlanLimits(userPlan);
@@ -249,7 +251,7 @@ const Themes = () => {
 
   const handleSubscribe = async (themeId: string, themeName: string) => {
     if (!isAuthenticated || !token) {
-      openAuthModal('signup', { ref: 'themes_subscribe' });
+      anonSignup('themes_subscribe');
       return;
     }
 
