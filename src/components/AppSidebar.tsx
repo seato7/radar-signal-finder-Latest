@@ -231,7 +231,7 @@ export function AppSidebar() {
               onClick={() => openAuthModal("signup", { ref: "sidebar" })}
               className="w-full bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
             >
-              Start Free Access
+              Sign Up Free
             </Button>
             <Button
               variant="ghost"
