@@ -704,7 +704,8 @@ const Themes = () => {
                 key={theme.id}
                 mode="card"
                 intensity="medium"
-                targetTier="starter"
+                targetTier="pro"
+                context="themes"
                 trackingLabel="themes_locked_card"
               >
                 {cardContent}

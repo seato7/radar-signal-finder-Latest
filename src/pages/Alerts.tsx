@@ -248,6 +248,7 @@ const Alerts = () => {
                 mode="card"
                 intensity="medium"
                 targetTier="starter"
+                context="alerts"
                 trackingLabel="alerts_example"
               >
                 <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-5 h-full">
