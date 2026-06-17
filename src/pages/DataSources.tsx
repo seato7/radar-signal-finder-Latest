@@ -363,7 +363,7 @@ export default function DataSources() {
                     <AlertTitle>What This Shows</AlertTitle>
                     <AlertDescription>
                       Social sentiment tracks retail investor sentiment from Reddit (r/wallstreetbets, r/stocks) and StockTwits. 
-                      High bullish sentiment + institutional buying = strong conviction opportunity. Watch for sentiment spikes 
+                      High bullish sentiment + institutional buying = high-confidence opportunity. Watch for sentiment spikes 
                       before major moves.
                     </AlertDescription>
                   </Alert>

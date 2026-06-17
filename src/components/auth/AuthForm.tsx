@@ -186,9 +186,9 @@ export function AuthForm({ onClose, redirectAfterSignIn = "/dashboard" }: AuthFo
               <polyline points="22,6 12,13 2,6" />
             </svg>
           </div>
-          <h3 className="text-base font-semibold text-white">Check your email to confirm your account</h3>
+          <h3 className="text-base font-semibold text-white">Check your email.</h3>
           <p className="text-xs leading-relaxed" style={{ color: "#94a3b8" }}>
-            We've sent a verification link to <span className="text-white font-medium">{email}</span> from support@insiderpulse.org. Click the link to activate your account, then come back to sign in.
+            We sent a confirmation link to <span className="text-white font-medium">{email}</span>.
           </p>
         </div>
       )}

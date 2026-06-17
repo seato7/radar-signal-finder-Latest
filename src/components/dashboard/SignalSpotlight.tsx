@@ -80,7 +80,7 @@ const SignalSpotlight = () => {
                     <span className="text-caption font-medium px-2 py-0.5 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary">
                       insider trade
                     </span>
-                    <span className="text-data-sm font-mono text-ds-text-primary">Magnitude: 78%</span>
+                    <span className="text-data-sm font-mono text-ds-text-primary">Strength: 78%</span>
                   </div>
                 </div>
               </div>
@@ -165,7 +165,7 @@ const SignalSpotlight = () => {
                   {spotlight.type.replace(/_/g, ' ')}
                 </span>
                 <span className="text-data-sm font-mono text-ds-text-primary">
-                  Magnitude: {(spotlight.magnitude * 100).toFixed(0)}%
+                  Strength: {(spotlight.magnitude * 100).toFixed(0)}%
                 </span>
               </div>
             </div>

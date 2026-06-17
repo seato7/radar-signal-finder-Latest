@@ -37,7 +37,7 @@ function AlertsUpgradeCta() {
   if (isAuthenticated) {
     return (
       <Button asChild className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary">
-        <Link to="/pricing?upgrade_from=alerts_synthetic">Get Started Free</Link>
+        <Link to="/pricing?upgrade_from=alerts_synthetic">Upgrade to Starter</Link>
       </Button>
     );
   }
@@ -46,7 +46,7 @@ function AlertsUpgradeCta() {
       onClick={() => anonSignup("alerts_synthetic")}
       className="cta-upgrade-pulse bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-secondary"
     >
-      Get Started Free
+      Sign Up Free
     </Button>
   );
 }
