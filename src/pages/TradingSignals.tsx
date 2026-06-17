@@ -11,6 +11,7 @@ import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { cn } from "@/lib/utils";
 import { TrendingUp, Clock, Target, BarChart3, Percent, X, AlertTriangle, Circle } from "lucide-react";
@@ -128,6 +129,7 @@ const MaskedTicker = () => (
 export default function TradingSignals() {
   const { planLoading, limits, userPlan, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const previewQuery = usePublicPreview();
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false);
@@ -622,7 +624,7 @@ export default function TradingSignals() {
           <Button
             onClick={() => isAuthenticated
               ? setPaywallOpen(true)
-              : openAuthModal('signup', { ref: 'trading_signals_upgrade' })}
+              : anonSignup('trading_signals_upgrade')}
             variant="outline"
             className="border-ds-brand-primary/40 text-ds-brand-primary hover:bg-ds-brand-primary/10 hover:text-ds-brand-primary"
           >

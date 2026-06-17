@@ -1,64 +1,79 @@
-# Anonymous-Equals-Free Refactor
+# Phase B: Copy + Routing + Modal Pattern
 
-Make anonymous visitors render the same pages, sidebar, and blur model as logged-in Free users. Interactive actions open the auth modal in signup mode instead of redirecting to `/pricing` or `/auth`. Single commit.
+Three bundled changes in a single commit. No design tokens, fonts, colors, shadcn primitives, RLS, RPCs, or edge functions touched.
 
-## 1. Data-layer approach: **B (frontend branching)**
+## Task 1 — Copy changes
 
-Chosen over A. Reasoning:
-- All `get_*_for_user` RPCs are `SECURITY DEFINER` with `auth.uid()` checks that gate per-user data. Loosening them to return public payloads on null `auth.uid()` widens the security boundary and contradicts the Phase 6 RLS work that is explicitly out of scope.
-- `get_public_preview` already exists and returns exactly the demo/blurred shapes the pages need.
-- Branching lives in 5 page-level data hooks (AssetRadar, Themes, TradingSignals, dashboard cards, AssetDetail). No SQL migration needed. Smaller blast radius and zero risk of leaking authenticated payloads.
+The Phase B Copy Spec attachment was not provided. I will execute the copy edits that are explicitly inlined in the prompt body, and flag the rest as out-of-scope until the spec arrives:
 
-Mechanism: each affected page checks `isAnonymous`. If anonymous, it consumes `usePublicPreview()` and maps `demo_assets + blurred_assets`, `demo_themes + blurred_themes`, `demo_signal` into the same row/card shapes the existing UI renders, with the existing blur flag forced on for blurred entries (reusing the `is_demo_only` / `demo_tickers` logic already in `planLimits`).
+**Applied verbatim from prompt:**
+- `src/pages/Alerts.tsx:39` banner → "Get notified when scores change. Sign up free." with button label "Get Started Free".
+- Auth modal headlines (Section N): **CANNOT APPLY** — Section N strings were not included. Will leave AuthModal copy untouched and flag in report.
+- `src/pages/Landing.tsx:259` secondary hero: grep current text; if it duplicates the primary CTA, retarget per Task 2 and apply After (not provided → leave string, only flip route). If it reads as "See how it works" or similar non-converting label, leave string and route both untouched per prompt rule.
+- `src/pages/Help.tsx:537`, `src/pages/Pricing.tsx:252`, `src/pages/Pricing.tsx:391` trial references: inspect each call site. If onClick goes straight to Stripe Checkout (`manage-payments` invoke / checkout URL), keep trial copy. If it routes through `/auth` or `openAuthModal('signup')` first, replace with "Get Started Free".
 
-## 2. Files to modify (~20)
+**Not applied (spec missing):** Sections A–M and O strings. Will report the unapplied rows so Dan can resend the spec for a follow-up commit. No "(unchanged)" or Section O strings will be touched either way.
 
-**Auth / shell**
-1. `src/hooks/useAuth.ts` — when `session` is null: `userPlan='free'`, `planLoading=false`, expose `isAnonymous()` (true only when no session), keep `isFree()` true for both anon and Free, `hasPaidPlan()` false for anon, `limits()` returns `PLAN_LIMITS.free`.
-2. `src/components/AppSidebar.tsx` — delete `publicItems` branch and `groupLabel` swap. Always render the 11-item `navigationItems`. Footer logic unchanged (already correct for both auth states).
-3. `src/App.tsx` — delete `AuthSwitch`, route `/asset-radar`, `/themes`, `/trading-signals` directly to the real components inside `AppShell`. Remove the wrapping `ProtectedRoute` from `/dashboard`, `/assistant`, `/alerts`, `/watchlist`, `/bots`, `/asset/*`, `/settings`. Keep `ProtectedRoute requireAdmin` on `/admin`, `/api-usage`, `/ingestion-health`, `/data-ingestion`, `/pipeline-tests`. Mount `<StickySignupBar />` inside `AppShell` (renders only when `!isAuthenticated`). Add a `/settings` → `/asset-radar` redirect for anon.
-4. `src/components/conversion/StickySignupBar.tsx` — already self-gates on `isAuthenticated`; just confirm the global mount works (no behavior change).
+## Task 2 — Route migration (/asset-radar → /dashboard)
 
-**Page-level anonymous data branching**
-5. `src/pages/AssetRadar.tsx` — when anon, source rows from `usePublicPreview` (demo_assets + blurred_assets mapped to the radar row shape); tab visibility and blur are already governed by `planLimits.free` + `isDemoModeForClass`. Replace any `/pricing` navigation with `openAuthModal('signup')` when anon.
-6. `src/pages/Themes.tsx` — anon: render demo + blurred themes from preview payload; click handlers → auth modal.
-7. `src/pages/TradingSignals.tsx` — anon: render `demo_signal` plus blurred teaser rows from preview payload; replace PaywallModal `/pricing` link with `openAuthModal('signup')` when anon.
-8. `src/pages/Home.tsx` (dashboard) — anon: render the same Free dashboard. The dashboard cards already render Free's blur model; they need an anon fallback for data fetch.
-9. `src/components/dashboard/TopAssetsCard.tsx`, `TopThemesCard.tsx`, `SignalSpotlight.tsx`, `MarketRadar.tsx`, `FollowedThemesCard.tsx` — when anon, swap their `get_*_for_user` query for the matching slice of `usePublicPreview`. No layout change.
+Flip destination only, keep visible label unless the prompt overrides it.
 
-**Self-scoped pages**
-10. `src/pages/Watchlist.tsx` — anon: render header `0 / 3 slots`, empty list, "Add to watchlist" CTA → `openAuthModal('signup', { ref: 'watchlist_add' })`. Skip the `watchlist` table fetch entirely when anon.
-11. `src/pages/Alerts.tsx` — anon: render same locked form Free sees; intercept submit / locked-overlay click → `openAuthModal('signup', { ref: 'alerts_create' })`. Skip the alerts fetch when anon.
-12. `src/pages/Assistant.tsx` + `src/components/AIAssistantChat.tsx` — anon: chat UI + suggested prompts visible, counter shows `0/3`. Send button and prompt-click handlers branch on `isAnonymous` and open auth modal with `ref: 'assistant_send'`.
-13. `src/pages/Bots.tsx` — verify anon renders the same waitlist form Free sees (no plan-gated fetches). If a fetch requires auth, short-circuit it for anon.
+| File | Line | Change |
+|---|---|---|
+| `src/App.tsx` | 100 | SettingsRoute anon redirect → `/dashboard` |
+| `src/pages/Auth.tsx` | 22 | Authenticated-fallback navigate → `/dashboard` |
+| `src/pages/Landing.tsx` | 233 | Header "Sign In" link → `/dashboard` |
+| `src/pages/Landing.tsx` | 241 | Hero primary CTA → `/dashboard` |
+| `src/pages/Landing.tsx` | 259 | Secondary hero → `/dashboard` |
+| `src/pages/Landing.tsx` | 316 | Mid-page CTA → `/dashboard` |
+| `src/pages/Landing.tsx` | 705 | Footer CTA → `/dashboard` |
+| `src/hooks/useAnalytics.ts` | 14 | Add `/dashboard` page-view trigger alongside existing `/asset-radar` |
 
-**Interaction CTAs**
-14. `src/components/conversion/TierCeiling.tsx` — for anon, replace `<Link to={href}>` with a `<Button onClick={openAuthModal('signup', { ref: trackingLabel })}>`. Keep the existing Link path for authenticated users.
-15. `src/lib/getUpgradeCTA.ts` — leave `getCTAHref` for authenticated paths; add an `openCTA(isAuthenticated, userPlan, trackingLabel)` helper or, simpler, keep `getCTAHref` as-is and let callers decide. (TierCeiling and PaywallModal change directly; getCTAHref's `/auth?mode=signup` return path is dead code for anon once callers switch — leave file untouched to keep diff small.)
-16. `src/pages/Pricing.tsx` — anon click on any tier → `openAuthModal('signup', { ref: 'pricing_<tier>' })` instead of Stripe checkout call.
-17. `src/components/PaywallModal.tsx` — if anon, primary CTA opens auth modal instead of routing to `/pricing`.
+**Explicitly NOT changed:** `Watchlist.tsx:195`, `Themes.tsx:679`, `TopAssetsCard.tsx:118` stay pointing at `/asset-radar`.
 
-**Cleanup (same commit, after verification)**
-18. Delete `src/pages/public/PublicAssetRadar.tsx`
-19. Delete `src/pages/public/PublicThemes.tsx`
-20. Delete `src/pages/public/PublicTradingSignals.tsx`
+## Task 3 — Navigate-then-modal pattern
 
-**Memory**
-21. Update `mem://constraints/preview-first-funnel` to the new wording supplied in the prompt.
+Replace every anonymous-only `openAuthModal('signup', { ref })` call site with:
 
-**Kept**: `get_public_preview` RPC (used by Approach B), `/auth` route as fallback redirect, AuthContext, AuthModalContext, AuthForm, AuthModal visuals, LockedPreview/BlurredUpgradeOverlay/BlurCell APIs, `planLimits.ts` (incl. the Starter fix), Landing page, admin route protection, Phase 6 RLS/edge-auth boundaries.
+```ts
+const { pathname } = useLocation();
+const handleAnonCTA = (ref: string) => {
+  if (pathname !== '/dashboard') navigate('/dashboard');
+  openAuthModal('signup', { ref });
+};
+```
 
-## 3. Risk / guardrails
+Authenticated Free users keep their existing `/pricing` route — only the anonymous branch changes. Preserve the existing tracking `ref` string at each site.
 
-- Any `for_user` RPC stays locked; no SQL changes. Anonymous payloads only ever come from `get_public_preview`.
-- File count target ~20, hard ceiling 30. If a dashboard card or `AIAssistantChat` requires deeper restructuring than a single anon-branch, I stop and report instead of pushing past 30.
-- `useAuth().planLoading` currently never resolves when there's no user; the fix in (1) sets `planLoading=false` immediately for anon so `ProtectedRoute` removal doesn't strand admin paths.
-- Sticky bar mounts once inside `AppShell`; the three Public* pages currently mount their own — those mounts disappear with the files in (18)-(20), so no double-render.
+Affected files (anon branches only):
+- `src/components/conversion/TierCeiling.tsx`
+- `src/components/PaywallModal.tsx`
+- `src/components/AIAssistantChat.tsx` (handleSend + initial-query effect)
+- `src/pages/Watchlist.tsx` (Add Asset)
+- `src/pages/Alerts.tsx` (Create Alert)
+- `src/pages/AssetRadar.tsx` (add-to-watchlist, blurred-cell handlers)
+- `src/pages/Themes.tsx` (subscribe)
+- `src/pages/TradingSignals.tsx` (Upgrade plan)
+- `src/components/dashboard/TopAssetsCard.tsx`
+- `src/components/dashboard/TopThemesCard.tsx`
+- `src/components/dashboard/SignalSpotlight.tsx`
+- `src/components/dashboard/MarketRadar.tsx`
+- `src/components/dashboard/FollowedThemesCard.tsx`
 
-## 4. Verification plan
+For components that don't already pull `useLocation`/`useNavigate`, add the imports from `react-router-dom`.
 
-Build + targeted reads after edits. Browser verification of the 23 user-listed steps is reported back for user-side walkthrough; I confirm steps 1-8, 12, 22-23 in preview (the deterministic, observable ones) and flag any that need a live signup to test.
+## Task 4 — Memory update
 
-## 5. Out of scope
+Rewrite `mem://constraints/preview-first-funnel` to the exact wording supplied in the prompt and update the index entry's one-liner to match.
 
-Auth contexts, AuthForm internals, AuthModal visuals, LockedPreview/TierCeiling/BlurCell APIs, Phase 6 security, planLimits values, Landing, admin routes, `/auth` fallback.
+## Deliverables in the build response
+
+1. Unified diff covering every modified file.
+2. Per-file summary mapping each edit to Task 1/2/3.
+3. Confirmation no design tokens / fonts / colors / shadcn primitives changed.
+4. Confirmation no Phase 6 RLS / RPC / edge-function code changed.
+5. Interpretation log: Landing.tsx:259 grep result + decision, Help/Pricing trial-language decisions per call-site inspection, and the Section A–N copy rows left untouched because the spec text wasn't supplied.
+
+## Open question before build
+
+Section N (auth modal headlines) and Sections A–M/O strings were referenced but not pasted. I will proceed without them and flag the gap in the report, unless you'd rather resend the spec first so the copy pass and the routing/modal pass ship together.

@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
-import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
 
 type Tier = "free" | "starter" | "pro" | "premium";
@@ -33,7 +33,7 @@ export function TierCeiling({
   trackingLabel,
 }: TierCeilingProps) {
   const { isAuthenticated, userPlan } = useAuth();
-  const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const atCeiling = currentUsage >= limit;
   const scope = timeScope ? ` ${timeScope}` : "";
   const headline = atCeiling
@@ -47,7 +47,7 @@ export function TierCeiling({
 
   const handleClick = () => {
     if (!isAuthenticated) {
-      openAuthModal("signup", { ref: trackingLabel });
+      anonSignup(trackingLabel);
     }
   };
 

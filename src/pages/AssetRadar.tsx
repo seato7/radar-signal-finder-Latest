@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { getPlanLimits, isDemoModeForClass } from "@/lib/planLimits";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
@@ -135,6 +136,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 const AssetRadar = () => {
   const { user, userPlan, planLoading, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const planLimits = getPlanLimits(userPlan);
   const { toast } = useToast();
   const { addTicker: addToWatchlist, adding: addingToWatchlist } = useAddToWatchlist();
@@ -1015,7 +1017,7 @@ const AssetRadar = () => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 if (!isAuthenticated) {
-                                  openAuthModal('signup', { ref: 'asset_radar_watchlist' });
+                                  anonSignup('asset_radar_watchlist');
                                   return;
                                 }
                                 addToWatchlist(asset.ticker);

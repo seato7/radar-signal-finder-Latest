@@ -93,11 +93,11 @@ const AppShell = ({ children }: { children: React.ReactNode }) => (
   </SidebarProvider>
 );
 
-// Anonymous visitors don't have a Settings page to configure — redirect to /asset-radar.
+// Anonymous visitors don't have a Settings page to configure — redirect to /dashboard.
 const SettingsRoute = () => {
   const { isAuthenticated, loading } = useAuth();
   if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/asset-radar" replace />;
+  if (!isAuthenticated) return <Navigate to="/dashboard" replace />;
   return <Settings />;
 };
 

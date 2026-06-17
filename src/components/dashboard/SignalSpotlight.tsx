@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { TickerLink } from "@/lib/tickerLink";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 
 
@@ -22,6 +23,7 @@ const SignalSpotlight = () => {
   const navigate = useNavigate();
   const { userPlan, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const anonSignup = useAnonSignupCTA();
   const isFree = userPlan === 'free' || !userPlan;
 
   const { data: spotlight, isLoading } = useQuery({
@@ -93,7 +95,7 @@ const SignalSpotlight = () => {
                   className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent"
                   onClick={() => isAuthenticated
                     ? navigate('/pricing?upgrade_from=dashboard_signal_spotlight')
-                    : openAuthModal('signup', { ref: 'dashboard_signal_spotlight' })}
+                    : anonSignup('dashboard_signal_spotlight')}
                 >
                   {isAuthenticated ? 'Upgrade to Starter' : 'Start Free Access'}
                 </Button>
