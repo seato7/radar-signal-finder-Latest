@@ -314,9 +314,11 @@ const Pricing = () => {
                     {plan.name}
                   </h3>
                   {isFoundingWindow() && (plan.plan_id === "starter" || plan.plan_id === "pro") && (
-                    <span className="inline-block rounded-full border border-ds-brand-primary px-2 py-0.5 font-mono text-[10px] text-ds-text-secondary">
-                      Founding member rate. Locks in your price for life.
-                    </span>
+                    <div className="flex justify-center">
+                      <span className="inline-flex items-center rounded-full border border-ds-brand-primary bg-ds-surface px-2.5 py-0.5 text-overline text-ds-brand-primary">
+                        Founding member rate. Locks in your price for life.
+                      </span>
+                    </div>
                   )}
                   <p className="text-body-sm text-ds-text-secondary leading-snug min-h-[2.5rem]">
                     {plan.description}

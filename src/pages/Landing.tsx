@@ -313,7 +313,7 @@ const Landing = () => {
               asChild
             >
               <Link to="/dashboard" className="inline-flex items-center gap-1.5">
-                Sign Up Free
+                See today's signals
                 <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </Button>
@@ -696,15 +696,14 @@ const Landing = () => {
               Start Watching the Market
             </h2>
             <p className="text-ds-text-secondary text-body md:text-body-lg max-w-2xl mx-auto mb-8">
-              Free access shows 3 assets and one theme. Premium unlocks the full 26,000+ asset
-              universe with live scoring and signal data.
+              Browse 25,536 ranked assets, see live scoring, save what catches your eye.
             </p>
             {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
               className="h-11 px-8 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/dashboard">Sign Up Free</Link>
+              <Link to="/dashboard">Find your edge</Link>
             </Button>
           </motion.div>
         </AnimatedSection>

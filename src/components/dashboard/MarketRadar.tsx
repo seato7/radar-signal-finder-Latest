@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, Lock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { TickerLink } from "@/lib/tickerLink";
 import { useAuth } from "@/hooks/useAuth";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 interface TopMover {
   ticker: string;
@@ -15,6 +17,7 @@ interface TopMover {
 
 const MarketRadar = () => {
   const { userPlan, isAuthenticated } = useAuth();
+  const anonSignup = useAnonSignupCTA();
   const isFree = userPlan === 'free' || !userPlan;
   const { data: topMovers = [], isLoading } = useQuery({
     enabled: isAuthenticated,
@@ -54,6 +57,34 @@ const MarketRadar = () => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 px-5 pb-5">
+        {!isAuthenticated ? (
+          <div className="space-y-4">
+            {[
+              { label: "Strong Momentum", Icon: TrendingUp, tone: "text-ds-signal-positive" },
+              { label: "Under Pressure", Icon: TrendingDown, tone: "text-ds-signal-negative" },
+            ].map(({ label, Icon, tone }) => (
+              <div key={label} className="space-y-2">
+                <div className={`flex items-center gap-1.5 text-overline ${tone}`}>
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{label}</span>
+                </div>
+                <div className="flex items-center justify-center gap-2 p-4 rounded-ds-md bg-ds-surface-elevated border border-ds-border text-ds-text-secondary text-body-sm">
+                  <Lock className="h-4 w-4" />
+                  <span>Sign up to see today's market signals.</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-center pt-1">
+              <Button
+                onClick={() => anonSignup('dashboard_market_radar_anon')}
+                className="bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90"
+              >
+                Sign Up Free
+              </Button>
+            </div>
+          </div>
+        ) : (<>
+
         {/* Bullish */}
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-overline text-ds-signal-positive">
@@ -133,6 +164,7 @@ const MarketRadar = () => {
             )}
           </div>
         </div>
+        </>)}
       </CardContent>
     </Card>
   );
