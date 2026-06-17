@@ -29,10 +29,10 @@ const plans: Plan[] = [
     annual: 0,
     annualSaving: null,
     plan_id: "free",
-    description: "Try the platform with a single demo theme and three demo tickers",
+    description: "Try the platform with a single sample theme and three sample assets",
     features: [
-      "1 demo theme (read only)",
-      "3 demo tickers (F, VTI, EUR/USD) with scores",
+      "1 sample theme (read only)",
+      "3 sample assets (F, VTI, EUR/USD) with scores",
       "AI Assistant: 3 messages/day",
       "3 Watchlist slots",
       "No alerts or active signals",
