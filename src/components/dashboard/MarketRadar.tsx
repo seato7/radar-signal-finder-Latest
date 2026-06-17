@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, Lock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { TickerLink } from "@/lib/tickerLink";
 import { useAuth } from "@/hooks/useAuth";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 
 interface TopMover {
   ticker: string;
