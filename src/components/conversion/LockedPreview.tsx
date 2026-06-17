@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { getCTAText, getCTAHref, getLockTooltip, type FieldType } from "@/lib/getUpgradeCTA";
+import type { UpgradeContext } from "@/lib/upgradeTarget";
 import { track, trackOnce } from "@/lib/analytics";
 import { useAuthModal } from "@/contexts/AuthModalContext";
 
@@ -24,6 +25,7 @@ export interface LockedPreviewProps {
   trackingLabel?: string;
   className?: string;
   fieldType?: FieldType;
+  context?: UpgradeContext;
 }
 
 const blurPx: Record<Intensity, string> = {
@@ -94,14 +96,15 @@ export function LockedPreview({
   trackingLabel,
   className,
   fieldType = "generic",
+  context = "generic",
 }: LockedPreviewProps) {
   const { isAuthenticated, userPlan } = useAuth();
 
-  const tooltip = tooltipText ?? getLockTooltip(isAuthenticated, userPlan, fieldType);
-  const cta = ctaText ?? getCTAText(isAuthenticated, userPlan);
+  const tooltip = tooltipText ?? getLockTooltip(isAuthenticated, userPlan, fieldType, context);
+  const cta = ctaText ?? getCTAText(isAuthenticated, userPlan, context);
   const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
   const showOv = showOverlay ?? (mode === "card" || mode === "section");
-  const ariaLabel = isAuthenticated ? `Locked. Requires ${targetTier} plan.` : "Locked. Start Free Access to unlock.";
+  const ariaLabel = isAuthenticated ? `Locked. Requires ${targetTier} plan.` : "Locked. Sign Up Free to unlock.";
 
   const handleLockClick = () => {
     trackOnce("first_locked_interaction", { field_type: fieldType, target_tier: targetTier, label: trackingLabel });

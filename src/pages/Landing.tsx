@@ -313,7 +313,7 @@ const Landing = () => {
               className="h-11 px-6 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/dashboard">Start Free Access</Link>
+              <Link to="/dashboard">Sign Up Free</Link>
             </Button>
           </motion.div>
 
@@ -702,7 +702,7 @@ const Landing = () => {
               className="h-11 px-8 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body"
               asChild
             >
-              <Link to="/dashboard">Start Free Access</Link>
+              <Link to="/dashboard">Sign Up Free</Link>
             </Button>
           </motion.div>
         </AnimatedSection>

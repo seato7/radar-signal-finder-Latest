@@ -455,9 +455,9 @@ const Help = () => {
                       <tbody className="text-slate-300">
                         {[
                           ["Active Signals", "0", "1", "3", "Unlimited", "Unlimited"],
-                          ["Asset Radar coverage", "3 demo tickers", "Stocks", "Stocks, ETFs & Forex", "All asset classes", "All asset classes"],
-                          ["Asset scores", "Yes (demo only)", "Yes", "Yes", "Yes", "Yes"],
-                          ["Themes", "1 demo (read only)", "1", "3", "Unlimited", "Unlimited"],
+                          ["Asset Radar coverage", "3 sample assets", "Stocks", "Stocks, ETFs & Forex", "All asset classes", "All asset classes"],
+                          ["Asset scores", "Yes (sample only)", "Yes", "Yes", "Yes", "Yes"],
+                          ["Themes", "1 sample (read only)", "1", "3", "Unlimited", "Unlimited"],
                           ["AI Assistant (messages/day)", "3", "5", "20", "Unlimited", "Unlimited"],
                           ["Alerts", "0", "1", "5", "Unlimited", "Unlimited"],
                           ["Watchlist slots", "3", "3", "10", "Unlimited", "Unlimited"],

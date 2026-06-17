@@ -1,6 +1,7 @@
 // Session-aware CTA helpers for conversion primitives.
-// Anonymous visitors get a "Start Free Access" call-to-action that routes to /auth.
+// Anonymous visitors get a "Sign Up Free" call-to-action that opens the auth modal.
 // Logged-in visitors compose with the existing getUpgradeTarget() ladder.
+// See mem://constraints/preview-first-funnel
 
 import { getUpgradeTarget, type UpgradeContext } from "./upgradeTarget";
 
@@ -17,9 +18,8 @@ export function getCTAText(
   userPlan: string | undefined,
   context: UpgradeContext = "generic",
 ): string {
-  if (!isAuthenticated) return "Start Free Access";
+  if (!isAuthenticated) return "Sign Up Free";
   const tier = (userPlan || "free").toLowerCase();
-  if (tier === "free") return "Start Free Access";
   const target = getUpgradeTarget(tier, context);
   return `Upgrade to ${TIER_LABEL[target.nextTier] ?? target.nextTier}`;
 }
@@ -37,18 +37,23 @@ export function getCTAHref(
   return `/pricing${trackingLabel ? `?upgrade_from=${encodeURIComponent(trackingLabel)}` : ""}`;
 }
 
-const ANON_TOOLTIP: Record<FieldType, string> = {
-  score: "Score visible with Free Access. Start in 30s.",
-  price: "Live price visible with Free Access. Start in 30s.",
-  pnl: "P&L visible with Free Access. Start in 30s.",
-  generic: "Unlock with Free Access. Start in 30s.",
+// Per-surface anonymous headlines. Honest about what signup delivers:
+// signing up gives Free, which already includes these capabilities (or
+// the demo slice of them). No "Unlock" / "Start 7-day trial" copy here.
+const ANON_BY_CONTEXT: Partial<Record<UpgradeContext, string>> = {
+  themes: "Sign up to track themes.",
+  signals: "Sign up to see today's signals.",
+  watchlist: "Save assets to your watchlist.",
+  alerts: "Get notified when scores change.",
+  ai: "Ask anything about 25,536 assets.",
+  asset_radar: "Sign up free to see all 25,536 ranked assets.",
 };
 
-const FREE_TOOLTIP: Record<FieldType, string> = {
-  score: "Live score visible with Starter.",
-  price: "Live price visible with Starter.",
-  pnl: "P&L visible with Starter.",
-  generic: "Unlock with Starter.",
+const ANON_TOOLTIP: Record<FieldType, string> = {
+  score: "Sign up free to see scores.",
+  price: "Sign up free to see live prices.",
+  pnl: "Sign up free to see P&L.",
+  generic: "Sign up free to unlock.",
 };
 
 export function getLockTooltip(
@@ -57,11 +62,12 @@ export function getLockTooltip(
   fieldType: FieldType = "generic",
   context: UpgradeContext = "generic",
 ): string {
-  if (!isAuthenticated) return ANON_TOOLTIP[fieldType];
+  if (!isAuthenticated) {
+    return ANON_BY_CONTEXT[context] ?? ANON_TOOLTIP[fieldType];
+  }
   const tier = (userPlan || "free").toLowerCase();
-  if (tier === "free") return FREE_TOOLTIP[fieldType];
   const target = getUpgradeTarget(tier, context);
-  return `Unlock with ${TIER_LABEL[target.nextTier] ?? target.nextTier} for ${target.benefit}.`;
+  return `Upgrade to ${TIER_LABEL[target.nextTier] ?? target.nextTier} for ${target.benefit}.`;
 }
 
 export interface ProgressionLabelArgs {
@@ -71,11 +77,12 @@ export interface ProgressionLabelArgs {
   total: number;
   noun: string; // "assets", "themes", "signals"
   trackingLabel?: string;
+  context?: UpgradeContext;
 }
 
 export function getProgressionCopy(args: ProgressionLabelArgs): { text: string; cta: string; href: string } {
-  const { isAuthenticated, userPlan, visible, total, noun, trackingLabel } = args;
-  const cta = getCTAText(isAuthenticated, userPlan);
+  const { isAuthenticated, userPlan, visible, total, noun, trackingLabel, context } = args;
+  const cta = getCTAText(isAuthenticated, userPlan, context);
   const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
   const totalLabel = total >= 1000 ? `${Math.floor(total / 1000)},${String(total % 1000).padStart(3, "0")}+` : String(total);
   const text = `Viewing ${visible} of ${totalLabel} ${noun}.`;

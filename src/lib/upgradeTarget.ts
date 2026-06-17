@@ -70,7 +70,8 @@ export function getUpgradeTarget(
   // Free=3 and Starter=3 watchlist slots post-5B widening, so route Free→Pro for slot quantity.
   if (context === "watchlist" && tier === "free") nextTier = "pro";
   if (context === "alerts" && tier === "free") nextTier = "starter";
-  if (context === "themes" && tier === "free") nextTier = "starter";
+  // Free=1 and Starter=1 themes — Pro (3 themes) is the first real uplift.
+  if (context === "themes" && tier === "free") nextTier = "pro";
 
   const benefit = BENEFITS[context][nextTier];
   const ctaCopy = `Upgrade to ${nextTier[0].toUpperCase()}${nextTier.slice(1)}`;
