@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
 import { isPremiumOrAbove } from '@/lib/planLimits';
-import { TrendingUp, TrendingDown, Activity, DollarSign, Target, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, DollarSign, Target, AlertCircle, Info } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function Analytics() {
@@ -66,6 +67,7 @@ export default function Analytics() {
   }
 
   return (
+    <TooltipProvider>
     <div className="container mx-auto p-6 space-y-6">
       <PageHeader
         title="Advanced Analytics"
@@ -129,7 +131,13 @@ export default function Analytics() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingDown className="h-4 w-4 text-orange-500" />
-              Max Drawdown
+              Max Loss
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>Largest peak-to-trough drop in account value.</TooltipContent>
+              </Tooltip>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -181,12 +189,20 @@ export default function Analytics() {
       <Card>
         <CardHeader>
           <CardTitle>Risk Analysis</CardTitle>
-          <CardDescription>Risk metrics and exposure</CardDescription>
+          <CardDescription>Risk and position metrics</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 border rounded-lg">
-              <div className="text-sm text-muted-foreground mb-1">Sharpe Ratio</div>
+              <div className="text-sm text-muted-foreground mb-1 flex items-center gap-1.5">
+                Sharpe Ratio
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>Return per unit of risk. Higher is better.</TooltipContent>
+                </Tooltip>
+              </div>
               <div className="text-2xl font-bold">{analytics?.sharpe_ratio?.toFixed(2) || 'N/A'}</div>
             </div>
             <div className="p-4 border rounded-lg">
@@ -194,12 +210,21 @@ export default function Analytics() {
               <div className="text-2xl font-bold">{analytics?.volatility?.toFixed(1) || 'N/A'}%</div>
             </div>
             <div className="p-4 border rounded-lg">
-              <div className="text-sm text-muted-foreground mb-1">Profit Factor</div>
+              <div className="text-sm text-muted-foreground mb-1 flex items-center gap-1.5">
+                Win/Loss Ratio
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>Total profit divided by total loss. Above 1.0 is profitable.</TooltipContent>
+                </Tooltip>
+              </div>
               <div className="text-2xl font-bold">{analytics?.profit_factor?.toFixed(2) || 'N/A'}</div>
             </div>
           </div>
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   );
 }

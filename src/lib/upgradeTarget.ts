@@ -39,8 +39,8 @@ const BENEFITS: Record<UpgradeContext, Record<"starter" | "pro" | "premium", str
     premium: "unlimited investment themes",
   },
   signals: {
-    starter: "1 fully spec'd Active Signal",
-    pro: "3 fully spec'd Active Signals",
+    starter: "today's Active Signal in full",
+    pro: "3 Active Signals in full",
     premium: "unlimited Active Signals + full exit history",
   },
   asset_radar: {

@@ -14,7 +14,8 @@ interface StickySignupBarProps {
  * See mem://constraints/preview-first-funnel
  */
 export function StickySignupBar({
-  copy = "Sign up free to unlock 26,000+ assets and live signals",
+  // TODO: source 25,536 dynamically from get_public_preview RPC (scored_asset_count).
+  copy = "Browse 25,536 ranked assets free. 30 seconds, no card.",
   trackingLabel = "sticky_signup_bar",
 }: StickySignupBarProps) {
   const { isAuthenticated, loading } = useAuth();

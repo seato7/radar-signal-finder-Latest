@@ -268,15 +268,35 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               <div className="inline-flex items-center justify-center w-10 h-10 rounded-ds-md border border-ds-border bg-ds-surface-elevated mb-4">
                 <Hand className="h-4 w-4 text-ds-brand-primary" />
               </div>
-              <p className="text-body text-ds-text-primary mb-2">
-                Hi, I'm the InsiderPulse AI Assistant.
-              </p>
-              <p className="text-body-sm text-ds-text-secondary">
-                Ask me about themes, signals, or market opportunities across all asset classes.
-              </p>
-              <p className="text-caption text-ds-text-muted mt-4">
-                I can also generate charts and visualizations.
-              </p>
+              {!isAuthenticated ? (
+                <>
+                  <p className="text-body text-ds-text-primary mb-2">
+                    Ask anything about 25,536 assets.
+                  </p>
+                  <p className="text-body-sm text-ds-text-secondary">
+                    Sign up free to chat.
+                  </p>
+                  <Button
+                    onClick={() => anonSignup('assistant_empty_state')}
+                    className="mt-4 bg-ds-brand-primary hover:bg-ds-brand-primary/90 text-white"
+                    size="sm"
+                  >
+                    Sign Up Free
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-body text-ds-text-primary mb-2">
+                    Hi, I'm the InsiderPulse AI Assistant.
+                  </p>
+                  <p className="text-body-sm text-ds-text-secondary">
+                    Ask me about themes, signals, or market opportunities across all asset classes.
+                  </p>
+                  <p className="text-caption text-ds-text-muted mt-4">
+                    I can also generate charts and visualizations.
+                  </p>
+                </>
+              )}
               <p className="text-caption text-ds-text-muted mt-6">
                 General market information only, not financial advice. See our{' '}
                 <Link to="/terms" className="text-ds-brand-primary hover:underline">

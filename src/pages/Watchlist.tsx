@@ -188,14 +188,22 @@ const Watchlist = () => {
             <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-12 text-center flex flex-col items-center">
               <Star className="h-12 w-12 text-ds-text-muted mb-4" />
               <p className="text-body-lg font-semibold text-ds-text-primary">
-                Your watchlist is empty
+                {isAuthenticated ? "Your watchlist is empty" : "Save assets to your watchlist."}
               </p>
               <p className="text-body text-ds-text-secondary mt-2 max-w-md">
-                Tap the star on any asset to start tracking it here.
+                {isAuthenticated
+                  ? "Tap the star on any asset to start tracking it here."
+                  : "Track tickers across sessions with live prices and scores."}
               </p>
-              <Button asChild className="mt-6">
-                <Link to="/asset-radar">Browse Asset Radar</Link>
-              </Button>
+              {isAuthenticated ? (
+                <Button asChild className="mt-6">
+                  <Link to="/asset-radar">Browse Asset Radar</Link>
+                </Button>
+              ) : (
+                <Button className="mt-6" onClick={() => anonSignup("watchlist_empty")}>
+                  Sign Up Free
+                </Button>
+              )}
             </div>
           ) : filtered.length === 0 ? (
             <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-8 text-center">

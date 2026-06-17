@@ -238,7 +238,7 @@ const Landing = () => {
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/dashboard">Start Free</Link>
+              <Link to="/dashboard">Sign Up Free</Link>
             </Button>
           </div>
         </div>

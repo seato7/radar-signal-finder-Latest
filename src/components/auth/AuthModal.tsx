@@ -92,10 +92,10 @@ export function AuthModal() {
 
             <div className="hidden md:block mb-5">
               <h2 className="text-lg font-semibold text-white tracking-tight">
-                {mode === "signup" ? "Create your free account" : mode === "forgot" ? "Reset your password" : "Welcome back"}
+                {mode === "signup" ? "Get full access in 30 seconds" : mode === "forgot" ? "Reset your password" : "Welcome back"}
               </h2>
               <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
-                {mode === "signup" ? "Takes under 30 seconds." : mode === "forgot" ? "We'll send a reset link to your email." : "Sign in to continue."}
+                {mode === "signup" ? "Free account. No credit card." : mode === "forgot" ? "We'll send a reset link to your email." : "Sign in to continue."}
               </p>
             </div>
 

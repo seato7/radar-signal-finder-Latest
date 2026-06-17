@@ -155,7 +155,7 @@ const Terms = () => {
                   className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full px-5"
                   asChild
                 >
-                  <Link to="/auth">Start Free</Link>
+                  <Link to="/auth">Sign Up Free</Link>
                 </Button>
               </>
             )}
