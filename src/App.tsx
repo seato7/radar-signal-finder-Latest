@@ -93,13 +93,8 @@ const AppShell = ({ children }: { children: React.ReactNode }) => (
   </SidebarProvider>
 );
 
-// Anonymous visitors don't have a Settings page to configure — redirect to /dashboard.
-const SettingsRoute = () => {
-  const { isAuthenticated, loading } = useAuth();
-  if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/dashboard" replace />;
-  return <Settings />;
-};
+// Anonymous visitors see a locked Settings page (per anonymous-equals-Free pattern).
+const SettingsRoute = () => <Settings />;
 
 const App = () => (
   <ErrorBoundary>
