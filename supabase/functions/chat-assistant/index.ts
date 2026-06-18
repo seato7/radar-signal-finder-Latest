@@ -1043,7 +1043,13 @@ ${webSearchResults || '[Web search results will appear here]'}
 ===== ADDITIONAL CONTEXT =====
 ${context ? JSON.stringify(context, null, 2) : 'No additional context'}
 
-${detectedContradiction ? '===== USER CONTRADICTION DETECTED =====\nThe user is pushing back on a prior answer. A fresh search was triggered above. Re-read the search sections from scratch, treat your prior answer as potentially wrong, and respond with what the cited snippets actually say. Do not defend the prior answer.\n' : ''}
+${detectedContradiction ? `===== USER PUSHBACK DETECTED =====
+The user is challenging a prior answer. A fresh search was triggered above. Pushback classifier outcome: ${pushbackOutcome ?? 'inconclusive'}.
+
+- CONFIRM: fresh results support your prior answer. Restate the answer, add the new citations, and say "My original answer stands, confirmed by [new source]". Do NOT switch to UNABLE TO VERIFY.
+- CONTRADICT: fresh results contradict your prior answer. Accept the correction and revise.
+- INCONCLUSIVE: fresh results neither confirm nor contradict. If your prior answer had cited evidence, restate it with the original citation and say "Fresh search did not surface additional confirmation, but my original answer was based on [citation]." Do NOT default to UNABLE TO VERIFY when you had original evidence.
+` : ''}
 
 **DATA SOURCES AVAILABLE (37 Total):**
 
