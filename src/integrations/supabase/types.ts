@@ -1108,6 +1108,48 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_assistant_diagnostics: {
+        Row: {
+          confidence_rating: string | null
+          created_at: string
+          detected_contradiction: boolean
+          firecrawl_chars: number
+          has_current_date: boolean
+          id: string
+          model_input_total_chars: number
+          tavily_chars: number
+          tavily_triggered: boolean
+          user_id: string | null
+          user_query_preview: string | null
+        }
+        Insert: {
+          confidence_rating?: string | null
+          created_at?: string
+          detected_contradiction?: boolean
+          firecrawl_chars?: number
+          has_current_date?: boolean
+          id?: string
+          model_input_total_chars?: number
+          tavily_chars?: number
+          tavily_triggered?: boolean
+          user_id?: string | null
+          user_query_preview?: string | null
+        }
+        Update: {
+          confidence_rating?: string | null
+          created_at?: string
+          detected_contradiction?: boolean
+          firecrawl_chars?: number
+          has_current_date?: boolean
+          id?: string
+          model_input_total_chars?: number
+          tavily_chars?: number
+          tavily_triggered?: boolean
+          user_id?: string | null
+          user_query_preview?: string | null
+        }
+        Relationships: []
+      }
       circuit_breaker_status: {
         Row: {
           consecutive_failures: number

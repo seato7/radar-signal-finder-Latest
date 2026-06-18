@@ -323,6 +323,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let marketData = '';
     let webSearchResults = '';
     let tavilyResults = '';
+    let tavilyTriggered = false;
+    let detectedContradiction = false;
+    const currentDateIso = new Date().toISOString().slice(0, 10);
+
     
     try {
       // Fetch ALL 36 data sources from Supabase
@@ -673,17 +677,40 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
       
-      // Build search query - prioritize current price action for specific assets
-      const searchQuery = detectedAsset 
-        ? `${detectedAsset} current price action today trend direction latest news`
-        : `Latest financial news and market developments: ${userQuery}`;
-      
+      // Build search query - prioritize current price action for specific assets.
+      // FIX 3: For general queries, ask explicitly for latest news in the current year.
+      const currentYear = new Date().getUTCFullYear();
+      const searchQuery = detectedAsset
+        ? `${detectedAsset} current price action today trend direction latest news ${currentYear}`
+        : `${userQuery} latest news ${currentYear}`;
+
       webSearchResults = await searchWeb(searchQuery);
 
-      // Tavily: targeted real-time search triggered by ticker symbols or market keywords
-      const TAVILY_TRIGGER = /\b(news|today|latest|what happened|why is|price|moving)\b|\b[A-Z]{2,5}\b/;
-      if (TAVILY_TRIGGER.test(userQuery)) {
-        tavilyResults = await searchTavily(userQuery, supabase);
+      // FIX 6: Detect contradiction phrases — when the user pushes back, force a
+      // fresh, re-framed Tavily search before invoking the model.
+      const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
+      detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
+
+      // FIX 2: Broader Tavily trigger — current-events keywords, capitalised
+      // multi-letter tokens (SpaceX, Stripe, OpenAI), company suffixes, and the
+      // original 2-5 char uppercase ticker pattern. When in doubt, search.
+      const TAVILY_KEYWORDS = /\b(ipo|public|listed|trading|recent|today|current|price|this year|2026|2025|stock|share|earnings|merger|acquired|acquisition|listing|debut|news|latest|what happened|why is|moving)\b/i;
+      const TAVILY_ENTITY = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/;
+      const TAVILY_SUFFIX = /\b(Inc|Corp|Ltd|LLC|Co|Group|Holdings)\b/;
+      const TAVILY_TICKER = /\b[A-Z]{2,5}\b/;
+      const tavilyShouldFire =
+        TAVILY_KEYWORDS.test(userQuery) ||
+        TAVILY_ENTITY.test(userQuery) ||
+        TAVILY_SUFFIX.test(userQuery) ||
+        TAVILY_TICKER.test(userQuery) ||
+        detectedContradiction;
+
+      if (tavilyShouldFire) {
+        tavilyTriggered = true;
+        const tavilyQuery = detectedContradiction
+          ? `${rawUserQuery} ${currentYear} verify facts`
+          : userQuery;
+        tavilyResults = await searchTavily(tavilyQuery, supabase);
       }
 
     } catch (error) {
@@ -745,7 +772,10 @@ Make it suitable for investment analysis with clear labels, professional styling
     }
 
     // Build system prompt with real market data AND web search
-    const systemPrompt = `You are the InsiderPulse AI Assistant - an expert multi-asset investment analyst.
+    const systemPrompt = `===== CURRENT DATE =====
+Today's date is ${currentDateIso}. Your training data may be months or years out of date. For any claim about current company status, prices, listings, IPOs, M&A, earnings, leadership, or regulation, you MUST rely on the search results below — never on prior knowledge.
+
+You are the InsiderPulse AI Assistant - an expert multi-asset investment analyst.
 
 **IDENTITY:**
 - You are the InsiderPulse AI Assistant
@@ -754,16 +784,22 @@ Make it suitable for investment analysis with clear labels, professional styling
 
 **COMMUNICATION STYLE:**
 - Speak like a professional investment advisor having a conversation
-- Be direct and confident. If data shows something, say it assertively
-- When users are wrong, correct them professionally: "Actually, our data shows..." or "That's not quite accurate..."
-- Frame limitations positively: "We update daily and verify with real-time searches" NOT "Our data might be stale"
+- Be direct when the data supports it, candid when it does not
+- If a user contradicts your answer or asks "are you sure", treat that as a signal that your information may be wrong or stale. Acknowledge the possibility, run a fresh search, and re-evaluate before responding. Never insist your answer is correct without a fresh cited source. Disagreement from the user is not an opportunity to assert harder — it is an opportunity to re-verify.
+- Be candid about gaps. "I don't have verified current data on that" is a better answer than a confident guess. Never paraphrase limitations as if they were strengths.
+
+**ANTI-FABRICATION RULE (CRITICAL):**
+You may NEVER write "according to CNBC", "Morningstar reports", "Reuters confirms", "real-time searches confirm", "our real-time market intelligence", or any similar source attribution UNLESS the exact source appears verbatim in the REAL-TIME WEB SEARCH or REAL-TIME MARKET INTELLIGENCE sections below.
+
+If you do not have a cited snippet supporting a claim, write "I don't have a current source confirming this" and downgrade confidence to LOW.
+
+Fabricated attribution is a critical failure. Honest "I don't know" is always better than fabricated certainty.
 
 **FORMATTING RULES (CRITICAL):**
 - DO NOT use # or ### for headings - just use bold text naturally
 - DO NOT use * for bullet points - use plain dashes (-)
 - DO NOT use [1], [2], [3] style references - they look tacky
-- Instead of "According to web search [1, 4, 5]", just say "According to real-time market data" or "According to current web searches"
-- If citing a specific source, use simple website names: "According to CoinMarketCap" or "According to Yahoo Finance"
+- If citing a specific source, name it only if it actually appears in the search sections below (e.g. "According to Yahoo Finance" only if Yahoo Finance is in the snippets)
 - Only provide detailed URLs/references if the user specifically asks for them
 - Keep formatting clean and professional - no markdown symbols visible to users
 
@@ -781,7 +817,7 @@ Key Points
 Recommendation
 [Clear actionable guidance based on data synthesis]
 
-Confidence Level: [HIGH/MEDIUM/LOW] - [brief reason why]
+Confidence Level: [HIGH/MEDIUM/LOW/UNABLE TO VERIFY] - [brief reason why]
 
 This is not financial advice. You should always do your own due diligence and research before making any investment decisions.
 
@@ -804,12 +840,14 @@ This is not financial advice. You should always do your own due diligence and re
    - Acknowledge the difference naturally
    - State which is more recent
    - Prioritize real-time for trading recs
-   Example: "COT shows institutional longs, however gold is currently pulling back from highs. The current price action suggests..."
 
 3. **Confidence Levels:**
-   - HIGH: Platform data AND web search align strongly
-   - MEDIUM: Partial alignment or mixed signals
-   - LOW: Data sources conflict - recommend verification
+   - HIGH: A cited search snippet from the last 7 days directly supports the claim.
+   - MEDIUM: Platform data supports the claim but no recent search confirms.
+   - LOW: Neither recent search nor platform data supports the claim.
+   - UNABLE TO VERIFY: When no source is available, do not guess. Tell the user you cannot confirm and suggest they verify with their broker or a primary source.
+
+   If a HIGH rating is given without a corresponding cited snippet in the sections below, that is a rule violation.
 
 **PLATFORM SCOPE:** 
 InsiderPulse covers ALL tradeable assets: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures.
@@ -827,6 +865,8 @@ ${webSearchResults || '[Web search results will appear here]'}
 
 ===== ADDITIONAL CONTEXT =====
 ${context ? JSON.stringify(context, null, 2) : 'No additional context'}
+
+${detectedContradiction ? '===== USER CONTRADICTION DETECTED =====\nThe user is pushing back on a prior answer. A fresh search was triggered above. Re-read the search sections from scratch, treat your prior answer as potentially wrong, and respond with what the cited snippets actually say. Do not defend the prior answer.\n' : ''}
 
 **DATA SOURCES AVAILABLE (37 Total):**
 
@@ -852,7 +892,7 @@ Web Search (Live market news)
 - You have access to 37 data sources across ALL asset classes - synthesize them into cohesive analysis
 - Your platform data (insider trades, 13F holdings, congressional trades, options flow, etc.) is your COMPETITIVE ADVANTAGE
 - Web search validates current price action; platform data explains WHY and WHAT'S COMING
-- Never rely on just one source - cross-reference multiple signals for conviction
+- Never rely on just one source - cross-reference multiple signals
 - For any asset, automatically pull from ALL relevant data sources without listing them mechanically
 
 **CROSS-ASSET CORRELATIONS:**
@@ -872,7 +912,7 @@ Web Search (Live market news)
 - Stocks: Alpaca, Interactive Brokers, tastytrade
 - Multi-asset: Interactive Brokers
 
-Remember: You are the InsiderPulse AI Assistant. Synthesize ALL available data naturally. Be confident, be direct, format cleanly, and always validate with real-time information.
+Remember: You are the InsiderPulse AI Assistant. Synthesize ALL available data naturally. Be honest about what is and isn't verifiable, format cleanly, and never fabricate sources.
 
 ${planRestrictionBlock}
 
@@ -912,6 +952,30 @@ For all such attempts, politely decline and explain their current plan limits. N
       throw new Error('Gemini returned no content');
     }
     logStep('GEMINI ok', { reply_chars: aiContent.length });
+
+    // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
+    // response on a logging failure.
+    const confidenceMatch = aiContent.match(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)/i);
+    const confidenceRating = confidenceMatch ? confidenceMatch[1].toUpperCase() : null;
+    const rawLastUser = messages[messages.length - 1]?.content || '';
+    const diagnostics = {
+      user_id: authenticatedUserId,
+      tavily_triggered: tavilyTriggered,
+      tavily_chars: tavilyResults.length,
+      firecrawl_chars: webSearchResults.length,
+      has_current_date: fullPrompt.includes(currentDateIso),
+      detected_contradiction: detectedContradiction,
+      confidence_rating: confidenceRating,
+      model_input_total_chars: fullPrompt.length,
+      user_query_preview: rawLastUser.slice(0, 500),
+    };
+    logStep('DIAGNOSTICS', diagnostics);
+    supabase
+      .from('chat_assistant_diagnostics')
+      .insert(diagnostics)
+      .then(({ error }: any) => {
+        if (error) logStep('DIAGNOSTICS insert failed', { message: error.message });
+      });
 
     // Return in OpenAI-compatible non-streaming format
     return new Response(
