@@ -135,9 +135,18 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('chat-assistant', {
+      // C.7 FIX 5a: retry once if the initial invoke fails fast (transient
+      // preflight / cold-start failures observed 2/12 sends in verification).
+      const invokeOnce = () => supabase.functions.invoke('chat-assistant', {
         body: { messages: newMessages, context },
       });
+      let { data, error } = await invokeOnce();
+      if (error && (error as any).context?.status !== 429) {
+        await new Promise((r) => setTimeout(r, 500));
+        const retry = await invokeOnce();
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) {
         if ((error as any).context?.status === 429) {
@@ -161,6 +170,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
         }
         throw new Error('Failed to start chat');
       }
+
 
       if (typeof data?.current_count === 'number') {
         setTodayCount(data.current_count);
