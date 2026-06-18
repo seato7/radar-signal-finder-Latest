@@ -953,6 +953,30 @@ For all such attempts, politely decline and explain their current plan limits. N
     }
     logStep('GEMINI ok', { reply_chars: aiContent.length });
 
+    // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
+    // response on a logging failure.
+    const confidenceMatch = aiContent.match(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)/i);
+    const confidenceRating = confidenceMatch ? confidenceMatch[1].toUpperCase() : null;
+    const rawLastUser = messages[messages.length - 1]?.content || '';
+    const diagnostics = {
+      user_id: authenticatedUserId,
+      tavily_triggered: tavilyTriggered,
+      tavily_chars: tavilyResults.length,
+      firecrawl_chars: webSearchResults.length,
+      has_current_date: fullPrompt.includes(currentDateIso),
+      detected_contradiction: detectedContradiction,
+      confidence_rating: confidenceRating,
+      model_input_total_chars: fullPrompt.length,
+      user_query_preview: rawLastUser.slice(0, 500),
+    };
+    logStep('DIAGNOSTICS', diagnostics);
+    supabase
+      .from('chat_assistant_diagnostics')
+      .insert(diagnostics)
+      .then(({ error }: any) => {
+        if (error) logStep('DIAGNOSTICS insert failed', { message: error.message });
+      });
+
     // Return in OpenAI-compatible non-streaming format
     return new Response(
       JSON.stringify({
