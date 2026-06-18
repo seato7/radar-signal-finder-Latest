@@ -391,17 +391,9 @@ const Landing = () => {
                 <div className="text-ds-text-primary text-body-sm font-medium mb-1">Signals Processed</div>
                 <div className="text-ds-text-muted text-caption">Since January 2026</div>
               </motion.div>
-              <motion.div
-                variants={fadeUp}
-                className="relative bg-ds-surface border border-ds-brand-primary/40 rounded-ds-lg p-6 md:p-7 text-center flex flex-col justify-center shadow-ds-md"
-                style={{ boxShadow: "0 8px 32px -12px hsl(var(--ds-brand-primary) / 0.35)" }}
-              >
-                <div className="text-h1 font-semibold text-ds-brand-primary mb-2 tabular-nums leading-none tracking-tight">
-                  +160.63%
-                </div>
-                <div className="text-ds-text-primary text-body-sm font-medium mb-1">Cumulative Return</div>
-                <div className="text-ds-text-muted text-caption">Across All Tracked Signals</div>
-              </motion.div>
+              {/* Dynamic value sourced from Active Signals cumulative return. Never hardcode. */}
+              <CumulativeReturnCard />
+            </motion.div>
             </div>
 
 
