@@ -323,6 +323,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let marketData = '';
     let webSearchResults = '';
     let tavilyResults = '';
+    let tavilyTriggered = false;
+    let detectedContradiction = false;
+    const currentDateIso = new Date().toISOString().slice(0, 10);
+
     
     try {
       // Fetch ALL 36 data sources from Supabase
