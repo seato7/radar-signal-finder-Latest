@@ -1158,12 +1158,13 @@ For all such attempts, politely decline and explain their current plan limits. N
     };
 
     // (c) Unknown-entity override — runs first, strongest signal.
-    const entityClaimedButMissing =
-      primaryEntity &&
-      hasSearchEvidence === false ||
-      (primaryEntity && (tavilyResults.length > 0 || webSearchResults.length > 0) && !entityMatchFound);
+    // C.8 FIX 3: Suppress on pushback CONFIRM/INCONCLUSIVE so a correct
+    // prior answer isn't dropped just because fresh search didn't re-mention
+    // the entity name.
+    const suppressUnknownOverride =
+      detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
 
-    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered)) {
+    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
       aiContent =
         `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
         `- The company or entity may be private or recently formed\n` +
