@@ -925,6 +925,16 @@ This is not financial advice. You should always do your own due diligence and re
 
    If a HIGH rating is given without a corresponding cited snippet in the sections below, that is a rule violation.
 
+4. **Effective Dates (CRITICAL):**
+   When a search result mentions an appointment, transition, IPO, M&A, or status change, READ THE EFFECTIVE DATE CAREFULLY. An announcement made on Date A about a transition effective Date B does NOT make the change current until Date B.
+
+   Examples of correct reasoning:
+   - "Cook to transition to Chairman effective September 1, 2026" published June 17, 2026 → Tim Cook is CURRENT CEO. Ternus is FUTURE CEO.
+   - "X Corp to be acquired pending Q4 close" → not yet acquired.
+   - "IPO priced June 12" published June 13 → already public.
+
+   When a future-effective date is involved, state both the current status AND the upcoming change clearly.
+
 **PLATFORM SCOPE:** 
 InsiderPulse covers ALL tradeable assets: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures.
 
