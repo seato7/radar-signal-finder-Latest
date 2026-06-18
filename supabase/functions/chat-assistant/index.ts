@@ -320,12 +320,23 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     }
 
     // Fetch real-time market data from Supabase
+    const turnStartMs = Date.now();
     let marketData = '';
     let webSearchResults = '';
     let tavilyResults = '';
     let tavilyTriggered = false;
+    let firecrawlTriggered = false;
     let detectedContradiction = false;
+    let tavilyTimeMs = 0;
+    let firecrawlTimeMs = 0;
+    let geminiTimeMs = 0;
+    let searchSkippedReason: string | null = null;
+    let primaryEntity: string | null = null;
+    let entityMatchFound = false;
+    let confidenceDowngraded = false;
     const currentDateIso = new Date().toISOString().slice(0, 10);
+
+    
 
     
     try {
