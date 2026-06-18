@@ -830,10 +830,9 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
 
-      // C.7 FIX 2: Did either search mention the primary entity by name?
+      // C.8 FIX 2: Strict (proximity) entity-match check.
       if (primaryEntity) {
-        const haystack = `${tavilyResults}\n${webSearchResults}`.toLowerCase();
-        entityMatchFound = haystack.includes(primaryEntity.toLowerCase());
+        entityMatchFound = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
       }
 
 
