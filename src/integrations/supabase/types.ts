@@ -1110,6 +1110,7 @@ export type Database = {
       }
       chat_assistant_diagnostics: {
         Row: {
+          cleaned_query: string | null
           confidence_downgraded: boolean
           confidence_rating: string | null
           created_at: string
@@ -1122,6 +1123,7 @@ export type Database = {
           id: string
           model_input_total_chars: number
           primary_entity: string | null
+          pushback_outcome: string | null
           search_skipped_reason: string | null
           tavily_chars: number
           tavily_time_ms: number | null
@@ -1131,6 +1133,7 @@ export type Database = {
           user_query_preview: string | null
         }
         Insert: {
+          cleaned_query?: string | null
           confidence_downgraded?: boolean
           confidence_rating?: string | null
           created_at?: string
@@ -1143,6 +1146,7 @@ export type Database = {
           id?: string
           model_input_total_chars?: number
           primary_entity?: string | null
+          pushback_outcome?: string | null
           search_skipped_reason?: string | null
           tavily_chars?: number
           tavily_time_ms?: number | null
@@ -1152,6 +1156,7 @@ export type Database = {
           user_query_preview?: string | null
         }
         Update: {
+          cleaned_query?: string | null
           confidence_downgraded?: boolean
           confidence_rating?: string | null
           created_at?: string
@@ -1164,6 +1169,7 @@ export type Database = {
           id?: string
           model_input_total_chars?: number
           primary_entity?: string | null
+          pushback_outcome?: string | null
           search_skipped_reason?: string | null
           tavily_chars?: number
           tavily_time_ms?: number | null
