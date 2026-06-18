@@ -838,7 +838,38 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         entityMatchFound = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
       }
 
-
+      // C.8 FIX 3: Pushback classification. When the user pushes back, compare
+      // the prior assistant answer against fresh search results to decide
+      // whether to hold position (CONFIRM), revise (CONTRADICT), or
+      // acknowledge inconclusive evidence (INCONCLUSIVE). The classification
+      // is surfaced to the model AND used to suppress the unknown-entity
+      // override so a correct answer is not capitulated on noise.
+      if (detectedContradiction) {
+        const priorAssistant = [...messages].slice(0, -1).reverse().find((m: any) => m.role === 'assistant');
+        const priorText = (priorAssistant?.content || '') as string;
+        const fresh = `${tavilyResults}\n${webSearchResults}`;
+        if (!priorText || fresh.trim().length === 0) {
+          pushbackOutcome = 'inconclusive';
+        } else {
+          const properNouns = Array.from(
+            new Set(
+              (priorText.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]+)*\b/g) || [])
+                .map((s: string) => s.toLowerCase())
+            )
+          ).slice(0, 8);
+          const freshLower = fresh.toLowerCase();
+          const matches = properNouns.filter((n) => freshLower.includes(n)).length;
+          const negationNearby = /(no longer|former(ly)?|stepped down|replaced by|resigned|incorrect|that's wrong|debunked|denied)/i.test(fresh);
+          if (negationNearby && matches > 0) {
+            pushbackOutcome = 'contradict';
+          } else if (matches >= Math.max(1, Math.ceil(properNouns.length / 2))) {
+            pushbackOutcome = 'confirm';
+          } else {
+            pushbackOutcome = 'inconclusive';
+          }
+        }
+        logStep('PUSHBACK', { pushbackOutcome });
+      }
 
     } catch (error) {
       console.error('Error fetching market data:', error);
