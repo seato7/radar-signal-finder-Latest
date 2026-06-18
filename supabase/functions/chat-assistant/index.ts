@@ -673,17 +673,40 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
       
-      // Build search query - prioritize current price action for specific assets
-      const searchQuery = detectedAsset 
-        ? `${detectedAsset} current price action today trend direction latest news`
-        : `Latest financial news and market developments: ${userQuery}`;
-      
+      // Build search query - prioritize current price action for specific assets.
+      // FIX 3: For general queries, ask explicitly for latest news in the current year.
+      const currentYear = new Date().getUTCFullYear();
+      const searchQuery = detectedAsset
+        ? `${detectedAsset} current price action today trend direction latest news ${currentYear}`
+        : `${userQuery} latest news ${currentYear}`;
+
       webSearchResults = await searchWeb(searchQuery);
 
-      // Tavily: targeted real-time search triggered by ticker symbols or market keywords
-      const TAVILY_TRIGGER = /\b(news|today|latest|what happened|why is|price|moving)\b|\b[A-Z]{2,5}\b/;
-      if (TAVILY_TRIGGER.test(userQuery)) {
-        tavilyResults = await searchTavily(userQuery, supabase);
+      // FIX 6: Detect contradiction phrases — when the user pushes back, force a
+      // fresh, re-framed Tavily search before invoking the model.
+      const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
+      detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
+
+      // FIX 2: Broader Tavily trigger — current-events keywords, capitalised
+      // multi-letter tokens (SpaceX, Stripe, OpenAI), company suffixes, and the
+      // original 2-5 char uppercase ticker pattern. When in doubt, search.
+      const TAVILY_KEYWORDS = /\b(ipo|public|listed|trading|recent|today|current|price|this year|2026|2025|stock|share|earnings|merger|acquired|acquisition|listing|debut|news|latest|what happened|why is|moving)\b/i;
+      const TAVILY_ENTITY = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/;
+      const TAVILY_SUFFIX = /\b(Inc|Corp|Ltd|LLC|Co|Group|Holdings)\b/;
+      const TAVILY_TICKER = /\b[A-Z]{2,5}\b/;
+      const tavilyShouldFire =
+        TAVILY_KEYWORDS.test(userQuery) ||
+        TAVILY_ENTITY.test(userQuery) ||
+        TAVILY_SUFFIX.test(userQuery) ||
+        TAVILY_TICKER.test(userQuery) ||
+        detectedContradiction;
+
+      if (tavilyShouldFire) {
+        tavilyTriggered = true;
+        const tavilyQuery = detectedContradiction
+          ? `${rawUserQuery} ${currentYear} verify facts`
+          : userQuery;
+        tavilyResults = await searchTavily(tavilyQuery, supabase);
       }
 
     } catch (error) {
