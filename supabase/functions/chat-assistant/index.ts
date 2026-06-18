@@ -73,6 +73,53 @@ async function searchTavily(query: string, supabase: any): Promise<string> {
   }
 }
 
+// C.8 FIX 1: Strip leading interrogatives/discourse markers/articles before
+// extracting the primary entity. "Did Nvidia beat earnings?" → "Nvidia beat
+// earnings" → entity "Nvidia". Run a few passes for stacked prefixes
+// ("What is the current...").
+const INTERROGATIVE_PREFIX_RE = /^\s*(tell\s+me\s+about|show\s+me|give\s+me|explain|what(?:'s|\s+is|\s+are|\s+was|\s+were)?|who(?:'s|\s+is)?|whose|why(?:\s+(?:is|did|does))?|how(?:\s+(?:is|does|did))?|when|where|is|are|was|were|do|does|did|has|have|had|will|would|could|should|can)\b[\s,:\-]*/i;
+const ARTICLE_PREFIX_RE = /^\s*(the|a|an)\b\s+/i;
+function stripInterrogatives(q: string): string {
+  let s = (q || '').trim();
+  for (let i = 0; i < 4; i++) {
+    const before = s;
+    s = s.replace(INTERROGATIVE_PREFIX_RE, '');
+    s = s.replace(ARTICLE_PREFIX_RE, '');
+    if (s === before) break;
+  }
+  return s.trim();
+}
+
+// C.8 FIX 2: Strict multi-token entity match. Single-token entities just need
+// to appear. Multi-token entities require ALL tokens within a 50-char window
+// of each other inside the same search result. Catches fictional names like
+// "Zorbex Industries" (whose tokens never co-occur) while still passing real
+// multi-token names like "Berkshire Hathaway".
+function entityFoundStrict(entity: string | null, results: string[]): boolean {
+  if (!entity) return false;
+  const tokens = entity.split(/\s+/).filter(Boolean).map((t) => t.toLowerCase());
+  if (tokens.length === 0) return false;
+  const WINDOW = 50;
+  for (const result of results) {
+    if (!result) continue;
+    const lower = result.toLowerCase();
+    if (tokens.length === 1) {
+      if (lower.includes(tokens[0])) return true;
+      continue;
+    }
+    const [first, ...rest] = tokens;
+    let idx = lower.indexOf(first);
+    while (idx !== -1) {
+      const start = Math.max(0, idx - WINDOW);
+      const end = idx + first.length + WINDOW;
+      const window = lower.slice(start, end);
+      if (rest.every((t) => window.includes(t))) return true;
+      idx = lower.indexOf(first, idx + 1);
+    }
+  }
+  return false;
+}
+
 // Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
   const FIRECRAWL_API_KEY = Deno.env.get('FIRECRAWL_API_KEY');
@@ -332,6 +379,8 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let geminiTimeMs = 0;
     let searchSkippedReason: string | null = null;
     let primaryEntity: string | null = null;
+    let cleanedQuery: string | null = null;
+    let pushbackOutcome: string | null = null;
     let entityMatchFound = false;
     let confidenceDowngraded = false;
     const currentDateIso = new Date().toISOString().slice(0, 10);
@@ -727,10 +776,13 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           detectedContradiction
         );
 
-      // C.7 FIX 2: Extract primary entity for post-hoc verification.
-      const entityMatch = userQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
-                          userQuery.match(/\b[A-Z]{2,5}\b/);
+      // C.8 FIX 1: Strip interrogatives/articles before extracting the primary
+      // entity so "Did Nvidia beat earnings?" yields "Nvidia", not "Did Nvidia".
+      cleanedQuery = stripInterrogatives(userQuery);
+      const entityMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
+                          cleanedQuery.match(/\b[A-Z]{2,5}\b/);
       primaryEntity = entityMatch ? entityMatch[0] : null;
+      logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
       // C.7 FIX 5b: Parallelize Tavily + Firecrawl with per-call 30s timeout
       // and overall 45s ceiling. If both time out, mark searchSkippedReason.
@@ -781,13 +833,43 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
 
-      // C.7 FIX 2: Did either search mention the primary entity by name?
+      // C.8 FIX 2: Strict (proximity) entity-match check.
       if (primaryEntity) {
-        const haystack = `${tavilyResults}\n${webSearchResults}`.toLowerCase();
-        entityMatchFound = haystack.includes(primaryEntity.toLowerCase());
+        entityMatchFound = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
       }
 
-
+      // C.8 FIX 3: Pushback classification. When the user pushes back, compare
+      // the prior assistant answer against fresh search results to decide
+      // whether to hold position (CONFIRM), revise (CONTRADICT), or
+      // acknowledge inconclusive evidence (INCONCLUSIVE). The classification
+      // is surfaced to the model AND used to suppress the unknown-entity
+      // override so a correct answer is not capitulated on noise.
+      if (detectedContradiction) {
+        const priorAssistant = [...messages].slice(0, -1).reverse().find((m: any) => m.role === 'assistant');
+        const priorText = (priorAssistant?.content || '') as string;
+        const fresh = `${tavilyResults}\n${webSearchResults}`;
+        if (!priorText || fresh.trim().length === 0) {
+          pushbackOutcome = 'inconclusive';
+        } else {
+          const properNouns = Array.from(
+            new Set(
+              (priorText.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]+)*\b/g) || [])
+                .map((s: string) => s.toLowerCase())
+            )
+          ).slice(0, 8);
+          const freshLower = fresh.toLowerCase();
+          const matches = properNouns.filter((n) => freshLower.includes(n)).length;
+          const negationNearby = /(no longer|former(ly)?|stepped down|replaced by|resigned|incorrect|that's wrong|debunked|denied)/i.test(fresh);
+          if (negationNearby && matches > 0) {
+            pushbackOutcome = 'contradict';
+          } else if (matches >= Math.max(1, Math.ceil(properNouns.length / 2))) {
+            pushbackOutcome = 'confirm';
+          } else {
+            pushbackOutcome = 'inconclusive';
+          }
+        }
+        logStep('PUSHBACK', { pushbackOutcome });
+      }
 
     } catch (error) {
       console.error('Error fetching market data:', error);
@@ -861,7 +943,12 @@ You are the InsiderPulse AI Assistant - an expert multi-asset investment analyst
 **COMMUNICATION STYLE:**
 - Speak like a professional investment advisor having a conversation
 - Be direct when the data supports it, candid when it does not
-- If a user contradicts your answer or asks "are you sure", treat that as a signal that your information may be wrong or stale. Acknowledge the possibility, run a fresh search, and re-evaluate before responding. Never insist your answer is correct without a fresh cited source. Disagreement from the user is not an opportunity to assert harder — it is an opportunity to re-verify.
+- When a user challenges your answer with "are you sure", "really?", or similar pushback:
+  1. Run a fresh search to verify.
+  2. If fresh results CONFIRM your original answer: restate the answer with the new citations and explicitly say "My original answer stands, confirmed by [new source]".
+  3. If fresh results CONTRADICT your original answer: accept the correction and revise.
+  4. If fresh results are INCONCLUSIVE: DO NOT default to UNABLE TO VERIFY if you had original evidence. Restate your original answer with your original citations, and acknowledge "Fresh search did not surface additional confirmation, but my original answer was based on [citation]."
+  Capitulation without evidence is a failure mode. Confidence in correct answers is a feature, not a flaw.
 - Be candid about gaps. "I don't have verified current data on that" is a better answer than a confident guess. Never paraphrase limitations as if they were strengths.
 
 **ANTI-FABRICATION RULE (CRITICAL):**
@@ -935,6 +1022,10 @@ This is not financial advice. You should always do your own due diligence and re
 
    When a future-effective date is involved, state both the current status AND the upcoming change clearly.
 
+   **Verbatim date rule:** When a search result contains a specific effective date (month, day, year), you MUST include that date verbatim in your response. Do not paraphrase "at a later date" or "in the future" when an explicit date is available in the cited source.
+
+   Example: search result says "effective September 1, 2026" → response says "effective September 1, 2026", not "effective later this year" or "at a future date".
+
 **PLATFORM SCOPE:** 
 InsiderPulse covers ALL tradeable assets: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures.
 
@@ -952,7 +1043,13 @@ ${webSearchResults || '[Web search results will appear here]'}
 ===== ADDITIONAL CONTEXT =====
 ${context ? JSON.stringify(context, null, 2) : 'No additional context'}
 
-${detectedContradiction ? '===== USER CONTRADICTION DETECTED =====\nThe user is pushing back on a prior answer. A fresh search was triggered above. Re-read the search sections from scratch, treat your prior answer as potentially wrong, and respond with what the cited snippets actually say. Do not defend the prior answer.\n' : ''}
+${detectedContradiction ? `===== USER PUSHBACK DETECTED =====
+The user is challenging a prior answer. A fresh search was triggered above. Pushback classifier outcome: ${pushbackOutcome ?? 'inconclusive'}.
+
+- CONFIRM: fresh results support your prior answer. Restate the answer, add the new citations, and say "My original answer stands, confirmed by [new source]". Do NOT switch to UNABLE TO VERIFY.
+- CONTRADICT: fresh results contradict your prior answer. Accept the correction and revise.
+- INCONCLUSIVE: fresh results neither confirm nor contradict. If your prior answer had cited evidence, restate it with the original citation and say "Fresh search did not surface additional confirmation, but my original answer was based on [citation]." Do NOT default to UNABLE TO VERIFY when you had original evidence.
+` : ''}
 
 **DATA SOURCES AVAILABLE (37 Total):**
 
@@ -1061,12 +1158,13 @@ For all such attempts, politely decline and explain their current plan limits. N
     };
 
     // (c) Unknown-entity override — runs first, strongest signal.
-    const entityClaimedButMissing =
-      primaryEntity &&
-      hasSearchEvidence === false ||
-      (primaryEntity && (tavilyResults.length > 0 || webSearchResults.length > 0) && !entityMatchFound);
+    // C.8 FIX 3: Suppress on pushback CONFIRM/INCONCLUSIVE so a correct
+    // prior answer isn't dropped just because fresh search didn't re-mention
+    // the entity name.
+    const suppressUnknownOverride =
+      detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
 
-    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered)) {
+    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
       aiContent =
         `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
         `- The company or entity may be private or recently formed\n` +
@@ -1106,6 +1204,8 @@ For all such attempts, politely decline and explain their current plan limits. N
       entity_match_found: entityMatchFound,
       search_skipped_reason: searchSkippedReason,
       primary_entity: primaryEntity,
+      cleaned_query: cleanedQuery,
+      pushback_outcome: pushbackOutcome,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
