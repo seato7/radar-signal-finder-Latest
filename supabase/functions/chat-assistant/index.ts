@@ -379,6 +379,8 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let geminiTimeMs = 0;
     let searchSkippedReason: string | null = null;
     let primaryEntity: string | null = null;
+    let cleanedQuery: string | null = null;
+    let pushbackOutcome: string | null = null;
     let entityMatchFound = false;
     let confidenceDowngraded = false;
     const currentDateIso = new Date().toISOString().slice(0, 10);
