@@ -393,7 +393,6 @@ const Landing = () => {
               </motion.div>
               {/* Dynamic value sourced from Active Signals cumulative return. Never hardcode. */}
               <CumulativeReturnCard />
-            </motion.div>
             </div>
 
 
