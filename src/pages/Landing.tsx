@@ -5,8 +5,10 @@ import { useAuthModal } from "@/contexts/AuthModalContext";
 import { motion, useInView, type Variants } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, Sparkles, Crosshair, BarChart3, Shield, Star, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 const MEDIA_NAMES = [
   "Bloomberg",
@@ -238,7 +240,7 @@ const Landing = () => {
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/dashboard">Sign Up Free</Link>
+              <Link to="/dashboard">Start exploring</Link>
             </Button>
           </div>
         </div>
