@@ -4353,6 +4353,13 @@ export type Database = {
         }[]
       }
       get_public_preview: { Args: never; Returns: Json }
+      get_public_signal_performance: {
+        Args: never
+        Returns: {
+          closed_count: number
+          total_return_pct: number
+        }[]
+      }
       get_scoring_global_mean: {
         Args: never
         Returns: {

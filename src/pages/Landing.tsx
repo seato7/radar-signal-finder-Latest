@@ -5,8 +5,10 @@ import { useAuthModal } from "@/contexts/AuthModalContext";
 import { motion, useInView, type Variants } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Eye, Sparkles, Crosshair, BarChart3, Shield, Star, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 const MEDIA_NAMES = [
   "Bloomberg",
@@ -238,7 +240,7 @@ const Landing = () => {
               className="h-10 px-4 rounded-ds-md bg-ds-brand-primary text-ds-brand-primary-foreground hover:bg-ds-brand-primary/90 font-medium text-body-sm"
               asChild
             >
-              <Link to="/dashboard">Sign Up Free</Link>
+              <Link to="/dashboard">Start exploring</Link>
             </Button>
           </div>
         </div>
@@ -389,17 +391,8 @@ const Landing = () => {
                 <div className="text-ds-text-primary text-body-sm font-medium mb-1">Signals Processed</div>
                 <div className="text-ds-text-muted text-caption">Since January 2026</div>
               </motion.div>
-              <motion.div
-                variants={fadeUp}
-                className="relative bg-ds-surface border border-ds-brand-primary/40 rounded-ds-lg p-6 md:p-7 text-center flex flex-col justify-center shadow-ds-md"
-                style={{ boxShadow: "0 8px 32px -12px hsl(var(--ds-brand-primary) / 0.35)" }}
-              >
-                <div className="text-h1 font-semibold text-ds-brand-primary mb-2 tabular-nums leading-none tracking-tight">
-                  +160.63%
-                </div>
-                <div className="text-ds-text-primary text-body-sm font-medium mb-1">Cumulative Return</div>
-                <div className="text-ds-text-muted text-caption">Across All Tracked Signals</div>
-              </motion.div>
+              {/* Dynamic value sourced from Active Signals cumulative return. Never hardcode. */}
+              <CumulativeReturnCard />
             </div>
 
 
@@ -730,6 +723,69 @@ const Landing = () => {
         </div>
       </footer>
     </div>
+  );
+};
+
+// Dynamic value sourced from Active Signals cumulative return. Never hardcode.
+// Sums pnl_pct across closed (triggered/stopped/expired) trade_signals via
+// the public get_public_signal_performance RPC. The same underlying column
+// powers /trading-signals "Total Return" (get_signals_for_user RPC).
+const CumulativeReturnCard = () => {
+  const { data, isLoading } = useQuery({
+    queryKey: ["public_signal_performance"],
+    queryFn: async () => {
+      const { data, error } = await (supabase.rpc as any)("get_public_signal_performance");
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return {
+        closedCount: Number(row?.closed_count ?? 0),
+        totalReturnPct: row?.total_return_pct == null ? null : Number(row.total_return_pct),
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const closedCount = data?.closedCount ?? 0;
+  const totalReturn = data?.totalReturnPct ?? null;
+  const hasValue = closedCount > 0 && totalReturn != null;
+  const positive = (totalReturn ?? 0) >= 0;
+
+  const valueClass = hasValue
+    ? positive
+      ? "text-ds-signal-positive"
+      : "text-ds-signal-negative"
+    : "text-ds-text-primary";
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className="relative bg-ds-surface border border-ds-brand-primary/40 rounded-ds-lg p-6 md:p-7 text-center flex flex-col justify-center shadow-ds-md cursor-help"
+            style={{ boxShadow: "0 8px 32px -12px hsl(var(--ds-brand-primary) / 0.35)" }}
+          >
+            <div className={`text-h1 font-semibold mb-2 tabular-nums leading-none tracking-tight ${valueClass}`}>
+              {isLoading
+                ? "…"
+                : hasValue
+                  ? `${positive ? "+" : ""}${(totalReturn as number).toFixed(2)}%`
+                  : "Tracking 25,536 assets"}
+            </div>
+            <div className="text-ds-text-primary text-body-sm font-medium mb-1">
+              {hasValue ? "Cumulative Return" : "Live Coverage"}
+            </div>
+            <div className="text-ds-text-muted text-caption">
+              {hasValue
+                ? `Across ${closedCount} closed Active Signal${closedCount === 1 ? "" : "s"}`
+                : "Closed-signal returns will appear here"}
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          Cumulative return across all closed Active Signals positions.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 };
 
