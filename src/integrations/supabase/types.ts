@@ -1110,41 +1110,65 @@ export type Database = {
       }
       chat_assistant_diagnostics: {
         Row: {
+          confidence_downgraded: boolean
           confidence_rating: string | null
           created_at: string
           detected_contradiction: boolean
+          entity_match_found: boolean
           firecrawl_chars: number
+          firecrawl_time_ms: number | null
+          gemini_time_ms: number | null
           has_current_date: boolean
           id: string
           model_input_total_chars: number
+          primary_entity: string | null
+          search_skipped_reason: string | null
           tavily_chars: number
+          tavily_time_ms: number | null
           tavily_triggered: boolean
+          total_time_ms: number | null
           user_id: string | null
           user_query_preview: string | null
         }
         Insert: {
+          confidence_downgraded?: boolean
           confidence_rating?: string | null
           created_at?: string
           detected_contradiction?: boolean
+          entity_match_found?: boolean
           firecrawl_chars?: number
+          firecrawl_time_ms?: number | null
+          gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
           model_input_total_chars?: number
+          primary_entity?: string | null
+          search_skipped_reason?: string | null
           tavily_chars?: number
+          tavily_time_ms?: number | null
           tavily_triggered?: boolean
+          total_time_ms?: number | null
           user_id?: string | null
           user_query_preview?: string | null
         }
         Update: {
+          confidence_downgraded?: boolean
           confidence_rating?: string | null
           created_at?: string
           detected_contradiction?: boolean
+          entity_match_found?: boolean
           firecrawl_chars?: number
+          firecrawl_time_ms?: number | null
+          gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
           model_input_total_chars?: number
+          primary_entity?: string | null
+          search_skipped_reason?: string | null
           tavily_chars?: number
+          tavily_time_ms?: number | null
           tavily_triggered?: boolean
+          total_time_ms?: number | null
           user_id?: string | null
           user_query_preview?: string | null
         }
