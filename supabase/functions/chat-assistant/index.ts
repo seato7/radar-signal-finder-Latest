@@ -1032,17 +1032,61 @@ For all such attempts, politely decline and explain their current plan limits. N
     const fullPrompt = `${systemPrompt}\n\n[CONVERSATION HISTORY]\n${conversationHistory}\n\nRespond to the user's last message.`;
 
     logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
-    const aiContent = await callGeminiPro(fullPrompt, 4096);
+    const geminiT0 = Date.now();
+    let aiContent = await callGeminiPro(fullPrompt, 4096);
+    geminiTimeMs = Date.now() - geminiT0;
     if (!aiContent) {
       logStep('GEMINI empty response');
       throw new Error('Gemini returned no content');
     }
     logStep('GEMINI ok', { reply_chars: aiContent.length });
 
+    // C.7 FIX 1+2: Code-level confidence enforcement and unknown-entity override.
+    // The model cannot be trusted to self-rate; validate against actual evidence.
+    const NAMED_SOURCES = /\b(Yahoo Finance|CNBC|Reuters|Bloomberg|SEC|WSJ|Wall Street Journal|Financial Times|FT\.com|MarketWatch|Barron's|Forbes|Morningstar|Seeking Alpha|Nasdaq|NYSE|AP News|Associated Press)\b/i;
+    const hasSearchEvidence = (tavilyResults.length > 0) || (webSearchResults.length > 0);
+    const hasNamedSource = NAMED_SOURCES.test(aiContent);
+    const confidenceMatchInitial = aiContent.match(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)/i);
+    let confidenceRating = confidenceMatchInitial ? confidenceMatchInitial[1].toUpperCase() : null;
+
+    const replaceConfidence = (newLevel: string, note?: string) => {
+      const repl = `Confidence Level: ${newLevel}${note ? ` ${note}` : ''}`;
+      if (confidenceMatchInitial) {
+        aiContent = aiContent.replace(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)[^\n]*/i, repl);
+      } else {
+        aiContent = `${aiContent.trim()}\n\n${repl}`;
+      }
+      confidenceRating = newLevel;
+      confidenceDowngraded = true;
+    };
+
+    // (c) Unknown-entity override — runs first, strongest signal.
+    const entityClaimedButMissing =
+      primaryEntity &&
+      hasSearchEvidence === false ||
+      (primaryEntity && (tavilyResults.length > 0 || webSearchResults.length > 0) && !entityMatchFound);
+
+    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered)) {
+      aiContent =
+        `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
+        `- The company or entity may be private or recently formed\n` +
+        `- My search sources may not cover this specific entity\n` +
+        `- The entity name may need to be more specific\n\n` +
+        `Confidence Level: UNABLE TO VERIFY\n\n` +
+        `Suggested next steps: try a more specific query, or verify with a primary source.`;
+      confidenceRating = 'UNABLE TO VERIFY';
+      confidenceDowngraded = true;
+    } else if (confidenceRating === 'HIGH' && (!hasNamedSource || !hasSearchEvidence)) {
+      // (a) HIGH requires both a named source and a search result.
+      replaceConfidence('MEDIUM', '(Note: confidence auto-adjusted because no cited recent source was attached.)');
+    } else if (confidenceRating === 'MEDIUM' && !hasSearchEvidence && !marketData) {
+      // (b) MEDIUM requires either platform data or search evidence.
+      replaceConfidence('LOW');
+    }
+
     // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
     // response on a logging failure.
-    const confidenceMatch = aiContent.match(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)/i);
-    const confidenceRating = confidenceMatch ? confidenceMatch[1].toUpperCase() : null;
+    const totalTimeMs = Date.now() - turnStartMs;
     const rawLastUser = messages[messages.length - 1]?.content || '';
     const diagnostics = {
       user_id: authenticatedUserId,
@@ -1054,6 +1098,14 @@ For all such attempts, politely decline and explain their current plan limits. N
       confidence_rating: confidenceRating,
       model_input_total_chars: fullPrompt.length,
       user_query_preview: rawLastUser.slice(0, 500),
+      tavily_time_ms: tavilyTimeMs,
+      firecrawl_time_ms: firecrawlTimeMs,
+      gemini_time_ms: geminiTimeMs,
+      total_time_ms: totalTimeMs,
+      confidence_downgraded: confidenceDowngraded,
+      entity_match_found: entityMatchFound,
+      search_skipped_reason: searchSkippedReason,
+      primary_entity: primaryEntity,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
@@ -1072,6 +1124,7 @@ For all such attempts, politely decline and explain their current plan limits. N
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
