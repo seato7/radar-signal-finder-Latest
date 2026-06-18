@@ -1204,6 +1204,8 @@ For all such attempts, politely decline and explain their current plan limits. N
       entity_match_found: entityMatchFound,
       search_skipped_reason: searchSkippedReason,
       primary_entity: primaryEntity,
+      cleaned_query: cleanedQuery,
+      pushback_outcome: pushbackOutcome,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
