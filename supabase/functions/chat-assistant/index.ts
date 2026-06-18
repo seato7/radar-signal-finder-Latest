@@ -695,34 +695,99 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         ? `${detectedAsset} current price action today trend direction latest news ${currentYear}`
         : `${userQuery} latest news ${currentYear}`;
 
-      webSearchResults = await searchWeb(searchQuery);
-
       // FIX 6: Detect contradiction phrases — when the user pushes back, force a
       // fresh, re-framed Tavily search before invoking the model.
       const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
       detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
 
-      // FIX 2: Broader Tavily trigger — current-events keywords, capitalised
-      // multi-letter tokens (SpaceX, Stripe, OpenAI), company suffixes, and the
-      // original 2-5 char uppercase ticker pattern. When in doubt, search.
+      // C.7 FIX 3: Educational query exclusion. Definitional/explanatory queries
+      // with no ticker, company-name, or recency cue should NOT fire search.
+      const EDUCATIONAL_RE = /^(explain\s+what|what\s+is\s+(a|an|the)|what\s+are\s+(a|an|the)|what\s+does\s+.+\s+mean|how\s+does\s+.+\s+work|define\b|definition\s+of|tell\s+me\s+about\s+(the\s+concept\s+of|how))/i;
+      const RECENCY_RE = /\b(today|now|current|currently|latest|recent|this\s+week|this\s+month|this\s+year|yesterday|2025|2026)\b/i;
+      const TICKER_HINT = /\b[A-Z]{2,5}\b/;
+      const ENTITY_HINT = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+|Inc|Corp|Ltd|LLC|Group|Holdings)\b/;
+      const isEducational =
+        EDUCATIONAL_RE.test(userQuery.trim()) &&
+        !RECENCY_RE.test(userQuery) &&
+        !TICKER_HINT.test(userQuery) &&
+        !ENTITY_HINT.test(userQuery) &&
+        !detectedContradiction;
+
+      // FIX 2 (C.6): Broader Tavily trigger.
       const TAVILY_KEYWORDS = /\b(ipo|public|listed|trading|recent|today|current|price|this year|2026|2025|stock|share|earnings|merger|acquired|acquisition|listing|debut|news|latest|what happened|why is|moving)\b/i;
       const TAVILY_ENTITY = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/;
       const TAVILY_SUFFIX = /\b(Inc|Corp|Ltd|LLC|Co|Group|Holdings)\b/;
       const TAVILY_TICKER = /\b[A-Z]{2,5}\b/;
       const tavilyShouldFire =
-        TAVILY_KEYWORDS.test(userQuery) ||
-        TAVILY_ENTITY.test(userQuery) ||
-        TAVILY_SUFFIX.test(userQuery) ||
-        TAVILY_TICKER.test(userQuery) ||
-        detectedContradiction;
+        !isEducational && (
+          TAVILY_KEYWORDS.test(userQuery) ||
+          TAVILY_ENTITY.test(userQuery) ||
+          TAVILY_SUFFIX.test(userQuery) ||
+          TAVILY_TICKER.test(userQuery) ||
+          detectedContradiction
+        );
 
-      if (tavilyShouldFire) {
-        tavilyTriggered = true;
+      // C.7 FIX 2: Extract primary entity for post-hoc verification.
+      const entityMatch = userQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
+                          userQuery.match(/\b[A-Z]{2,5}\b/);
+      primaryEntity = entityMatch ? entityMatch[0] : null;
+
+      // C.7 FIX 5b: Parallelize Tavily + Firecrawl with per-call 30s timeout
+      // and overall 45s ceiling. If both time out, mark searchSkippedReason.
+      const withTimeout = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+        ]);
+
+      if (isEducational) {
+        searchSkippedReason = 'educational_query';
+        tavilyTriggered = false;
+        firecrawlTriggered = false;
+      } else {
+        firecrawlTriggered = true;
         const tavilyQuery = detectedContradiction
           ? `${rawUserQuery} ${currentYear} verify facts`
           : userQuery;
-        tavilyResults = await searchTavily(tavilyQuery, supabase);
+
+        const tavilyPromise = tavilyShouldFire
+          ? (async () => {
+              const t0 = Date.now();
+              const r = await withTimeout(searchTavily(tavilyQuery, supabase), 30_000, '');
+              tavilyTimeMs = Date.now() - t0;
+              tavilyTriggered = true;
+              return r;
+            })()
+          : Promise.resolve('');
+
+        const firecrawlPromise = (async () => {
+          const t0 = Date.now();
+          const r = await withTimeout(searchWeb(searchQuery), 30_000, '');
+          firecrawlTimeMs = Date.now() - t0;
+          return r;
+        })();
+
+        const elapsed = Date.now() - turnStartMs;
+        const remaining = Math.max(5_000, 45_000 - elapsed);
+        const [tRes, fRes] = await withTimeout(
+          Promise.all([tavilyPromise, firecrawlPromise]),
+          remaining,
+          ['', ''] as [string, string],
+        );
+        tavilyResults = tRes || '';
+        webSearchResults = fRes || '';
+        if (!tavilyResults && !webSearchResults && (tavilyShouldFire || firecrawlTriggered)) {
+          searchSkippedReason = 'search_timeout';
+        }
       }
+
+      // C.7 FIX 2: Did either search mention the primary entity by name?
+      if (primaryEntity) {
+        const haystack = `${tavilyResults}\n${webSearchResults}`.toLowerCase();
+        entityMatchFound = haystack.includes(primaryEntity.toLowerCase());
+      }
+
+
 
     } catch (error) {
       console.error('Error fetching market data:', error);
