@@ -778,10 +778,11 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
 
       // C.8 FIX 1: Strip interrogatives/articles before extracting the primary
       // entity so "Did Nvidia beat earnings?" yields "Nvidia", not "Did Nvidia".
-      const cleanedQuery = stripInterrogatives(userQuery);
+      cleanedQuery = stripInterrogatives(userQuery);
       const entityMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
                           cleanedQuery.match(/\b[A-Z]{2,5}\b/);
       primaryEntity = entityMatch ? entityMatch[0] : null;
+      logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
       // C.7 FIX 5b: Parallelize Tavily + Firecrawl with per-call 30s timeout
       // and overall 45s ceiling. If both time out, mark searchSkippedReason.
