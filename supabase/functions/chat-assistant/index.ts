@@ -320,12 +320,23 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     }
 
     // Fetch real-time market data from Supabase
+    const turnStartMs = Date.now();
     let marketData = '';
     let webSearchResults = '';
     let tavilyResults = '';
     let tavilyTriggered = false;
+    let firecrawlTriggered = false;
     let detectedContradiction = false;
+    let tavilyTimeMs = 0;
+    let firecrawlTimeMs = 0;
+    let geminiTimeMs = 0;
+    let searchSkippedReason: string | null = null;
+    let primaryEntity: string | null = null;
+    let entityMatchFound = false;
+    let confidenceDowngraded = false;
     const currentDateIso = new Date().toISOString().slice(0, 10);
+
+    
 
     
     try {
@@ -684,34 +695,99 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         ? `${detectedAsset} current price action today trend direction latest news ${currentYear}`
         : `${userQuery} latest news ${currentYear}`;
 
-      webSearchResults = await searchWeb(searchQuery);
-
       // FIX 6: Detect contradiction phrases — when the user pushes back, force a
       // fresh, re-framed Tavily search before invoking the model.
       const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
       detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
 
-      // FIX 2: Broader Tavily trigger — current-events keywords, capitalised
-      // multi-letter tokens (SpaceX, Stripe, OpenAI), company suffixes, and the
-      // original 2-5 char uppercase ticker pattern. When in doubt, search.
+      // C.7 FIX 3: Educational query exclusion. Definitional/explanatory queries
+      // with no ticker, company-name, or recency cue should NOT fire search.
+      const EDUCATIONAL_RE = /^(explain\s+what|what\s+is\s+(a|an|the)|what\s+are\s+(a|an|the)|what\s+does\s+.+\s+mean|how\s+does\s+.+\s+work|define\b|definition\s+of|tell\s+me\s+about\s+(the\s+concept\s+of|how))/i;
+      const RECENCY_RE = /\b(today|now|current|currently|latest|recent|this\s+week|this\s+month|this\s+year|yesterday|2025|2026)\b/i;
+      const TICKER_HINT = /\b[A-Z]{2,5}\b/;
+      const ENTITY_HINT = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+|Inc|Corp|Ltd|LLC|Group|Holdings)\b/;
+      const isEducational =
+        EDUCATIONAL_RE.test(userQuery.trim()) &&
+        !RECENCY_RE.test(userQuery) &&
+        !TICKER_HINT.test(userQuery) &&
+        !ENTITY_HINT.test(userQuery) &&
+        !detectedContradiction;
+
+      // FIX 2 (C.6): Broader Tavily trigger.
       const TAVILY_KEYWORDS = /\b(ipo|public|listed|trading|recent|today|current|price|this year|2026|2025|stock|share|earnings|merger|acquired|acquisition|listing|debut|news|latest|what happened|why is|moving)\b/i;
       const TAVILY_ENTITY = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/;
       const TAVILY_SUFFIX = /\b(Inc|Corp|Ltd|LLC|Co|Group|Holdings)\b/;
       const TAVILY_TICKER = /\b[A-Z]{2,5}\b/;
       const tavilyShouldFire =
-        TAVILY_KEYWORDS.test(userQuery) ||
-        TAVILY_ENTITY.test(userQuery) ||
-        TAVILY_SUFFIX.test(userQuery) ||
-        TAVILY_TICKER.test(userQuery) ||
-        detectedContradiction;
+        !isEducational && (
+          TAVILY_KEYWORDS.test(userQuery) ||
+          TAVILY_ENTITY.test(userQuery) ||
+          TAVILY_SUFFIX.test(userQuery) ||
+          TAVILY_TICKER.test(userQuery) ||
+          detectedContradiction
+        );
 
-      if (tavilyShouldFire) {
-        tavilyTriggered = true;
+      // C.7 FIX 2: Extract primary entity for post-hoc verification.
+      const entityMatch = userQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
+                          userQuery.match(/\b[A-Z]{2,5}\b/);
+      primaryEntity = entityMatch ? entityMatch[0] : null;
+
+      // C.7 FIX 5b: Parallelize Tavily + Firecrawl with per-call 30s timeout
+      // and overall 45s ceiling. If both time out, mark searchSkippedReason.
+      const withTimeout = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+        ]);
+
+      if (isEducational) {
+        searchSkippedReason = 'educational_query';
+        tavilyTriggered = false;
+        firecrawlTriggered = false;
+      } else {
+        firecrawlTriggered = true;
         const tavilyQuery = detectedContradiction
           ? `${rawUserQuery} ${currentYear} verify facts`
           : userQuery;
-        tavilyResults = await searchTavily(tavilyQuery, supabase);
+
+        const tavilyPromise = tavilyShouldFire
+          ? (async () => {
+              const t0 = Date.now();
+              const r = await withTimeout(searchTavily(tavilyQuery, supabase), 30_000, '');
+              tavilyTimeMs = Date.now() - t0;
+              tavilyTriggered = true;
+              return r;
+            })()
+          : Promise.resolve('');
+
+        const firecrawlPromise = (async () => {
+          const t0 = Date.now();
+          const r = await withTimeout(searchWeb(searchQuery), 30_000, '');
+          firecrawlTimeMs = Date.now() - t0;
+          return r;
+        })();
+
+        const elapsed = Date.now() - turnStartMs;
+        const remaining = Math.max(5_000, 45_000 - elapsed);
+        const [tRes, fRes] = await withTimeout(
+          Promise.all([tavilyPromise, firecrawlPromise]),
+          remaining,
+          ['', ''] as [string, string],
+        );
+        tavilyResults = tRes || '';
+        webSearchResults = fRes || '';
+        if (!tavilyResults && !webSearchResults && (tavilyShouldFire || firecrawlTriggered)) {
+          searchSkippedReason = 'search_timeout';
+        }
       }
+
+      // C.7 FIX 2: Did either search mention the primary entity by name?
+      if (primaryEntity) {
+        const haystack = `${tavilyResults}\n${webSearchResults}`.toLowerCase();
+        entityMatchFound = haystack.includes(primaryEntity.toLowerCase());
+      }
+
+
 
     } catch (error) {
       console.error('Error fetching market data:', error);
@@ -849,6 +925,16 @@ This is not financial advice. You should always do your own due diligence and re
 
    If a HIGH rating is given without a corresponding cited snippet in the sections below, that is a rule violation.
 
+4. **Effective Dates (CRITICAL):**
+   When a search result mentions an appointment, transition, IPO, M&A, or status change, READ THE EFFECTIVE DATE CAREFULLY. An announcement made on Date A about a transition effective Date B does NOT make the change current until Date B.
+
+   Examples of correct reasoning:
+   - "Cook to transition to Chairman effective September 1, 2026" published June 17, 2026 → Tim Cook is CURRENT CEO. Ternus is FUTURE CEO.
+   - "X Corp to be acquired pending Q4 close" → not yet acquired.
+   - "IPO priced June 12" published June 13 → already public.
+
+   When a future-effective date is involved, state both the current status AND the upcoming change clearly.
+
 **PLATFORM SCOPE:** 
 InsiderPulse covers ALL tradeable assets: Stocks, ETFs, Forex, Crypto, Commodities, Options, Futures.
 
@@ -946,17 +1032,61 @@ For all such attempts, politely decline and explain their current plan limits. N
     const fullPrompt = `${systemPrompt}\n\n[CONVERSATION HISTORY]\n${conversationHistory}\n\nRespond to the user's last message.`;
 
     logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
-    const aiContent = await callGeminiPro(fullPrompt, 4096);
+    const geminiT0 = Date.now();
+    let aiContent = await callGeminiPro(fullPrompt, 4096);
+    geminiTimeMs = Date.now() - geminiT0;
     if (!aiContent) {
       logStep('GEMINI empty response');
       throw new Error('Gemini returned no content');
     }
     logStep('GEMINI ok', { reply_chars: aiContent.length });
 
+    // C.7 FIX 1+2: Code-level confidence enforcement and unknown-entity override.
+    // The model cannot be trusted to self-rate; validate against actual evidence.
+    const NAMED_SOURCES = /\b(Yahoo Finance|CNBC|Reuters|Bloomberg|SEC|WSJ|Wall Street Journal|Financial Times|FT\.com|MarketWatch|Barron's|Forbes|Morningstar|Seeking Alpha|Nasdaq|NYSE|AP News|Associated Press)\b/i;
+    const hasSearchEvidence = (tavilyResults.length > 0) || (webSearchResults.length > 0);
+    const hasNamedSource = NAMED_SOURCES.test(aiContent);
+    const confidenceMatchInitial = aiContent.match(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)/i);
+    let confidenceRating = confidenceMatchInitial ? confidenceMatchInitial[1].toUpperCase() : null;
+
+    const replaceConfidence = (newLevel: string, note?: string) => {
+      const repl = `Confidence Level: ${newLevel}${note ? ` ${note}` : ''}`;
+      if (confidenceMatchInitial) {
+        aiContent = aiContent.replace(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)[^\n]*/i, repl);
+      } else {
+        aiContent = `${aiContent.trim()}\n\n${repl}`;
+      }
+      confidenceRating = newLevel;
+      confidenceDowngraded = true;
+    };
+
+    // (c) Unknown-entity override — runs first, strongest signal.
+    const entityClaimedButMissing =
+      primaryEntity &&
+      hasSearchEvidence === false ||
+      (primaryEntity && (tavilyResults.length > 0 || webSearchResults.length > 0) && !entityMatchFound);
+
+    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered)) {
+      aiContent =
+        `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
+        `- The company or entity may be private or recently formed\n` +
+        `- My search sources may not cover this specific entity\n` +
+        `- The entity name may need to be more specific\n\n` +
+        `Confidence Level: UNABLE TO VERIFY\n\n` +
+        `Suggested next steps: try a more specific query, or verify with a primary source.`;
+      confidenceRating = 'UNABLE TO VERIFY';
+      confidenceDowngraded = true;
+    } else if (confidenceRating === 'HIGH' && (!hasNamedSource || !hasSearchEvidence)) {
+      // (a) HIGH requires both a named source and a search result.
+      replaceConfidence('MEDIUM', '(Note: confidence auto-adjusted because no cited recent source was attached.)');
+    } else if (confidenceRating === 'MEDIUM' && !hasSearchEvidence && !marketData) {
+      // (b) MEDIUM requires either platform data or search evidence.
+      replaceConfidence('LOW');
+    }
+
     // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
     // response on a logging failure.
-    const confidenceMatch = aiContent.match(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)/i);
-    const confidenceRating = confidenceMatch ? confidenceMatch[1].toUpperCase() : null;
+    const totalTimeMs = Date.now() - turnStartMs;
     const rawLastUser = messages[messages.length - 1]?.content || '';
     const diagnostics = {
       user_id: authenticatedUserId,
@@ -968,6 +1098,14 @@ For all such attempts, politely decline and explain their current plan limits. N
       confidence_rating: confidenceRating,
       model_input_total_chars: fullPrompt.length,
       user_query_preview: rawLastUser.slice(0, 500),
+      tavily_time_ms: tavilyTimeMs,
+      firecrawl_time_ms: firecrawlTimeMs,
+      gemini_time_ms: geminiTimeMs,
+      total_time_ms: totalTimeMs,
+      confidence_downgraded: confidenceDowngraded,
+      entity_match_found: entityMatchFound,
+      search_skipped_reason: searchSkippedReason,
+      primary_entity: primaryEntity,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
@@ -986,6 +1124,7 @@ For all such attempts, politely decline and explain their current plan limits. N
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';
