@@ -574,6 +574,56 @@ export async function isEntityVerifiable(
     const ok = got === c.expect;
     console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // ---- C.12 normalization self-tests (12 total) ----
+  // Dollar normalization (4): equivalent magnitudes across notation must
+  // NOT flag as fabrication.
+  const dollarCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Revenue was $25.5B last quarter.', corpus: 'Q1 revenue totaled $25,500 million in the filing.', label: 'dollar-B-vs-million' },
+    { resp: 'Reached a market cap of $1.5 trillion today.', corpus: 'Market capitalization reached $1,500 billion at close.', label: 'dollar-trillion-vs-billion' },
+    { resp: 'They raised $500M in funding.', corpus: 'Company raised $500 million in series E.', label: 'dollar-M-vs-million' },
+    { resp: 'Debt stands at $3.2bn now.', corpus: 'Net debt of $3.2 billion as of filing.', label: 'dollar-bn-vs-billion' },
+  ];
+  for (const c of dollarCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const hasFabDollar = fabricated.some(f => /^\$/.test(f));
+    const ok = !hasFabDollar;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-dollar ${c.label} -> hasFabDollar=${hasFabDollar} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Percentage normalization (3): %, percent, basis points.
+  const pctCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Yields rose 0.91% today on the print.', corpus: 'Treasury rates ticked up by 91 basis points after the auction.', label: 'pct-vs-bps' },
+    { resp: 'Stock fell 5.5% on the news.', corpus: 'Shares closed down 5.5 percent in intraday trading.', label: 'pct-vs-percent' },
+    { resp: 'Inflation jumped 2% year over year.', corpus: 'Core CPI moved 200 basis points higher YoY in the report.', label: 'pct-low-vs-bps' },
+  ];
+  for (const c of pctCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const hasFabPct = fabricated.some(f => /%$/.test(f));
+    const ok = !hasFabPct;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-pct ${c.label} -> hasFabPct=${hasFabPct} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Date normalization (3): formats normalize to ISO.
+  const dateCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Filed on September 1 2026 with the SEC commission.', corpus: 'SEC filing dated 9/1/2026 was posted to EDGAR.', label: 'date-words-vs-slash' },
+    { resp: 'Quarter ended Sept 1, 2026 per the press release.', corpus: 'Reporting period ending 2026-09-01 was disclosed.', label: 'date-abbrev-vs-iso' },
+    { resp: 'Effective 01-Sep-2026 per the filing letter.', corpus: 'Effective September 1, 2026 per the agreement.', label: 'date-dash-vs-words' },
+  ];
+  for (const c of dateCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const hasFabDate = fabricated.some(f => /^20\d{2}-\d{2}-\d{2}$/.test(f));
+    const ok = !hasFabDate;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-date ${c.label} -> hasFabDate=${hasFabDate} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Person names known-figure pass (2): real figures in KNOWN_FINANCIAL_FIGURES
+  // must not be flagged even when the corpus uses only a last name.
+  const nameCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Tim Cook addressed shareholders at the meeting.', corpus: 'CEO Cook spoke at the annual gathering.', label: 'figure-tim-cook' },
+    { resp: 'Warren Buffett commented on the deal terms.', corpus: 'Buffett told reporters on Friday at the office.', label: 'figure-buffett' },
+  ];
+  for (const c of nameCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const ok = !fabricated.some(f => /(Tim Cook|Warren Buffett)/i.test(f));
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-name ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
