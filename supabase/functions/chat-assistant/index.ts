@@ -1078,8 +1078,40 @@ Make it suitable for investment analysis with clear labels, professional styling
       );
     }
 
+    // C.10: classification-specific instruction block prepended to the
+    // system prompt. EDUCATIONAL/CONVERSATIONAL paths get a tight, plain
+    // instruction with NO Analysis/Key Points/Recommendation framing.
+    // FACTUAL gets a strict RAG instruction: answer ONLY from search
+    // results, refuse to fill gaps from training data.
+    let classificationBlock = '';
+    if (queryClassification === 'EDUCATIONAL') {
+      classificationBlock = `===== QUERY MODE: EDUCATIONAL =====
+This is a conceptual/definitional question. Provide a clear educational explanation in plain prose.
+- Do NOT reference current market data, prices, recent events, or specific companies.
+- Do NOT use the Analysis / Key Points / Recommendation / Confidence Level structure.
+- Do NOT include the financial disclaimer.
+- Output: 1-3 short paragraphs of plain prose.
+`;
+    } else if (queryClassification === 'CONVERSATIONAL') {
+      classificationBlock = `===== QUERY MODE: CONVERSATIONAL =====
+This is a greeting, acknowledgment, or meta-question about the assistant. Respond briefly and naturally in 1-2 sentences. Do NOT use the Analysis / Key Points / Recommendation structure. Do NOT include a financial disclaimer.
+`;
+    } else {
+      classificationBlock = `===== QUERY MODE: FACTUAL — RAG STRICT =====
+You are a financial analyst summarizing real-time market data. Your response MUST be based EXCLUSIVELY on the REAL-TIME MARKET INTELLIGENCE (Tavily) and REAL-TIME WEB SEARCH sections below.
+
+CRITICAL RULES:
+- Do NOT use your training data for any factual claim about the entity, company, person, price, event, ticker, or status mentioned in the user's question.
+- If the search results contain information about the queried entity, summarize it accurately and cite the source names that literally appear in the snippets.
+- If the search results do NOT contain information about the queried entity (or only contain unrelated mentions of similarly-named things), respond with: "I don't have current data on [entity]. The search returned results but none specifically about this entity." Do NOT invent details to fill the gap.
+- Every proper noun, name, date, dollar amount, and percentage in your response must appear in the search results above. A post-processor will reject responses that include claims not present in the search corpus.
+- Confidence: HIGH only when the search results directly address the question with a cited source. MEDIUM when partial. UNABLE TO VERIFY when nothing relevant.
+`;
+    }
+
     // Build system prompt with real market data AND web search
-    const systemPrompt = `===== CURRENT DATE =====
+    const systemPrompt = `${classificationBlock}
+===== CURRENT DATE =====
 Today's date is ${currentDateIso}. Your training data may be months or years out of date. For any claim about current company status, prices, listings, IPOs, M&A, earnings, leadership, or regulation, you MUST rely on the search results below — never on prior knowledge.
 
 You are the InsiderPulse AI Assistant - an expert multi-asset investment analyst.
