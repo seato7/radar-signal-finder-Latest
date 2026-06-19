@@ -2089,6 +2089,10 @@ For all such attempts, politely decline and explain their current plan limits. N
       trusted_result_count: trustedResultCount,
       rejected_result_count: rejectedResultCount,
       rejected_domains: rejectedDomains.length ? rejectedDomains.join(',').slice(0, 2000) : null,
+      // C.13
+      skipped_fabrication_gate: skippedFabricationGate,
+      citations_present: citationsPresent,
+      inherited_entity_from_prior: inheritedEntityFromPrior,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
