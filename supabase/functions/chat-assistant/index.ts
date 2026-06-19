@@ -640,6 +640,30 @@ export async function isEntityVerifiable(
     const { fabricated } = detectFabrication(c.resp, c.corpus);
     const ok = !fabricated.some(f => /(Tim Cook|Warren Buffett)/i.test(f));
     console.log(`[CHAT-ASSISTANT][SELFTEST] norm-name ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
+  // ---- C.12.1 stop-word + possessive self-tests (6 total) ----
+  // Stop-word filter (3): sentence-starter capitals must NOT be flagged.
+  const stopwordCases: Array<{ resp: string; corpus: string; bad: RegExp; label: string }> = [
+    { resp: 'However, the stock fell on the print.', corpus: 'Shares closed lower after the report.', bad: /^However$/i, label: 'stopword-however' },
+    { resp: 'Investors should note the guidance was raised.', corpus: 'Company raised full-year guidance in the release.', bad: /^Investors$/i, label: 'stopword-investors' },
+    { resp: 'Current CEO Tim Cook addressed the meeting.', corpus: 'Apple chief executive Tim Cook spoke today.', bad: /^Current(\s+CEO)?$/i, label: 'stopword-current-ceo' },
+  ];
+  for (const c of stopwordCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const ok = !fabricated.some(f => c.bad.test(f));
+    console.log(`[CHAT-ASSISTANT][SELFTEST] stopword ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Possessive-aware extractor (3): possessor wins over trailing common noun.
+  const possessiveCases: Array<{ q: string; expect: string; label: string }> = [
+    { q: "Who is Apple's CEO?", expect: 'Apple', label: 'possessive-apple-ceo' },
+    { q: "What were Microsoft's earnings?", expect: 'Microsoft', label: 'possessive-msft-earnings' },
+    { q: "How is Tesla's stock doing?", expect: 'Tesla', label: 'possessive-tesla-stock' },
+  ];
+  for (const c of possessiveCases) {
+    const cleaned = stripInterrogatives(c.q);
+    const m = cleaned.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)[\u2019']s\b/);
+    const got = m ? m[1] : null;
+    const ok = got === c.expect;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
 })();
 
