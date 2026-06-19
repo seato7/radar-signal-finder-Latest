@@ -1985,25 +1985,54 @@ For all such attempts, politely decline and explain their current plan limits. N
       replaceConfidence('LOW');
     }
 
-    // C.10 TASK 4: Hard-gate fabrication check on FACTUAL responses.
-    // Extract proper nouns, dates, dollar amounts, percentages from the
-    // model output and verify each appears in the search corpus we passed
-    // in. If anything is unsupported, replace with UNABLE TO VERIFY.
-    // Skipped when:
-    // - Query was EDUCATIONAL/CONVERSATIONAL (no RAG contract)
-    // - Unknown-entity override already fired (response is already canned)
-    // - Pushback hold-position is active (prior-answer context is the
-    //   authoritative corpus there, validated separately)
+    // C.13 FIX 1 + FIX 2: Citation presence + scoped fabrication gate.
+    //
+    // Aligns with how production AI search (Perplexity, ChatGPT Browse,
+    // Claude web, Gemini grounding) work: the whitelist + trusted-source
+    // filter are the safety floor; the model's citation-enforced synthesis
+    // is the answer mechanism. Lexical post-hoc validation only runs on the
+    // non-whitelisted fallback path where it actually adds value.
+    citationsPresent = /\[\d+\](?:\[\d+\])*/.test(aiContent);
+
     const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
     const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
-    if (cannedReply === null && queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
+    const whitelistedAndTrusted =
+      entityInWhitelist === true && trustedResultCount >= 2;
+
+    if (
+      cannedReply === null &&
+      queryClassification === 'FACTUAL' &&
+      !alreadyOverridden &&
+      !pushbackHold &&
+      whitelistedAndTrusted
+    ) {
+      // Whitelisted entity with ≥2 trusted sources: trust Gemini's
+      // paraphrasing. Skip the lexical fabrication gate entirely. Force
+      // confidence rating from trusted_result_count.
+      skippedFabricationGate = true;
+      const forcedConfidence = trustedResultCount >= 5 ? 'HIGH' : 'MEDIUM';
+      if (confidenceRating !== forcedConfidence) {
+        replaceConfidence(forcedConfidence);
+      }
+      logStep('FABRICATION_GATE_SKIPPED', {
+        entity_in_whitelist: entityInWhitelist,
+        whitelist_source: whitelistSource,
+        trusted_result_count: trustedResultCount,
+        forced_confidence: forcedConfidence,
+        citations_present: citationsPresent,
+      });
+    } else if (
+      cannedReply === null &&
+      queryClassification === 'FACTUAL' &&
+      !alreadyOverridden &&
+      !pushbackHold
+    ) {
+      // Non-whitelisted (or whitelisted with <2 trusted sources) fallback
+      // path: keep the lexical fabrication gate active as the safety net.
       const corpus = `${tavilyResults}\n${webSearchResults}\n${marketData}`;
       const { fabricated } = detectFabrication(aiContent, corpus);
       fabricatedClaims = fabricated;
       fabricationDetected = fabricated.length > 0;
-      // Threshold: 2+ unsupported high-signal claims OR any unsupported
-      // dollar/percentage/date OR any unsupported claim when the search
-      // corpus was empty.
       const highSignal = fabricated.filter((c) => /[\$%]|\d{4}/.test(c));
       const corpusEmpty = corpus.trim().length < 50;
       const shouldForce = (fabricated.length >= 2) || (highSignal.length >= 1) || (corpusEmpty && fabricated.length >= 1);
