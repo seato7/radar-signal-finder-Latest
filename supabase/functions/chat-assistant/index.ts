@@ -119,8 +119,81 @@ function entityFoundStrict(entity: string | null, results: string[]): EntityMatc
   return { matched: false, matchedIndex: -1, resultCount };
 }
 
-// C.9 self-test: run at module load. Logs PASS/FAIL so deploy logs surface
-// regressions in the interrogative stripper or entity matcher.
+// C.10: Deterministic query classifier. Buckets each turn into FACTUAL,
+// EDUCATIONAL, or CONVERSATIONAL. Rule order matters: conversational
+// short-circuits first, then educational definitional patterns, and
+// FACTUAL is the default when in doubt.
+export type QueryClassification = 'FACTUAL' | 'EDUCATIONAL' | 'CONVERSATIONAL';
+const CONVERSATIONAL_RE = /^\s*(hi|hello|hey|yo|thanks|thank you|thx|ok|okay|cool|got it|nice|great|hmm|interesting|what can you do|who are you|what are you|help|how does this work)\b[\s.!?]*$/i;
+const EDUCATIONAL_DEF_RE = /^\s*(explain\s+what|what\s+is\s+(a|an|the)\b|what\s+are\s+(a|an|the)\b|what\s+does\s+\w+\s+mean|how\s+does\s+\w+\s+work|define\b|definition\s+of|tell\s+me\s+about\s+(the\s+concept\s+of|how))/i;
+const EDUCATIONAL_CONCEPTS = /\b(diversification|p\/?e ratio|market cap(italization)?|dividend|volatility|beta|alpha|sharpe|drawdown|portfolio|asset allocation|risk tolerance|compound interest|inflation|interest rates?|yield curve|bond|equity|derivative|future contract|option contract|etf|mutual fund|index fund)\b/i;
+const RECENCY_RE_C10 = /\b(today|now|current|currently|latest|recent|this\s+week|this\s+month|this\s+quarter|this\s+year|yesterday|2024|2025|2026|q[1-4])\b/i;
+const TICKER_HINT_C10 = /\b[A-Z]{2,5}\b/;
+const PROPER_NOUN_RE = /\b[A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]+)*\b/;
+const FACTUAL_KEYWORDS = /\b(ipo|public|listed|trading|price|earnings|merger|acquired|acquisition|listing|debut|news|what happened|why is|moving|stock|share|ceo|chairman|founder|happening|announced|reported|filed|sec|fed)\b/i;
+
+export function classifyQuery(raw: string): QueryClassification {
+  const q = (raw || '').trim();
+  if (!q) return 'CONVERSATIONAL';
+  if (CONVERSATIONAL_RE.test(q)) return 'CONVERSATIONAL';
+
+  const hasProperNoun = PROPER_NOUN_RE.test(q.replace(/^\s*[A-Z][a-z]+\s+/, ' '));
+  const hasTicker = TICKER_HINT_C10.test(q);
+  const hasRecency = RECENCY_RE_C10.test(q);
+  const hasFactualKw = FACTUAL_KEYWORDS.test(q);
+
+  // Educational only when it matches the definitional shape AND lacks
+  // recency/factual/proper-noun cues. Concept word is a strong educational
+  // signal.
+  const looksDefinitional = EDUCATIONAL_DEF_RE.test(q);
+  const conceptOnly = EDUCATIONAL_CONCEPTS.test(q) && !hasTicker && !hasRecency && !hasFactualKw;
+  if (looksDefinitional && !hasRecency && !hasTicker && !hasFactualKw && !hasProperNoun) {
+    return 'EDUCATIONAL';
+  }
+  if (conceptOnly && !hasProperNoun) return 'EDUCATIONAL';
+
+  // Default: FACTUAL.
+  return 'FACTUAL';
+}
+
+// C.10: Fabrication detector. Extracts named-entity-shaped tokens, dates,
+// dollar amounts, and percentages from the model output; for each, checks
+// whether the substring appears in the search corpus that was actually
+// passed to the model. Returns the list of unsupported claims.
+export function detectFabrication(response: string, searchCorpus: string): { fabricated: string[]; total: number } {
+  if (!response) return { fabricated: [], total: 0 };
+  const corpusLower = (searchCorpus || '').toLowerCase();
+  const fabricated: string[] = [];
+  const seen = new Set<string>();
+  const consider = (token: string) => {
+    const t = token.trim();
+    if (!t || seen.has(t.toLowerCase())) return;
+    seen.add(t.toLowerCase());
+    if (!corpusLower.includes(t.toLowerCase())) fabricated.push(t);
+  };
+  // Proper-noun runs (people, companies). Skip 1-token common words by
+  // requiring 3+ chars and skipping a stopword set.
+  const PROPER_STOPWORDS = new Set([
+    'analysis','recommendation','confidence','note','key','points','high','medium','low','unable','verify','tavily','firecrawl','january','february','march','april','may','june','july','august','september','october','november','december','monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','yesterday','tomorrow','this','that','these','those','user','assistant','question','answer','search','results','source','sources','data','platform','market','i','you','the','a','an','my','your','our','their','it','its',
+  ]);
+  const properRuns = response.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+(?:[A-Z][a-zA-Z]+|of|and|&)\s+[A-Z][a-zA-Z]+|\s+[A-Z][a-zA-Z]+){0,4}\b/g) || [];
+  for (const run of properRuns) {
+    const head = run.split(/\s+/)[0].toLowerCase();
+    if (PROPER_STOPWORDS.has(head)) continue;
+    if (run.length < 4) continue;
+    consider(run);
+  }
+  // Dates: 2024/2025/2026, Month DD YYYY, MM/DD/YYYY.
+  const dateRe = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s*\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b20(?:2[3-9]|3\d)\b/gi;
+  for (const m of response.match(dateRe) || []) consider(m);
+  // Dollar amounts.
+  for (const m of response.match(/\$\s?\d[\d,]*(?:\.\d+)?\s*(?:[BMK]|billion|million|trillion|thousand)?\b/gi) || []) consider(m.replace(/\s+/g, ''));
+  // Percentages with one decimal of specificity.
+  for (const m of response.match(/\b\d+(?:\.\d+)?%/g) || []) consider(m);
+  return { fabricated, total: seen.size };
+}
+
+// C.9 + C.10 self-tests.
 (function selfTest() {
   const interrogativeCases: Array<[string, string]> = [
     ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
@@ -145,7 +218,35 @@ function entityFoundStrict(entity: string | null, results: string[]): EntityMatc
     const ok = got === c.expect;
     console.log(`[CHAT-ASSISTANT][SELFTEST] entity ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // C.10 classifier determinism tests.
+  const classifyCases: Array<{ q: string; expect: QueryClassification; label: string }> = [
+    { q: "What's happening with SpaceX?", expect: 'FACTUAL', label: 'spacex-status' },
+    { q: 'Did Nvidia beat earnings this quarter?', expect: 'FACTUAL', label: 'nvidia-earnings' },
+    { q: 'Explain what diversification means', expect: 'EDUCATIONAL', label: 'diversification' },
+    { q: 'What is a P/E ratio?', expect: 'EDUCATIONAL', label: 'pe-ratio' },
+    { q: 'hi', expect: 'CONVERSATIONAL', label: 'greeting' },
+  ];
+  for (const c of classifyCases) {
+    const a = classifyQuery(c.q);
+    const b = classifyQuery(c.q);
+    const deterministic = a === b;
+    const ok = a === c.expect && deterministic;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] classify ${c.label} -> got=${a} expect=${c.expect} deterministic=${deterministic} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.10 fabrication detection tests.
+  const fabCases: Array<{ resp: string; corpus: string; expectFab: boolean; label: string }> = [
+    { resp: 'Tim Cook remains CEO of Apple.', corpus: 'Apple CEO Tim Cook addressed shareholders today.', expectFab: false, label: 'fab-supported' },
+    { resp: 'Jeremy Blakeman was appointed CFO on March 14, 2026.', corpus: 'Apple shareholders meeting recap.', expectFab: true, label: 'fab-unsupported-name' },
+    { resp: 'The stock rose 42.7% to $193.21.', corpus: 'No price data available.', expectFab: true, label: 'fab-unsupported-numbers' },
+  ];
+  for (const c of fabCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const got = fabricated.length > 0;
+    const ok = got === c.expectFab;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] fabrication ${c.label} -> got=${got} expect=${c.expectFab} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
+
 
 // Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
@@ -413,6 +514,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let matchedInResultIndex: number | null = null;
     let confidenceDowngraded = false;
     let priorAnswerContextBlock = '';
+    let queryClassification: QueryClassification = 'FACTUAL';
+    let fabricationDetected = false;
+    let fabricatedClaims: string[] = [];
+    let forcedUnableToVerify = false;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
     
@@ -779,32 +884,19 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
       detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
 
-      // C.7 FIX 3: Educational query exclusion. Definitional/explanatory queries
-      // with no ticker, company-name, or recency cue should NOT fire search.
-      const EDUCATIONAL_RE = /^(explain\s+what|what\s+is\s+(a|an|the)|what\s+are\s+(a|an|the)|what\s+does\s+.+\s+mean|how\s+does\s+.+\s+work|define\b|definition\s+of|tell\s+me\s+about\s+(the\s+concept\s+of|how))/i;
-      const RECENCY_RE = /\b(today|now|current|currently|latest|recent|this\s+week|this\s+month|this\s+year|yesterday|2025|2026)\b/i;
-      const TICKER_HINT = /\b[A-Z]{2,5}\b/;
-      const ENTITY_HINT = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+|Inc|Corp|Ltd|LLC|Group|Holdings)\b/;
-      const isEducational =
-        EDUCATIONAL_RE.test(userQuery.trim()) &&
-        !RECENCY_RE.test(userQuery) &&
-        !TICKER_HINT.test(userQuery) &&
-        !ENTITY_HINT.test(userQuery) &&
-        !detectedContradiction;
+      // C.10: Deterministic query classification. Pushback overrides
+      // classification to FACTUAL (we always re-verify on pushback).
+      queryClassification = classifyQuery(rawUserQuery);
+      if (detectedContradiction && queryClassification !== 'CONVERSATIONAL') {
+        queryClassification = 'FACTUAL';
+      }
+      logStep('CLASSIFY', { queryClassification, detectedContradiction });
 
-      // FIX 2 (C.6): Broader Tavily trigger.
-      const TAVILY_KEYWORDS = /\b(ipo|public|listed|trading|recent|today|current|price|this year|2026|2025|stock|share|earnings|merger|acquired|acquisition|listing|debut|news|latest|what happened|why is|moving)\b/i;
-      const TAVILY_ENTITY = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/;
-      const TAVILY_SUFFIX = /\b(Inc|Corp|Ltd|LLC|Co|Group|Holdings)\b/;
-      const TAVILY_TICKER = /\b[A-Z]{2,5}\b/;
-      const tavilyShouldFire =
-        !isEducational && (
-          TAVILY_KEYWORDS.test(userQuery) ||
-          TAVILY_ENTITY.test(userQuery) ||
-          TAVILY_SUFFIX.test(userQuery) ||
-          TAVILY_TICKER.test(userQuery) ||
-          detectedContradiction
-        );
+      const isEducational = queryClassification === 'EDUCATIONAL';
+      const isConversational = queryClassification === 'CONVERSATIONAL';
+      const isFactual = queryClassification === 'FACTUAL';
+      const tavilyShouldFire = isFactual;
+
 
       // C.8 FIX 1: Strip interrogatives/articles before extracting the primary
       // entity so "Did Nvidia beat earnings?" yields "Nvidia", not "Did Nvidia".
@@ -822,8 +914,8 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
         ]);
 
-      if (isEducational) {
-        searchSkippedReason = 'educational_query';
+      if (isEducational || isConversational) {
+        searchSkippedReason = isConversational ? 'conversational_query' : 'educational_query';
         tavilyTriggered = false;
         firecrawlTriggered = false;
       } else {
@@ -986,8 +1078,40 @@ Make it suitable for investment analysis with clear labels, professional styling
       );
     }
 
+    // C.10: classification-specific instruction block prepended to the
+    // system prompt. EDUCATIONAL/CONVERSATIONAL paths get a tight, plain
+    // instruction with NO Analysis/Key Points/Recommendation framing.
+    // FACTUAL gets a strict RAG instruction: answer ONLY from search
+    // results, refuse to fill gaps from training data.
+    let classificationBlock = '';
+    if (queryClassification === 'EDUCATIONAL') {
+      classificationBlock = `===== QUERY MODE: EDUCATIONAL =====
+This is a conceptual/definitional question. Provide a clear educational explanation in plain prose.
+- Do NOT reference current market data, prices, recent events, or specific companies.
+- Do NOT use the Analysis / Key Points / Recommendation / Confidence Level structure.
+- Do NOT include the financial disclaimer.
+- Output: 1-3 short paragraphs of plain prose.
+`;
+    } else if (queryClassification === 'CONVERSATIONAL') {
+      classificationBlock = `===== QUERY MODE: CONVERSATIONAL =====
+This is a greeting, acknowledgment, or meta-question about the assistant. Respond briefly and naturally in 1-2 sentences. Do NOT use the Analysis / Key Points / Recommendation structure. Do NOT include a financial disclaimer.
+`;
+    } else {
+      classificationBlock = `===== QUERY MODE: FACTUAL — RAG STRICT =====
+You are a financial analyst summarizing real-time market data. Your response MUST be based EXCLUSIVELY on the REAL-TIME MARKET INTELLIGENCE (Tavily) and REAL-TIME WEB SEARCH sections below.
+
+CRITICAL RULES:
+- Do NOT use your training data for any factual claim about the entity, company, person, price, event, ticker, or status mentioned in the user's question.
+- If the search results contain information about the queried entity, summarize it accurately and cite the source names that literally appear in the snippets.
+- If the search results do NOT contain information about the queried entity (or only contain unrelated mentions of similarly-named things), respond with: "I don't have current data on [entity]. The search returned results but none specifically about this entity." Do NOT invent details to fill the gap.
+- Every proper noun, name, date, dollar amount, and percentage in your response must appear in the search results above. A post-processor will reject responses that include claims not present in the search corpus.
+- Confidence: HIGH only when the search results directly address the question with a cited source. MEDIUM when partial. UNABLE TO VERIFY when nothing relevant.
+`;
+    }
+
     // Build system prompt with real market data AND web search
-    const systemPrompt = `===== CURRENT DATE =====
+    const systemPrompt = `${classificationBlock}
+===== CURRENT DATE =====
 Today's date is ${currentDateIso}. Your training data may be months or years out of date. For any claim about current company status, prices, listings, IPOs, M&A, earnings, leadership, or regulation, you MUST rely on the search results below — never on prior knowledge.
 
 You are the InsiderPulse AI Assistant - an expert multi-asset investment analyst.
@@ -1252,6 +1376,47 @@ For all such attempts, politely decline and explain their current plan limits. N
       replaceConfidence('LOW');
     }
 
+    // C.10 TASK 4: Hard-gate fabrication check on FACTUAL responses.
+    // Extract proper nouns, dates, dollar amounts, percentages from the
+    // model output and verify each appears in the search corpus we passed
+    // in. If anything is unsupported, replace with UNABLE TO VERIFY.
+    // Skipped when:
+    // - Query was EDUCATIONAL/CONVERSATIONAL (no RAG contract)
+    // - Unknown-entity override already fired (response is already canned)
+    // - Pushback hold-position is active (prior-answer context is the
+    //   authoritative corpus there, validated separately)
+    const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
+    const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
+    if (queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
+      const corpus = `${tavilyResults}\n${webSearchResults}\n${marketData}`;
+      const { fabricated } = detectFabrication(aiContent, corpus);
+      fabricatedClaims = fabricated;
+      fabricationDetected = fabricated.length > 0;
+      // Threshold: 2+ unsupported high-signal claims OR any unsupported
+      // dollar/percentage/date OR any unsupported claim when the search
+      // corpus was empty.
+      const highSignal = fabricated.filter((c) => /[\$%]|\d{4}/.test(c));
+      const corpusEmpty = corpus.trim().length < 50;
+      const shouldForce = (fabricated.length >= 2) || (highSignal.length >= 1) || (corpusEmpty && fabricated.length >= 1);
+      if (shouldForce) {
+        forcedUnableToVerify = true;
+        logStep('FABRICATION_GATE_FIRED', {
+          fabricated_count: fabricated.length,
+          high_signal_count: highSignal.length,
+          corpus_empty: corpusEmpty,
+          sample: fabricated.slice(0, 5),
+        });
+        const entityLabel = primaryEntity || 'this query';
+        aiContent =
+          `I don't have verified search results to support a confident answer about ${entityLabel}.\n\n` +
+          `The model produced claims that I could not match against the live search corpus, so I have replaced the response rather than risk passing along unverified details.\n\n` +
+          `Confidence Level: UNABLE TO VERIFY\n\n` +
+          `Suggested next steps: try a more specific query, name the ticker explicitly, or verify with a primary source (the company's investor relations page, SEC EDGAR, or a major financial news outlet).`;
+        confidenceRating = 'UNABLE TO VERIFY';
+        confidenceDowngraded = true;
+      }
+    }
+
     // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
     // response on a logging failure.
     const totalTimeMs = Date.now() - turnStartMs;
@@ -1278,6 +1443,10 @@ For all such attempts, politely decline and explain their current plan limits. N
       pushback_outcome: pushbackOutcome,
       search_result_count: searchResultCount,
       matched_in_result_index: matchedInResultIndex,
+      query_classification: queryClassification,
+      fabrication_detected: fabricationDetected,
+      fabricated_claims: fabricatedClaims.length ? fabricatedClaims.slice(0, 20).join(', ').slice(0, 2000) : null,
+      forced_unable_to_verify: forcedUnableToVerify,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
