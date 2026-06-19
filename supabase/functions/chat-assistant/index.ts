@@ -899,7 +899,7 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let forcedUnableToVerify = false;
     // C.11 state
     let entityInWhitelist: boolean | null = null;
-    let whitelistSource: 'assets' | 'figures' | null = null;
+    let whitelistSource: 'assets' | 'figures' | 'trusted_corpus_fallback' | null = null;
     let trustedResultCount = 0;
     let rejectedResultCount = 0;
     let rejectedDomains: string[] = [];
