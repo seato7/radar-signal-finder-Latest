@@ -863,22 +863,37 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
 
-      // C.8 FIX 2: Strict (proximity) entity-match check.
+      // C.9 FIX 2: Strict full-name substring entity-match.
       if (primaryEntity) {
-        entityMatchFound = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
+        const m = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
+        entityMatchFound = m.matched;
+        searchResultCount = m.resultCount;
+        matchedInResultIndex = m.matchedIndex === -1 ? null : m.matchedIndex;
+        logStep('ENTITY_MATCH', {
+          primary_entity: primaryEntity,
+          search_result_count: searchResultCount,
+          matched_in_result_index: matchedInResultIndex,
+          entity_match_found: entityMatchFound,
+        });
       }
 
-      // C.8 FIX 3: Pushback classification. When the user pushes back, compare
-      // the prior assistant answer against fresh search results to decide
-      // whether to hold position (CONFIRM), revise (CONTRADICT), or
-      // acknowledge inconclusive evidence (INCONCLUSIVE). The classification
-      // is surfaced to the model AND used to suppress the unknown-entity
-      // override so a correct answer is not capitulated on noise.
+      // C.8/C.9 FIX 3: Pushback classification. Decide CONFIRM / CONTRADICT
+      // / INCONCLUSIVE / NO_PRIOR_EVIDENCE so the model holds position when
+      // it had prior cited evidence and only capitulates when there was
+      // truly nothing to anchor on.
       if (detectedContradiction) {
         const priorAssistant = [...messages].slice(0, -1).reverse().find((m: any) => m.role === 'assistant');
         const priorText = (priorAssistant?.content || '') as string;
-        const fresh = `${tavilyResults}\n${webSearchResults}`;
-        if (!priorText || fresh.trim().length === 0) {
+        const NAMED_SOURCES_RE = /\b(Yahoo Finance|CNBC|Reuters|Bloomberg|SEC|WSJ|Wall Street Journal|Financial Times|FT\.com|MarketWatch|Barron's|Forbes|Morningstar|Seeking Alpha|Nasdaq|NYSE|AP News|Associated Press)\b/i;
+        const priorHadCitation = !!priorText && NAMED_SOURCES_RE.test(priorText);
+        const priorSources = Array.from(
+          new Set((priorText.match(NAMED_SOURCES_RE) || []).map((s) => s))
+        );
+        const fresh = `${tavilyResults}\n${webSearchResults}`.trim();
+
+        if (!priorText || !priorHadCitation) {
+          pushbackOutcome = 'no_prior_evidence';
+        } else if (fresh.length === 0) {
           pushbackOutcome = 'inconclusive';
         } else {
           const properNouns = Array.from(
@@ -898,7 +913,19 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
             pushbackOutcome = 'inconclusive';
           }
         }
-        logStep('PUSHBACK', { pushbackOutcome });
+
+        // Inject prior-answer context for the model when we have it.
+        if (priorText) {
+          const truncatedPrior = priorText.length > 1500 ? priorText.slice(0, 1500) + '...[truncated]' : priorText;
+          priorAnswerContextBlock = `===== PRIOR ANSWER CONTEXT =====
+Your prior answer was:
+${truncatedPrior}
+
+This answer had the following sources cited:
+${priorSources.length ? priorSources.join(', ') : '[no named sources detected in prior answer]'}
+`;
+        }
+        logStep('PUSHBACK', { pushbackOutcome, priorHadCitation, priorSources });
       }
 
     } catch (error) {
