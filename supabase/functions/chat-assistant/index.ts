@@ -73,15 +73,16 @@ async function searchTavily(query: string, supabase: any): Promise<string> {
   }
 }
 
-// C.8 FIX 1: Strip leading interrogatives/discourse markers/articles before
-// extracting the primary entity. "Did Nvidia beat earnings?" → "Nvidia beat
-// earnings" → entity "Nvidia". Run a few passes for stacked prefixes
-// ("What is the current...").
-const INTERROGATIVE_PREFIX_RE = /^\s*(tell\s+me\s+about|show\s+me|give\s+me|explain|what(?:'s|\s+is|\s+are|\s+was|\s+were)?|who(?:'s|\s+is)?|whose|why(?:\s+(?:is|did|does))?|how(?:\s+(?:is|does|did))?|when|where|is|are|was|were|do|does|did|has|have|had|will|would|could|should|can)\b[\s,:\-]*/i;
-const ARTICLE_PREFIX_RE = /^\s*(the|a|an)\b\s+/i;
+// C.8/C.9 FIX 1: Strip leading interrogatives/discourse markers/articles
+// before extracting the primary entity. "Did Nvidia beat earnings?" →
+// "Nvidia beat earnings" → entity "Nvidia". Includes all auxiliary verbs
+// (is/are/was/were/do/does/did/has/have/had/will/would/could/should/can/
+// may/might). Loops to handle stacked prefixes ("Can you tell me about...").
+const INTERROGATIVE_PREFIX_RE = /^\s*(?:tell\s+me\s+about|show\s+me|give\s+me|explain|what(?:'s|\s+is|\s+are|\s+was|\s+were)?|who(?:'s|\s+is)?|whose|why(?:\s+(?:is|did|does))?|how(?:\s+(?:is|does|did))?|when|where|is|are|was|were|do|does|did|has|have|had|will|would|could|should|can|may|might|you)\b[\s,:\-?]*/i;
+const ARTICLE_PREFIX_RE = /^\s*(?:the|a|an)\b\s+/i;
 function stripInterrogatives(q: string): string {
   let s = (q || '').trim();
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const before = s;
     s = s.replace(INTERROGATIVE_PREFIX_RE, '');
     s = s.replace(ARTICLE_PREFIX_RE, '');
@@ -90,35 +91,61 @@ function stripInterrogatives(q: string): string {
   return s.trim();
 }
 
-// C.8 FIX 2: Strict multi-token entity match. Single-token entities just need
-// to appear. Multi-token entities require ALL tokens within a 50-char window
-// of each other inside the same search result. Catches fictional names like
-// "Zorbex Industries" (whose tokens never co-occur) while still passing real
-// multi-token names like "Berkshire Hathaway".
-function entityFoundStrict(entity: string | null, results: string[]): boolean {
-  if (!entity) return false;
-  const tokens = entity.split(/\s+/).filter(Boolean).map((t) => t.toLowerCase());
-  if (tokens.length === 0) return false;
-  const WINDOW = 50;
-  for (const result of results) {
-    if (!result) continue;
-    const lower = result.toLowerCase();
-    if (tokens.length === 1) {
-      if (lower.includes(tokens[0])) return true;
-      continue;
-    }
-    const [first, ...rest] = tokens;
-    let idx = lower.indexOf(first);
-    while (idx !== -1) {
-      const start = Math.max(0, idx - WINDOW);
-      const end = idx + first.length + WINDOW;
-      const window = lower.slice(start, end);
-      if (rest.every((t) => window.includes(t))) return true;
-      idx = lower.indexOf(first, idx + 1);
+// C.9 FIX 2: Strict full-name substring match. Single-token entities match
+// case-insensitively as substrings. Multi-token entities (e.g. "Apex
+// Quantum") require the FULL phrase to appear contiguously in at least one
+// search result. Strips possessive 's. Returns rich diagnostics so the
+// caller can persist which result matched.
+function stripPossessive(s: string): string {
+  return s.replace(/[\u2019']s\b/gi, '').trim();
+}
+interface EntityMatchResult {
+  matched: boolean;
+  matchedIndex: number; // -1 if none
+  resultCount: number;
+}
+function entityFoundStrict(entity: string | null, results: string[]): EntityMatchResult {
+  const resultCount = results.filter((r) => r && r.length > 0).length;
+  if (!entity) return { matched: false, matchedIndex: -1, resultCount };
+  const cleaned = stripPossessive(entity).toLowerCase().trim();
+  if (!cleaned) return { matched: false, matchedIndex: -1, resultCount };
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r) continue;
+    if (r.toLowerCase().includes(cleaned)) {
+      return { matched: true, matchedIndex: i, resultCount };
     }
   }
-  return false;
+  return { matched: false, matchedIndex: -1, resultCount };
 }
+
+// C.9 self-test: run at module load. Logs PASS/FAIL so deploy logs surface
+// regressions in the interrogative stripper or entity matcher.
+(function selfTest() {
+  const interrogativeCases: Array<[string, string]> = [
+    ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
+    ['Does Tesla make money?', 'Tesla make money'],
+    ['Will Apple report next week?', 'Apple report next week'],
+    ['Has Microsoft announced anything?', 'Microsoft announced anything'],
+    ['Can you tell me about AAPL?', 'AAPL'],
+  ];
+  for (const [input, expected] of interrogativeCases) {
+    const got = stripInterrogatives(input).replace(/[?.!]+$/, '').trim();
+    const exp = expected.replace(/[?.!]+$/, '').trim();
+    const ok = got.toLowerCase().startsWith(exp.toLowerCase().split(/\s+/)[0]);
+    console.log(`[CHAT-ASSISTANT][SELFTEST] strip "${input}" -> "${got}" ${ok ? 'PASS' : `FAIL (expected start "${exp}")`}`);
+  }
+  const entityCases: Array<{ entity: string; result: string; expect: boolean; label: string }> = [
+    { entity: 'Apex Quantum', result: 'Apex Industries quantum computing news', expect: false, label: 'apex-quantum-noncontig' },
+    { entity: 'Apex Quantum', result: 'Apex Quantum Inc announced today', expect: true, label: 'apex-quantum-contig' },
+    { entity: 'Berkshire Hathaway', result: 'Berkshire Hathaway Inc earnings posted', expect: true, label: 'berkshire-hathaway' },
+  ];
+  for (const c of entityCases) {
+    const got = entityFoundStrict(c.entity, [c.result]).matched;
+    const ok = got === c.expect;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] entity ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+})();
 
 // Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
