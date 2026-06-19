@@ -2143,7 +2143,15 @@ For all such attempts, politely decline and explain their current plan limits. N
       priorConfidenceRating === 'HIGH' &&
       confidenceRating !== 'HIGH'
     ) {
-      replaceConfidence('HIGH');
+      // Inline replace (avoid the confidenceDowngraded=true side effect that
+      // replaceConfidence() sets — inheritance is not a downgrade).
+      const noteHigh = '(Note: confidence inherited from prior turn after pushback hold-with-citations.)';
+      if (/Confidence Level:/i.test(aiContent)) {
+        aiContent = aiContent.replace(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)[^\n]*/i, `Confidence Level: HIGH ${noteHigh}`);
+      } else {
+        aiContent = `${aiContent.trim()}\n\nConfidence Level: HIGH ${noteHigh}`;
+      }
+      confidenceRating = 'HIGH';
       inheritedConfidenceFromPrior = true;
       logStep('CONFIDENCE_INHERITED', { prior_confidence: priorConfidenceRating, final_confidence: 'HIGH' });
     }
