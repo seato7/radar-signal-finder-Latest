@@ -119,8 +119,81 @@ function entityFoundStrict(entity: string | null, results: string[]): EntityMatc
   return { matched: false, matchedIndex: -1, resultCount };
 }
 
-// C.9 self-test: run at module load. Logs PASS/FAIL so deploy logs surface
-// regressions in the interrogative stripper or entity matcher.
+// C.10: Deterministic query classifier. Buckets each turn into FACTUAL,
+// EDUCATIONAL, or CONVERSATIONAL. Rule order matters: conversational
+// short-circuits first, then educational definitional patterns, and
+// FACTUAL is the default when in doubt.
+export type QueryClassification = 'FACTUAL' | 'EDUCATIONAL' | 'CONVERSATIONAL';
+const CONVERSATIONAL_RE = /^\s*(hi|hello|hey|yo|thanks|thank you|thx|ok|okay|cool|got it|nice|great|hmm|interesting|what can you do|who are you|what are you|help|how does this work)\b[\s.!?]*$/i;
+const EDUCATIONAL_DEF_RE = /^\s*(explain\s+what|what\s+is\s+(a|an|the)\b|what\s+are\s+(a|an|the)\b|what\s+does\s+\w+\s+mean|how\s+does\s+\w+\s+work|define\b|definition\s+of|tell\s+me\s+about\s+(the\s+concept\s+of|how))/i;
+const EDUCATIONAL_CONCEPTS = /\b(diversification|p\/?e ratio|market cap(italization)?|dividend|volatility|beta|alpha|sharpe|drawdown|portfolio|asset allocation|risk tolerance|compound interest|inflation|interest rates?|yield curve|bond|equity|derivative|future contract|option contract|etf|mutual fund|index fund)\b/i;
+const RECENCY_RE_C10 = /\b(today|now|current|currently|latest|recent|this\s+week|this\s+month|this\s+quarter|this\s+year|yesterday|2024|2025|2026|q[1-4])\b/i;
+const TICKER_HINT_C10 = /\b[A-Z]{2,5}\b/;
+const PROPER_NOUN_RE = /\b[A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]+)*\b/;
+const FACTUAL_KEYWORDS = /\b(ipo|public|listed|trading|price|earnings|merger|acquired|acquisition|listing|debut|news|what happened|why is|moving|stock|share|ceo|chairman|founder|happening|announced|reported|filed|sec|fed)\b/i;
+
+export function classifyQuery(raw: string): QueryClassification {
+  const q = (raw || '').trim();
+  if (!q) return 'CONVERSATIONAL';
+  if (CONVERSATIONAL_RE.test(q)) return 'CONVERSATIONAL';
+
+  const hasProperNoun = PROPER_NOUN_RE.test(q.replace(/^\s*[A-Z][a-z]+\s+/, ' '));
+  const hasTicker = TICKER_HINT_C10.test(q);
+  const hasRecency = RECENCY_RE_C10.test(q);
+  const hasFactualKw = FACTUAL_KEYWORDS.test(q);
+
+  // Educational only when it matches the definitional shape AND lacks
+  // recency/factual/proper-noun cues. Concept word is a strong educational
+  // signal.
+  const looksDefinitional = EDUCATIONAL_DEF_RE.test(q);
+  const conceptOnly = EDUCATIONAL_CONCEPTS.test(q) && !hasTicker && !hasRecency && !hasFactualKw;
+  if (looksDefinitional && !hasRecency && !hasTicker && !hasFactualKw && !hasProperNoun) {
+    return 'EDUCATIONAL';
+  }
+  if (conceptOnly && !hasProperNoun) return 'EDUCATIONAL';
+
+  // Default: FACTUAL.
+  return 'FACTUAL';
+}
+
+// C.10: Fabrication detector. Extracts named-entity-shaped tokens, dates,
+// dollar amounts, and percentages from the model output; for each, checks
+// whether the substring appears in the search corpus that was actually
+// passed to the model. Returns the list of unsupported claims.
+export function detectFabrication(response: string, searchCorpus: string): { fabricated: string[]; total: number } {
+  if (!response) return { fabricated: [], total: 0 };
+  const corpusLower = (searchCorpus || '').toLowerCase();
+  const fabricated: string[] = [];
+  const seen = new Set<string>();
+  const consider = (token: string) => {
+    const t = token.trim();
+    if (!t || seen.has(t.toLowerCase())) return;
+    seen.add(t.toLowerCase());
+    if (!corpusLower.includes(t.toLowerCase())) fabricated.push(t);
+  };
+  // Proper-noun runs (people, companies). Skip 1-token common words by
+  // requiring 3+ chars and skipping a stopword set.
+  const PROPER_STOPWORDS = new Set([
+    'analysis','recommendation','confidence','note','key','points','high','medium','low','unable','verify','tavily','firecrawl','january','february','march','april','may','june','july','august','september','october','november','december','monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','yesterday','tomorrow','this','that','these','those','user','assistant','question','answer','search','results','source','sources','data','platform','market','i','you','the','a','an','my','your','our','their','it','its',
+  ]);
+  const properRuns = response.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+(?:[A-Z][a-zA-Z]+|of|and|&)\s+[A-Z][a-zA-Z]+|\s+[A-Z][a-zA-Z]+){0,4}\b/g) || [];
+  for (const run of properRuns) {
+    const head = run.split(/\s+/)[0].toLowerCase();
+    if (PROPER_STOPWORDS.has(head)) continue;
+    if (run.length < 4) continue;
+    consider(run);
+  }
+  // Dates: 2024/2025/2026, Month DD YYYY, MM/DD/YYYY.
+  const dateRe = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s*\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b20(?:2[3-9]|3\d)\b/gi;
+  for (const m of response.match(dateRe) || []) consider(m);
+  // Dollar amounts.
+  for (const m of response.match(/\$\s?\d[\d,]*(?:\.\d+)?\s*(?:[BMK]|billion|million|trillion|thousand)?\b/gi) || []) consider(m.replace(/\s+/g, ''));
+  // Percentages with one decimal of specificity.
+  for (const m of response.match(/\b\d+(?:\.\d+)?%/g) || []) consider(m);
+  return { fabricated, total: seen.size };
+}
+
+// C.9 + C.10 self-tests.
 (function selfTest() {
   const interrogativeCases: Array<[string, string]> = [
     ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
@@ -145,7 +218,35 @@ function entityFoundStrict(entity: string | null, results: string[]): EntityMatc
     const ok = got === c.expect;
     console.log(`[CHAT-ASSISTANT][SELFTEST] entity ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // C.10 classifier determinism tests.
+  const classifyCases: Array<{ q: string; expect: QueryClassification; label: string }> = [
+    { q: "What's happening with SpaceX?", expect: 'FACTUAL', label: 'spacex-status' },
+    { q: 'Did Nvidia beat earnings this quarter?', expect: 'FACTUAL', label: 'nvidia-earnings' },
+    { q: 'Explain what diversification means', expect: 'EDUCATIONAL', label: 'diversification' },
+    { q: 'What is a P/E ratio?', expect: 'EDUCATIONAL', label: 'pe-ratio' },
+    { q: 'hi', expect: 'CONVERSATIONAL', label: 'greeting' },
+  ];
+  for (const c of classifyCases) {
+    const a = classifyQuery(c.q);
+    const b = classifyQuery(c.q);
+    const deterministic = a === b;
+    const ok = a === c.expect && deterministic;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] classify ${c.label} -> got=${a} expect=${c.expect} deterministic=${deterministic} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.10 fabrication detection tests.
+  const fabCases: Array<{ resp: string; corpus: string; expectFab: boolean; label: string }> = [
+    { resp: 'Tim Cook remains CEO of Apple.', corpus: 'Apple CEO Tim Cook addressed shareholders today.', expectFab: false, label: 'fab-supported' },
+    { resp: 'Jeremy Blakeman was appointed CFO on March 14, 2026.', corpus: 'Apple shareholders meeting recap.', expectFab: true, label: 'fab-unsupported-name' },
+    { resp: 'The stock rose 42.7% to $193.21.', corpus: 'No price data available.', expectFab: true, label: 'fab-unsupported-numbers' },
+  ];
+  for (const c of fabCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const got = fabricated.length > 0;
+    const ok = got === c.expectFab;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] fabrication ${c.label} -> got=${got} expect=${c.expectFab} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
+
 
 // Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
