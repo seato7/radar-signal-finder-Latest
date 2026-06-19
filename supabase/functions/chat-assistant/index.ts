@@ -165,11 +165,26 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
   const corpusLower = (searchCorpus || '').toLowerCase();
   const fabricated: string[] = [];
   const seen = new Set<string>();
+  // Tokens that don't carry standalone identity weight — accepted as supported
+  // when surrounding tokens are corpus-grounded.
+  const PHRASE_FILLERS = new Set(['of','and','the','for','a','an','to','in','on','at','&','inc','inc.','corp','corp.','co','co.','ltd','llc','plc','group','holdings','holding','company']);
+  const PHRASE_TITLES = new Set(['ceo','cfo','coo','cto','cio','president','chairman','chairwoman','founder','cofounder','co-founder','director','chief','officer','head','vp']);
   const consider = (token: string) => {
     const t = token.trim();
     if (!t || seen.has(t.toLowerCase())) return;
     seen.add(t.toLowerCase());
-    if (!corpusLower.includes(t.toLowerCase())) fabricated.push(t);
+    const lower = t.toLowerCase();
+    if (corpusLower.includes(lower)) return;
+    // Token-bag fallback for multi-word proper-noun runs: if every meaningful
+    // token (not a filler/title) appears somewhere in the corpus, treat as
+    // supported. Prevents false positives from word-order differences like
+    // "CEO of Apple" vs corpus "Apple CEO Tim Cook".
+    const parts = lower.split(/\s+/);
+    if (parts.length > 1) {
+      const meaningful = parts.filter(p => !PHRASE_FILLERS.has(p) && !PHRASE_TITLES.has(p) && p.length >= 2);
+      if (meaningful.length > 0 && meaningful.every(p => corpusLower.includes(p))) return;
+    }
+    fabricated.push(t);
   };
   // Proper-noun runs (people, companies). Skip 1-token common words by
   // requiring 3+ chars and skipping a stopword set.
