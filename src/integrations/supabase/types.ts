@@ -1116,8 +1116,11 @@ export type Database = {
           created_at: string
           detected_contradiction: boolean
           entity_match_found: boolean
+          fabricated_claims: string | null
+          fabrication_detected: boolean | null
           firecrawl_chars: number
           firecrawl_time_ms: number | null
+          forced_unable_to_verify: boolean | null
           gemini_time_ms: number | null
           has_current_date: boolean
           id: string
@@ -1125,6 +1128,7 @@ export type Database = {
           model_input_total_chars: number
           primary_entity: string | null
           pushback_outcome: string | null
+          query_classification: string | null
           search_result_count: number | null
           search_skipped_reason: string | null
           tavily_chars: number
@@ -1141,8 +1145,11 @@ export type Database = {
           created_at?: string
           detected_contradiction?: boolean
           entity_match_found?: boolean
+          fabricated_claims?: string | null
+          fabrication_detected?: boolean | null
           firecrawl_chars?: number
           firecrawl_time_ms?: number | null
+          forced_unable_to_verify?: boolean | null
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
@@ -1150,6 +1157,7 @@ export type Database = {
           model_input_total_chars?: number
           primary_entity?: string | null
           pushback_outcome?: string | null
+          query_classification?: string | null
           search_result_count?: number | null
           search_skipped_reason?: string | null
           tavily_chars?: number
@@ -1166,8 +1174,11 @@ export type Database = {
           created_at?: string
           detected_contradiction?: boolean
           entity_match_found?: boolean
+          fabricated_claims?: string | null
+          fabrication_detected?: boolean | null
           firecrawl_chars?: number
           firecrawl_time_ms?: number | null
+          forced_unable_to_verify?: boolean | null
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
@@ -1175,6 +1186,7 @@ export type Database = {
           model_input_total_chars?: number
           primary_entity?: string | null
           pushback_outcome?: string | null
+          query_classification?: string | null
           search_result_count?: number | null
           search_skipped_reason?: string | null
           tavily_chars?: number
