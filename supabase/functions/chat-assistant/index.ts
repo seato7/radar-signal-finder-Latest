@@ -1405,7 +1405,32 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
       primaryEntity = entityHit;
-      logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
+
+      // C.13 FIX 4: On pushback / detected contradiction, do NOT re-extract
+      // entity from the follow-up message ("Actually", "Are you sure?",
+      // "Fed"...). Inherit primary_entity from the prior turn's diagnostic
+      // record so the same entity carries through the conversation.
+      if (detectedContradiction && authenticatedUserId) {
+        try {
+          const { data: prior } = await supabase
+            .from('chat_assistant_diagnostics')
+            .select('primary_entity')
+            .eq('user_id', authenticatedUserId)
+            .not('primary_entity', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          const inherited = Array.isArray(prior) && prior.length > 0 ? prior[0].primary_entity : null;
+          if (inherited) {
+            primaryEntity = inherited;
+            inheritedEntityFromPrior = true;
+            logStep('ENTITY_INHERITED', { inherited_from_prior: true, primary_entity: primaryEntity });
+          }
+        } catch (e) {
+          logStep('ENTITY_INHERIT_FAILED', { message: (e as Error).message });
+        }
+      }
+
+      logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity, inheritedFromPrior: inheritedEntityFromPrior });
 
       // C.11 FIX 1 + C.12 FIX 2: Entity verifiability whitelist with
       // trusted-corpus fallback. If the entity is in assets/figures, proceed
