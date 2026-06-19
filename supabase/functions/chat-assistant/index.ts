@@ -1367,13 +1367,24 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
       detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
 
+      // C.14 FIX 2: On pushback, capture the prior user query AND prior assistant
+      // text early so (a) the fresh search runs against the original topic, not the
+      // pushback phrase, and (b) the prompt builder can inject prior-answer context.
+      let priorUserQuery = '';
+      let priorAssistantText = '';
+      if (detectedContradiction) {
+        const reversed = [...messages].slice(0, -1).reverse();
+        priorAssistantText = (reversed.find((m: any) => m.role === 'assistant')?.content || '') as string;
+        priorUserQuery = (reversed.find((m: any) => m.role === 'user')?.content || '') as string;
+      }
+
       // C.10: Deterministic query classification. Pushback overrides
       // classification to FACTUAL (we always re-verify on pushback).
       queryClassification = classifyQuery(rawUserQuery);
       if (detectedContradiction && queryClassification !== 'CONVERSATIONAL') {
         queryClassification = 'FACTUAL';
       }
-      logStep('CLASSIFY', { queryClassification, detectedContradiction });
+      logStep('CLASSIFY', { queryClassification, detectedContradiction, priorUserQueryLen: priorUserQuery.length });
 
       const isEducational = queryClassification === 'EDUCATIONAL';
       const isConversational = queryClassification === 'CONVERSATIONAL';
