@@ -1833,13 +1833,7 @@ For all such attempts, politely decline and explain their current plan limits. N
         search_result_count: searchResultCount,
         matched_in_result_index: matchedInResultIndex,
       });
-      aiContent =
-        `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
-        `- The company or entity may be private or recently formed\n` +
-        `- My search sources may not cover this specific entity\n` +
-        `- The entity name may need to be more specific\n\n` +
-        `Confidence Level: UNABLE TO VERIFY\n\n` +
-        `Suggested next steps: try a more specific query, or verify with a primary source.`;
+      aiContent = buildUnableToVerifyReply(primaryEntity);
       confidenceRating = 'UNABLE TO VERIFY';
       confidenceDowngraded = true;
     } else if (confidenceRating === 'HIGH' && (!hasNamedSource || !hasSearchEvidence)) {
