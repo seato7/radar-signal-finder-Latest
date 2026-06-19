@@ -1701,15 +1701,17 @@ This is a conceptual/definitional question. Provide a clear educational explanat
 This is a greeting, acknowledgment, or meta-question about the assistant. Respond briefly and naturally in 1-2 sentences. Do NOT use the Analysis / Key Points / Recommendation structure. Do NOT include a financial disclaimer.
 `;
     } else {
-      classificationBlock = `===== QUERY MODE: FACTUAL — RAG STRICT =====
-You are a financial analyst summarizing real-time market data. Your response MUST be based EXCLUSIVELY on the REAL-TIME MARKET INTELLIGENCE (Tavily) and REAL-TIME WEB SEARCH sections below.
+      classificationBlock = `===== QUERY MODE: FACTUAL — RAG STRICT WITH CITATIONS =====
+You are answering using REAL-TIME SEARCH RESULTS provided below (REAL-TIME MARKET INTELLIGENCE + REAL-TIME WEB SEARCH). The sources are numbered [1], [2], [3]... in the order they appear.
 
-CRITICAL RULES:
+CRITICAL CITATION RULES:
+- For each factual claim (numbers, dates, names, prices, percentages, status changes), append the source number in brackets like [1] or [2][3] immediately after the claim.
+- If a claim is not supported by any provided source, do NOT make that claim — instead say "I don't have a current source for that."
+- Never invent numbers, dates, or names. Paraphrasing source content is fine and expected; fabricating facts is not.
+- Cite as you go, not at the end. Every sentence that asserts a fact must carry a citation.
 - Do NOT use your training data for any factual claim about the entity, company, person, price, event, ticker, or status mentioned in the user's question.
-- If the search results contain information about the queried entity, summarize it accurately and cite the source names that literally appear in the snippets.
-- If the search results do NOT contain information about the queried entity (or only contain unrelated mentions of similarly-named things), respond with: "I don't have current data on [entity]. The search returned results but none specifically about this entity." Do NOT invent details to fill the gap.
-- Every proper noun, name, date, dollar amount, and percentage in your response must appear in the search results above. A post-processor will reject responses that include claims not present in the search corpus.
-- Confidence: HIGH only when the search results directly address the question with a cited source. MEDIUM when partial. UNABLE TO VERIFY when nothing relevant.
+- If the search results do NOT contain information about the queried entity (or only contain unrelated mentions), respond with: "I don't have current data on [entity]. The search returned results but none specifically about this entity."
+- Confidence: HIGH when 3+ trusted-source citations directly support the answer. MEDIUM when 1-2 citations support. UNABLE TO VERIFY when no citation is possible.
 `;
     }
 
