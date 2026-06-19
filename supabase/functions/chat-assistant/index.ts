@@ -1443,6 +1443,10 @@ For all such attempts, politely decline and explain their current plan limits. N
       pushback_outcome: pushbackOutcome,
       search_result_count: searchResultCount,
       matched_in_result_index: matchedInResultIndex,
+      query_classification: queryClassification,
+      fabrication_detected: fabricationDetected,
+      fabricated_claims: fabricatedClaims.length ? fabricatedClaims.slice(0, 20).join(', ').slice(0, 2000) : null,
+      forced_unable_to_verify: forcedUnableToVerify,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
