@@ -1074,6 +1074,28 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       primaryEntity = entityMatch ? entityMatch[0] : null;
       logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
+      // C.11 FIX 1: Entity verifiability whitelist. Before spending any
+      // Tavily/Firecrawl budget on a FACTUAL turn with an extracted entity,
+      // confirm the entity is either (a) in the assets table or (b) a
+      // curated known financial figure. Miss → canned UNABLE TO VERIFY and
+      // skip search + Gemini entirely. Pushback turns bypass this gate so
+      // the pushback-hold mechanism can still operate.
+      if (isFactual && primaryEntity && !detectedContradiction) {
+        const v = await isEntityVerifiable(supabase, primaryEntity);
+        entityInWhitelist = v.matched;
+        whitelistSource = v.source;
+        logStep('WHITELIST', { primary_entity: primaryEntity, matched: v.matched, source: v.source });
+        if (!v.matched) {
+          cannedReply =
+            `InsiderPulse focuses on publicly traded companies and financial topics. ` +
+            `I don't have verified information about ${primaryEntity}. ` +
+            `If you're asking about a publicly traded company, try the official ticker symbol or full company name.\n\n` +
+            `Confidence Level: UNABLE TO VERIFY`;
+          cannedReason = 'whitelist_miss';
+          searchSkippedReason = 'whitelist_miss';
+        }
+      }
+
       // C.7 FIX 5b: Parallelize Tavily + Firecrawl with per-call 30s timeout
       // and overall 45s ceiling. If both time out, mark searchSkippedReason.
       const withTimeout = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
@@ -1082,7 +1104,11 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
         ]);
 
-      if (isEducational || isConversational) {
+      if (cannedReply !== null) {
+        // Skip search entirely on whitelist miss.
+        tavilyTriggered = false;
+        firecrawlTriggered = false;
+      } else if (isEducational || isConversational) {
         searchSkippedReason = isConversational ? 'conversational_query' : 'educational_query';
         tavilyTriggered = false;
         firecrawlTriggered = false;
@@ -1120,6 +1146,35 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         webSearchResults = fRes || '';
         if (!tavilyResults && !webSearchResults && (tavilyShouldFire || firecrawlTriggered)) {
           searchSkippedReason = 'search_timeout';
+        }
+
+        // C.11 FIX 2: Trusted-source corpus filter. Run BOTH corpora through
+        // the domain allow-list. Junk people-search and ZoomInfo-style
+        // scrape blocks get rejected so the fabrication gate and the model
+        // never see them. Counts + rejected domains are persisted to
+        // diagnostics for verification.
+        if (isFactual) {
+          const tFilt = filterTrustedCorpus(tavilyResults);
+          const fFilt = filterTrustedCorpus(webSearchResults);
+          trustedResultCount = tFilt.trustedCount + fFilt.trustedCount;
+          rejectedResultCount = tFilt.rejectedCount + fFilt.rejectedCount;
+          rejectedDomains = Array.from(new Set([...tFilt.rejectedDomains, ...fFilt.rejectedDomains])).slice(0, 25);
+          tavilyResults = tFilt.filtered;
+          webSearchResults = fFilt.filtered;
+          logStep('TRUSTED_SOURCE_FILTER', {
+            trusted_result_count: trustedResultCount,
+            rejected_result_count: rejectedResultCount,
+            rejected_domains: rejectedDomains.join(','),
+          });
+
+          // If everything got rejected and we had a verifiable entity, fall
+          // back to a canned response. We trust nothing of what came back.
+          if (trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
+            cannedReply =
+              `I found search results, but none from sources I trust for financial questions.\n\n` +
+              `Confidence Level: UNABLE TO VERIFY`;
+            cannedReason = 'no_trusted_sources';
+          }
         }
       }
 
