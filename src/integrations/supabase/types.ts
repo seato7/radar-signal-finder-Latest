@@ -1121,9 +1121,11 @@ export type Database = {
           gemini_time_ms: number | null
           has_current_date: boolean
           id: string
+          matched_in_result_index: number | null
           model_input_total_chars: number
           primary_entity: string | null
           pushback_outcome: string | null
+          search_result_count: number | null
           search_skipped_reason: string | null
           tavily_chars: number
           tavily_time_ms: number | null
@@ -1144,9 +1146,11 @@ export type Database = {
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
+          matched_in_result_index?: number | null
           model_input_total_chars?: number
           primary_entity?: string | null
           pushback_outcome?: string | null
+          search_result_count?: number | null
           search_skipped_reason?: string | null
           tavily_chars?: number
           tavily_time_ms?: number | null
@@ -1167,9 +1171,11 @@ export type Database = {
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
+          matched_in_result_index?: number | null
           model_input_total_chars?: number
           primary_entity?: string | null
           pushback_outcome?: string | null
+          search_result_count?: number | null
           search_skipped_reason?: string | null
           tavily_chars?: number
           tavily_time_ms?: number | null
