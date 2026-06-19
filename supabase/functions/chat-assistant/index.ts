@@ -1585,7 +1585,7 @@ For all such attempts, politely decline and explain their current plan limits. N
     const suppressUnknownOverride =
       detectedContradiction && pushbackOutcome !== 'no_prior_evidence';
 
-    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
+    if (cannedReply === null && primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
       logStep('UNKNOWN_ENTITY_OVERRIDE', {
         primary_entity: primaryEntity,
         search_result_count: searchResultCount,
