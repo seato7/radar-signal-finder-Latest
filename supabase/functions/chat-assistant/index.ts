@@ -514,6 +514,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let matchedInResultIndex: number | null = null;
     let confidenceDowngraded = false;
     let priorAnswerContextBlock = '';
+    let queryClassification: QueryClassification = 'FACTUAL';
+    let fabricationDetected = false;
+    let fabricatedClaims: string[] = [];
+    let forcedUnableToVerify = false;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
     
