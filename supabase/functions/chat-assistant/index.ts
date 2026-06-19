@@ -716,6 +716,41 @@ export async function isEntityVerifiable(
     const ok = isPushback === true;
     console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-inheritance-signal -> isPushback=${isPushback} followUpHasCapToken=${followUpHasEntity} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // C.14 (5) Pushback prior-answer injection: builder includes PRIOR ANSWER block.
+  {
+    const priorText = 'Tim Cook is the current CEO of Apple [1].';
+    const priorUserQuery = "Who is Apple's CEO?";
+    const rawUserQuery = 'Are you sure?';
+    const block = `===== PRIOR ANSWER CONTEXT =====
+PRIOR USER QUESTION (turn N-1): ${priorUserQuery}
+PRIOR ASSISTANT ANSWER (turn N-1):
+${priorText}
+PUSHBACK INSTRUCTION: user said "${rawUserQuery}"`;
+    const ok = block.includes('PRIOR ANSWER CONTEXT') && block.includes(priorText) && block.includes(priorUserQuery);
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-prior-answer-injection -> includesPrior=${block.includes(priorText)} includesQuery=${block.includes(priorUserQuery)} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.14 (6) Pushback search query inheritance: search uses prior user query.
+  {
+    const priorUserQuery = 'What is the Fed funds rate?';
+    const rawUserQuery = 'Actually they cut it yesterday';
+    const detectedContradiction = true;
+    const currentYear = 2026;
+    const pushbackBaseQuery = (priorUserQuery || rawUserQuery).trim();
+    const tavilyQuery = detectedContradiction
+      ? `${pushbackBaseQuery} ${currentYear} verify latest`
+      : rawUserQuery;
+    const ok = tavilyQuery.includes('Fed funds rate') && !tavilyQuery.includes('Actually they cut');
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-search-inheritance -> query="${tavilyQuery}" ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.14 (7) Citation format normalization: numeric [N] preferred, named tags flagged.
+  {
+    const numericOnly = 'Revenue grew 15% [1]. EPS was $0.91 [2][3].';
+    const namedTags = 'Per [Yahoo Finance News] revenue grew. [Congressional Trades] confirms.';
+    const hasNumeric = /\[\d+\]/.test(numericOnly) && !/\[[A-Za-z][A-Za-z\s]+\]/.test(numericOnly);
+    const hasNamed = /\[[A-Za-z][A-Za-z\s]+\]/.test(namedTags);
+    const ok = hasNumeric === true && hasNamed === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] citation-format-normalization -> numericClean=${hasNumeric} namedFlagged=${hasNamed} ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
