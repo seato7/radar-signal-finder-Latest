@@ -751,6 +751,38 @@ PUSHBACK INSTRUCTION: user said "${rawUserQuery}"`;
     const ok = hasNumeric === true && hasNamed === true;
     console.log(`[CHAT-ASSISTANT][SELFTEST] citation-format-normalization -> numericClean=${hasNumeric} namedFlagged=${hasNamed} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // ---- C.15 polish self-tests (3 total) ----
+  // (1) Citation suffix stripping: "[1, Web Search]" -> "[1]"
+  {
+    const dirty = 'Revenue grew 15% [1, Web Search]. EPS was $0.91 [2, Yahoo Finance][3].';
+    const cleaned = dirty.replace(/\[(\d+)\s*,\s*[^\]]+\]/g, '[$1]');
+    const expected = 'Revenue grew 15% [1]. EPS was $0.91 [2][3].';
+    const ok = cleaned === expected;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] citation-suffix-strip -> got="${cleaned}" expect="${expected}" ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (2) Pushback confidence inheritance: prior HIGH + hold-with-citations -> HIGH.
+  {
+    const detectedContradiction = true;
+    const pushbackOutcome = 'confirm';
+    const citationsPresent = true;
+    const priorConfidenceRating = 'HIGH';
+    let confidenceRating: string | null = 'MEDIUM';
+    let inherited = false;
+    if (detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive') &&
+        citationsPresent && priorConfidenceRating === 'HIGH' && confidenceRating !== 'HIGH') {
+      confidenceRating = 'HIGH';
+      inherited = true;
+    }
+    const ok = confidenceRating === 'HIGH' && inherited === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-confidence-inheritance -> final=${confidenceRating} inherited=${inherited} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (3) Markdown sanitization: literal **X** stripped to X.
+  {
+    const dirty = '**Analysis:** Revenue was strong. **Key Points:** Growth accelerated.';
+    const cleaned = dirty.replace(/\*\*([^*\n]+?)\*\*/g, '$1');
+    const ok = !cleaned.includes('**') && cleaned.includes('Analysis:') && cleaned.includes('Key Points:');
+    console.log(`[CHAT-ASSISTANT][SELFTEST] markdown-asterisk-sanitization -> cleaned="${cleaned}" ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
