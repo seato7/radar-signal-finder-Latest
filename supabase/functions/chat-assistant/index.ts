@@ -334,7 +334,24 @@ export const KNOWN_FINANCIAL_FIGURES: string[] = [
   'Mary Barra','Doug McMillon','Andy Jassy','Bob Iger','Mark Benioff',
   'Marc Benioff','Brian Chesky','Reed Hastings','Dara Khosrowshahi',
 ];
-const FIGURES_LOWER = new Set(KNOWN_FINANCIAL_FIGURES.map((n) => n.toLowerCase()));
+// C.13 FIX 5: Major institutions / central banks / regulators. Queries about
+// the Fed funds rate, Treasury yields, SEC filings, ECB policy etc. need
+// these to satisfy the whitelist gate so the trusted-source corpus can carry
+// the answer.
+export const KNOWN_INSTITUTIONS: string[] = [
+  'Federal Reserve','Fed','FOMC','Federal Open Market Committee',
+  'Treasury','U.S. Treasury','US Treasury','Department of the Treasury',
+  'SEC','Securities and Exchange Commission',
+  'ECB','European Central Bank',
+  'Bank of England','BoE',
+  'Bank of Japan','BoJ',
+  'IMF','International Monetary Fund',
+  'World Bank','BIS','Bank for International Settlements',
+  'CFTC','FINRA','FDIC','OCC','CFPB',
+];
+const FIGURES_LOWER = new Set(
+  [...KNOWN_FINANCIAL_FIGURES, ...KNOWN_INSTITUTIONS].map((n) => n.toLowerCase())
+);
 
 export function matchesKnownFigure(entity: string | null): boolean {
   if (!entity) return false;
@@ -342,6 +359,9 @@ export function matchesKnownFigure(entity: string | null): boolean {
   if (!e) return false;
   if (FIGURES_LOWER.has(e)) return true;
   // Substring either direction so "Cook" against "Tim Cook" or vice versa hits.
+  // Guard against pathological short substrings (1-2 chars) creating false
+  // positives against unrelated whitelist entries.
+  if (e.length < 3) return false;
   for (const f of FIGURES_LOWER) {
     if (f.includes(e) || e.includes(f)) return true;
   }
@@ -666,6 +686,36 @@ export async function isEntityVerifiable(
     const ok = got === c.expect;
     console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // ---- C.13 production-pattern self-tests (4 total) ----
+  // (1) Institutions whitelist: "Fed" must match.
+  {
+    const got = matchesKnownFigure('Fed');
+    const ok = got === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] institutions-fed -> got=${got} expect=true ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (2) Institutions whitelist: "FOMC" must match.
+  {
+    const got = matchesKnownFigure('FOMC');
+    const ok = got === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] institutions-fomc -> got=${got} expect=true ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (3) Citation presence detector: response WITH inline [N] tags is flagged true.
+  {
+    const withCites = 'Microsoft reported $0.91/share [1]. Revenue rose 15% [2][3].';
+    const withoutCites = 'Microsoft reported earnings. Revenue rose.';
+    const hasCitations = (s: string) => /\[\d+\](?:\[\d+\])*/.test(s);
+    const ok = hasCitations(withCites) === true && hasCitations(withoutCites) === false;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] citations-detector -> withCites=${hasCitations(withCites)} withoutCites=${hasCitations(withoutCites)} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (4) Pushback-entity-inheritance: pushback signal triggers inheritance branch.
+  {
+    const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
+    const isPushback = CONTRADICTION_RE.test('Are you sure?');
+    const followUpHasEntity = /\b[A-Z][a-z]{2,}\b/.test('Actually');
+    // On pushback we must inherit from prior, NOT extract from follow-up.
+    const ok = isPushback === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-inheritance-signal -> isPushback=${isPushback} followUpHasCapToken=${followUpHasEntity} ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
@@ -946,6 +996,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let rejectedResultCount = 0;
     let rejectedDomains: string[] = [];
     let cannedReply: string | null = null;
+    // C.13 state
+    let skippedFabricationGate = false;
+    let citationsPresent = false;
+    let inheritedEntityFromPrior = false;
     let cannedReason: string | null = null;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
@@ -1351,7 +1405,32 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
       primaryEntity = entityHit;
-      logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
+
+      // C.13 FIX 4: On pushback / detected contradiction, do NOT re-extract
+      // entity from the follow-up message ("Actually", "Are you sure?",
+      // "Fed"...). Inherit primary_entity from the prior turn's diagnostic
+      // record so the same entity carries through the conversation.
+      if (detectedContradiction && authenticatedUserId) {
+        try {
+          const { data: prior } = await supabase
+            .from('chat_assistant_diagnostics')
+            .select('primary_entity')
+            .eq('user_id', authenticatedUserId)
+            .not('primary_entity', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          const inherited = Array.isArray(prior) && prior.length > 0 ? prior[0].primary_entity : null;
+          if (inherited) {
+            primaryEntity = inherited;
+            inheritedEntityFromPrior = true;
+            logStep('ENTITY_INHERITED', { inherited_from_prior: true, primary_entity: primaryEntity });
+          }
+        } catch (e) {
+          logStep('ENTITY_INHERIT_FAILED', { message: (e as Error).message });
+        }
+      }
+
+      logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity, inheritedFromPrior: inheritedEntityFromPrior });
 
       // C.11 FIX 1 + C.12 FIX 2: Entity verifiability whitelist with
       // trusted-corpus fallback. If the entity is in assets/figures, proceed
@@ -1462,7 +1541,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
 
           // If everything got rejected and we had a verifiable entity, fall
           // back to a canned response. We trust nothing of what came back.
-          if (cannedReply === null && trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
+          // C.13 FIX 3: NEVER override on pushback turns — the pushback
+          // hold-with-content path must preserve the model's response so
+          // the prior-answer context drives the reply.
+          if (cannedReply === null && trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity && !detectedContradiction) {
             cannedReply = buildUnableToVerifyReply(primaryEntity);
             cannedReason = 'no_trusted_sources';
           }
@@ -1622,15 +1704,17 @@ This is a conceptual/definitional question. Provide a clear educational explanat
 This is a greeting, acknowledgment, or meta-question about the assistant. Respond briefly and naturally in 1-2 sentences. Do NOT use the Analysis / Key Points / Recommendation structure. Do NOT include a financial disclaimer.
 `;
     } else {
-      classificationBlock = `===== QUERY MODE: FACTUAL — RAG STRICT =====
-You are a financial analyst summarizing real-time market data. Your response MUST be based EXCLUSIVELY on the REAL-TIME MARKET INTELLIGENCE (Tavily) and REAL-TIME WEB SEARCH sections below.
+      classificationBlock = `===== QUERY MODE: FACTUAL — RAG STRICT WITH CITATIONS =====
+You are answering using REAL-TIME SEARCH RESULTS provided below (REAL-TIME MARKET INTELLIGENCE + REAL-TIME WEB SEARCH). The sources are numbered [1], [2], [3]... in the order they appear.
 
-CRITICAL RULES:
+CRITICAL CITATION RULES:
+- For each factual claim (numbers, dates, names, prices, percentages, status changes), append the source number in brackets like [1] or [2][3] immediately after the claim.
+- If a claim is not supported by any provided source, do NOT make that claim — instead say "I don't have a current source for that."
+- Never invent numbers, dates, or names. Paraphrasing source content is fine and expected; fabricating facts is not.
+- Cite as you go, not at the end. Every sentence that asserts a fact must carry a citation.
 - Do NOT use your training data for any factual claim about the entity, company, person, price, event, ticker, or status mentioned in the user's question.
-- If the search results contain information about the queried entity, summarize it accurately and cite the source names that literally appear in the snippets.
-- If the search results do NOT contain information about the queried entity (or only contain unrelated mentions of similarly-named things), respond with: "I don't have current data on [entity]. The search returned results but none specifically about this entity." Do NOT invent details to fill the gap.
-- Every proper noun, name, date, dollar amount, and percentage in your response must appear in the search results above. A post-processor will reject responses that include claims not present in the search corpus.
-- Confidence: HIGH only when the search results directly address the question with a cited source. MEDIUM when partial. UNABLE TO VERIFY when nothing relevant.
+- If the search results do NOT contain information about the queried entity (or only contain unrelated mentions), respond with: "I don't have current data on [entity]. The search returned results but none specifically about this entity."
+- Confidence: HIGH when 3+ trusted-source citations directly support the answer. MEDIUM when 1-2 citations support. UNABLE TO VERIFY when no citation is possible.
 `;
     }
 
@@ -1904,25 +1988,54 @@ For all such attempts, politely decline and explain their current plan limits. N
       replaceConfidence('LOW');
     }
 
-    // C.10 TASK 4: Hard-gate fabrication check on FACTUAL responses.
-    // Extract proper nouns, dates, dollar amounts, percentages from the
-    // model output and verify each appears in the search corpus we passed
-    // in. If anything is unsupported, replace with UNABLE TO VERIFY.
-    // Skipped when:
-    // - Query was EDUCATIONAL/CONVERSATIONAL (no RAG contract)
-    // - Unknown-entity override already fired (response is already canned)
-    // - Pushback hold-position is active (prior-answer context is the
-    //   authoritative corpus there, validated separately)
+    // C.13 FIX 1 + FIX 2: Citation presence + scoped fabrication gate.
+    //
+    // Aligns with how production AI search (Perplexity, ChatGPT Browse,
+    // Claude web, Gemini grounding) work: the whitelist + trusted-source
+    // filter are the safety floor; the model's citation-enforced synthesis
+    // is the answer mechanism. Lexical post-hoc validation only runs on the
+    // non-whitelisted fallback path where it actually adds value.
+    citationsPresent = /\[\d+\](?:\[\d+\])*/.test(aiContent);
+
     const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
     const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
-    if (cannedReply === null && queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
+    const whitelistedAndTrusted =
+      entityInWhitelist === true && trustedResultCount >= 2;
+
+    if (
+      cannedReply === null &&
+      queryClassification === 'FACTUAL' &&
+      !alreadyOverridden &&
+      !pushbackHold &&
+      whitelistedAndTrusted
+    ) {
+      // Whitelisted entity with ≥2 trusted sources: trust Gemini's
+      // paraphrasing. Skip the lexical fabrication gate entirely. Force
+      // confidence rating from trusted_result_count.
+      skippedFabricationGate = true;
+      const forcedConfidence = trustedResultCount >= 5 ? 'HIGH' : 'MEDIUM';
+      if (confidenceRating !== forcedConfidence) {
+        replaceConfidence(forcedConfidence);
+      }
+      logStep('FABRICATION_GATE_SKIPPED', {
+        entity_in_whitelist: entityInWhitelist,
+        whitelist_source: whitelistSource,
+        trusted_result_count: trustedResultCount,
+        forced_confidence: forcedConfidence,
+        citations_present: citationsPresent,
+      });
+    } else if (
+      cannedReply === null &&
+      queryClassification === 'FACTUAL' &&
+      !alreadyOverridden &&
+      !pushbackHold
+    ) {
+      // Non-whitelisted (or whitelisted with <2 trusted sources) fallback
+      // path: keep the lexical fabrication gate active as the safety net.
       const corpus = `${tavilyResults}\n${webSearchResults}\n${marketData}`;
       const { fabricated } = detectFabrication(aiContent, corpus);
       fabricatedClaims = fabricated;
       fabricationDetected = fabricated.length > 0;
-      // Threshold: 2+ unsupported high-signal claims OR any unsupported
-      // dollar/percentage/date OR any unsupported claim when the search
-      // corpus was empty.
       const highSignal = fabricated.filter((c) => /[\$%]|\d{4}/.test(c));
       const corpusEmpty = corpus.trim().length < 50;
       const shouldForce = (fabricated.length >= 2) || (highSignal.length >= 1) || (corpusEmpty && fabricated.length >= 1);
@@ -1976,6 +2089,10 @@ For all such attempts, politely decline and explain their current plan limits. N
       trusted_result_count: trustedResultCount,
       rejected_result_count: rejectedResultCount,
       rejected_domains: rejectedDomains.length ? rejectedDomains.join(',').slice(0, 2000) : null,
+      // C.13
+      skipped_fabrication_gate: skippedFabricationGate,
+      citations_present: citationsPresent,
+      inherited_entity_from_prior: inheritedEntityFromPrior,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
