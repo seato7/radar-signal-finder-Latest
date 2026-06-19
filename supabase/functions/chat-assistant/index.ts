@@ -334,7 +334,24 @@ export const KNOWN_FINANCIAL_FIGURES: string[] = [
   'Mary Barra','Doug McMillon','Andy Jassy','Bob Iger','Mark Benioff',
   'Marc Benioff','Brian Chesky','Reed Hastings','Dara Khosrowshahi',
 ];
-const FIGURES_LOWER = new Set(KNOWN_FINANCIAL_FIGURES.map((n) => n.toLowerCase()));
+// C.13 FIX 5: Major institutions / central banks / regulators. Queries about
+// the Fed funds rate, Treasury yields, SEC filings, ECB policy etc. need
+// these to satisfy the whitelist gate so the trusted-source corpus can carry
+// the answer.
+export const KNOWN_INSTITUTIONS: string[] = [
+  'Federal Reserve','Fed','FOMC','Federal Open Market Committee',
+  'Treasury','U.S. Treasury','US Treasury','Department of the Treasury',
+  'SEC','Securities and Exchange Commission',
+  'ECB','European Central Bank',
+  'Bank of England','BoE',
+  'Bank of Japan','BoJ',
+  'IMF','International Monetary Fund',
+  'World Bank','BIS','Bank for International Settlements',
+  'CFTC','FINRA','FDIC','OCC','CFPB',
+];
+const FIGURES_LOWER = new Set(
+  [...KNOWN_FINANCIAL_FIGURES, ...KNOWN_INSTITUTIONS].map((n) => n.toLowerCase())
+);
 
 export function matchesKnownFigure(entity: string | null): boolean {
   if (!entity) return false;
@@ -342,6 +359,9 @@ export function matchesKnownFigure(entity: string | null): boolean {
   if (!e) return false;
   if (FIGURES_LOWER.has(e)) return true;
   // Substring either direction so "Cook" against "Tim Cook" or vice versa hits.
+  // Guard against pathological short substrings (1-2 chars) creating false
+  // positives against unrelated whitelist entries.
+  if (e.length < 3) return false;
   for (const f of FIGURES_LOWER) {
     if (f.includes(e) || e.includes(f)) return true;
   }
