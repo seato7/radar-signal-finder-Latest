@@ -1276,6 +1276,8 @@ For all such attempts, politely decline and explain their current plan limits. N
       primary_entity: primaryEntity,
       cleaned_query: cleanedQuery,
       pushback_outcome: pushbackOutcome,
+      search_result_count: searchResultCount,
+      matched_in_result_index: matchedInResultIndex,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
