@@ -50,7 +50,8 @@ function sanitiseUserMessage(content: string): { sanitised: string; flagged: boo
   return { sanitised, flagged };
 }
 
-// Tavily search — called conditionally when message contains tickers or market keywords
+// Tavily search — called conditionally when message contains tickers or market keywords.
+// Each result block carries a URL so the C.11 trusted-source filter can classify it.
 async function searchTavily(query: string, supabase: any): Promise<string> {
   try {
     const { data, error } = await supabase.functions.invoke('search-tavily', {
@@ -58,13 +59,11 @@ async function searchTavily(query: string, supabase: any): Promise<string> {
     });
     if (error || !data) return '';
     const parts: string[] = [];
-    if (data.answer) parts.push(data.answer);
+    if (data.answer) parts.push(`[Tavily Answer]\nURL: N/A\n${data.answer}`);
     if (data.results?.length) {
-      parts.push(
-        data.results
-          .map((r: any) => `${r.title}: ${(r.content || '').substring(0, 300)}`)
-          .join('\n')
-      );
+      data.results.forEach((r: any, i: number) => {
+        parts.push(`[${i + 1}] ${r.title || 'Untitled'}\nURL: ${r.url || 'N/A'}\n${(r.content || '').substring(0, 300)}`);
+      });
     }
     return parts.join('\n\n');
   } catch (err) {
