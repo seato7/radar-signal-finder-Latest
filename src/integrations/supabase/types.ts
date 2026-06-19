@@ -1110,6 +1110,7 @@ export type Database = {
       }
       chat_assistant_diagnostics: {
         Row: {
+          citations_present: boolean | null
           cleaned_query: string | null
           confidence_downgraded: boolean
           confidence_rating: string | null
@@ -1125,6 +1126,7 @@ export type Database = {
           gemini_time_ms: number | null
           has_current_date: boolean
           id: string
+          inherited_entity_from_prior: boolean | null
           matched_in_result_index: number | null
           model_input_total_chars: number
           primary_entity: string | null
@@ -1134,6 +1136,7 @@ export type Database = {
           rejected_result_count: number | null
           search_result_count: number | null
           search_skipped_reason: string | null
+          skipped_fabrication_gate: boolean | null
           tavily_chars: number
           tavily_time_ms: number | null
           tavily_triggered: boolean
@@ -1144,6 +1147,7 @@ export type Database = {
           whitelist_source: string | null
         }
         Insert: {
+          citations_present?: boolean | null
           cleaned_query?: string | null
           confidence_downgraded?: boolean
           confidence_rating?: string | null
@@ -1159,6 +1163,7 @@ export type Database = {
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
+          inherited_entity_from_prior?: boolean | null
           matched_in_result_index?: number | null
           model_input_total_chars?: number
           primary_entity?: string | null
@@ -1168,6 +1173,7 @@ export type Database = {
           rejected_result_count?: number | null
           search_result_count?: number | null
           search_skipped_reason?: string | null
+          skipped_fabrication_gate?: boolean | null
           tavily_chars?: number
           tavily_time_ms?: number | null
           tavily_triggered?: boolean
@@ -1178,6 +1184,7 @@ export type Database = {
           whitelist_source?: string | null
         }
         Update: {
+          citations_present?: boolean | null
           cleaned_query?: string | null
           confidence_downgraded?: boolean
           confidence_rating?: string | null
@@ -1193,6 +1200,7 @@ export type Database = {
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
+          inherited_entity_from_prior?: boolean | null
           matched_in_result_index?: number | null
           model_input_total_chars?: number
           primary_entity?: string | null
@@ -1202,6 +1210,7 @@ export type Database = {
           rejected_result_count?: number | null
           search_result_count?: number | null
           search_skipped_reason?: string | null
+          skipped_fabrication_gate?: boolean | null
           tavily_chars?: number
           tavily_time_ms?: number | null
           tavily_triggered?: boolean
