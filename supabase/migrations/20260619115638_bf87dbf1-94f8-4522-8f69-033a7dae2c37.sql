@@ -1,0 +1,2 @@
+ALTER TABLE public.chat_assistant_diagnostics
+ADD COLUMN IF NOT EXISTS inherited_confidence_from_prior boolean;

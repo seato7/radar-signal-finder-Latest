@@ -751,6 +751,38 @@ PUSHBACK INSTRUCTION: user said "${rawUserQuery}"`;
     const ok = hasNumeric === true && hasNamed === true;
     console.log(`[CHAT-ASSISTANT][SELFTEST] citation-format-normalization -> numericClean=${hasNumeric} namedFlagged=${hasNamed} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // ---- C.15 polish self-tests (3 total) ----
+  // (1) Citation suffix stripping: "[1, Web Search]" -> "[1]"
+  {
+    const dirty = 'Revenue grew 15% [1, Web Search]. EPS was $0.91 [2, Yahoo Finance][3].';
+    const cleaned = dirty.replace(/\[(\d+)\s*,\s*[^\]]+\]/g, '[$1]');
+    const expected = 'Revenue grew 15% [1]. EPS was $0.91 [2][3].';
+    const ok = cleaned === expected;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] citation-suffix-strip -> got="${cleaned}" expect="${expected}" ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (2) Pushback confidence inheritance: prior HIGH + hold-with-citations -> HIGH.
+  {
+    const detectedContradiction = true;
+    const pushbackOutcome = 'confirm';
+    const citationsPresent = true;
+    const priorConfidenceRating = 'HIGH';
+    let confidenceRating: string | null = 'MEDIUM';
+    let inherited = false;
+    if (detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive') &&
+        citationsPresent && priorConfidenceRating === 'HIGH' && confidenceRating !== 'HIGH') {
+      confidenceRating = 'HIGH';
+      inherited = true;
+    }
+    const ok = confidenceRating === 'HIGH' && inherited === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-confidence-inheritance -> final=${confidenceRating} inherited=${inherited} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (3) Markdown sanitization: literal **X** stripped to X.
+  {
+    const dirty = '**Analysis:** Revenue was strong. **Key Points:** Growth accelerated.';
+    const cleaned = dirty.replace(/\*\*([^*\n]+?)\*\*/g, '$1');
+    const ok = !cleaned.includes('**') && cleaned.includes('Analysis:') && cleaned.includes('Key Points:');
+    console.log(`[CHAT-ASSISTANT][SELFTEST] markdown-asterisk-sanitization -> cleaned="${cleaned}" ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
@@ -1035,6 +1067,9 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let skippedFabricationGate = false;
     let citationsPresent = false;
     let inheritedEntityFromPrior = false;
+    // C.15 state
+    let priorConfidenceRating: string | null = null;
+    let inheritedConfidenceFromPrior = false;
     let cannedReason: string | null = null;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
@@ -1460,16 +1495,21 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         try {
           const { data: prior } = await supabase
             .from('chat_assistant_diagnostics')
-            .select('primary_entity')
+            .select('primary_entity, confidence_rating')
             .eq('user_id', authenticatedUserId)
             .not('primary_entity', 'is', null)
             .order('created_at', { ascending: false })
             .limit(1);
           const inherited = Array.isArray(prior) && prior.length > 0 ? prior[0].primary_entity : null;
+          const inheritedConf = Array.isArray(prior) && prior.length > 0 ? prior[0].confidence_rating : null;
           if (inherited) {
             primaryEntity = inherited;
             inheritedEntityFromPrior = true;
             logStep('ENTITY_INHERITED', { inherited_from_prior: true, primary_entity: primaryEntity });
+          }
+          if (inheritedConf) {
+            priorConfidenceRating = String(inheritedConf).toUpperCase();
+            logStep('PRIOR_CONFIDENCE_CAPTURED', { prior_confidence: priorConfidenceRating });
           }
         } catch (e) {
           logStep('ENTITY_INHERIT_FAILED', { message: (e as Error).message });
@@ -1811,7 +1851,15 @@ Fabricated attribution is a critical failure. Honest "I don't know" is always be
 **FORMATTING RULES (CRITICAL):**
 - DO NOT use # or ### for headings - just use bold text naturally
 - DO NOT use * for bullet points - use plain dashes (-)
-- CITATIONS: For FACTUAL queries, cite each factual claim with a numeric source reference in square brackets, like [1] or [2][3]. The source numbers correspond to the order of results in the REAL-TIME SEARCH RESULTS sections below. Do NOT use named tags like [Yahoo Finance], [Reuters], or [Congressional Trades] — numbers only.
+- DO NOT wrap headings or labels in ** asterisks (e.g. write "Analysis" not "**Analysis:**"). Plain text only.
+- CITATION FORMAT RULES (STRICT):
+  * Use numeric source references in brackets only: [1], [2], [3], etc. Numbers correspond to the order of results in the REAL-TIME SEARCH RESULTS section.
+  * FORBIDDEN — never append source names or labels inside brackets. Bad: [1, Web Search], [2, Yahoo Finance], [3, Market Intelligence], [Yahoo Finance News], [Reuters]. Good: [1], [2][3], [4].
+  * Multiple sources: use separate bracket pairs like [1][2][3], never [1, 2, 3].
+- HEDGE RULES (STRICT):
+  * If 3+ trusted sources directly answer the question, answer with confidence based on what they say. Do NOT add hedges like "I don't have a current source confirming..." when the sources clearly do confirm.
+  * Only say "I don't have a current source for [specific claim]" when sources truly don't address that specific claim.
+  * Profitability questions: if latest quarterly earnings show positive net income per cited sources, the company is making money — do not hedge based on absence of forward-looking projections.
 - When synthesizing across multiple sources, do not blend distinct events, missions, or filings. Each factual sentence must be traceable to a specific source. If sources describe different events, treat them as separate.
 - Only provide detailed URLs/references if the user specifically asks for them
 - Keep formatting clean and professional - no markdown symbols visible to users
@@ -2048,14 +2096,16 @@ For all such attempts, politely decline and explain their current plan limits. N
       replaceConfidence('LOW');
     }
 
+    // C.15 FIX 1+3: Citation suffix stripping + markdown sanitization.
+    // - Strip "[1, Web Search]" / "[2, Yahoo Finance]" -> "[1]" / "[2]"
+    // - Remove literal "**X**" wrapping (model occasionally leaks raw asterisks
+    //   into headers like "**Analysis:**"; client renders pre-wrap, not markdown).
+    aiContent = aiContent.replace(/\[(\d+)\s*,\s*[^\]]+\]/g, '[$1]');
+    aiContent = aiContent.replace(/\*\*([^*\n]+?)\*\*/g, '$1');
+
     // C.13 FIX 1 + FIX 2: Citation presence + scoped fabrication gate.
-    //
-    // Aligns with how production AI search (Perplexity, ChatGPT Browse,
-    // Claude web, Gemini grounding) work: the whitelist + trusted-source
-    // filter are the safety floor; the model's citation-enforced synthesis
-    // is the answer mechanism. Lexical post-hoc validation only runs on the
-    // non-whitelisted fallback path where it actually adds value.
     citationsPresent = /\[\d+\](?:\[\d+\])*/.test(aiContent);
+
 
     const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
     const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
@@ -2114,6 +2164,31 @@ For all such attempts, politely decline and explain their current plan limits. N
       }
     }
 
+    // C.15 FIX 2: Pushback confidence inheritance. When a pushback turn HOLDS
+    // content with fresh citations, inherit the prior turn's confidence rather
+    // than re-rating from scratch (which mechanically drops HIGH -> MEDIUM
+    // because the rater can't see the prior corpus).
+    if (
+      detectedContradiction &&
+      (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive') &&
+      citationsPresent &&
+      priorConfidenceRating === 'HIGH' &&
+      confidenceRating !== 'HIGH'
+    ) {
+      // Inline replace (avoid the confidenceDowngraded=true side effect that
+      // replaceConfidence() sets — inheritance is not a downgrade).
+      const noteHigh = '(Note: confidence inherited from prior turn after pushback hold-with-citations.)';
+      if (/Confidence Level:/i.test(aiContent)) {
+        aiContent = aiContent.replace(/Confidence Level:\s*(HIGH|MEDIUM|LOW|UNABLE TO VERIFY)[^\n]*/i, `Confidence Level: HIGH ${noteHigh}`);
+      } else {
+        aiContent = `${aiContent.trim()}\n\nConfidence Level: HIGH ${noteHigh}`;
+      }
+      confidenceRating = 'HIGH';
+      inheritedConfidenceFromPrior = true;
+      logStep('CONFIDENCE_INHERITED', { prior_confidence: priorConfidenceRating, final_confidence: 'HIGH' });
+    }
+
+
     // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
     // response on a logging failure.
     const totalTimeMs = Date.now() - turnStartMs;
@@ -2153,6 +2228,8 @@ For all such attempts, politely decline and explain their current plan limits. N
       skipped_fabrication_gate: skippedFabricationGate,
       citations_present: citationsPresent,
       inherited_entity_from_prior: inheritedEntityFromPrior,
+      // C.15
+      inherited_confidence_from_prior: inheritedConfidenceFromPrior,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
