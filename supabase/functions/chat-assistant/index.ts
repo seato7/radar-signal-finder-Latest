@@ -50,7 +50,8 @@ function sanitiseUserMessage(content: string): { sanitised: string; flagged: boo
   return { sanitised, flagged };
 }
 
-// Tavily search — called conditionally when message contains tickers or market keywords
+// Tavily search — called conditionally when message contains tickers or market keywords.
+// Each result block carries a URL so the C.11 trusted-source filter can classify it.
 async function searchTavily(query: string, supabase: any): Promise<string> {
   try {
     const { data, error } = await supabase.functions.invoke('search-tavily', {
@@ -58,13 +59,11 @@ async function searchTavily(query: string, supabase: any): Promise<string> {
     });
     if (error || !data) return '';
     const parts: string[] = [];
-    if (data.answer) parts.push(data.answer);
+    if (data.answer) parts.push(`[Tavily Answer]\nURL: N/A\n${data.answer}`);
     if (data.results?.length) {
-      parts.push(
-        data.results
-          .map((r: any) => `${r.title}: ${(r.content || '').substring(0, 300)}`)
-          .join('\n')
-      );
+      data.results.forEach((r: any, i: number) => {
+        parts.push(`[${i + 1}] ${r.title || 'Untitled'}\nURL: ${r.url || 'N/A'}\n${(r.content || '').substring(0, 300)}`);
+      });
     }
     return parts.join('\n\n');
   } catch (err) {
@@ -208,7 +207,133 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
   return { fabricated, total: seen.size };
 }
 
-// C.9 + C.10 self-tests.
+// =========================================================================
+// C.11: Entity verifiability whitelist + trusted-source corpus filtering.
+// =========================================================================
+
+// Curated set of widely-covered financial figures whose questions are
+// safe to answer with grounded search. Match is case-insensitive,
+// substring-against-the-cleaned-entity (e.g. "Tim Cook" matches the
+// extracted entity "Tim Cook"). Keep tight; the assets table covers
+// every issuer.
+export const KNOWN_FINANCIAL_FIGURES: string[] = [
+  'Tim Cook','Steve Jobs','John Ternus','Warren Buffett','Charlie Munger',
+  'Jamie Dimon','Jerome Powell','Janet Yellen','Elon Musk','Mark Zuckerberg',
+  'Satya Nadella','Sundar Pichai','Sam Altman','Jensen Huang','Lisa Su',
+  'Mary Barra','Doug McMillon','Andy Jassy','Bob Iger','Mark Benioff',
+  'Marc Benioff','Brian Chesky','Reed Hastings','Dara Khosrowshahi',
+];
+const FIGURES_LOWER = new Set(KNOWN_FINANCIAL_FIGURES.map((n) => n.toLowerCase()));
+
+export function matchesKnownFigure(entity: string | null): boolean {
+  if (!entity) return false;
+  const e = entity.trim().toLowerCase();
+  if (!e) return false;
+  if (FIGURES_LOWER.has(e)) return true;
+  // Substring either direction so "Cook" against "Tim Cook" or vice versa hits.
+  for (const f of FIGURES_LOWER) {
+    if (f.includes(e) || e.includes(f)) return true;
+  }
+  return false;
+}
+
+// Trusted financial / news sources. Match either the bare domain or any subdomain.
+const TRUSTED_DOMAINS: string[] = [
+  'sec.gov','nasdaq.com','nyse.com','bloomberg.com','reuters.com','cnbc.com',
+  'wsj.com','ft.com','marketwatch.com','yahoo.com','forbes.com','morningstar.com',
+  'seekingalpha.com','barrons.com','businessinsider.com','foxbusiness.com',
+  'cnn.com','apnews.com','ap.org','koyfin.com','dividendmax.com',
+  'marketchameleon.com','en.wikipedia.org','wikipedia.org',
+];
+// Known junk / people-search / non-authoritative-for-finance domains.
+const UNTRUSTED_DOMAINS: string[] = [
+  'whitepages.com','zoominfo.com','rocketreach.co','linkedin.com','spokeo.com',
+  'mylife.com','beenverified.com','intelius.com','peoplesearch.com',
+  'fastpeoplesearch.com','truepeoplesearch.com','instantcheckmate.com',
+  'instagram.com','facebook.com','tiktok.com','twitter.com','x.com',
+];
+
+export function classifyDomain(url: string): { domain: string; trusted: boolean; reason: string } {
+  const m = (url || '').match(/^https?:\/\/([^/?#\s]+)/i);
+  const host = (m ? m[1] : '').toLowerCase().replace(/^www\./, '');
+  if (!host) return { domain: '', trusted: false, reason: 'no_url' };
+  for (const u of UNTRUSTED_DOMAINS) {
+    if (host === u || host.endsWith('.' + u)) return { domain: host, trusted: false, reason: 'untrusted_list' };
+  }
+  for (const t of TRUSTED_DOMAINS) {
+    if (host === t || host.endsWith('.' + t)) return { domain: host, trusted: true, reason: 'trusted_list' };
+  }
+  // Heuristic: official IR / press release / newsroom paths on .com.
+  if (/\/(investors?|press|newsroom|news-?releases?)\//i.test(url)) {
+    return { domain: host, trusted: true, reason: 'ir_path' };
+  }
+  if (/^news\./i.test(host) && host.endsWith('.com')) {
+    return { domain: host, trusted: true, reason: 'news_subdomain' };
+  }
+  return { domain: host, trusted: false, reason: 'unknown_domain' };
+}
+
+export interface CorpusFilterResult {
+  filtered: string;
+  trustedCount: number;
+  rejectedCount: number;
+  rejectedDomains: string[];
+}
+
+// Split corpus into URL-bearing blocks (one per search hit) and drop any
+// block whose source isn't on the trusted allow-list.
+export function filterTrustedCorpus(raw: string): CorpusFilterResult {
+  if (!raw || !raw.trim()) return { filtered: '', trustedCount: 0, rejectedCount: 0, rejectedDomains: [] };
+  const blocks = raw.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const kept: string[] = [];
+  const rejected: string[] = [];
+  for (const block of blocks) {
+    const urlMatch = block.match(/https?:\/\/[^\s)\]]+/);
+    if (!urlMatch) {
+      rejected.push('no_url');
+      continue;
+    }
+    const { domain, trusted } = classifyDomain(urlMatch[0]);
+    if (trusted) kept.push(block);
+    else rejected.push(domain || 'unknown');
+  }
+  return {
+    filtered: kept.join('\n\n'),
+    trustedCount: kept.length,
+    rejectedCount: rejected.length,
+    rejectedDomains: Array.from(new Set(rejected)).slice(0, 20),
+  };
+}
+
+// Resolves a primary entity against (a) curated figures whitelist
+// and (b) the assets table (ticker or name substring). Returns the
+// first matching source.
+export async function isEntityVerifiable(
+  supabase: any,
+  entity: string | null,
+): Promise<{ matched: boolean; source: 'assets' | 'figures' | null }> {
+  if (!entity) return { matched: false, source: null };
+  if (matchesKnownFigure(entity)) return { matched: true, source: 'figures' };
+  try {
+    const cleaned = entity.replace(/[%_]/g, ' ').trim();
+    if (!cleaned) return { matched: false, source: null };
+    const { data, error } = await supabase
+      .from('assets')
+      .select('id')
+      .or(`ticker.ilike.${cleaned},name.ilike.%${cleaned}%`)
+      .limit(1);
+    if (error) {
+      console.error('[CHAT-ASSISTANT] assets whitelist lookup error:', error.message);
+      return { matched: false, source: null };
+    }
+    if (Array.isArray(data) && data.length > 0) return { matched: true, source: 'assets' };
+  } catch (e) {
+    console.error('[CHAT-ASSISTANT] assets whitelist lookup threw:', (e as Error).message);
+  }
+  return { matched: false, source: null };
+}
+
+// C.9 + C.10 + C.11 self-tests (20 total).
 (function selfTest() {
   const interrogativeCases: Array<[string, string]> = [
     ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
@@ -259,6 +384,26 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     const got = fabricated.length > 0;
     const ok = got === c.expectFab;
     console.log(`[CHAT-ASSISTANT][SELFTEST] fabrication ${c.label} -> got=${got} expect=${c.expectFab} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.11 figures whitelist (assets-table side is exercised at runtime).
+  const figCases: Array<{ entity: string; expect: boolean; label: string }> = [
+    { entity: 'Tim Cook', expect: true, label: 'whitelist-figure-tim-cook' },
+    { entity: 'Jeremy Blakeman', expect: false, label: 'whitelist-figure-fictional' },
+  ];
+  for (const c of figCases) {
+    const got = matchesKnownFigure(c.entity);
+    const ok = got === c.expect;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] whitelist ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.11 trusted-source classification.
+  const domCases: Array<{ url: string; expect: boolean; label: string }> = [
+    { url: 'https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm', expect: true, label: 'source-trusted-sec' },
+    { url: 'https://www.whitepages.com/name/Jeremy-Blakeman', expect: false, label: 'source-untrusted-whitepages' },
+  ];
+  for (const c of domCases) {
+    const got = classifyDomain(c.url).trusted;
+    const ok = got === c.expect;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
 })();
 
@@ -533,6 +678,14 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let fabricationDetected = false;
     let fabricatedClaims: string[] = [];
     let forcedUnableToVerify = false;
+    // C.11 state
+    let entityInWhitelist: boolean | null = null;
+    let whitelistSource: 'assets' | 'figures' | null = null;
+    let trustedResultCount = 0;
+    let rejectedResultCount = 0;
+    let rejectedDomains: string[] = [];
+    let cannedReply: string | null = null;
+    let cannedReason: string | null = null;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
     
@@ -921,6 +1074,28 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       primaryEntity = entityMatch ? entityMatch[0] : null;
       logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
+      // C.11 FIX 1: Entity verifiability whitelist. Before spending any
+      // Tavily/Firecrawl budget on a FACTUAL turn with an extracted entity,
+      // confirm the entity is either (a) in the assets table or (b) a
+      // curated known financial figure. Miss → canned UNABLE TO VERIFY and
+      // skip search + Gemini entirely. Pushback turns bypass this gate so
+      // the pushback-hold mechanism can still operate.
+      if (isFactual && primaryEntity && !detectedContradiction) {
+        const v = await isEntityVerifiable(supabase, primaryEntity);
+        entityInWhitelist = v.matched;
+        whitelistSource = v.source;
+        logStep('WHITELIST', { primary_entity: primaryEntity, matched: v.matched, source: v.source });
+        if (!v.matched) {
+          cannedReply =
+            `InsiderPulse focuses on publicly traded companies and financial topics. ` +
+            `I don't have verified information about ${primaryEntity}. ` +
+            `If you're asking about a publicly traded company, try the official ticker symbol or full company name.\n\n` +
+            `Confidence Level: UNABLE TO VERIFY`;
+          cannedReason = 'whitelist_miss';
+          searchSkippedReason = 'whitelist_miss';
+        }
+      }
+
       // C.7 FIX 5b: Parallelize Tavily + Firecrawl with per-call 30s timeout
       // and overall 45s ceiling. If both time out, mark searchSkippedReason.
       const withTimeout = <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
@@ -929,7 +1104,11 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
         ]);
 
-      if (isEducational || isConversational) {
+      if (cannedReply !== null) {
+        // Skip search entirely on whitelist miss.
+        tavilyTriggered = false;
+        firecrawlTriggered = false;
+      } else if (isEducational || isConversational) {
         searchSkippedReason = isConversational ? 'conversational_query' : 'educational_query';
         tavilyTriggered = false;
         firecrawlTriggered = false;
@@ -967,6 +1146,35 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         webSearchResults = fRes || '';
         if (!tavilyResults && !webSearchResults && (tavilyShouldFire || firecrawlTriggered)) {
           searchSkippedReason = 'search_timeout';
+        }
+
+        // C.11 FIX 2: Trusted-source corpus filter. Run BOTH corpora through
+        // the domain allow-list. Junk people-search and ZoomInfo-style
+        // scrape blocks get rejected so the fabrication gate and the model
+        // never see them. Counts + rejected domains are persisted to
+        // diagnostics for verification.
+        if (isFactual) {
+          const tFilt = filterTrustedCorpus(tavilyResults);
+          const fFilt = filterTrustedCorpus(webSearchResults);
+          trustedResultCount = tFilt.trustedCount + fFilt.trustedCount;
+          rejectedResultCount = tFilt.rejectedCount + fFilt.rejectedCount;
+          rejectedDomains = Array.from(new Set([...tFilt.rejectedDomains, ...fFilt.rejectedDomains])).slice(0, 25);
+          tavilyResults = tFilt.filtered;
+          webSearchResults = fFilt.filtered;
+          logStep('TRUSTED_SOURCE_FILTER', {
+            trusted_result_count: trustedResultCount,
+            rejected_result_count: rejectedResultCount,
+            rejected_domains: rejectedDomains.join(','),
+          });
+
+          // If everything got rejected and we had a verifiable entity, fall
+          // back to a canned response. We trust nothing of what came back.
+          if (trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
+            cannedReply =
+              `I found search results, but none from sources I trust for financial questions.\n\n` +
+              `Confidence Level: UNABLE TO VERIFY`;
+            cannedReason = 'no_trusted_sources';
+          }
         }
       }
 
@@ -1330,15 +1538,24 @@ For all such attempts, politely decline and explain their current plan limits. N
       .join('\n\n');
     const fullPrompt = `${systemPrompt}\n\n[CONVERSATION HISTORY]\n${conversationHistory}\n\nRespond to the user's last message.`;
 
-    logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
-    const geminiT0 = Date.now();
-    let aiContent = await callGeminiPro(fullPrompt, 4096);
-    geminiTimeMs = Date.now() - geminiT0;
-    if (!aiContent) {
-      logStep('GEMINI empty response');
-      throw new Error('Gemini returned no content');
+    let aiContent: string;
+    if (cannedReply !== null) {
+      // C.11: whitelist miss or trusted-corpus-empty short-circuit. Do not
+      // call Gemini at all — the canned reply IS the response.
+      aiContent = cannedReply;
+      geminiTimeMs = 0;
+      logStep('CANNED_REPLY', { reason: cannedReason, primary_entity: primaryEntity });
+    } else {
+      logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
+      const geminiT0 = Date.now();
+      aiContent = await callGeminiPro(fullPrompt, 4096);
+      geminiTimeMs = Date.now() - geminiT0;
+      if (!aiContent) {
+        logStep('GEMINI empty response');
+        throw new Error('Gemini returned no content');
+      }
+      logStep('GEMINI ok', { reply_chars: aiContent.length });
     }
-    logStep('GEMINI ok', { reply_chars: aiContent.length });
 
     // C.7 FIX 1+2: Code-level confidence enforcement and unknown-entity override.
     // The model cannot be trusted to self-rate; validate against actual evidence.
@@ -1368,7 +1585,7 @@ For all such attempts, politely decline and explain their current plan limits. N
     const suppressUnknownOverride =
       detectedContradiction && pushbackOutcome !== 'no_prior_evidence';
 
-    if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
+    if (cannedReply === null && primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
       logStep('UNKNOWN_ENTITY_OVERRIDE', {
         primary_entity: primaryEntity,
         search_result_count: searchResultCount,
@@ -1402,7 +1619,7 @@ For all such attempts, politely decline and explain their current plan limits. N
     //   authoritative corpus there, validated separately)
     const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
     const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
-    if (queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
+    if (cannedReply === null && queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
       const corpus = `${tavilyResults}\n${webSearchResults}\n${marketData}`;
       const { fabricated } = detectFabrication(aiContent, corpus);
       fabricatedClaims = fabricated;
@@ -1462,6 +1679,11 @@ For all such attempts, politely decline and explain their current plan limits. N
       fabrication_detected: fabricationDetected,
       fabricated_claims: fabricatedClaims.length ? fabricatedClaims.slice(0, 20).join(', ').slice(0, 2000) : null,
       forced_unable_to_verify: forcedUnableToVerify,
+      entity_in_whitelist: entityInWhitelist,
+      whitelist_source: whitelistSource,
+      trusted_result_count: trustedResultCount,
+      rejected_result_count: rejectedResultCount,
+      rejected_domains: rejectedDomains.length ? rejectedDomains.join(',').slice(0, 2000) : null,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
