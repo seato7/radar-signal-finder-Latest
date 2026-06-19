@@ -266,15 +266,32 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     }
     fabricated.push(t);
   };
+  // C.12.1: Expanded stop-list to suppress capitalized sentence-starters,
+  // transition words, generic titles, and date/calendar words that the
+  // proper-noun extractor was mis-flagging as fabricated entities.
   const PROPER_STOPWORDS = new Set([
+    // existing
     'analysis','recommendation','confidence','note','key','points','high','medium','low','unable','verify','tavily','firecrawl','january','february','march','april','may','june','july','august','september','october','november','december','monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','yesterday','tomorrow','this','that','these','those','user','assistant','question','answer','search','results','source','sources','data','platform','market','i','you','the','a','an','my','your','our','their','it','its',
+    // C.12.1 transition / sentence-starter words
+    'however','while','whilst','conversely','additionally','furthermore','moreover','therefore','thus','hence','nevertheless','nonetheless','although','though','despite','without','within','whereas','according','meanwhile','overall','subsequently','otherwise','alternatively','regarding','concerning','given','considering','ultimately','finally','initially','recently','historically','importantly','notably','significantly','similarly','consequently','accordingly','specifically','generally','typically','arguably','reportedly','allegedly','presumably','currently',
+    // C.12.1 generic sentence-starter nouns/pronouns
+    'investors','shareholders','analysts','traders','consumers','customers','markets','companies','there','such','both','either','neither','some','many','most','few','several','various','other','another','each','every','any','all','none','one','two','three',
+    // C.12.1 title-prefix qualifiers (so "Current CEO Tim Cook" -> "Tim Cook")
+    'current','upcoming','previous','former','new','incoming','outgoing','acting','interim','past','prior','next','recent','newly','soon-to-be',
+    // C.12.1 generic titles (so they are stripped from runs)
+    'ceo','cfo','coo','cto','cio','president','chairman','chairwoman','chairperson','founder','cofounder','director','chief','officer','head','vp','svp','evp','executive','manager','transition','leadership','succession','appointment','retirement','departure',
   ]);
   const properRuns = response.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+(?:[A-Z][a-zA-Z]+|of|and|&)\s+[A-Z][a-zA-Z]+|\s+[A-Z][a-zA-Z]+){0,4}\b/g) || [];
   for (const run of properRuns) {
-    const head = run.split(/\s+/)[0].toLowerCase();
-    if (PROPER_STOPWORDS.has(head)) continue;
-    if (run.length < 4) continue;
-    considerName(run);
+    // Strip leading stop-words rather than dropping the entire run, so
+    // "Current CEO Tim Cook" keeps "Tim Cook" and "Upcoming Transition" drops to nothing.
+    let words = run.split(/\s+/);
+    while (words.length && PROPER_STOPWORDS.has(words[0].toLowerCase())) words.shift();
+    while (words.length && PROPER_STOPWORDS.has(words[words.length - 1].toLowerCase())) words.pop();
+    if (words.length === 0) continue;
+    const stripped = words.join(' ');
+    if (stripped.length < 4) continue;
+    considerName(stripped);
   }
   // C.12: Dollar amounts via normalized comparison, ±2% rounding tolerance.
   const respDollars = collectDollars(response);
@@ -623,6 +640,30 @@ export async function isEntityVerifiable(
     const { fabricated } = detectFabrication(c.resp, c.corpus);
     const ok = !fabricated.some(f => /(Tim Cook|Warren Buffett)/i.test(f));
     console.log(`[CHAT-ASSISTANT][SELFTEST] norm-name ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
+  // ---- C.12.1 stop-word + possessive self-tests (6 total) ----
+  // Stop-word filter (3): sentence-starter capitals must NOT be flagged.
+  const stopwordCases: Array<{ resp: string; corpus: string; bad: RegExp; label: string }> = [
+    { resp: 'However, the stock fell on the print.', corpus: 'Shares closed lower after the report.', bad: /^However$/i, label: 'stopword-however' },
+    { resp: 'Investors should note the guidance was raised.', corpus: 'Company raised full-year guidance in the release.', bad: /^Investors$/i, label: 'stopword-investors' },
+    { resp: 'Current CEO Tim Cook addressed the meeting.', corpus: 'Apple chief executive Tim Cook spoke today.', bad: /^Current(\s+CEO)?$/i, label: 'stopword-current-ceo' },
+  ];
+  for (const c of stopwordCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const ok = !fabricated.some(f => c.bad.test(f));
+    console.log(`[CHAT-ASSISTANT][SELFTEST] stopword ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Possessive-aware extractor (3): possessor wins over trailing common noun.
+  const possessiveCases: Array<{ q: string; expect: string; label: string }> = [
+    { q: "Who is Apple's CEO?", expect: 'Apple', label: 'possessive-apple-ceo' },
+    { q: "What were Microsoft's earnings?", expect: 'Microsoft', label: 'possessive-msft-earnings' },
+    { q: "How is Tesla's stock doing?", expect: 'Tesla', label: 'possessive-tesla-stock' },
+  ];
+  for (const c of possessiveCases) {
+    const cleaned = stripInterrogatives(c.q);
+    const m = cleaned.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)[\u2019']s\b/);
+    const got = m ? m[1] : null;
+    const ok = got === c.expect;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
 })();
 
@@ -1288,9 +1329,27 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       // C.8 FIX 1: Strip interrogatives/articles before extracting the primary
       // entity so "Did Nvidia beat earnings?" yields "Nvidia", not "Did Nvidia".
       cleanedQuery = stripInterrogatives(userQuery);
-      const entityMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
-                          cleanedQuery.match(/\b[A-Z]{2,5}\b/);
-      primaryEntity = entityMatch ? entityMatch[0] : null;
+      // C.12.1: Possessive-aware extraction. "Apple's CEO" / "Microsoft's
+      // earnings" / "Tesla's stock" must yield the possessor (Apple/MSFT/
+      // Tesla), not the trailing common noun (CEO/earnings/stock).
+      const possessiveMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)[\u2019']s\b/);
+      let entityHit: string | null = possessiveMatch ? possessiveMatch[1] : null;
+      if (!entityHit) {
+        const entityMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
+                            cleanedQuery.match(/\b[A-Z]{2,5}\b/);
+        entityHit = entityMatch ? entityMatch[0] : null;
+      }
+      // C.12.1: Single capitalized proper-noun fallback (e.g. "Apple",
+      // "Tesla") so common one-word entities aren't missed. Skips
+      // sentence-starter/interrogative stop-words.
+      if (!entityHit) {
+        const SINGLE_STOP = new Set(['who','what','when','where','why','how','did','does','do','is','are','was','were','will','can','could','should','tell','explain','please','the','a','an','about','for','on','in','at','to','with','of','by','from','i','you','we','they','it','this','that','these','those','today','yesterday','tomorrow','currently','recently']);
+        for (const tok of cleanedQuery.split(/\s+/)) {
+          const w = tok.replace(/[^A-Za-z]/g, '');
+          if (/^[A-Z][a-z]{2,}$/.test(w) && !SINGLE_STOP.has(w.toLowerCase())) { entityHit = w; break; }
+        }
+      }
+      primaryEntity = entityHit;
       logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
       // C.11 FIX 1 + C.12 FIX 2: Entity verifiability whitelist with
