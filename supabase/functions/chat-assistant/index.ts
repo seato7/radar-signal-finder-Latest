@@ -1293,25 +1293,22 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       primaryEntity = entityMatch ? entityMatch[0] : null;
       logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
-      // C.11 FIX 1: Entity verifiability whitelist. Before spending any
-      // Tavily/Firecrawl budget on a FACTUAL turn with an extracted entity,
-      // confirm the entity is either (a) in the assets table or (b) a
-      // curated known financial figure. Miss → canned UNABLE TO VERIFY and
-      // skip search + Gemini entirely. Pushback turns bypass this gate so
-      // the pushback-hold mechanism can still operate.
+      // C.11 FIX 1 + C.12 FIX 2: Entity verifiability whitelist with
+      // trusted-corpus fallback. If the entity is in assets/figures, proceed
+      // normally. If it misses, we still run search this turn so the
+      // trusted-corpus fallback (≥2 trusted hits prominently mentioning the
+      // entity) can rescue legitimate real entities the local assets table
+      // doesn't have. Pushback turns bypass this gate so pushback-hold can
+      // still operate.
+      let whitelistFallbackPending = false;
       if (isFactual && primaryEntity && !detectedContradiction) {
         const v = await isEntityVerifiable(supabase, primaryEntity);
         entityInWhitelist = v.matched;
         whitelistSource = v.source;
         logStep('WHITELIST', { primary_entity: primaryEntity, matched: v.matched, source: v.source });
         if (!v.matched) {
-          cannedReply =
-            `InsiderPulse focuses on publicly traded companies and financial topics. ` +
-            `I don't have verified information about ${primaryEntity}. ` +
-            `If you're asking about a publicly traded company, try the official ticker symbol or full company name.\n\n` +
-            `Confidence Level: UNABLE TO VERIFY`;
-          cannedReason = 'whitelist_miss';
-          searchSkippedReason = 'whitelist_miss';
+          whitelistFallbackPending = true;
+          logStep('WHITELIST_FALLBACK_PENDING', { primary_entity: primaryEntity });
         }
       }
 
@@ -1323,11 +1320,7 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
         ]);
 
-      if (cannedReply !== null) {
-        // Skip search entirely on whitelist miss.
-        tavilyTriggered = false;
-        firecrawlTriggered = false;
-      } else if (isEducational || isConversational) {
+      if (isEducational || isConversational) {
         searchSkippedReason = isConversational ? 'conversational_query' : 'educational_query';
         tavilyTriggered = false;
         firecrawlTriggered = false;
@@ -1367,11 +1360,9 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           searchSkippedReason = 'search_timeout';
         }
 
-        // C.11 FIX 2: Trusted-source corpus filter. Run BOTH corpora through
-        // the domain allow-list. Junk people-search and ZoomInfo-style
+        // C.11 FIX 2: Trusted-source corpus filter. Junk people-search and
         // scrape blocks get rejected so the fabrication gate and the model
-        // never see them. Counts + rejected domains are persisted to
-        // diagnostics for verification.
+        // never see them.
         if (isFactual) {
           const tFilt = filterTrustedCorpus(tavilyResults);
           const fFilt = filterTrustedCorpus(webSearchResults);
@@ -1386,16 +1377,48 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
             rejected_domains: rejectedDomains.join(','),
           });
 
+          // C.12 FIX 2: Trusted-corpus fallback whitelist. If the assets/
+          // figures whitelist missed, check whether ≥2 trusted-domain
+          // results prominently mention the entity. If yes, treat as
+          // verifiable and proceed. Otherwise canned UNABLE TO VERIFY.
+          if (whitelistFallbackPending && primaryEntity) {
+            const combined = `${tavilyResults}\n\n${webSearchResults}`;
+            const hits = entityProminentInTrustedCorpus(primaryEntity, combined);
+            logStep('TRUSTED_CORPUS_FALLBACK', {
+              primary_entity: primaryEntity,
+              hits,
+              threshold: 2,
+            });
+            if (hits >= 2) {
+              entityInWhitelist = true;
+              whitelistSource = 'trusted_corpus_fallback';
+              whitelistFallbackPending = false;
+            } else {
+              cannedReply = buildUnableToVerifyReply(primaryEntity);
+              cannedReason = 'whitelist_miss_no_corpus_fallback';
+              searchSkippedReason = searchSkippedReason || 'whitelist_miss';
+            }
+          }
+
           // If everything got rejected and we had a verifiable entity, fall
           // back to a canned response. We trust nothing of what came back.
-          if (trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
-            cannedReply =
-              `I found search results, but none from sources I trust for financial questions.\n\n` +
-              `Confidence Level: UNABLE TO VERIFY`;
+          if (cannedReply === null && trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
+            cannedReply = buildUnableToVerifyReply(primaryEntity);
             cannedReason = 'no_trusted_sources';
           }
         }
       }
+
+      // If whitelist fallback was pending but search was skipped (e.g. educational
+      // path — shouldn't happen since whitelistFallbackPending is only set for
+      // FACTUAL), or the search timed out before the fallback could run, fall
+      // back to canned UNABLE TO VERIFY.
+      if (whitelistFallbackPending && cannedReply === null && primaryEntity) {
+        cannedReply = buildUnableToVerifyReply(primaryEntity);
+        cannedReason = 'whitelist_miss_no_corpus_fallback';
+        searchSkippedReason = searchSkippedReason || 'whitelist_miss';
+      }
+
 
       // C.9 FIX 2: Strict full-name substring entity-match.
       if (primaryEntity) {
