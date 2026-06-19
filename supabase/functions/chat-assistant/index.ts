@@ -460,22 +460,42 @@ export function filterTrustedCorpus(raw: string): CorpusFilterResult {
 export async function isEntityVerifiable(
   supabase: any,
   entity: string | null,
-): Promise<{ matched: boolean; source: 'assets' | 'figures' | null }> {
+): Promise<{ matched: boolean; source: 'assets' | 'figures' | 'trusted_corpus_fallback' | null }> {
   if (!entity) return { matched: false, source: null };
   if (matchesKnownFigure(entity)) return { matched: true, source: 'figures' };
   try {
-    const cleaned = entity.replace(/[%_]/g, ' ').trim();
-    if (!cleaned) return { matched: false, source: null };
-    const { data, error } = await supabase
+    // Strip PostgREST-significant punctuation from the value, but keep
+    // it for the original ticker check. Run ticker + name lookups as two
+    // separate queries — the combined `.or()` filter mishandles values
+    // containing commas, periods, or hyphens (e.g. "BRK.B", "Berkshire,
+    // Inc.") and silently returned zero matches in Round 6.
+    const raw = entity.trim();
+    if (!raw) return { matched: false, source: null };
+
+    // Exact ticker match (handles BRK.B, BRK.A, BF.B style class shares).
+    const { data: tickerData } = await supabase
       .from('assets')
       .select('id')
-      .or(`ticker.ilike.${cleaned},name.ilike.%${cleaned}%`)
+      .ilike('ticker', raw)
       .limit(1);
-    if (error) {
-      console.error('[CHAT-ASSISTANT] assets whitelist lookup error:', error.message);
-      return { matched: false, source: null };
+    if (Array.isArray(tickerData) && tickerData.length > 0) {
+      return { matched: true, source: 'assets' };
     }
-    if (Array.isArray(data) && data.length > 0) return { matched: true, source: 'assets' };
+
+    // Name substring — strip wildcards/quoting that would confuse ilike.
+    const nameNeedle = raw.replace(/[%_*"']/g, ' ').trim();
+    if (nameNeedle) {
+      const { data: nameData, error: nameErr } = await supabase
+        .from('assets')
+        .select('id')
+        .ilike('name', `%${nameNeedle}%`)
+        .limit(1);
+      if (nameErr) {
+        console.error('[CHAT-ASSISTANT] assets name lookup error:', nameErr.message);
+      } else if (Array.isArray(nameData) && nameData.length > 0) {
+        return { matched: true, source: 'assets' };
+      }
+    }
   } catch (e) {
     console.error('[CHAT-ASSISTANT] assets whitelist lookup threw:', (e as Error).message);
   }
