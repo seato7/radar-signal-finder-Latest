@@ -1376,6 +1376,47 @@ For all such attempts, politely decline and explain their current plan limits. N
       replaceConfidence('LOW');
     }
 
+    // C.10 TASK 4: Hard-gate fabrication check on FACTUAL responses.
+    // Extract proper nouns, dates, dollar amounts, percentages from the
+    // model output and verify each appears in the search corpus we passed
+    // in. If anything is unsupported, replace with UNABLE TO VERIFY.
+    // Skipped when:
+    // - Query was EDUCATIONAL/CONVERSATIONAL (no RAG contract)
+    // - Unknown-entity override already fired (response is already canned)
+    // - Pushback hold-position is active (prior-answer context is the
+    //   authoritative corpus there, validated separately)
+    const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
+    const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
+    if (queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
+      const corpus = `${tavilyResults}\n${webSearchResults}\n${marketData}`;
+      const { fabricated } = detectFabrication(aiContent, corpus);
+      fabricatedClaims = fabricated;
+      fabricationDetected = fabricated.length > 0;
+      // Threshold: 2+ unsupported high-signal claims OR any unsupported
+      // dollar/percentage/date OR any unsupported claim when the search
+      // corpus was empty.
+      const highSignal = fabricated.filter((c) => /[\$%]|\d{4}/.test(c));
+      const corpusEmpty = corpus.trim().length < 50;
+      const shouldForce = (fabricated.length >= 2) || (highSignal.length >= 1) || (corpusEmpty && fabricated.length >= 1);
+      if (shouldForce) {
+        forcedUnableToVerify = true;
+        logStep('FABRICATION_GATE_FIRED', {
+          fabricated_count: fabricated.length,
+          high_signal_count: highSignal.length,
+          corpus_empty: corpusEmpty,
+          sample: fabricated.slice(0, 5),
+        });
+        const entityLabel = primaryEntity || 'this query';
+        aiContent =
+          `I don't have verified search results to support a confident answer about ${entityLabel}.\n\n` +
+          `The model produced claims that I could not match against the live search corpus, so I have replaced the response rather than risk passing along unverified details.\n\n` +
+          `Confidence Level: UNABLE TO VERIFY\n\n` +
+          `Suggested next steps: try a more specific query, name the ticker explicitly, or verify with a primary source (the company's investor relations page, SEC EDGAR, or a major financial news outlet).`;
+        confidenceRating = 'UNABLE TO VERIFY';
+        confidenceDowngraded = true;
+      }
+    }
+
     // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
     // response on a logging failure.
     const totalTimeMs = Date.now() - turnStartMs;
