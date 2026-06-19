@@ -1305,9 +1305,27 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       // C.8 FIX 1: Strip interrogatives/articles before extracting the primary
       // entity so "Did Nvidia beat earnings?" yields "Nvidia", not "Did Nvidia".
       cleanedQuery = stripInterrogatives(userQuery);
-      const entityMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
-                          cleanedQuery.match(/\b[A-Z]{2,5}\b/);
-      primaryEntity = entityMatch ? entityMatch[0] : null;
+      // C.12.1: Possessive-aware extraction. "Apple's CEO" / "Microsoft's
+      // earnings" / "Tesla's stock" must yield the possessor (Apple/MSFT/
+      // Tesla), not the trailing common noun (CEO/earnings/stock).
+      const possessiveMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)[\u2019']s\b/);
+      let entityHit: string | null = possessiveMatch ? possessiveMatch[1] : null;
+      if (!entityHit) {
+        const entityMatch = cleanedQuery.match(/\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/) ||
+                            cleanedQuery.match(/\b[A-Z]{2,5}\b/);
+        entityHit = entityMatch ? entityMatch[0] : null;
+      }
+      // C.12.1: Single capitalized proper-noun fallback (e.g. "Apple",
+      // "Tesla") so common one-word entities aren't missed. Skips
+      // sentence-starter/interrogative stop-words.
+      if (!entityHit) {
+        const SINGLE_STOP = new Set(['who','what','when','where','why','how','did','does','do','is','are','was','were','will','can','could','should','tell','explain','please','the','a','an','about','for','on','in','at','to','with','of','by','from','i','you','we','they','it','this','that','these','those','today','yesterday','tomorrow','currently','recently']);
+        for (const tok of cleanedQuery.split(/\s+/)) {
+          const w = tok.replace(/[^A-Za-z]/g, '');
+          if (/^[A-Z][a-z]{2,}$/.test(w) && !SINGLE_STOP.has(w.toLowerCase())) { entityHit = w; break; }
+        }
+      }
+      primaryEntity = entityHit;
       logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
       // C.11 FIX 1 + C.12 FIX 2: Entity verifiability whitelist with
