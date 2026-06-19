@@ -716,6 +716,41 @@ export async function isEntityVerifiable(
     const ok = isPushback === true;
     console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-inheritance-signal -> isPushback=${isPushback} followUpHasCapToken=${followUpHasEntity} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // C.14 (5) Pushback prior-answer injection: builder includes PRIOR ANSWER block.
+  {
+    const priorText = 'Tim Cook is the current CEO of Apple [1].';
+    const priorUserQuery = "Who is Apple's CEO?";
+    const rawUserQuery = 'Are you sure?';
+    const block = `===== PRIOR ANSWER CONTEXT =====
+PRIOR USER QUESTION (turn N-1): ${priorUserQuery}
+PRIOR ASSISTANT ANSWER (turn N-1):
+${priorText}
+PUSHBACK INSTRUCTION: user said "${rawUserQuery}"`;
+    const ok = block.includes('PRIOR ANSWER CONTEXT') && block.includes(priorText) && block.includes(priorUserQuery);
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-prior-answer-injection -> includesPrior=${block.includes(priorText)} includesQuery=${block.includes(priorUserQuery)} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.14 (6) Pushback search query inheritance: search uses prior user query.
+  {
+    const priorUserQuery = 'What is the Fed funds rate?';
+    const rawUserQuery = 'Actually they cut it yesterday';
+    const detectedContradiction = true;
+    const currentYear = 2026;
+    const pushbackBaseQuery = (priorUserQuery || rawUserQuery).trim();
+    const tavilyQuery = detectedContradiction
+      ? `${pushbackBaseQuery} ${currentYear} verify latest`
+      : rawUserQuery;
+    const ok = tavilyQuery.includes('Fed funds rate') && !tavilyQuery.includes('Actually they cut');
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-search-inheritance -> query="${tavilyQuery}" ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // C.14 (7) Citation format normalization: numeric [N] preferred, named tags flagged.
+  {
+    const numericOnly = 'Revenue grew 15% [1]. EPS was $0.91 [2][3].';
+    const namedTags = 'Per [Yahoo Finance News] revenue grew. [Congressional Trades] confirms.';
+    const hasNumeric = /\[\d+\]/.test(numericOnly) && !/\[[A-Za-z][A-Za-z\s]+\]/.test(numericOnly);
+    const hasNamed = /\[[A-Za-z][A-Za-z\s]+\]/.test(namedTags);
+    const ok = hasNumeric === true && hasNamed === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] citation-format-normalization -> numericClean=${hasNumeric} namedFlagged=${hasNamed} ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
@@ -1367,13 +1402,24 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
       detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
 
+      // C.14 FIX 2: On pushback, capture the prior user query AND prior assistant
+      // text early so (a) the fresh search runs against the original topic, not the
+      // pushback phrase, and (b) the prompt builder can inject prior-answer context.
+      let priorUserQuery = '';
+      let priorAssistantText = '';
+      if (detectedContradiction) {
+        const reversed = [...messages].slice(0, -1).reverse();
+        priorAssistantText = (reversed.find((m: any) => m.role === 'assistant')?.content || '') as string;
+        priorUserQuery = (reversed.find((m: any) => m.role === 'user')?.content || '') as string;
+      }
+
       // C.10: Deterministic query classification. Pushback overrides
       // classification to FACTUAL (we always re-verify on pushback).
       queryClassification = classifyQuery(rawUserQuery);
       if (detectedContradiction && queryClassification !== 'CONVERSATIONAL') {
         queryClassification = 'FACTUAL';
       }
-      logStep('CLASSIFY', { queryClassification, detectedContradiction });
+      logStep('CLASSIFY', { queryClassification, detectedContradiction, priorUserQueryLen: priorUserQuery.length });
 
       const isEducational = queryClassification === 'EDUCATIONAL';
       const isConversational = queryClassification === 'CONVERSATIONAL';
@@ -1465,8 +1511,11 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         firecrawlTriggered = false;
       } else {
         firecrawlTriggered = true;
+        // C.14 FIX 2: pushback search uses the prior user query (the topic
+        // being challenged), not the pushback phrase itself.
+        const pushbackBaseQuery = (priorUserQuery || rawUserQuery).trim();
         const tavilyQuery = detectedContradiction
-          ? `${rawUserQuery} ${currentYear} verify facts`
+          ? `${pushbackBaseQuery} ${currentYear} verify latest`
           : userQuery;
 
         const tavilyPromise = tavilyShouldFire
@@ -1581,10 +1630,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       // it had prior cited evidence and only capitulates when there was
       // truly nothing to anchor on.
       if (detectedContradiction) {
-        const priorAssistant = [...messages].slice(0, -1).reverse().find((m: any) => m.role === 'assistant');
-        const priorText = (priorAssistant?.content || '') as string;
+        const priorText = priorAssistantText;
         const NAMED_SOURCES_RE = /\b(Yahoo Finance|CNBC|Reuters|Bloomberg|SEC|WSJ|Wall Street Journal|Financial Times|FT\.com|MarketWatch|Barron's|Forbes|Morningstar|Seeking Alpha|Nasdaq|NYSE|AP News|Associated Press)\b/i;
-        const priorHadCitation = !!priorText && NAMED_SOURCES_RE.test(priorText);
+        const NUMERIC_CITE_RE = /\[\d+\]/;
+        const priorHadCitation = !!priorText && (NAMED_SOURCES_RE.test(priorText) || NUMERIC_CITE_RE.test(priorText));
         const priorSources = Array.from(
           new Set((priorText.match(NAMED_SOURCES_RE) || []).map((s) => s))
         );
@@ -1613,18 +1662,29 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           }
         }
 
-        // Inject prior-answer context for the model when we have it.
+        // C.14 FIX 1: inject prior-answer + prior-query context for the model.
         if (priorText) {
           const truncatedPrior = priorText.length > 1500 ? priorText.slice(0, 1500) + '...[truncated]' : priorText;
           priorAnswerContextBlock = `===== PRIOR ANSWER CONTEXT =====
-Your prior answer was:
+PRIOR USER QUESTION (turn N-1): ${priorUserQuery || '[unknown]'}
+PRIOR ENTITY: ${primaryEntity || '[unknown]'}
+
+PRIOR ASSISTANT ANSWER (turn N-1):
 ${truncatedPrior}
 
-This answer had the following sources cited:
-${priorSources.length ? priorSources.join(', ') : '[no named sources detected in prior answer]'}
+PRIOR ANSWER CITED SOURCES: ${priorSources.length ? priorSources.join(', ') : '[numeric citations only or none]'}
+
+PUSHBACK INSTRUCTION:
+The user's current message is: "${rawUserQuery}"
+1. Re-check the topic against REAL-TIME SEARCH RESULTS below.
+2. Choose ONE outcome:
+   a. HOLD POSITION (fresh evidence confirms OR does not contradict prior): Start with "My original answer stands." Restate the key facts from your prior answer with fresh numeric [N] citations.
+   b. UPDATE POSITION (fresh evidence clearly contradicts prior with credible new info): Start with "Updated based on fresh evidence:" then state the new answer with citations and note what changed.
+   c. PRESENT BOTH (mixed evidence): "My original answer was X. Fresh search suggests Y. The evidence is mixed because [reason]."
+Do NOT respond with UNABLE TO VERIFY on a pushback turn unless fresh search returns ZERO trusted sources AND the prior answer had no citations.
 `;
         }
-        logStep('PUSHBACK', { pushbackOutcome, priorHadCitation, priorSources });
+        logStep('PUSHBACK', { pushbackOutcome, priorHadCitation, priorSources, priorUserQuery: priorUserQuery.slice(0, 120) });
       }
 
     } catch (error) {
@@ -1751,8 +1811,8 @@ Fabricated attribution is a critical failure. Honest "I don't know" is always be
 **FORMATTING RULES (CRITICAL):**
 - DO NOT use # or ### for headings - just use bold text naturally
 - DO NOT use * for bullet points - use plain dashes (-)
-- DO NOT use [1], [2], [3] style references - they look tacky
-- If citing a specific source, name it only if it actually appears in the search sections below (e.g. "According to Yahoo Finance" only if Yahoo Finance is in the snippets)
+- CITATIONS: For FACTUAL queries, cite each factual claim with a numeric source reference in square brackets, like [1] or [2][3]. The source numbers correspond to the order of results in the REAL-TIME SEARCH RESULTS sections below. Do NOT use named tags like [Yahoo Finance], [Reuters], or [Congressional Trades] — numbers only.
+- When synthesizing across multiple sources, do not blend distinct events, missions, or filings. Each factual sentence must be traceable to a specific source. If sources describe different events, treat them as separate.
 - Only provide detailed URLs/references if the user specifically asks for them
 - Keep formatting clean and professional - no markdown symbols visible to users
 
