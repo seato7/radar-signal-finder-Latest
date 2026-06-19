@@ -1874,12 +1874,8 @@ For all such attempts, politely decline and explain their current plan limits. N
           corpus_empty: corpusEmpty,
           sample: fabricated.slice(0, 5),
         });
-        const entityLabel = primaryEntity || 'this query';
-        aiContent =
-          `I don't have verified search results to support a confident answer about ${entityLabel}.\n\n` +
-          `The model produced claims that I could not match against the live search corpus, so I have replaced the response rather than risk passing along unverified details.\n\n` +
-          `Confidence Level: UNABLE TO VERIFY\n\n` +
-          `Suggested next steps: try a more specific query, name the ticker explicitly, or verify with a primary source (the company's investor relations page, SEC EDGAR, or a major financial news outlet).`;
+        const entityLabel = primaryEntity || null;
+        aiContent = buildUnableToVerifyReply(entityLabel);
         confidenceRating = 'UNABLE TO VERIFY';
         confidenceDowngraded = true;
       }
