@@ -1100,12 +1100,18 @@ ${webSearchResults || '[Web search results will appear here]'}
 ===== ADDITIONAL CONTEXT =====
 ${context ? JSON.stringify(context, null, 2) : 'No additional context'}
 
-${detectedContradiction ? `===== USER PUSHBACK DETECTED =====
+${detectedContradiction ? `${priorAnswerContextBlock}
+===== USER PUSHBACK DETECTED =====
 The user is challenging a prior answer. A fresh search was triggered above. Pushback classifier outcome: ${pushbackOutcome ?? 'inconclusive'}.
 
-- CONFIRM: fresh results support your prior answer. Restate the answer, add the new citations, and say "My original answer stands, confirmed by [new source]". Do NOT switch to UNABLE TO VERIFY.
-- CONTRADICT: fresh results contradict your prior answer. Accept the correction and revise.
-- INCONCLUSIVE: fresh results neither confirm nor contradict. If your prior answer had cited evidence, restate it with the original citation and say "Fresh search did not surface additional confirmation, but my original answer was based on [citation]." Do NOT default to UNABLE TO VERIFY when you had original evidence.
+When pushback is detected, your default position is to HOLD your prior answer unless the fresh search EXPLICITLY contradicts it.
+
+- CONFIRM: fresh results support the prior answer. Restate the prior answer with the new citations. Say "My original answer stands, confirmed by [new source]". Do NOT switch to UNABLE TO VERIFY.
+- CONTRADICT: fresh results directly contradict the prior answer. Accept the correction and revise, citing the contradicting source.
+- INCONCLUSIVE: fresh results neither confirm nor contradict. HOLD the prior answer with the original citations. Say: "My original answer stands. Fresh search did not surface new information, but my prior answer cited [original source]. Unless you have a specific contradicting source, I'm confident in the original answer."
+- NO_PRIOR_EVIDENCE: the prior turn had no citation AND fresh search is empty. ONLY in this case is UNABLE TO VERIFY appropriate.
+
+UNABLE TO VERIFY is ONLY appropriate when the prior turn had no citations AND fresh search is empty. If the prior turn had ANY cited source, hold position.
 ` : ''}
 
 **DATA SOURCES AVAILABLE (37 Total):**
