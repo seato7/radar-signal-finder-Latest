@@ -1115,6 +1115,7 @@ export type Database = {
           confidence_rating: string | null
           created_at: string
           detected_contradiction: boolean
+          entity_in_whitelist: boolean | null
           entity_match_found: boolean
           fabricated_claims: string | null
           fabrication_detected: boolean | null
@@ -1129,14 +1130,18 @@ export type Database = {
           primary_entity: string | null
           pushback_outcome: string | null
           query_classification: string | null
+          rejected_domains: string | null
+          rejected_result_count: number | null
           search_result_count: number | null
           search_skipped_reason: string | null
           tavily_chars: number
           tavily_time_ms: number | null
           tavily_triggered: boolean
           total_time_ms: number | null
+          trusted_result_count: number | null
           user_id: string | null
           user_query_preview: string | null
+          whitelist_source: string | null
         }
         Insert: {
           cleaned_query?: string | null
@@ -1144,6 +1149,7 @@ export type Database = {
           confidence_rating?: string | null
           created_at?: string
           detected_contradiction?: boolean
+          entity_in_whitelist?: boolean | null
           entity_match_found?: boolean
           fabricated_claims?: string | null
           fabrication_detected?: boolean | null
@@ -1158,14 +1164,18 @@ export type Database = {
           primary_entity?: string | null
           pushback_outcome?: string | null
           query_classification?: string | null
+          rejected_domains?: string | null
+          rejected_result_count?: number | null
           search_result_count?: number | null
           search_skipped_reason?: string | null
           tavily_chars?: number
           tavily_time_ms?: number | null
           tavily_triggered?: boolean
           total_time_ms?: number | null
+          trusted_result_count?: number | null
           user_id?: string | null
           user_query_preview?: string | null
+          whitelist_source?: string | null
         }
         Update: {
           cleaned_query?: string | null
@@ -1173,6 +1183,7 @@ export type Database = {
           confidence_rating?: string | null
           created_at?: string
           detected_contradiction?: boolean
+          entity_in_whitelist?: boolean | null
           entity_match_found?: boolean
           fabricated_claims?: string | null
           fabrication_detected?: boolean | null
@@ -1187,14 +1198,18 @@ export type Database = {
           primary_entity?: string | null
           pushback_outcome?: string | null
           query_classification?: string | null
+          rejected_domains?: string | null
+          rejected_result_count?: number | null
           search_result_count?: number | null
           search_skipped_reason?: string | null
           tavily_chars?: number
           tavily_time_ms?: number | null
           tavily_triggered?: boolean
           total_time_ms?: number | null
+          trusted_result_count?: number | null
           user_id?: string | null
           user_query_preview?: string | null
+          whitelist_source?: string | null
         }
         Relationships: []
       }
