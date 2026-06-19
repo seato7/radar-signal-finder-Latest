@@ -409,7 +409,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let cleanedQuery: string | null = null;
     let pushbackOutcome: string | null = null;
     let entityMatchFound = false;
+    let searchResultCount = 0;
+    let matchedInResultIndex: number | null = null;
     let confidenceDowngraded = false;
+    let priorAnswerContextBlock = '';
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
     
