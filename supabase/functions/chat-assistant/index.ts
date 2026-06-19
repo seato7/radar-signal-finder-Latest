@@ -1776,8 +1776,8 @@ Fabricated attribution is a critical failure. Honest "I don't know" is always be
 **FORMATTING RULES (CRITICAL):**
 - DO NOT use # or ### for headings - just use bold text naturally
 - DO NOT use * for bullet points - use plain dashes (-)
-- DO NOT use [1], [2], [3] style references - they look tacky
-- If citing a specific source, name it only if it actually appears in the search sections below (e.g. "According to Yahoo Finance" only if Yahoo Finance is in the snippets)
+- CITATIONS: For FACTUAL queries, cite each factual claim with a numeric source reference in square brackets, like [1] or [2][3]. The source numbers correspond to the order of results in the REAL-TIME SEARCH RESULTS sections below. Do NOT use named tags like [Yahoo Finance], [Reuters], or [Congressional Trades] — numbers only.
+- When synthesizing across multiple sources, do not blend distinct events, missions, or filings. Each factual sentence must be traceable to a specific source. If sources describe different events, treat them as separate.
 - Only provide detailed URLs/references if the user specifically asks for them
 - Keep formatting clean and professional - no markdown symbols visible to users
 
