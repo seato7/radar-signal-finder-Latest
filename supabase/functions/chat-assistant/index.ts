@@ -502,7 +502,7 @@ export async function isEntityVerifiable(
   return { matched: false, source: null };
 }
 
-// C.9 + C.10 + C.11 self-tests (20 total).
+// C.9 + C.10 + C.11 + C.12 self-tests (32 total).
 (function selfTest() {
   const interrogativeCases: Array<[string, string]> = [
     ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
