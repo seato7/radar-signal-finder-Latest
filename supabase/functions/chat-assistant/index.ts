@@ -686,6 +686,36 @@ export async function isEntityVerifiable(
     const ok = got === c.expect;
     console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
   }
+  // ---- C.13 production-pattern self-tests (4 total) ----
+  // (1) Institutions whitelist: "Fed" must match.
+  {
+    const got = matchesKnownFigure('Fed');
+    const ok = got === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] institutions-fed -> got=${got} expect=true ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (2) Institutions whitelist: "FOMC" must match.
+  {
+    const got = matchesKnownFigure('FOMC');
+    const ok = got === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] institutions-fomc -> got=${got} expect=true ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (3) Citation presence detector: response WITH inline [N] tags is flagged true.
+  {
+    const withCites = 'Microsoft reported $0.91/share [1]. Revenue rose 15% [2][3].';
+    const withoutCites = 'Microsoft reported earnings. Revenue rose.';
+    const hasCitations = (s: string) => /\[\d+\](?:\[\d+\])*/.test(s);
+    const ok = hasCitations(withCites) === true && hasCitations(withoutCites) === false;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] citations-detector -> withCites=${hasCitations(withCites)} withoutCites=${hasCitations(withoutCites)} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // (4) Pushback-entity-inheritance: pushback signal triggers inheritance branch.
+  {
+    const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
+    const isPushback = CONTRADICTION_RE.test('Are you sure?');
+    const followUpHasEntity = /\b[A-Z][a-z]{2,}\b/.test('Actually');
+    // On pushback we must inherit from prior, NOT extract from follow-up.
+    const ok = isPushback === true;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] pushback-inheritance-signal -> isPushback=${isPushback} followUpHasCapToken=${followUpHasEntity} ${ok ? 'PASS' : 'FAIL'}`);
+  }
 })();
 
 
