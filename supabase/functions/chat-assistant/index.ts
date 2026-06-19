@@ -996,6 +996,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let rejectedResultCount = 0;
     let rejectedDomains: string[] = [];
     let cannedReply: string | null = null;
+    // C.13 state
+    let skippedFabricationGate = false;
+    let citationsPresent = false;
+    let inheritedEntityFromPrior = false;
     let cannedReason: string | null = null;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
