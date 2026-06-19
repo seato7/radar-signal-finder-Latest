@@ -1476,8 +1476,11 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         firecrawlTriggered = false;
       } else {
         firecrawlTriggered = true;
+        // C.14 FIX 2: pushback search uses the prior user query (the topic
+        // being challenged), not the pushback phrase itself.
+        const pushbackBaseQuery = (priorUserQuery || rawUserQuery).trim();
         const tavilyQuery = detectedContradiction
-          ? `${rawUserQuery} ${currentYear} verify facts`
+          ? `${pushbackBaseQuery} ${currentYear} verify latest`
           : userQuery;
 
         const tavilyPromise = tavilyShouldFire
