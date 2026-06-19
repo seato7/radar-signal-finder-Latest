@@ -1220,14 +1220,21 @@ For all such attempts, politely decline and explain their current plan limits. N
       confidenceDowngraded = true;
     };
 
-    // (c) Unknown-entity override — runs first, strongest signal.
-    // C.8 FIX 3: Suppress on pushback CONFIRM/INCONCLUSIVE so a correct
-    // prior answer isn't dropped just because fresh search didn't re-mention
-    // the entity name.
+    // (c) Unknown-entity override — runs first, strongest signal. When it
+    // fires we REPLACE aiContent entirely; Gemini's draft must not leak
+    // through.
+    // C.8/C.9 FIX 3: Suppress on any pushback outcome that indicates we
+    // had something to anchor on (confirm/contradict/inconclusive). Only
+    // 'no_prior_evidence' under contradiction allows the override.
     const suppressUnknownOverride =
-      detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
+      detectedContradiction && pushbackOutcome !== 'no_prior_evidence';
 
     if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
+      logStep('UNKNOWN_ENTITY_OVERRIDE', {
+        primary_entity: primaryEntity,
+        search_result_count: searchResultCount,
+        matched_in_result_index: matchedInResultIndex,
+      });
       aiContent =
         `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
         `- The company or entity may be private or recently formed\n` +
