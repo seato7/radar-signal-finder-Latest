@@ -1619,7 +1619,7 @@ For all such attempts, politely decline and explain their current plan limits. N
     //   authoritative corpus there, validated separately)
     const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
     const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
-    if (queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
+    if (cannedReply === null && queryClassification === 'FACTUAL' && !alreadyOverridden && !pushbackHold) {
       const corpus = `${tavilyResults}\n${webSearchResults}\n${marketData}`;
       const { fabricated } = detectFabrication(aiContent, corpus);
       fabricatedClaims = fabricated;
