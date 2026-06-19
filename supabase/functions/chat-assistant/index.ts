@@ -914,8 +914,8 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
         ]);
 
-      if (isEducational) {
-        searchSkippedReason = 'educational_query';
+      if (isEducational || isConversational) {
+        searchSkippedReason = isConversational ? 'conversational_query' : 'educational_query';
         tavilyTriggered = false;
         firecrawlTriggered = false;
       } else {
