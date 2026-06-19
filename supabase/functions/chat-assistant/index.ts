@@ -155,29 +155,110 @@ export function classifyQuery(raw: string): QueryClassification {
   return 'FACTUAL';
 }
 
-// C.10: Fabrication detector. Extracts named-entity-shaped tokens, dates,
-// dollar amounts, and percentages from the model output; for each, checks
-// whether the substring appears in the search corpus that was actually
-// passed to the model. Returns the list of unsupported claims.
+// C.12: Numeric / date / name normalization helpers. Comparing raw strings
+// caused false-positive fabrications when the model summarized "$25.5B"
+// but the corpus said "$25,500 million". These helpers canonicalize each
+// claim before comparison so equivalent representations match.
+const MONTH_MAP: Record<string, string> = {
+  jan:'01', january:'01', feb:'02', february:'02', mar:'03', march:'03',
+  apr:'04', april:'04', may:'05', jun:'06', june:'06', jul:'07', july:'07',
+  aug:'08', august:'08', sep:'09', sept:'09', september:'09',
+  oct:'10', october:'10', nov:'11', november:'11', dec:'12', december:'12',
+};
+const DOLLAR_TOKEN_RE = /\$\s?[\d,]+(?:\.\d+)?\s*(?:trillion|billion|million|thousand|bn|tn|[btmk])?\b/gi;
+const PCT_TOKEN_RE = /\b\d+(?:\.\d+)?\s*(?:%|percent\b|basis\s*points?\b|bps\b|bp\b)/gi;
+const DATE_TOKEN_RE = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+20\d{2}\b|\b\d{1,2}\/\d{1,2}\/20\d{2}\b|\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}-(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*-20\d{2}\b/gi;
+
+export function normalizeDollar(raw: string): number | null {
+  const m = raw.match(/\$?\s?([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|tn|[btmk])?/i);
+  if (!m) return null;
+  const num = parseFloat(m[1].replace(/,/g, ''));
+  if (!isFinite(num)) return null;
+  const suf = (m[2] || '').toLowerCase();
+  let mult = 1;
+  if (suf === 'tn' || suf === 't' || suf === 'trillion') mult = 1e12;
+  else if (suf === 'bn' || suf === 'b' || suf === 'billion') mult = 1e9;
+  else if (suf === 'm' || suf === 'million') mult = 1e6;
+  else if (suf === 'k' || suf === 'thousand') mult = 1e3;
+  return num * mult;
+}
+export function normalizePercent(raw: string): number | null {
+  const bps = raw.match(/([\d.]+)\s*(?:basis\s*points?|bps?|bp)\b/i);
+  if (bps) {
+    const n = parseFloat(bps[1]);
+    return isFinite(n) ? n / 100 : null;
+  }
+  const pct = raw.match(/([\d.]+)\s*(?:%|percent)/i);
+  if (pct) {
+    const n = parseFloat(pct[1]);
+    return isFinite(n) ? n : null;
+  }
+  return null;
+}
+export function normalizeDate(raw: string): string | null {
+  let m = raw.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = raw.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+  if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  m = raw.match(/\b([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(20\d{2})\b/);
+  if (m) {
+    const mo = MONTH_MAP[m[1].toLowerCase()];
+    if (mo) return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
+  }
+  m = raw.match(/\b(\d{1,2})-([A-Za-z]{3,9})-(20\d{2})\b/);
+  if (m) {
+    const mo = MONTH_MAP[m[2].toLowerCase()];
+    if (mo) return `${m[3]}-${mo}-${m[1].padStart(2,'0')}`;
+  }
+  return null;
+}
+function collectDollars(s: string): number[] {
+  const out: number[] = [];
+  for (const m of s.match(DOLLAR_TOKEN_RE) || []) {
+    const v = normalizeDollar(m);
+    if (v !== null) out.push(v);
+  }
+  return out;
+}
+function collectPercents(s: string): number[] {
+  const out: number[] = [];
+  for (const m of s.match(PCT_TOKEN_RE) || []) {
+    const v = normalizePercent(m);
+    if (v !== null) out.push(v);
+  }
+  return out;
+}
+function collectDates(s: string): string[] {
+  const out: string[] = [];
+  for (const m of s.match(DATE_TOKEN_RE) || []) {
+    const v = normalizeDate(m);
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+// C.10 + C.12: Fabrication detector. Extracts proper-noun runs, dates,
+// dollar amounts, and percentages from the model output and checks each
+// against the search corpus. Numeric and date claims use normalized
+// comparison so "$25.5B" matches "$25,500 million" and "9/1/2026" matches
+// "September 1, 2026". Person-name runs that match a curated known-figure
+// list are accepted without corpus match.
 export function detectFabrication(response: string, searchCorpus: string): { fabricated: string[]; total: number } {
   if (!response) return { fabricated: [], total: 0 };
   const corpusLower = (searchCorpus || '').toLowerCase();
   const fabricated: string[] = [];
   const seen = new Set<string>();
-  // Tokens that don't carry standalone identity weight — accepted as supported
-  // when surrounding tokens are corpus-grounded.
   const PHRASE_FILLERS = new Set(['of','and','the','for','a','an','to','in','on','at','&','inc','inc.','corp','corp.','co','co.','ltd','llc','plc','group','holdings','holding','company']);
   const PHRASE_TITLES = new Set(['ceo','cfo','coo','cto','cio','president','chairman','chairwoman','founder','cofounder','co-founder','director','chief','officer','head','vp']);
-  const consider = (token: string) => {
+  const considerName = (token: string) => {
     const t = token.trim();
     if (!t || seen.has(t.toLowerCase())) return;
     seen.add(t.toLowerCase());
     const lower = t.toLowerCase();
     if (corpusLower.includes(lower)) return;
-    // Token-bag fallback for multi-word proper-noun runs: if every meaningful
-    // token (not a filler/title) appears somewhere in the corpus, treat as
-    // supported. Prevents false positives from word-order differences like
-    // "CEO of Apple" vs corpus "Apple CEO Tim Cook".
+    // C.12: known-figure pass — accept verified real people without corpus match.
+    if (matchesKnownFigure(t)) return;
+    // Token-bag fallback for multi-word proper-noun runs.
     const parts = lower.split(/\s+/);
     if (parts.length > 1) {
       const meaningful = parts.filter(p => !PHRASE_FILLERS.has(p) && !PHRASE_TITLES.has(p) && p.length >= 2);
@@ -185,8 +266,6 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     }
     fabricated.push(t);
   };
-  // Proper-noun runs (people, companies). Skip 1-token common words by
-  // requiring 3+ chars and skipping a stopword set.
   const PROPER_STOPWORDS = new Set([
     'analysis','recommendation','confidence','note','key','points','high','medium','low','unable','verify','tavily','firecrawl','january','february','march','april','may','june','july','august','september','october','november','december','monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','yesterday','tomorrow','this','that','these','those','user','assistant','question','answer','search','results','source','sources','data','platform','market','i','you','the','a','an','my','your','our','their','it','its',
   ]);
@@ -195,15 +274,30 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     const head = run.split(/\s+/)[0].toLowerCase();
     if (PROPER_STOPWORDS.has(head)) continue;
     if (run.length < 4) continue;
-    consider(run);
+    considerName(run);
   }
-  // Dates: 2024/2025/2026, Month DD YYYY, MM/DD/YYYY.
-  const dateRe = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s*\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b20(?:2[3-9]|3\d)\b/gi;
-  for (const m of response.match(dateRe) || []) consider(m);
-  // Dollar amounts.
-  for (const m of response.match(/\$\s?\d[\d,]*(?:\.\d+)?\s*(?:[BMK]|billion|million|trillion|thousand)?\b/gi) || []) consider(m.replace(/\s+/g, ''));
-  // Percentages with one decimal of specificity.
-  for (const m of response.match(/\b\d+(?:\.\d+)?%/g) || []) consider(m);
+  // C.12: Dollar amounts via normalized comparison, ±2% rounding tolerance.
+  const respDollars = collectDollars(response);
+  const corpDollars = collectDollars(searchCorpus);
+  for (const rd of respDollars) {
+    if (rd === 0) continue;
+    const supported = corpDollars.some(cd => Math.abs(rd - cd) <= Math.max(rd, cd) * 0.02);
+    if (!supported) fabricated.push(`$${rd.toLocaleString('en-US')}`);
+  }
+  // C.12: Percentages, ±0.05 tolerance.
+  const respPcts = collectPercents(response);
+  const corpPcts = collectPercents(searchCorpus);
+  for (const rp of respPcts) {
+    const supported = corpPcts.some(cp => Math.abs(rp - cp) <= 0.05);
+    if (!supported) fabricated.push(`${rp}%`);
+  }
+  // C.12: Dates via ISO normalization.
+  const respDates = collectDates(response);
+  const corpDatesAll = collectDates(searchCorpus);
+  const corpDateSet = new Set(corpDatesAll);
+  for (const rd of respDates) {
+    if (!corpDateSet.has(rd)) fabricated.push(rd);
+  }
   return { fabricated, total: seen.size };
 }
 
