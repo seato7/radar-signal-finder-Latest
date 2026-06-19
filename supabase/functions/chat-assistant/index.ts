@@ -1595,10 +1595,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       // it had prior cited evidence and only capitulates when there was
       // truly nothing to anchor on.
       if (detectedContradiction) {
-        const priorAssistant = [...messages].slice(0, -1).reverse().find((m: any) => m.role === 'assistant');
-        const priorText = (priorAssistant?.content || '') as string;
+        const priorText = priorAssistantText;
         const NAMED_SOURCES_RE = /\b(Yahoo Finance|CNBC|Reuters|Bloomberg|SEC|WSJ|Wall Street Journal|Financial Times|FT\.com|MarketWatch|Barron's|Forbes|Morningstar|Seeking Alpha|Nasdaq|NYSE|AP News|Associated Press)\b/i;
-        const priorHadCitation = !!priorText && NAMED_SOURCES_RE.test(priorText);
+        const NUMERIC_CITE_RE = /\[\d+\]/;
+        const priorHadCitation = !!priorText && (NAMED_SOURCES_RE.test(priorText) || NUMERIC_CITE_RE.test(priorText));
         const priorSources = Array.from(
           new Set((priorText.match(NAMED_SOURCES_RE) || []).map((s) => s))
         );
@@ -1627,18 +1627,29 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           }
         }
 
-        // Inject prior-answer context for the model when we have it.
+        // C.14 FIX 1: inject prior-answer + prior-query context for the model.
         if (priorText) {
           const truncatedPrior = priorText.length > 1500 ? priorText.slice(0, 1500) + '...[truncated]' : priorText;
           priorAnswerContextBlock = `===== PRIOR ANSWER CONTEXT =====
-Your prior answer was:
+PRIOR USER QUESTION (turn N-1): ${priorUserQuery || '[unknown]'}
+PRIOR ENTITY: ${primaryEntity || '[unknown]'}
+
+PRIOR ASSISTANT ANSWER (turn N-1):
 ${truncatedPrior}
 
-This answer had the following sources cited:
-${priorSources.length ? priorSources.join(', ') : '[no named sources detected in prior answer]'}
+PRIOR ANSWER CITED SOURCES: ${priorSources.length ? priorSources.join(', ') : '[numeric citations only or none]'}
+
+PUSHBACK INSTRUCTION:
+The user's current message is: "${rawUserQuery}"
+1. Re-check the topic against REAL-TIME SEARCH RESULTS below.
+2. Choose ONE outcome:
+   a. HOLD POSITION (fresh evidence confirms OR does not contradict prior): Start with "My original answer stands." Restate the key facts from your prior answer with fresh numeric [N] citations.
+   b. UPDATE POSITION (fresh evidence clearly contradicts prior with credible new info): Start with "Updated based on fresh evidence:" then state the new answer with citations and note what changed.
+   c. PRESENT BOTH (mixed evidence): "My original answer was X. Fresh search suggests Y. The evidence is mixed because [reason]."
+Do NOT respond with UNABLE TO VERIFY on a pushback turn unless fresh search returns ZERO trusted sources AND the prior answer had no citations.
 `;
         }
-        logStep('PUSHBACK', { pushbackOutcome, priorHadCitation, priorSources });
+        logStep('PUSHBACK', { pushbackOutcome, priorHadCitation, priorSources, priorUserQuery: priorUserQuery.slice(0, 120) });
       }
 
     } catch (error) {
