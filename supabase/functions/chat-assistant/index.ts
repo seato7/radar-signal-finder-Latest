@@ -640,6 +640,7 @@ export async function isEntityVerifiable(
     const { fabricated } = detectFabrication(c.resp, c.corpus);
     const ok = !fabricated.some(f => /(Tim Cook|Warren Buffett)/i.test(f));
     console.log(`[CHAT-ASSISTANT][SELFTEST] norm-name ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
+  }
   // ---- C.12.1 stop-word + possessive self-tests (6 total) ----
   // Stop-word filter (3): sentence-starter capitals must NOT be flagged.
   const stopwordCases: Array<{ resp: string; corpus: string; bad: RegExp; label: string }> = [
