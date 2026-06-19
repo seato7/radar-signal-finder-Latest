@@ -1541,7 +1541,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
 
           // If everything got rejected and we had a verifiable entity, fall
           // back to a canned response. We trust nothing of what came back.
-          if (cannedReply === null && trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
+          // C.13 FIX 3: NEVER override on pushback turns — the pushback
+          // hold-with-content path must preserve the model's response so
+          // the prior-answer context drives the reply.
+          if (cannedReply === null && trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity && !detectedContradiction) {
             cannedReply = buildUnableToVerifyReply(primaryEntity);
             cannedReason = 'no_trusted_sources';
           }
