@@ -1035,6 +1035,9 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let skippedFabricationGate = false;
     let citationsPresent = false;
     let inheritedEntityFromPrior = false;
+    // C.15 state
+    let priorConfidenceRating: string | null = null;
+    let inheritedConfidenceFromPrior = false;
     let cannedReason: string | null = null;
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
@@ -1460,16 +1463,21 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         try {
           const { data: prior } = await supabase
             .from('chat_assistant_diagnostics')
-            .select('primary_entity')
+            .select('primary_entity, confidence_rating')
             .eq('user_id', authenticatedUserId)
             .not('primary_entity', 'is', null)
             .order('created_at', { ascending: false })
             .limit(1);
           const inherited = Array.isArray(prior) && prior.length > 0 ? prior[0].primary_entity : null;
+          const inheritedConf = Array.isArray(prior) && prior.length > 0 ? prior[0].confidence_rating : null;
           if (inherited) {
             primaryEntity = inherited;
             inheritedEntityFromPrior = true;
             logStep('ENTITY_INHERITED', { inherited_from_prior: true, primary_entity: primaryEntity });
+          }
+          if (inheritedConf) {
+            priorConfidenceRating = String(inheritedConf).toUpperCase();
+            logStep('PRIOR_CONFIDENCE_CAPTURED', { prior_confidence: priorConfidenceRating });
           }
         } catch (e) {
           logStep('ENTITY_INHERIT_FAILED', { message: (e as Error).message });
@@ -1811,7 +1819,15 @@ Fabricated attribution is a critical failure. Honest "I don't know" is always be
 **FORMATTING RULES (CRITICAL):**
 - DO NOT use # or ### for headings - just use bold text naturally
 - DO NOT use * for bullet points - use plain dashes (-)
-- CITATIONS: For FACTUAL queries, cite each factual claim with a numeric source reference in square brackets, like [1] or [2][3]. The source numbers correspond to the order of results in the REAL-TIME SEARCH RESULTS sections below. Do NOT use named tags like [Yahoo Finance], [Reuters], or [Congressional Trades] — numbers only.
+- DO NOT wrap headings or labels in ** asterisks (e.g. write "Analysis" not "**Analysis:**"). Plain text only.
+- CITATION FORMAT RULES (STRICT):
+  * Use numeric source references in brackets only: [1], [2], [3], etc. Numbers correspond to the order of results in the REAL-TIME SEARCH RESULTS section.
+  * FORBIDDEN — never append source names or labels inside brackets. Bad: [1, Web Search], [2, Yahoo Finance], [3, Market Intelligence], [Yahoo Finance News], [Reuters]. Good: [1], [2][3], [4].
+  * Multiple sources: use separate bracket pairs like [1][2][3], never [1, 2, 3].
+- HEDGE RULES (STRICT):
+  * If 3+ trusted sources directly answer the question, answer with confidence based on what they say. Do NOT add hedges like "I don't have a current source confirming..." when the sources clearly do confirm.
+  * Only say "I don't have a current source for [specific claim]" when sources truly don't address that specific claim.
+  * Profitability questions: if latest quarterly earnings show positive net income per cited sources, the company is making money — do not hedge based on absence of forward-looking projections.
 - When synthesizing across multiple sources, do not blend distinct events, missions, or filings. Each factual sentence must be traceable to a specific source. If sources describe different events, treat them as separate.
 - Only provide detailed URLs/references if the user specifically asks for them
 - Keep formatting clean and professional - no markdown symbols visible to users
