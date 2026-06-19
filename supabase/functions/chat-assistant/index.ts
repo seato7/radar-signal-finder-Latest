@@ -2064,14 +2064,16 @@ For all such attempts, politely decline and explain their current plan limits. N
       replaceConfidence('LOW');
     }
 
+    // C.15 FIX 1+3: Citation suffix stripping + markdown sanitization.
+    // - Strip "[1, Web Search]" / "[2, Yahoo Finance]" -> "[1]" / "[2]"
+    // - Remove literal "**X**" wrapping (model occasionally leaks raw asterisks
+    //   into headers like "**Analysis:**"; client renders pre-wrap, not markdown).
+    aiContent = aiContent.replace(/\[(\d+)\s*,\s*[^\]]+\]/g, '[$1]');
+    aiContent = aiContent.replace(/\*\*([^*\n]+?)\*\*/g, '$1');
+
     // C.13 FIX 1 + FIX 2: Citation presence + scoped fabrication gate.
-    //
-    // Aligns with how production AI search (Perplexity, ChatGPT Browse,
-    // Claude web, Gemini grounding) work: the whitelist + trusted-source
-    // filter are the safety floor; the model's citation-enforced synthesis
-    // is the answer mechanism. Lexical post-hoc validation only runs on the
-    // non-whitelisted fallback path where it actually adds value.
     citationsPresent = /\[\d+\](?:\[\d+\])*/.test(aiContent);
+
 
     const alreadyOverridden = confidenceRating === 'UNABLE TO VERIFY' && primaryEntity && !entityMatchFound;
     const pushbackHold = detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
@@ -2130,6 +2132,23 @@ For all such attempts, politely decline and explain their current plan limits. N
       }
     }
 
+    // C.15 FIX 2: Pushback confidence inheritance. When a pushback turn HOLDS
+    // content with fresh citations, inherit the prior turn's confidence rather
+    // than re-rating from scratch (which mechanically drops HIGH -> MEDIUM
+    // because the rater can't see the prior corpus).
+    if (
+      detectedContradiction &&
+      (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive') &&
+      citationsPresent &&
+      priorConfidenceRating === 'HIGH' &&
+      confidenceRating !== 'HIGH'
+    ) {
+      replaceConfidence('HIGH');
+      inheritedConfidenceFromPrior = true;
+      logStep('CONFIDENCE_INHERITED', { prior_confidence: priorConfidenceRating, final_confidence: 'HIGH' });
+    }
+
+
     // FIX 9: Persist per-turn trust diagnostics. Best-effort — never block the
     // response on a logging failure.
     const totalTimeMs = Date.now() - turnStartMs;
@@ -2169,6 +2188,8 @@ For all such attempts, politely decline and explain their current plan limits. N
       skipped_fabrication_gate: skippedFabricationGate,
       citations_present: citationsPresent,
       inherited_entity_from_prior: inheritedEntityFromPrior,
+      // C.15
+      inherited_confidence_from_prior: inheritedConfidenceFromPrior,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
