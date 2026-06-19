@@ -155,29 +155,110 @@ export function classifyQuery(raw: string): QueryClassification {
   return 'FACTUAL';
 }
 
-// C.10: Fabrication detector. Extracts named-entity-shaped tokens, dates,
-// dollar amounts, and percentages from the model output; for each, checks
-// whether the substring appears in the search corpus that was actually
-// passed to the model. Returns the list of unsupported claims.
+// C.12: Numeric / date / name normalization helpers. Comparing raw strings
+// caused false-positive fabrications when the model summarized "$25.5B"
+// but the corpus said "$25,500 million". These helpers canonicalize each
+// claim before comparison so equivalent representations match.
+const MONTH_MAP: Record<string, string> = {
+  jan:'01', january:'01', feb:'02', february:'02', mar:'03', march:'03',
+  apr:'04', april:'04', may:'05', jun:'06', june:'06', jul:'07', july:'07',
+  aug:'08', august:'08', sep:'09', sept:'09', september:'09',
+  oct:'10', october:'10', nov:'11', november:'11', dec:'12', december:'12',
+};
+const DOLLAR_TOKEN_RE = /\$\s?[\d,]+(?:\.\d+)?\s*(?:trillion|billion|million|thousand|bn|tn|[btmk])?\b/gi;
+const PCT_TOKEN_RE = /\b\d+(?:\.\d+)?\s*(?:%|percent\b|basis\s*points?\b|bps\b|bp\b)/gi;
+const DATE_TOKEN_RE = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+20\d{2}\b|\b\d{1,2}\/\d{1,2}\/20\d{2}\b|\b20\d{2}-\d{1,2}-\d{1,2}\b|\b\d{1,2}-(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*-20\d{2}\b/gi;
+
+export function normalizeDollar(raw: string): number | null {
+  const m = raw.match(/\$?\s?([\d,]+(?:\.\d+)?)\s*(trillion|billion|million|thousand|bn|tn|[btmk])?/i);
+  if (!m) return null;
+  const num = parseFloat(m[1].replace(/,/g, ''));
+  if (!isFinite(num)) return null;
+  const suf = (m[2] || '').toLowerCase();
+  let mult = 1;
+  if (suf === 'tn' || suf === 't' || suf === 'trillion') mult = 1e12;
+  else if (suf === 'bn' || suf === 'b' || suf === 'billion') mult = 1e9;
+  else if (suf === 'm' || suf === 'million') mult = 1e6;
+  else if (suf === 'k' || suf === 'thousand') mult = 1e3;
+  return num * mult;
+}
+export function normalizePercent(raw: string): number | null {
+  const bps = raw.match(/([\d.]+)\s*(?:basis\s*points?|bps?|bp)\b/i);
+  if (bps) {
+    const n = parseFloat(bps[1]);
+    return isFinite(n) ? n / 100 : null;
+  }
+  const pct = raw.match(/([\d.]+)\s*(?:%|percent)/i);
+  if (pct) {
+    const n = parseFloat(pct[1]);
+    return isFinite(n) ? n : null;
+  }
+  return null;
+}
+export function normalizeDate(raw: string): string | null {
+  let m = raw.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = raw.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+  if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  m = raw.match(/\b([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(20\d{2})\b/);
+  if (m) {
+    const mo = MONTH_MAP[m[1].toLowerCase()];
+    if (mo) return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
+  }
+  m = raw.match(/\b(\d{1,2})-([A-Za-z]{3,9})-(20\d{2})\b/);
+  if (m) {
+    const mo = MONTH_MAP[m[2].toLowerCase()];
+    if (mo) return `${m[3]}-${mo}-${m[1].padStart(2,'0')}`;
+  }
+  return null;
+}
+function collectDollars(s: string): number[] {
+  const out: number[] = [];
+  for (const m of s.match(DOLLAR_TOKEN_RE) || []) {
+    const v = normalizeDollar(m);
+    if (v !== null) out.push(v);
+  }
+  return out;
+}
+function collectPercents(s: string): number[] {
+  const out: number[] = [];
+  for (const m of s.match(PCT_TOKEN_RE) || []) {
+    const v = normalizePercent(m);
+    if (v !== null) out.push(v);
+  }
+  return out;
+}
+function collectDates(s: string): string[] {
+  const out: string[] = [];
+  for (const m of s.match(DATE_TOKEN_RE) || []) {
+    const v = normalizeDate(m);
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+// C.10 + C.12: Fabrication detector. Extracts proper-noun runs, dates,
+// dollar amounts, and percentages from the model output and checks each
+// against the search corpus. Numeric and date claims use normalized
+// comparison so "$25.5B" matches "$25,500 million" and "9/1/2026" matches
+// "September 1, 2026". Person-name runs that match a curated known-figure
+// list are accepted without corpus match.
 export function detectFabrication(response: string, searchCorpus: string): { fabricated: string[]; total: number } {
   if (!response) return { fabricated: [], total: 0 };
   const corpusLower = (searchCorpus || '').toLowerCase();
   const fabricated: string[] = [];
   const seen = new Set<string>();
-  // Tokens that don't carry standalone identity weight — accepted as supported
-  // when surrounding tokens are corpus-grounded.
   const PHRASE_FILLERS = new Set(['of','and','the','for','a','an','to','in','on','at','&','inc','inc.','corp','corp.','co','co.','ltd','llc','plc','group','holdings','holding','company']);
   const PHRASE_TITLES = new Set(['ceo','cfo','coo','cto','cio','president','chairman','chairwoman','founder','cofounder','co-founder','director','chief','officer','head','vp']);
-  const consider = (token: string) => {
+  const considerName = (token: string) => {
     const t = token.trim();
     if (!t || seen.has(t.toLowerCase())) return;
     seen.add(t.toLowerCase());
     const lower = t.toLowerCase();
     if (corpusLower.includes(lower)) return;
-    // Token-bag fallback for multi-word proper-noun runs: if every meaningful
-    // token (not a filler/title) appears somewhere in the corpus, treat as
-    // supported. Prevents false positives from word-order differences like
-    // "CEO of Apple" vs corpus "Apple CEO Tim Cook".
+    // C.12: known-figure pass — accept verified real people without corpus match.
+    if (matchesKnownFigure(t)) return;
+    // Token-bag fallback for multi-word proper-noun runs.
     const parts = lower.split(/\s+/);
     if (parts.length > 1) {
       const meaningful = parts.filter(p => !PHRASE_FILLERS.has(p) && !PHRASE_TITLES.has(p) && p.length >= 2);
@@ -185,8 +266,6 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     }
     fabricated.push(t);
   };
-  // Proper-noun runs (people, companies). Skip 1-token common words by
-  // requiring 3+ chars and skipping a stopword set.
   const PROPER_STOPWORDS = new Set([
     'analysis','recommendation','confidence','note','key','points','high','medium','low','unable','verify','tavily','firecrawl','january','february','march','april','may','june','july','august','september','october','november','december','monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','yesterday','tomorrow','this','that','these','those','user','assistant','question','answer','search','results','source','sources','data','platform','market','i','you','the','a','an','my','your','our','their','it','its',
   ]);
@@ -195,15 +274,30 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     const head = run.split(/\s+/)[0].toLowerCase();
     if (PROPER_STOPWORDS.has(head)) continue;
     if (run.length < 4) continue;
-    consider(run);
+    considerName(run);
   }
-  // Dates: 2024/2025/2026, Month DD YYYY, MM/DD/YYYY.
-  const dateRe = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s*\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b20(?:2[3-9]|3\d)\b/gi;
-  for (const m of response.match(dateRe) || []) consider(m);
-  // Dollar amounts.
-  for (const m of response.match(/\$\s?\d[\d,]*(?:\.\d+)?\s*(?:[BMK]|billion|million|trillion|thousand)?\b/gi) || []) consider(m.replace(/\s+/g, ''));
-  // Percentages with one decimal of specificity.
-  for (const m of response.match(/\b\d+(?:\.\d+)?%/g) || []) consider(m);
+  // C.12: Dollar amounts via normalized comparison, ±2% rounding tolerance.
+  const respDollars = collectDollars(response);
+  const corpDollars = collectDollars(searchCorpus);
+  for (const rd of respDollars) {
+    if (rd === 0) continue;
+    const supported = corpDollars.some(cd => Math.abs(rd - cd) <= Math.max(rd, cd) * 0.02);
+    if (!supported) fabricated.push(`$${rd.toLocaleString('en-US')}`);
+  }
+  // C.12: Percentages, ±0.05 tolerance.
+  const respPcts = collectPercents(response);
+  const corpPcts = collectPercents(searchCorpus);
+  for (const rp of respPcts) {
+    const supported = corpPcts.some(cp => Math.abs(rp - cp) <= 0.05);
+    if (!supported) fabricated.push(`${rp}%`);
+  }
+  // C.12: Dates via ISO normalization.
+  const respDates = collectDates(response);
+  const corpDatesAll = collectDates(searchCorpus);
+  const corpDateSet = new Set(corpDatesAll);
+  for (const rd of respDates) {
+    if (!corpDateSet.has(rd)) fabricated.push(rd);
+  }
   return { fabricated, total: seen.size };
 }
 
@@ -245,6 +339,20 @@ const TRUSTED_DOMAINS: string[] = [
   'cnn.com','apnews.com','ap.org','koyfin.com','dividendmax.com',
   'marketchameleon.com','en.wikipedia.org','wikipedia.org',
 ];
+// C.12: Official corporate IR / company domains. Round 6 showed
+// berkshirehathaway.com, apple.com, tesla.com, nvidianews.nvidia.com, etc.
+// were rejected as untrusted, starving the corpus for legitimate large-cap
+// questions. Trust first-party domains of covered issuers outright.
+const OFFICIAL_COMPANY_DOMAINS: string[] = [
+  'berkshirehathaway.com','apple.com','microsoft.com','tesla.com','nvidia.com',
+  'google.com','abc.xyz','amazon.com','meta.com','fb.com','netflix.com',
+  'oracle.com','salesforce.com','adobe.com','ibm.com','intel.com','amd.com',
+  'walmart.com','costco.com','disney.com','jpmorganchase.com','jpmorgan.com',
+  'goldmansachs.com','morganstanley.com','bankofamerica.com','citigroup.com',
+  'wellsfargo.com','visa.com','mastercard.com','paypal.com','coinbase.com',
+  'pfizer.com','jnj.com','unitedhealthgroup.com','exxonmobil.com','chevron.com',
+  'boeing.com','lockheedmartin.com','generalmotors.com','ford.com','spacex.com',
+];
 // Known junk / people-search / non-authoritative-for-finance domains.
 const UNTRUSTED_DOMAINS: string[] = [
   'whitepages.com','zoominfo.com','rocketreach.co','linkedin.com','spokeo.com',
@@ -263,6 +371,14 @@ export function classifyDomain(url: string): { domain: string; trusted: boolean;
   for (const t of TRUSTED_DOMAINS) {
     if (host === t || host.endsWith('.' + t)) return { domain: host, trusted: true, reason: 'trusted_list' };
   }
+  for (const c of OFFICIAL_COMPANY_DOMAINS) {
+    if (host === c || host.endsWith('.' + c)) return { domain: host, trusted: true, reason: 'official_company' };
+  }
+  // C.12: All .gov TLDs are first-party government sources (federalreserve.gov,
+  // treasury.gov, bls.gov, bea.gov) — trust by TLD.
+  if (host.endsWith('.gov')) {
+    return { domain: host, trusted: true, reason: 'gov_tld' };
+  }
   // Heuristic: official IR / press release / newsroom paths on .com.
   if (/\/(investors?|press|newsroom|news-?releases?)\//i.test(url)) {
     return { domain: host, trusted: true, reason: 'ir_path' };
@@ -271,6 +387,39 @@ export function classifyDomain(url: string): { domain: string; trusted: boolean;
     return { domain: host, trusted: true, reason: 'news_subdomain' };
   }
   return { domain: host, trusted: false, reason: 'unknown_domain' };
+}
+
+// C.12: Count trusted-corpus blocks that prominently mention the entity
+// (in the first 300 chars — covers title + URL line + opening body). Used
+// as the secondary whitelist gate when the assets/figures lookup misses
+// but the entity may still be a covered real company.
+export function entityProminentInTrustedCorpus(entity: string | null, trustedCorpus: string): number {
+  if (!entity || !trustedCorpus) return 0;
+  const needle = stripPossessive(entity).toLowerCase().trim();
+  if (!needle) return 0;
+  const blocks = trustedCorpus.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  let hits = 0;
+  for (const b of blocks) {
+    const head = b.slice(0, 300).toLowerCase();
+    if (head.includes(needle)) hits++;
+  }
+  return hits;
+}
+
+// C.12: Unified UNABLE TO VERIFY template. Replaces the three prior
+// distinct templates (whitelist_miss / unknown_entity / fabrication_gate)
+// so user experience is consistent. The "may be private" line — actively
+// misleading for real entities like Berkshire — is removed.
+export function buildUnableToVerifyReply(entity: string | null): string {
+  const target = entity && entity.trim()
+    ? entity.trim()
+    : 'a confident answer to that question';
+  return (
+    `I couldn't verify ${target} against trusted financial sources. ` +
+    `This can happen when an entity is private, very new, not in my coverage, ` +
+    `or when public information about it is limited.\n\n` +
+    `Confidence Level: UNABLE TO VERIFY`
+  );
 }
 
 export interface CorpusFilterResult {
@@ -311,29 +460,49 @@ export function filterTrustedCorpus(raw: string): CorpusFilterResult {
 export async function isEntityVerifiable(
   supabase: any,
   entity: string | null,
-): Promise<{ matched: boolean; source: 'assets' | 'figures' | null }> {
+): Promise<{ matched: boolean; source: 'assets' | 'figures' | 'trusted_corpus_fallback' | null }> {
   if (!entity) return { matched: false, source: null };
   if (matchesKnownFigure(entity)) return { matched: true, source: 'figures' };
   try {
-    const cleaned = entity.replace(/[%_]/g, ' ').trim();
-    if (!cleaned) return { matched: false, source: null };
-    const { data, error } = await supabase
+    // Strip PostgREST-significant punctuation from the value, but keep
+    // it for the original ticker check. Run ticker + name lookups as two
+    // separate queries — the combined `.or()` filter mishandles values
+    // containing commas, periods, or hyphens (e.g. "BRK.B", "Berkshire,
+    // Inc.") and silently returned zero matches in Round 6.
+    const raw = entity.trim();
+    if (!raw) return { matched: false, source: null };
+
+    // Exact ticker match (handles BRK.B, BRK.A, BF.B style class shares).
+    const { data: tickerData } = await supabase
       .from('assets')
       .select('id')
-      .or(`ticker.ilike.${cleaned},name.ilike.%${cleaned}%`)
+      .ilike('ticker', raw)
       .limit(1);
-    if (error) {
-      console.error('[CHAT-ASSISTANT] assets whitelist lookup error:', error.message);
-      return { matched: false, source: null };
+    if (Array.isArray(tickerData) && tickerData.length > 0) {
+      return { matched: true, source: 'assets' };
     }
-    if (Array.isArray(data) && data.length > 0) return { matched: true, source: 'assets' };
+
+    // Name substring — strip wildcards/quoting that would confuse ilike.
+    const nameNeedle = raw.replace(/[%_*"']/g, ' ').trim();
+    if (nameNeedle) {
+      const { data: nameData, error: nameErr } = await supabase
+        .from('assets')
+        .select('id')
+        .ilike('name', `%${nameNeedle}%`)
+        .limit(1);
+      if (nameErr) {
+        console.error('[CHAT-ASSISTANT] assets name lookup error:', nameErr.message);
+      } else if (Array.isArray(nameData) && nameData.length > 0) {
+        return { matched: true, source: 'assets' };
+      }
+    }
   } catch (e) {
     console.error('[CHAT-ASSISTANT] assets whitelist lookup threw:', (e as Error).message);
   }
   return { matched: false, source: null };
 }
 
-// C.9 + C.10 + C.11 self-tests (20 total).
+// C.9 + C.10 + C.11 + C.12 self-tests (32 total).
 (function selfTest() {
   const interrogativeCases: Array<[string, string]> = [
     ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
@@ -404,6 +573,56 @@ export async function isEntityVerifiable(
     const got = classifyDomain(c.url).trusted;
     const ok = got === c.expect;
     console.log(`[CHAT-ASSISTANT][SELFTEST] ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // ---- C.12 normalization self-tests (12 total) ----
+  // Dollar normalization (4): equivalent magnitudes across notation must
+  // NOT flag as fabrication.
+  const dollarCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Revenue was $25.5B last quarter.', corpus: 'Q1 revenue totaled $25,500 million in the filing.', label: 'dollar-B-vs-million' },
+    { resp: 'Reached a market cap of $1.5 trillion today.', corpus: 'Market capitalization reached $1,500 billion at close.', label: 'dollar-trillion-vs-billion' },
+    { resp: 'They raised $500M in funding.', corpus: 'Company raised $500 million in series E.', label: 'dollar-M-vs-million' },
+    { resp: 'Debt stands at $3.2bn now.', corpus: 'Net debt of $3.2 billion as of filing.', label: 'dollar-bn-vs-billion' },
+  ];
+  for (const c of dollarCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const hasFabDollar = fabricated.some(f => /^\$/.test(f));
+    const ok = !hasFabDollar;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-dollar ${c.label} -> hasFabDollar=${hasFabDollar} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Percentage normalization (3): %, percent, basis points.
+  const pctCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Yields rose 0.91% today on the print.', corpus: 'Treasury rates ticked up by 91 basis points after the auction.', label: 'pct-vs-bps' },
+    { resp: 'Stock fell 5.5% on the news.', corpus: 'Shares closed down 5.5 percent in intraday trading.', label: 'pct-vs-percent' },
+    { resp: 'Inflation jumped 2% year over year.', corpus: 'Core CPI moved 200 basis points higher YoY in the report.', label: 'pct-low-vs-bps' },
+  ];
+  for (const c of pctCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const hasFabPct = fabricated.some(f => /%$/.test(f));
+    const ok = !hasFabPct;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-pct ${c.label} -> hasFabPct=${hasFabPct} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Date normalization (3): formats normalize to ISO.
+  const dateCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Filed on September 1 2026 with the SEC commission.', corpus: 'SEC filing dated 9/1/2026 was posted to EDGAR.', label: 'date-words-vs-slash' },
+    { resp: 'Quarter ended Sept 1, 2026 per the press release.', corpus: 'Reporting period ending 2026-09-01 was disclosed.', label: 'date-abbrev-vs-iso' },
+    { resp: 'Effective 01-Sep-2026 per the filing letter.', corpus: 'Effective September 1, 2026 per the agreement.', label: 'date-dash-vs-words' },
+  ];
+  for (const c of dateCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const hasFabDate = fabricated.some(f => /^20\d{2}-\d{2}-\d{2}$/.test(f));
+    const ok = !hasFabDate;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-date ${c.label} -> hasFabDate=${hasFabDate} flagged=${fabricated.slice(0,3).join('|')} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+  // Person names known-figure pass (2): real figures in KNOWN_FINANCIAL_FIGURES
+  // must not be flagged even when the corpus uses only a last name.
+  const nameCases: Array<{ resp: string; corpus: string; label: string }> = [
+    { resp: 'Tim Cook addressed shareholders at the meeting.', corpus: 'CEO Cook spoke at the annual gathering.', label: 'figure-tim-cook' },
+    { resp: 'Warren Buffett commented on the deal terms.', corpus: 'Buffett told reporters on Friday at the office.', label: 'figure-buffett' },
+  ];
+  for (const c of nameCases) {
+    const { fabricated } = detectFabrication(c.resp, c.corpus);
+    const ok = !fabricated.some(f => /(Tim Cook|Warren Buffett)/i.test(f));
+    console.log(`[CHAT-ASSISTANT][SELFTEST] norm-name ${c.label} -> flagged=[${fabricated.join('|')}] ${ok ? 'PASS' : 'FAIL'}`);
   }
 })();
 
@@ -680,7 +899,7 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let forcedUnableToVerify = false;
     // C.11 state
     let entityInWhitelist: boolean | null = null;
-    let whitelistSource: 'assets' | 'figures' | null = null;
+    let whitelistSource: 'assets' | 'figures' | 'trusted_corpus_fallback' | null = null;
     let trustedResultCount = 0;
     let rejectedResultCount = 0;
     let rejectedDomains: string[] = [];
@@ -1074,25 +1293,22 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       primaryEntity = entityMatch ? entityMatch[0] : null;
       logStep('ENTITY', { rawUserQuery: rawUserQuery.slice(0, 200), cleanedQuery, primaryEntity });
 
-      // C.11 FIX 1: Entity verifiability whitelist. Before spending any
-      // Tavily/Firecrawl budget on a FACTUAL turn with an extracted entity,
-      // confirm the entity is either (a) in the assets table or (b) a
-      // curated known financial figure. Miss → canned UNABLE TO VERIFY and
-      // skip search + Gemini entirely. Pushback turns bypass this gate so
-      // the pushback-hold mechanism can still operate.
+      // C.11 FIX 1 + C.12 FIX 2: Entity verifiability whitelist with
+      // trusted-corpus fallback. If the entity is in assets/figures, proceed
+      // normally. If it misses, we still run search this turn so the
+      // trusted-corpus fallback (≥2 trusted hits prominently mentioning the
+      // entity) can rescue legitimate real entities the local assets table
+      // doesn't have. Pushback turns bypass this gate so pushback-hold can
+      // still operate.
+      let whitelistFallbackPending = false;
       if (isFactual && primaryEntity && !detectedContradiction) {
         const v = await isEntityVerifiable(supabase, primaryEntity);
         entityInWhitelist = v.matched;
         whitelistSource = v.source;
         logStep('WHITELIST', { primary_entity: primaryEntity, matched: v.matched, source: v.source });
         if (!v.matched) {
-          cannedReply =
-            `InsiderPulse focuses on publicly traded companies and financial topics. ` +
-            `I don't have verified information about ${primaryEntity}. ` +
-            `If you're asking about a publicly traded company, try the official ticker symbol or full company name.\n\n` +
-            `Confidence Level: UNABLE TO VERIFY`;
-          cannedReason = 'whitelist_miss';
-          searchSkippedReason = 'whitelist_miss';
+          whitelistFallbackPending = true;
+          logStep('WHITELIST_FALLBACK_PENDING', { primary_entity: primaryEntity });
         }
       }
 
@@ -1104,11 +1320,7 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
         ]);
 
-      if (cannedReply !== null) {
-        // Skip search entirely on whitelist miss.
-        tavilyTriggered = false;
-        firecrawlTriggered = false;
-      } else if (isEducational || isConversational) {
+      if (isEducational || isConversational) {
         searchSkippedReason = isConversational ? 'conversational_query' : 'educational_query';
         tavilyTriggered = false;
         firecrawlTriggered = false;
@@ -1148,11 +1360,9 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
           searchSkippedReason = 'search_timeout';
         }
 
-        // C.11 FIX 2: Trusted-source corpus filter. Run BOTH corpora through
-        // the domain allow-list. Junk people-search and ZoomInfo-style
+        // C.11 FIX 2: Trusted-source corpus filter. Junk people-search and
         // scrape blocks get rejected so the fabrication gate and the model
-        // never see them. Counts + rejected domains are persisted to
-        // diagnostics for verification.
+        // never see them.
         if (isFactual) {
           const tFilt = filterTrustedCorpus(tavilyResults);
           const fFilt = filterTrustedCorpus(webSearchResults);
@@ -1167,16 +1377,48 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
             rejected_domains: rejectedDomains.join(','),
           });
 
+          // C.12 FIX 2: Trusted-corpus fallback whitelist. If the assets/
+          // figures whitelist missed, check whether ≥2 trusted-domain
+          // results prominently mention the entity. If yes, treat as
+          // verifiable and proceed. Otherwise canned UNABLE TO VERIFY.
+          if (whitelistFallbackPending && primaryEntity) {
+            const combined = `${tavilyResults}\n\n${webSearchResults}`;
+            const hits = entityProminentInTrustedCorpus(primaryEntity, combined);
+            logStep('TRUSTED_CORPUS_FALLBACK', {
+              primary_entity: primaryEntity,
+              hits,
+              threshold: 2,
+            });
+            if (hits >= 2) {
+              entityInWhitelist = true;
+              whitelistSource = 'trusted_corpus_fallback';
+              whitelistFallbackPending = false;
+            } else {
+              cannedReply = buildUnableToVerifyReply(primaryEntity);
+              cannedReason = 'whitelist_miss_no_corpus_fallback';
+              searchSkippedReason = searchSkippedReason || 'whitelist_miss';
+            }
+          }
+
           // If everything got rejected and we had a verifiable entity, fall
           // back to a canned response. We trust nothing of what came back.
-          if (trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
-            cannedReply =
-              `I found search results, but none from sources I trust for financial questions.\n\n` +
-              `Confidence Level: UNABLE TO VERIFY`;
+          if (cannedReply === null && trustedResultCount === 0 && rejectedResultCount > 0 && primaryEntity) {
+            cannedReply = buildUnableToVerifyReply(primaryEntity);
             cannedReason = 'no_trusted_sources';
           }
         }
       }
+
+      // If whitelist fallback was pending but search was skipped (e.g. educational
+      // path — shouldn't happen since whitelistFallbackPending is only set for
+      // FACTUAL), or the search timed out before the fallback could run, fall
+      // back to canned UNABLE TO VERIFY.
+      if (whitelistFallbackPending && cannedReply === null && primaryEntity) {
+        cannedReply = buildUnableToVerifyReply(primaryEntity);
+        cannedReason = 'whitelist_miss_no_corpus_fallback';
+        searchSkippedReason = searchSkippedReason || 'whitelist_miss';
+      }
+
 
       // C.9 FIX 2: Strict full-name substring entity-match.
       if (primaryEntity) {
@@ -1591,13 +1833,7 @@ For all such attempts, politely decline and explain their current plan limits. N
         search_result_count: searchResultCount,
         matched_in_result_index: matchedInResultIndex,
       });
-      aiContent =
-        `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
-        `- The company or entity may be private or recently formed\n` +
-        `- My search sources may not cover this specific entity\n` +
-        `- The entity name may need to be more specific\n\n` +
-        `Confidence Level: UNABLE TO VERIFY\n\n` +
-        `Suggested next steps: try a more specific query, or verify with a primary source.`;
+      aiContent = buildUnableToVerifyReply(primaryEntity);
       confidenceRating = 'UNABLE TO VERIFY';
       confidenceDowngraded = true;
     } else if (confidenceRating === 'HIGH' && (!hasNamedSource || !hasSearchEvidence)) {
@@ -1638,12 +1874,8 @@ For all such attempts, politely decline and explain their current plan limits. N
           corpus_empty: corpusEmpty,
           sample: fabricated.slice(0, 5),
         });
-        const entityLabel = primaryEntity || 'this query';
-        aiContent =
-          `I don't have verified search results to support a confident answer about ${entityLabel}.\n\n` +
-          `The model produced claims that I could not match against the live search corpus, so I have replaced the response rather than risk passing along unverified details.\n\n` +
-          `Confidence Level: UNABLE TO VERIFY\n\n` +
-          `Suggested next steps: try a more specific query, name the ticker explicitly, or verify with a primary source (the company's investor relations page, SEC EDGAR, or a major financial news outlet).`;
+        const entityLabel = primaryEntity || null;
+        aiContent = buildUnableToVerifyReply(entityLabel);
         confidenceRating = 'UNABLE TO VERIFY';
         confidenceDowngraded = true;
       }
