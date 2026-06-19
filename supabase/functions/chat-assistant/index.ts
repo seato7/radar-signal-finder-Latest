@@ -1679,6 +1679,11 @@ For all such attempts, politely decline and explain their current plan limits. N
       fabrication_detected: fabricationDetected,
       fabricated_claims: fabricatedClaims.length ? fabricatedClaims.slice(0, 20).join(', ').slice(0, 2000) : null,
       forced_unable_to_verify: forcedUnableToVerify,
+      entity_in_whitelist: entityInWhitelist,
+      whitelist_source: whitelistSource,
+      trusted_result_count: trustedResultCount,
+      rejected_result_count: rejectedResultCount,
+      rejected_domains: rejectedDomains.length ? rejectedDomains.join(',').slice(0, 2000) : null,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
