@@ -1126,6 +1126,7 @@ export type Database = {
           gemini_time_ms: number | null
           has_current_date: boolean
           id: string
+          inherited_confidence_from_prior: boolean | null
           inherited_entity_from_prior: boolean | null
           matched_in_result_index: number | null
           model_input_total_chars: number
@@ -1163,6 +1164,7 @@ export type Database = {
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
+          inherited_confidence_from_prior?: boolean | null
           inherited_entity_from_prior?: boolean | null
           matched_in_result_index?: number | null
           model_input_total_chars?: number
@@ -1200,6 +1202,7 @@ export type Database = {
           gemini_time_ms?: number | null
           has_current_date?: boolean
           id?: string
+          inherited_confidence_from_prior?: boolean | null
           inherited_entity_from_prior?: boolean | null
           matched_in_result_index?: number | null
           model_input_total_chars?: number
