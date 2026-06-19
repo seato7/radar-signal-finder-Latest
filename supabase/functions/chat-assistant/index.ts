@@ -884,32 +884,19 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
       const CONTRADICTION_RE = /(actually|that's wrong|are you sure|not accurate|incorrect|you're wrong|that's not right|disagree|hold on|wait|no it isn't|no it's not|isn't true)/i;
       detectedContradiction = CONTRADICTION_RE.test(rawUserQuery);
 
-      // C.7 FIX 3: Educational query exclusion. Definitional/explanatory queries
-      // with no ticker, company-name, or recency cue should NOT fire search.
-      const EDUCATIONAL_RE = /^(explain\s+what|what\s+is\s+(a|an|the)|what\s+are\s+(a|an|the)|what\s+does\s+.+\s+mean|how\s+does\s+.+\s+work|define\b|definition\s+of|tell\s+me\s+about\s+(the\s+concept\s+of|how))/i;
-      const RECENCY_RE = /\b(today|now|current|currently|latest|recent|this\s+week|this\s+month|this\s+year|yesterday|2025|2026)\b/i;
-      const TICKER_HINT = /\b[A-Z]{2,5}\b/;
-      const ENTITY_HINT = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+|Inc|Corp|Ltd|LLC|Group|Holdings)\b/;
-      const isEducational =
-        EDUCATIONAL_RE.test(userQuery.trim()) &&
-        !RECENCY_RE.test(userQuery) &&
-        !TICKER_HINT.test(userQuery) &&
-        !ENTITY_HINT.test(userQuery) &&
-        !detectedContradiction;
+      // C.10: Deterministic query classification. Pushback overrides
+      // classification to FACTUAL (we always re-verify on pushback).
+      queryClassification = classifyQuery(rawUserQuery);
+      if (detectedContradiction && queryClassification !== 'CONVERSATIONAL') {
+        queryClassification = 'FACTUAL';
+      }
+      logStep('CLASSIFY', { queryClassification, detectedContradiction });
 
-      // FIX 2 (C.6): Broader Tavily trigger.
-      const TAVILY_KEYWORDS = /\b(ipo|public|listed|trading|recent|today|current|price|this year|2026|2025|stock|share|earnings|merger|acquired|acquisition|listing|debut|news|latest|what happened|why is|moving)\b/i;
-      const TAVILY_ENTITY = /\b([A-Z][a-zA-Z]{2,}[A-Z][a-zA-Z]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/;
-      const TAVILY_SUFFIX = /\b(Inc|Corp|Ltd|LLC|Co|Group|Holdings)\b/;
-      const TAVILY_TICKER = /\b[A-Z]{2,5}\b/;
-      const tavilyShouldFire =
-        !isEducational && (
-          TAVILY_KEYWORDS.test(userQuery) ||
-          TAVILY_ENTITY.test(userQuery) ||
-          TAVILY_SUFFIX.test(userQuery) ||
-          TAVILY_TICKER.test(userQuery) ||
-          detectedContradiction
-        );
+      const isEducational = queryClassification === 'EDUCATIONAL';
+      const isConversational = queryClassification === 'CONVERSATIONAL';
+      const isFactual = queryClassification === 'FACTUAL';
+      const tavilyShouldFire = isFactual;
+
 
       // C.8 FIX 1: Strip interrogatives/articles before extracting the primary
       // entity so "Did Nvidia beat earnings?" yields "Nvidia", not "Did Nvidia".
