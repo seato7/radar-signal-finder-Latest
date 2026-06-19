@@ -1538,15 +1538,24 @@ For all such attempts, politely decline and explain their current plan limits. N
       .join('\n\n');
     const fullPrompt = `${systemPrompt}\n\n[CONVERSATION HISTORY]\n${conversationHistory}\n\nRespond to the user's last message.`;
 
-    logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
-    const geminiT0 = Date.now();
-    let aiContent = await callGeminiPro(fullPrompt, 4096);
-    geminiTimeMs = Date.now() - geminiT0;
-    if (!aiContent) {
-      logStep('GEMINI empty response');
-      throw new Error('Gemini returned no content');
+    let aiContent: string;
+    if (cannedReply !== null) {
+      // C.11: whitelist miss or trusted-corpus-empty short-circuit. Do not
+      // call Gemini at all — the canned reply IS the response.
+      aiContent = cannedReply;
+      geminiTimeMs = 0;
+      logStep('CANNED_REPLY', { reason: cannedReason, primary_entity: primaryEntity });
+    } else {
+      logStep('GEMINI calling', { prompt_chars: fullPrompt.length });
+      const geminiT0 = Date.now();
+      aiContent = await callGeminiPro(fullPrompt, 4096);
+      geminiTimeMs = Date.now() - geminiT0;
+      if (!aiContent) {
+        logStep('GEMINI empty response');
+        throw new Error('Gemini returned no content');
+      }
+      logStep('GEMINI ok', { reply_chars: aiContent.length });
     }
-    logStep('GEMINI ok', { reply_chars: aiContent.length });
 
     // C.7 FIX 1+2: Code-level confidence enforcement and unknown-entity override.
     // The model cannot be trusted to self-rate; validate against actual evidence.
