@@ -266,15 +266,32 @@ export function detectFabrication(response: string, searchCorpus: string): { fab
     }
     fabricated.push(t);
   };
+  // C.12.1: Expanded stop-list to suppress capitalized sentence-starters,
+  // transition words, generic titles, and date/calendar words that the
+  // proper-noun extractor was mis-flagging as fabricated entities.
   const PROPER_STOPWORDS = new Set([
+    // existing
     'analysis','recommendation','confidence','note','key','points','high','medium','low','unable','verify','tavily','firecrawl','january','february','march','april','may','june','july','august','september','october','november','december','monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','yesterday','tomorrow','this','that','these','those','user','assistant','question','answer','search','results','source','sources','data','platform','market','i','you','the','a','an','my','your','our','their','it','its',
+    // C.12.1 transition / sentence-starter words
+    'however','while','whilst','conversely','additionally','furthermore','moreover','therefore','thus','hence','nevertheless','nonetheless','although','though','despite','without','within','whereas','according','meanwhile','overall','subsequently','otherwise','alternatively','regarding','concerning','given','considering','ultimately','finally','initially','recently','historically','importantly','notably','significantly','similarly','consequently','accordingly','specifically','generally','typically','arguably','reportedly','allegedly','presumably','currently',
+    // C.12.1 generic sentence-starter nouns/pronouns
+    'investors','shareholders','analysts','traders','consumers','customers','markets','companies','there','such','both','either','neither','some','many','most','few','several','various','other','another','each','every','any','all','none','one','two','three',
+    // C.12.1 title-prefix qualifiers (so "Current CEO Tim Cook" -> "Tim Cook")
+    'current','upcoming','previous','former','new','incoming','outgoing','acting','interim','past','prior','next','recent','newly','soon-to-be',
+    // C.12.1 generic titles (so they are stripped from runs)
+    'ceo','cfo','coo','cto','cio','president','chairman','chairwoman','chairperson','founder','cofounder','director','chief','officer','head','vp','svp','evp','executive','manager','transition','leadership','succession','appointment','retirement','departure',
   ]);
   const properRuns = response.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+(?:[A-Z][a-zA-Z]+|of|and|&)\s+[A-Z][a-zA-Z]+|\s+[A-Z][a-zA-Z]+){0,4}\b/g) || [];
   for (const run of properRuns) {
-    const head = run.split(/\s+/)[0].toLowerCase();
-    if (PROPER_STOPWORDS.has(head)) continue;
-    if (run.length < 4) continue;
-    considerName(run);
+    // Strip leading stop-words rather than dropping the entire run, so
+    // "Current CEO Tim Cook" keeps "Tim Cook" and "Upcoming Transition" drops to nothing.
+    let words = run.split(/\s+/);
+    while (words.length && PROPER_STOPWORDS.has(words[0].toLowerCase())) words.shift();
+    while (words.length && PROPER_STOPWORDS.has(words[words.length - 1].toLowerCase())) words.pop();
+    if (words.length === 0) continue;
+    const stripped = words.join(' ');
+    if (stripped.length < 4) continue;
+    considerName(stripped);
   }
   // C.12: Dollar amounts via normalized comparison, ±2% rounding tolerance.
   const respDollars = collectDollars(response);
