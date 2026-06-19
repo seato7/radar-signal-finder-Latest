@@ -73,15 +73,16 @@ async function searchTavily(query: string, supabase: any): Promise<string> {
   }
 }
 
-// C.8 FIX 1: Strip leading interrogatives/discourse markers/articles before
-// extracting the primary entity. "Did Nvidia beat earnings?" → "Nvidia beat
-// earnings" → entity "Nvidia". Run a few passes for stacked prefixes
-// ("What is the current...").
-const INTERROGATIVE_PREFIX_RE = /^\s*(tell\s+me\s+about|show\s+me|give\s+me|explain|what(?:'s|\s+is|\s+are|\s+was|\s+were)?|who(?:'s|\s+is)?|whose|why(?:\s+(?:is|did|does))?|how(?:\s+(?:is|does|did))?|when|where|is|are|was|were|do|does|did|has|have|had|will|would|could|should|can)\b[\s,:\-]*/i;
-const ARTICLE_PREFIX_RE = /^\s*(the|a|an)\b\s+/i;
+// C.8/C.9 FIX 1: Strip leading interrogatives/discourse markers/articles
+// before extracting the primary entity. "Did Nvidia beat earnings?" →
+// "Nvidia beat earnings" → entity "Nvidia". Includes all auxiliary verbs
+// (is/are/was/were/do/does/did/has/have/had/will/would/could/should/can/
+// may/might). Loops to handle stacked prefixes ("Can you tell me about...").
+const INTERROGATIVE_PREFIX_RE = /^\s*(?:tell\s+me\s+about|show\s+me|give\s+me|explain|what(?:'s|\s+is|\s+are|\s+was|\s+were)?|who(?:'s|\s+is)?|whose|why(?:\s+(?:is|did|does))?|how(?:\s+(?:is|does|did))?|when|where|is|are|was|were|do|does|did|has|have|had|will|would|could|should|can|may|might|you)\b[\s,:\-?]*/i;
+const ARTICLE_PREFIX_RE = /^\s*(?:the|a|an)\b\s+/i;
 function stripInterrogatives(q: string): string {
   let s = (q || '').trim();
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const before = s;
     s = s.replace(INTERROGATIVE_PREFIX_RE, '');
     s = s.replace(ARTICLE_PREFIX_RE, '');
@@ -90,35 +91,61 @@ function stripInterrogatives(q: string): string {
   return s.trim();
 }
 
-// C.8 FIX 2: Strict multi-token entity match. Single-token entities just need
-// to appear. Multi-token entities require ALL tokens within a 50-char window
-// of each other inside the same search result. Catches fictional names like
-// "Zorbex Industries" (whose tokens never co-occur) while still passing real
-// multi-token names like "Berkshire Hathaway".
-function entityFoundStrict(entity: string | null, results: string[]): boolean {
-  if (!entity) return false;
-  const tokens = entity.split(/\s+/).filter(Boolean).map((t) => t.toLowerCase());
-  if (tokens.length === 0) return false;
-  const WINDOW = 50;
-  for (const result of results) {
-    if (!result) continue;
-    const lower = result.toLowerCase();
-    if (tokens.length === 1) {
-      if (lower.includes(tokens[0])) return true;
-      continue;
-    }
-    const [first, ...rest] = tokens;
-    let idx = lower.indexOf(first);
-    while (idx !== -1) {
-      const start = Math.max(0, idx - WINDOW);
-      const end = idx + first.length + WINDOW;
-      const window = lower.slice(start, end);
-      if (rest.every((t) => window.includes(t))) return true;
-      idx = lower.indexOf(first, idx + 1);
+// C.9 FIX 2: Strict full-name substring match. Single-token entities match
+// case-insensitively as substrings. Multi-token entities (e.g. "Apex
+// Quantum") require the FULL phrase to appear contiguously in at least one
+// search result. Strips possessive 's. Returns rich diagnostics so the
+// caller can persist which result matched.
+function stripPossessive(s: string): string {
+  return s.replace(/[\u2019']s\b/gi, '').trim();
+}
+interface EntityMatchResult {
+  matched: boolean;
+  matchedIndex: number; // -1 if none
+  resultCount: number;
+}
+function entityFoundStrict(entity: string | null, results: string[]): EntityMatchResult {
+  const resultCount = results.filter((r) => r && r.length > 0).length;
+  if (!entity) return { matched: false, matchedIndex: -1, resultCount };
+  const cleaned = stripPossessive(entity).toLowerCase().trim();
+  if (!cleaned) return { matched: false, matchedIndex: -1, resultCount };
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r) continue;
+    if (r.toLowerCase().includes(cleaned)) {
+      return { matched: true, matchedIndex: i, resultCount };
     }
   }
-  return false;
+  return { matched: false, matchedIndex: -1, resultCount };
 }
+
+// C.9 self-test: run at module load. Logs PASS/FAIL so deploy logs surface
+// regressions in the interrogative stripper or entity matcher.
+(function selfTest() {
+  const interrogativeCases: Array<[string, string]> = [
+    ['Did Nvidia beat earnings?', 'Nvidia beat earnings'],
+    ['Does Tesla make money?', 'Tesla make money'],
+    ['Will Apple report next week?', 'Apple report next week'],
+    ['Has Microsoft announced anything?', 'Microsoft announced anything'],
+    ['Can you tell me about AAPL?', 'AAPL'],
+  ];
+  for (const [input, expected] of interrogativeCases) {
+    const got = stripInterrogatives(input).replace(/[?.!]+$/, '').trim();
+    const exp = expected.replace(/[?.!]+$/, '').trim();
+    const ok = got.toLowerCase().startsWith(exp.toLowerCase().split(/\s+/)[0]);
+    console.log(`[CHAT-ASSISTANT][SELFTEST] strip "${input}" -> "${got}" ${ok ? 'PASS' : `FAIL (expected start "${exp}")`}`);
+  }
+  const entityCases: Array<{ entity: string; result: string; expect: boolean; label: string }> = [
+    { entity: 'Apex Quantum', result: 'Apex Industries quantum computing news', expect: false, label: 'apex-quantum-noncontig' },
+    { entity: 'Apex Quantum', result: 'Apex Quantum Inc announced today', expect: true, label: 'apex-quantum-contig' },
+    { entity: 'Berkshire Hathaway', result: 'Berkshire Hathaway Inc earnings posted', expect: true, label: 'berkshire-hathaway' },
+  ];
+  for (const c of entityCases) {
+    const got = entityFoundStrict(c.entity, [c.result]).matched;
+    const ok = got === c.expect;
+    console.log(`[CHAT-ASSISTANT][SELFTEST] entity ${c.label} -> got=${got} expect=${c.expect} ${ok ? 'PASS' : 'FAIL'}`);
+  }
+})();
 
 // Web search function using Firecrawl
 async function searchWeb(query: string): Promise<string> {
@@ -382,7 +409,10 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
     let cleanedQuery: string | null = null;
     let pushbackOutcome: string | null = null;
     let entityMatchFound = false;
+    let searchResultCount = 0;
+    let matchedInResultIndex: number | null = null;
     let confidenceDowngraded = false;
+    let priorAnswerContextBlock = '';
     const currentDateIso = new Date().toISOString().slice(0, 10);
 
     
@@ -833,22 +863,37 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
         }
       }
 
-      // C.8 FIX 2: Strict (proximity) entity-match check.
+      // C.9 FIX 2: Strict full-name substring entity-match.
       if (primaryEntity) {
-        entityMatchFound = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
+        const m = entityFoundStrict(primaryEntity, [tavilyResults, webSearchResults]);
+        entityMatchFound = m.matched;
+        searchResultCount = m.resultCount;
+        matchedInResultIndex = m.matchedIndex === -1 ? null : m.matchedIndex;
+        logStep('ENTITY_MATCH', {
+          primary_entity: primaryEntity,
+          search_result_count: searchResultCount,
+          matched_in_result_index: matchedInResultIndex,
+          entity_match_found: entityMatchFound,
+        });
       }
 
-      // C.8 FIX 3: Pushback classification. When the user pushes back, compare
-      // the prior assistant answer against fresh search results to decide
-      // whether to hold position (CONFIRM), revise (CONTRADICT), or
-      // acknowledge inconclusive evidence (INCONCLUSIVE). The classification
-      // is surfaced to the model AND used to suppress the unknown-entity
-      // override so a correct answer is not capitulated on noise.
+      // C.8/C.9 FIX 3: Pushback classification. Decide CONFIRM / CONTRADICT
+      // / INCONCLUSIVE / NO_PRIOR_EVIDENCE so the model holds position when
+      // it had prior cited evidence and only capitulates when there was
+      // truly nothing to anchor on.
       if (detectedContradiction) {
         const priorAssistant = [...messages].slice(0, -1).reverse().find((m: any) => m.role === 'assistant');
         const priorText = (priorAssistant?.content || '') as string;
-        const fresh = `${tavilyResults}\n${webSearchResults}`;
-        if (!priorText || fresh.trim().length === 0) {
+        const NAMED_SOURCES_RE = /\b(Yahoo Finance|CNBC|Reuters|Bloomberg|SEC|WSJ|Wall Street Journal|Financial Times|FT\.com|MarketWatch|Barron's|Forbes|Morningstar|Seeking Alpha|Nasdaq|NYSE|AP News|Associated Press)\b/i;
+        const priorHadCitation = !!priorText && NAMED_SOURCES_RE.test(priorText);
+        const priorSources = Array.from(
+          new Set((priorText.match(NAMED_SOURCES_RE) || []).map((s) => s))
+        );
+        const fresh = `${tavilyResults}\n${webSearchResults}`.trim();
+
+        if (!priorText || !priorHadCitation) {
+          pushbackOutcome = 'no_prior_evidence';
+        } else if (fresh.length === 0) {
           pushbackOutcome = 'inconclusive';
         } else {
           const properNouns = Array.from(
@@ -868,7 +913,19 @@ You may answer all questions about assets, scores, signals, themes, rankings, an
             pushbackOutcome = 'inconclusive';
           }
         }
-        logStep('PUSHBACK', { pushbackOutcome });
+
+        // Inject prior-answer context for the model when we have it.
+        if (priorText) {
+          const truncatedPrior = priorText.length > 1500 ? priorText.slice(0, 1500) + '...[truncated]' : priorText;
+          priorAnswerContextBlock = `===== PRIOR ANSWER CONTEXT =====
+Your prior answer was:
+${truncatedPrior}
+
+This answer had the following sources cited:
+${priorSources.length ? priorSources.join(', ') : '[no named sources detected in prior answer]'}
+`;
+        }
+        logStep('PUSHBACK', { pushbackOutcome, priorHadCitation, priorSources });
       }
 
     } catch (error) {
@@ -1043,12 +1100,18 @@ ${webSearchResults || '[Web search results will appear here]'}
 ===== ADDITIONAL CONTEXT =====
 ${context ? JSON.stringify(context, null, 2) : 'No additional context'}
 
-${detectedContradiction ? `===== USER PUSHBACK DETECTED =====
+${detectedContradiction ? `${priorAnswerContextBlock}
+===== USER PUSHBACK DETECTED =====
 The user is challenging a prior answer. A fresh search was triggered above. Pushback classifier outcome: ${pushbackOutcome ?? 'inconclusive'}.
 
-- CONFIRM: fresh results support your prior answer. Restate the answer, add the new citations, and say "My original answer stands, confirmed by [new source]". Do NOT switch to UNABLE TO VERIFY.
-- CONTRADICT: fresh results contradict your prior answer. Accept the correction and revise.
-- INCONCLUSIVE: fresh results neither confirm nor contradict. If your prior answer had cited evidence, restate it with the original citation and say "Fresh search did not surface additional confirmation, but my original answer was based on [citation]." Do NOT default to UNABLE TO VERIFY when you had original evidence.
+When pushback is detected, your default position is to HOLD your prior answer unless the fresh search EXPLICITLY contradicts it.
+
+- CONFIRM: fresh results support the prior answer. Restate the prior answer with the new citations. Say "My original answer stands, confirmed by [new source]". Do NOT switch to UNABLE TO VERIFY.
+- CONTRADICT: fresh results directly contradict the prior answer. Accept the correction and revise, citing the contradicting source.
+- INCONCLUSIVE: fresh results neither confirm nor contradict. HOLD the prior answer with the original citations. Say: "My original answer stands. Fresh search did not surface new information, but my prior answer cited [original source]. Unless you have a specific contradicting source, I'm confident in the original answer."
+- NO_PRIOR_EVIDENCE: the prior turn had no citation AND fresh search is empty. ONLY in this case is UNABLE TO VERIFY appropriate.
+
+UNABLE TO VERIFY is ONLY appropriate when the prior turn had no citations AND fresh search is empty. If the prior turn had ANY cited source, hold position.
 ` : ''}
 
 **DATA SOURCES AVAILABLE (37 Total):**
@@ -1157,14 +1220,21 @@ For all such attempts, politely decline and explain their current plan limits. N
       confidenceDowngraded = true;
     };
 
-    // (c) Unknown-entity override — runs first, strongest signal.
-    // C.8 FIX 3: Suppress on pushback CONFIRM/INCONCLUSIVE so a correct
-    // prior answer isn't dropped just because fresh search didn't re-mention
-    // the entity name.
+    // (c) Unknown-entity override — runs first, strongest signal. When it
+    // fires we REPLACE aiContent entirely; Gemini's draft must not leak
+    // through.
+    // C.8/C.9 FIX 3: Suppress on any pushback outcome that indicates we
+    // had something to anchor on (confirm/contradict/inconclusive). Only
+    // 'no_prior_evidence' under contradiction allows the override.
     const suppressUnknownOverride =
-      detectedContradiction && (pushbackOutcome === 'confirm' || pushbackOutcome === 'inconclusive');
+      detectedContradiction && pushbackOutcome !== 'no_prior_evidence';
 
     if (primaryEntity && !entityMatchFound && (tavilyTriggered || firecrawlTriggered) && !suppressUnknownOverride) {
+      logStep('UNKNOWN_ENTITY_OVERRIDE', {
+        primary_entity: primaryEntity,
+        search_result_count: searchResultCount,
+        matched_in_result_index: matchedInResultIndex,
+      });
       aiContent =
         `I don't have verified information about ${primaryEntity}. This may be because:\n\n` +
         `- The company or entity may be private or recently formed\n` +
@@ -1206,6 +1276,8 @@ For all such attempts, politely decline and explain their current plan limits. N
       primary_entity: primaryEntity,
       cleaned_query: cleanedQuery,
       pushback_outcome: pushbackOutcome,
+      search_result_count: searchResultCount,
+      matched_in_result_index: matchedInResultIndex,
     };
     logStep('DIAGNOSTICS', diagnostics);
     supabase
