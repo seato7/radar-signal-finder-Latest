@@ -339,6 +339,20 @@ const TRUSTED_DOMAINS: string[] = [
   'cnn.com','apnews.com','ap.org','koyfin.com','dividendmax.com',
   'marketchameleon.com','en.wikipedia.org','wikipedia.org',
 ];
+// C.12: Official corporate IR / company domains. Round 6 showed
+// berkshirehathaway.com, apple.com, tesla.com, nvidianews.nvidia.com, etc.
+// were rejected as untrusted, starving the corpus for legitimate large-cap
+// questions. Trust first-party domains of covered issuers outright.
+const OFFICIAL_COMPANY_DOMAINS: string[] = [
+  'berkshirehathaway.com','apple.com','microsoft.com','tesla.com','nvidia.com',
+  'google.com','abc.xyz','amazon.com','meta.com','fb.com','netflix.com',
+  'oracle.com','salesforce.com','adobe.com','ibm.com','intel.com','amd.com',
+  'walmart.com','costco.com','disney.com','jpmorganchase.com','jpmorgan.com',
+  'goldmansachs.com','morganstanley.com','bankofamerica.com','citigroup.com',
+  'wellsfargo.com','visa.com','mastercard.com','paypal.com','coinbase.com',
+  'pfizer.com','jnj.com','unitedhealthgroup.com','exxonmobil.com','chevron.com',
+  'boeing.com','lockheedmartin.com','generalmotors.com','ford.com','spacex.com',
+];
 // Known junk / people-search / non-authoritative-for-finance domains.
 const UNTRUSTED_DOMAINS: string[] = [
   'whitepages.com','zoominfo.com','rocketreach.co','linkedin.com','spokeo.com',
@@ -357,6 +371,14 @@ export function classifyDomain(url: string): { domain: string; trusted: boolean;
   for (const t of TRUSTED_DOMAINS) {
     if (host === t || host.endsWith('.' + t)) return { domain: host, trusted: true, reason: 'trusted_list' };
   }
+  for (const c of OFFICIAL_COMPANY_DOMAINS) {
+    if (host === c || host.endsWith('.' + c)) return { domain: host, trusted: true, reason: 'official_company' };
+  }
+  // C.12: All .gov TLDs are first-party government sources (federalreserve.gov,
+  // treasury.gov, bls.gov, bea.gov) — trust by TLD.
+  if (host.endsWith('.gov')) {
+    return { domain: host, trusted: true, reason: 'gov_tld' };
+  }
   // Heuristic: official IR / press release / newsroom paths on .com.
   if (/\/(investors?|press|newsroom|news-?releases?)\//i.test(url)) {
     return { domain: host, trusted: true, reason: 'ir_path' };
@@ -365,6 +387,39 @@ export function classifyDomain(url: string): { domain: string; trusted: boolean;
     return { domain: host, trusted: true, reason: 'news_subdomain' };
   }
   return { domain: host, trusted: false, reason: 'unknown_domain' };
+}
+
+// C.12: Count trusted-corpus blocks that prominently mention the entity
+// (in the first 300 chars — covers title + URL line + opening body). Used
+// as the secondary whitelist gate when the assets/figures lookup misses
+// but the entity may still be a covered real company.
+export function entityProminentInTrustedCorpus(entity: string | null, trustedCorpus: string): number {
+  if (!entity || !trustedCorpus) return 0;
+  const needle = stripPossessive(entity).toLowerCase().trim();
+  if (!needle) return 0;
+  const blocks = trustedCorpus.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  let hits = 0;
+  for (const b of blocks) {
+    const head = b.slice(0, 300).toLowerCase();
+    if (head.includes(needle)) hits++;
+  }
+  return hits;
+}
+
+// C.12: Unified UNABLE TO VERIFY template. Replaces the three prior
+// distinct templates (whitelist_miss / unknown_entity / fabrication_gate)
+// so user experience is consistent. The "may be private" line — actively
+// misleading for real entities like Berkshire — is removed.
+export function buildUnableToVerifyReply(entity: string | null): string {
+  const target = entity && entity.trim()
+    ? entity.trim()
+    : 'a confident answer to that question';
+  return (
+    `I couldn't verify ${target} against trusted financial sources. ` +
+    `This can happen when an entity is private, very new, not in my coverage, ` +
+    `or when public information about it is limited.\n\n` +
+    `Confidence Level: UNABLE TO VERIFY`
+  );
 }
 
 export interface CorpusFilterResult {
