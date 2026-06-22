@@ -787,7 +787,7 @@ const AssetRadar = () => {
         />
         <BlurredUpgradeOverlay
           feature="Asset Radar"
-          description="Upgrade to a paid plan to access Asset Radar and browse scored assets."
+          description="Upgrade to Starter to unlock stock scores and the ranked Asset Radar."
         >
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
