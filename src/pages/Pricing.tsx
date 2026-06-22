@@ -229,6 +229,8 @@ const Pricing = () => {
     if (current) return "Current plan";
     if (plan.plan_id === "free") return isAuthenticated ? "Switch to Free" : "Sign up free";
     if (plan.plan_id === "starter" && !isAnnual) return "Start 7-day free trial";
+    if (plan.plan_id === "pro") return "Unlock 3 signals + 20 AI messages/day";
+    if (plan.plan_id === "premium") return "Go unlimited — every signal, theme and alert";
     if (plan.plan_id === "enterprise") return "Contact sales";
     return "Get started";
   };
