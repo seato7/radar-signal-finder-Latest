@@ -405,7 +405,7 @@ const Themes = () => {
               </CardTitle>
             </div>
             <CardDescription className="text-body-sm text-ds-text-secondary mt-1">
-              You're currently viewing {userThemeLimit} of {themes.length} themes. Upgrade to Pro or Premium for unlimited access to all themes.
+              You're currently viewing {userThemeLimit} of {themes.length} themes. {userPlan === "pro" ? "Upgrade to Premium for unlimited themes." : "Upgrade to Pro for 3 themes, or Premium for unlimited."}
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -787,7 +787,7 @@ const AssetRadar = () => {
         />
         <BlurredUpgradeOverlay
           feature="Asset Radar"
-          description="Upgrade to a paid plan to access Asset Radar and browse scored assets."
+          description="Upgrade to Starter to unlock stock scores and the ranked Asset Radar."
         >
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
@@ -817,7 +817,7 @@ const AssetRadar = () => {
             <p className="text-body-sm font-semibold text-ds-text-primary">3 sample assets shown in full.</p>
             <p className="text-caption text-ds-text-secondary mt-0.5">
               {isAuthenticated
-                ? "Upgrade to Starter to see all 25,536 ranked assets."
+                ? "Upgrade to Starter to unlock stock scores, or Premium for all 25,536 assets across every asset class."
                 : "Sign up free to see all 25,536 ranked assets."}
             </p>
           </div>
