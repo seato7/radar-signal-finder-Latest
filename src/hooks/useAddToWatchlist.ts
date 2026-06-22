@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { getPlanLimits } from "@/lib/planLimits";
+import { getUpgradeTarget } from "@/lib/upgradeTarget";
 
 /**
  * Shared hook for adding a ticker to the current user's watchlist row.
