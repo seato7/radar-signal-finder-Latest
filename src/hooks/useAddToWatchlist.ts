@@ -51,12 +51,14 @@ export function useAddToWatchlist() {
       }
 
       if (slotsLimit !== -1 && currentTickers.length >= slotsLimit) {
+        const target = getUpgradeTarget(userPlan || "free", "watchlist");
+        const tierLabel = target.nextTier[0].toUpperCase() + target.nextTier.slice(1);
         toast({
           title: "Watchlist limit reached",
           description:
             slotsLimit === 0
-              ? "Upgrade to a paid plan to use the watchlist."
-              : `Your plan allows ${slotsLimit} assets. Upgrade to add more.`,
+              ? `Upgrade to ${tierLabel} for ${target.benefit}.`
+              : `You've used all ${slotsLimit} watchlist slots. Upgrade to ${tierLabel} for ${target.benefit}.`,
           variant: "destructive",
         });
         return false;
