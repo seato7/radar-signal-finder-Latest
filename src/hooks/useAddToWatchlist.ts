@@ -87,8 +87,11 @@ export function useAddToWatchlist() {
     } catch (err: any) {
       // Surface DB plan-limit trigger errors nicely
       const msg: string = err?.message || "Failed to add to watchlist";
+      const planTarget = getUpgradeTarget(userPlan || "free", "watchlist");
+      const planTierLabel = planTarget.nextTier[0].toUpperCase() + planTarget.nextTier.slice(1);
+      const currentLimit = getPlanLimits(userPlan).watchlist_slots;
       const friendly = msg.includes("plan_limit_reached")
-        ? "Watchlist limit reached for your plan. Upgrade to add more."
+        ? `You've used all ${currentLimit} watchlist slots. Upgrade to ${planTierLabel} for ${planTarget.benefit}.`
         : msg;
       toast({
         title: "Error",
