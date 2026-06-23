@@ -52,6 +52,7 @@ const TopAssetsCard = () => {
   const anonSignup = useAnonSignupCTA();
   const planLimits = limits();
   const isFree = userPlan === 'free' || !userPlan;
+  const { data: assetCounts } = useAssetUniverseCounts();
 
   const { data: assets = [], isLoading } = useQuery({
     enabled: isAuthenticated,
