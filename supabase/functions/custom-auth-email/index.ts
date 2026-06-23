@@ -192,11 +192,21 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const { action, email, password, tos_version, privacy_version, user_agent } = body as AuthEmailRequest;
+
+    // Synthetic health probe: confirms function booted, parsed body, CORS ok.
+    // No user creation, no Brevo call, no side effects.
+    if (action === "probe") {
+      return new Response(
+        JSON.stringify({ success: true, probe: "ok", brevo_key_configured: !!BREVO_API_KEY, ts: new Date().toISOString() }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     if (!BREVO_API_KEY) {
       throw new Error("BREVO_API_KEY is not configured");
     }
-
-    const { action, email, password, tos_version, privacy_version, user_agent }: AuthEmailRequest = await req.json();
 
     console.log(`Processing ${action} request`); // email redacted from logs
 
