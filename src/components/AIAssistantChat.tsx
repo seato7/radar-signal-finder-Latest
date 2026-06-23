@@ -36,6 +36,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   const anonSignup = useAnonSignupCTA();
   const planLimits = getPlanLimits(userPlan);
   const dailyLimit = planLimits.ai_messages_per_day;
+  const { data: assetCounts } = useAssetUniverseCounts();
 
 
   const [messages, setMessages] = useState<Message[]>([]);
