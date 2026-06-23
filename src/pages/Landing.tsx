@@ -254,7 +254,7 @@ const Landing = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-center gap-3 sm:gap-4 text-body-sm">
           <span className="ds-live-dot inline-block w-2 h-2 rounded-full bg-ds-brand-primary-foreground shrink-0" />
           <span className="text-ds-brand-primary-foreground font-medium tracking-tight text-center">
-            Browse 25,536 ranked assets free. 30 seconds, no card.
+            Browse {stats?.assetCount ? stats.assetCount.toLocaleString("en-US") : "all"} ranked assets free. 30 seconds, no card.
           </span>
           <Link
             to="/dashboard"
