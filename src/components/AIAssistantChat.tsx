@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { TierCeiling } from '@/components/conversion/TierCeiling';
 import { getUpgradeTarget } from '@/lib/upgradeTarget';
 import { cn } from '@/lib/utils';
+import { useAssetUniverseCounts, formatCount } from '@/hooks/useAssetUniverseCounts';
 
 
 interface Message {
