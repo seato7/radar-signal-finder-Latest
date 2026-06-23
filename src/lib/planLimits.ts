@@ -19,13 +19,17 @@ export interface PlanLimits {
 }
 
 export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
+  // NOTE: `asset_radar_classes` MUST match the server RPC `get_assets_for_user`
+  // (_allowed_classes branch) class-for-class per tier. Server is source of truth;
+  // if you change one, change the other in the same migration.
   free: {
     active_signals: 0,
     ai_messages_per_day: 3,
     alerts: 0,
     watchlist_slots: 3,
     themes: 1,
-    asset_radar_classes: ['stock', 'etf', 'forex'],
+    // RPC: free is NOT class-restricted (full universe, scores nulled on non-demo tickers).
+    asset_radar_classes: ['stock', 'etf', 'forex', 'crypto', 'commodity'],
     show_scores: true,
     show_sentiment: false,
     analytics_access: false,
@@ -41,9 +45,8 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     alerts: 1,
     watchlist_slots: 3,
     themes: 1,
-    asset_radar_classes: ['stock', 'etf', 'forex'],
-    asset_radar_demo_classes: ['etf', 'forex'],
-    demo_tickers: ['VTI', 'EUR/USD'],
+    // RPC: starter -> stock only.
+    asset_radar_classes: ['stock'],
     show_scores: true,
     show_sentiment: false,
     analytics_access: false,
