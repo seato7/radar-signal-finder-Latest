@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Eye, Sparkles, Crosshair, BarChart3, Shield, Star, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useAssetUniverseCounts } from "@/hooks/useAssetUniverseCounts";
 
 const MEDIA_NAMES = [
   "Bloomberg",
@@ -254,7 +255,7 @@ const Landing = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-center gap-3 sm:gap-4 text-body-sm">
           <span className="ds-live-dot inline-block w-2 h-2 rounded-full bg-ds-brand-primary-foreground shrink-0" />
           <span className="text-ds-brand-primary-foreground font-medium tracking-tight text-center">
-            Browse 25,536 ranked assets free. 30 seconds, no card.
+            Browse {stats?.assetCount ? stats.assetCount.toLocaleString("en-US") : "all"} ranked assets free. 30 seconds, no card.
           </span>
           <Link
             to="/dashboard"
@@ -689,7 +690,7 @@ const Landing = () => {
               Start Watching the Market
             </h2>
             <p className="text-ds-text-secondary text-body md:text-body-lg max-w-2xl mx-auto mb-8">
-              Browse 25,536 ranked assets, see live scoring, save what catches your eye.
+              Browse {stats?.assetCount ? stats.assetCount.toLocaleString("en-US") : "all"} ranked assets, see live scoring, save what catches your eye.
             </p>
             {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
@@ -744,6 +745,7 @@ const CumulativeReturnCard = () => {
     },
     staleTime: 5 * 60 * 1000,
   });
+  const { data: counts } = useAssetUniverseCounts();
 
   const closedCount = data?.closedCount ?? 0;
   const totalReturn = data?.totalReturnPct ?? null;
@@ -769,7 +771,7 @@ const CumulativeReturnCard = () => {
                 ? "…"
                 : hasValue
                   ? `${positive ? "+" : ""}${(totalReturn as number).toFixed(2)}%`
-                  : "Tracking 25,536 assets"}
+                  : `Tracking ${counts?.total ? counts.total.toLocaleString("en-US") : "all"} assets`}
             </div>
             <div className="text-ds-text-primary text-body-sm font-medium mb-1">
               {hasValue ? "Cumulative Return" : "Live Coverage"}

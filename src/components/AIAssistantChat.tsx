@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { TierCeiling } from '@/components/conversion/TierCeiling';
 import { getUpgradeTarget } from '@/lib/upgradeTarget';
 import { cn } from '@/lib/utils';
+import { useAssetUniverseCounts, formatCount } from '@/hooks/useAssetUniverseCounts';
 
 
 interface Message {
@@ -35,6 +36,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
   const anonSignup = useAnonSignupCTA();
   const planLimits = getPlanLimits(userPlan);
   const dailyLimit = planLimits.ai_messages_per_day;
+  const { data: assetCounts } = useAssetUniverseCounts();
 
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -281,7 +283,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               {!isAuthenticated ? (
                 <>
                   <p className="text-body text-ds-text-primary mb-2">
-                    Ask anything about 25,536 assets.
+                    Ask anything about {formatCount(assetCounts?.total)} assets.
                   </p>
                   <p className="text-body-sm text-ds-text-secondary">
                     Sign up free to chat.

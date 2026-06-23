@@ -2,6 +2,7 @@ import { ArrowRight, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
 import { track } from "@/lib/analytics";
+import { useAssetUniverseCounts, formatCount } from "@/hooks/useAssetUniverseCounts";
 
 interface StickySignupBarProps {
   copy?: string;
@@ -14,19 +15,23 @@ interface StickySignupBarProps {
  * See mem://constraints/preview-first-funnel
  */
 export function StickySignupBar({
-  // TODO: source 25,536 dynamically from get_public_preview RPC (scored_asset_count).
-  copy = "Browse 25,536 ranked assets free. 30 seconds, no card.",
+  copy,
   trackingLabel = "sticky_signup_bar",
 }: StickySignupBarProps) {
   const { isAuthenticated, loading } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const { data: counts } = useAssetUniverseCounts();
 
   if (loading || isAuthenticated) return null;
+
+  const resolvedCopy =
+    copy ?? `Browse ${formatCount(counts?.total)} ranked assets free. 30 seconds, no card.`;
 
   const onClick = () => {
     track("locked_content_cta_clicked", { surface: "sticky_bar", label: trackingLabel });
     openAuthModal("signup", { ref: trackingLabel });
   };
+
 
   return (
     <div
@@ -40,7 +45,7 @@ export function StickySignupBar({
       <div className="max-w-screen-2xl mx-auto px-4 md:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles className="h-4 w-4 text-ds-brand-primary shrink-0" aria-hidden="true" />
-          <p className="text-body-sm text-ds-text-primary truncate">{copy}</p>
+          <p className="text-body-sm text-ds-text-primary truncate">{resolvedCopy}</p>
         </div>
         <button
           type="button"

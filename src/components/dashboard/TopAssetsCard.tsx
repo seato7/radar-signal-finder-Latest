@@ -9,6 +9,7 @@ import { useAuthModal } from "@/contexts/AuthModalContext";
 import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { TickerLink } from "@/lib/tickerLink";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+import { useAssetUniverseCounts, formatCount } from "@/hooks/useAssetUniverseCounts";
 
 
 interface TopAsset {
@@ -51,6 +52,7 @@ const TopAssetsCard = () => {
   const anonSignup = useAnonSignupCTA();
   const planLimits = limits();
   const isFree = userPlan === 'free' || !userPlan;
+  const { data: assetCounts } = useAssetUniverseCounts();
 
   const { data: assets = [], isLoading } = useQuery({
     enabled: isAuthenticated,
@@ -171,7 +173,7 @@ const TopAssetsCard = () => {
                 <div className="text-center px-6 py-5 max-w-xs">
                   <p className="text-body-sm font-semibold text-ds-text-primary mb-1">Today's top-scored assets</p>
                   <p className="text-caption text-ds-text-secondary mb-4 leading-relaxed">
-                    {isAuthenticated ? 'Upgrade to Starter to see real top-scored assets.' : 'Sign up free to see all 25,536 ranked assets.'}
+                    {isAuthenticated ? 'Upgrade to Starter to see real top-scored assets.' : `Sign up free to see all ${formatCount(assetCounts?.total)} ranked assets.`}
                   </p>
                   <Button
                     size="sm"
