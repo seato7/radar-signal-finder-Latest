@@ -265,7 +265,8 @@ async function runAllProbes(): Promise<ProbeResult[]> {
     probeBrevoEgress(),
     probeFunctionBoot("custom-auth-email"),
     probeFunctionBoot("get-assets"),
-    probeFunctionBoot("create-checkout"),
+    // manage-payments is the live checkout entrypoint (create-checkout is deprecated, scheduled for removal)
+    probeFunctionBoot("manage-payments"),
   ];
   const settled = await Promise.allSettled(targets);
   return settled.map((s, i) => {
