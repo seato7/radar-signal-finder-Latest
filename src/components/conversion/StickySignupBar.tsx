@@ -2,6 +2,7 @@ import { ArrowRight, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthModal } from "@/contexts/AuthModalContext";
 import { track } from "@/lib/analytics";
+import { useAssetUniverseCounts, formatCount } from "@/hooks/useAssetUniverseCounts";
 
 interface StickySignupBarProps {
   copy?: string;
@@ -14,19 +15,23 @@ interface StickySignupBarProps {
  * See mem://constraints/preview-first-funnel
  */
 export function StickySignupBar({
-  // TODO: source 25,536 dynamically from get_public_preview RPC (scored_asset_count).
-  copy = "Browse 25,536 ranked assets free. 30 seconds, no card.",
+  copy,
   trackingLabel = "sticky_signup_bar",
 }: StickySignupBarProps) {
   const { isAuthenticated, loading } = useAuth();
   const { openAuthModal } = useAuthModal();
+  const { data: counts } = useAssetUniverseCounts();
 
   if (loading || isAuthenticated) return null;
+
+  const resolvedCopy =
+    copy ?? `Browse ${formatCount(counts?.total)} ranked assets free. 30 seconds, no card.`;
 
   const onClick = () => {
     track("locked_content_cta_clicked", { surface: "sticky_bar", label: trackingLabel });
     openAuthModal("signup", { ref: trackingLabel });
   };
+
 
   return (
     <div
