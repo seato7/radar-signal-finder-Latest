@@ -9,6 +9,7 @@ import { useAuthModal } from "@/contexts/AuthModalContext";
 import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { TickerLink } from "@/lib/tickerLink";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
+import { useAssetUniverseCounts, formatCount } from "@/hooks/useAssetUniverseCounts";
 
 
 interface TopAsset {
