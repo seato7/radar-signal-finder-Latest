@@ -17,6 +17,7 @@ import { useAuthModal } from "@/contexts/AuthModalContext";
 import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { getPlanLimits, isDemoModeForClass } from "@/lib/planLimits";
+import { useAssetUniverseCounts, formatCount } from "@/hooks/useAssetUniverseCounts";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { TickerLink } from "@/lib/tickerLink";
@@ -787,7 +788,7 @@ const AssetRadar = () => {
         />
         <BlurredUpgradeOverlay
           feature="Asset Radar"
-          description="Upgrade to Starter to unlock stock scores and the ranked Asset Radar."
+          description={`Upgrade to Starter to unlock scores on ${formatCount(universeCounts?.stock)} stocks and the ranked Asset Radar.`}
         >
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
