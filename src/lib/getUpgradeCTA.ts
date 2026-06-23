@@ -45,8 +45,8 @@ const ANON_BY_CONTEXT: Partial<Record<UpgradeContext, string>> = {
   signals: "Sign up to see today's signals.",
   watchlist: "Save assets to your watchlist.",
   alerts: "Get notified when scores change.",
-  ai: "Ask anything about 25,536 assets.",
-  asset_radar: "Sign up free to see all 25,536 ranked assets.",
+  ai: "Ask anything about the full ranked-asset universe.",
+  asset_radar: "Sign up free to see every ranked asset.",
 };
 
 const ANON_TOOLTIP: Record<FieldType, string> = {
