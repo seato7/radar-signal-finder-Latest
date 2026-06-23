@@ -2230,6 +2230,69 @@ export type Database = {
         }
         Relationships: []
       }
+      health_probe_alert_state: {
+        Row: {
+          consecutive_failures: number
+          last_alert_sent_at: string | null
+          last_failure_at: string | null
+          last_success_at: string | null
+          probe_name: string
+          updated_at: string
+        }
+        Insert: {
+          consecutive_failures?: number
+          last_alert_sent_at?: string | null
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          probe_name: string
+          updated_at?: string
+        }
+        Update: {
+          consecutive_failures?: number
+          last_alert_sent_at?: string | null
+          last_failure_at?: string | null
+          last_success_at?: string | null
+          probe_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      health_probe_results: {
+        Row: {
+          created_at: string
+          error_body: string | null
+          id: string
+          latency_ms: number | null
+          metadata: Json | null
+          ok: boolean
+          probe_name: string
+          status_code: number | null
+          target: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_body?: string | null
+          id?: string
+          latency_ms?: number | null
+          metadata?: Json | null
+          ok: boolean
+          probe_name: string
+          status_code?: number | null
+          target?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_body?: string | null
+          id?: string
+          latency_ms?: number | null
+          metadata?: Json | null
+          ok?: boolean
+          probe_name?: string
+          status_code?: number | null
+          target?: string | null
+        }
+        Relationships: []
+      }
       holdings_13f: {
         Row: {
           change_pct: number | null
