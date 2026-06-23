@@ -17,6 +17,7 @@ import { useAuthModal } from "@/contexts/AuthModalContext";
 import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
 import { usePublicPreview } from "@/hooks/usePublicPreview";
 import { getPlanLimits, isDemoModeForClass } from "@/lib/planLimits";
+import { useAssetUniverseCounts, formatCount } from "@/hooks/useAssetUniverseCounts";
 import { BlurredUpgradeOverlay } from "@/components/BlurredUpgradeOverlay";
 import { LockedPreview } from "@/components/conversion/LockedPreview";
 import { TickerLink } from "@/lib/tickerLink";
@@ -138,6 +139,7 @@ const AssetRadar = () => {
   const { openAuthModal } = useAuthModal();
   const anonSignup = useAnonSignupCTA();
   const planLimits = getPlanLimits(userPlan);
+  const { data: universeCounts } = useAssetUniverseCounts();
   const { toast } = useToast();
   const { addTicker: addToWatchlist, adding: addingToWatchlist } = useAddToWatchlist();
   const [requestModalOpen, setRequestModalOpen] = useState(false);
@@ -787,7 +789,7 @@ const AssetRadar = () => {
         />
         <BlurredUpgradeOverlay
           feature="Asset Radar"
-          description="Upgrade to Starter to unlock stock scores and the ranked Asset Radar."
+          description={`Upgrade to Starter to unlock scores on ${formatCount(universeCounts?.stock)} stocks and the ranked Asset Radar.`}
         >
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
@@ -817,8 +819,8 @@ const AssetRadar = () => {
             <p className="text-body-sm font-semibold text-ds-text-primary">3 sample assets shown in full.</p>
             <p className="text-caption text-ds-text-secondary mt-0.5">
               {isAuthenticated
-                ? "Upgrade to Starter to unlock stock scores, or Premium for all 25,536 assets across every asset class."
-                : "Sign up free to see all 25,536 ranked assets."}
+                ? `Starter unlocks ${formatCount(universeCounts?.stock)} stock scores. Pro adds ETFs + forex (${formatCount(universeCounts?.proCoverage)} assets). Premium covers all ${formatCount(universeCounts?.premiumCoverage)} assets across every class.`
+                : `Sign up free to browse all ${formatCount(universeCounts?.premiumCoverage)} ranked assets.`}
             </p>
           </div>
           {isAuthenticated ? (
@@ -828,7 +830,7 @@ const AssetRadar = () => {
               variant="outline"
               className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent shrink-0"
             >
-              <Link to="/pricing?upgrade_from=asset_radar_free_banner">Upgrade to Starter</Link>
+              <Link to="/pricing?upgrade_from=asset_radar_free_banner">Compare plans</Link>
             </Button>
           ) : (
             <Button
@@ -840,6 +842,50 @@ const AssetRadar = () => {
               Sign Up Free
             </Button>
           )}
+        </div>
+      )}
+
+      {userPlan === "starter" && (
+        <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3 md:gap-5">
+          <div className="flex-1 min-w-0">
+            <p className="text-overline text-ds-text-muted mb-1">STARTER PLAN</p>
+            <p className="text-body-sm font-semibold text-ds-text-primary">
+              You have scores on {formatCount(universeCounts?.stock)} stocks.
+            </p>
+            <p className="text-caption text-ds-text-secondary mt-0.5">
+              Upgrade to Pro to add {formatCount(universeCounts?.etf)} ETFs and {formatCount(universeCounts?.forex)} forex pairs ({formatCount(universeCounts?.proCoverage)} assets total), or Premium for the full universe of {formatCount(universeCounts?.premiumCoverage)} assets including crypto and commodities.
+            </p>
+          </div>
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent shrink-0"
+          >
+            <Link to="/pricing?upgrade_from=asset_radar_starter_banner">Upgrade</Link>
+          </Button>
+        </div>
+      )}
+
+      {userPlan === "pro" && (
+        <div className="bg-ds-surface border border-ds-border rounded-ds-lg p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3 md:gap-5">
+          <div className="flex-1 min-w-0">
+            <p className="text-overline text-ds-text-muted mb-1">PRO PLAN</p>
+            <p className="text-body-sm font-semibold text-ds-text-primary">
+              You have scores on {formatCount(universeCounts?.proCoverage)} assets (stocks, ETFs, forex).
+            </p>
+            <p className="text-caption text-ds-text-secondary mt-0.5">
+              Upgrade to Premium to add {formatCount(universeCounts?.crypto)} crypto and {formatCount(universeCounts?.commodity)} commodities — full universe of {formatCount(universeCounts?.premiumCoverage)} assets.
+            </p>
+          </div>
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="cta-upgrade-pulse text-xs border-ds-brand-primary text-ds-brand-primary hover:bg-ds-brand-primary hover:text-ds-brand-primary-foreground bg-transparent shrink-0"
+          >
+            <Link to="/pricing?upgrade_from=asset_radar_pro_banner">Upgrade to Premium</Link>
+          </Button>
         </div>
       )}
 
