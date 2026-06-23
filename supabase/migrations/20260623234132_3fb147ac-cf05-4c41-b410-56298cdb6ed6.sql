@@ -1,0 +1,1 @@
+DELETE FROM auth.users WHERE email IN ('verify-r10-fresh-2026@insiderpulse.test','diagnostic-fresh-r10@example.invalid');
