@@ -45,7 +45,7 @@ export function StickySignupBar({
       <div className="max-w-screen-2xl mx-auto px-4 md:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles className="h-4 w-4 text-ds-brand-primary shrink-0" aria-hidden="true" />
-          <p className="text-body-sm text-ds-text-primary truncate">{copy}</p>
+          <p className="text-body-sm text-ds-text-primary truncate">{resolvedCopy}</p>
         </div>
         <button
           type="button"
