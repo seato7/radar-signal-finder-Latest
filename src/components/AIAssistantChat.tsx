@@ -283,7 +283,7 @@ export const AIAssistantChat = ({ context, onClose, initialQuery }: AIAssistantC
               {!isAuthenticated ? (
                 <>
                   <p className="text-body text-ds-text-primary mb-2">
-                    Ask anything about 25,536 assets.
+                    Ask anything about {formatCount(assetCounts?.total)} assets.
                   </p>
                   <p className="text-body-sm text-ds-text-secondary">
                     Sign up free to chat.
