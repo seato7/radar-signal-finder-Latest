@@ -1,0 +1,1 @@
+DELETE FROM public.health_probe_alert_state WHERE probe_name = 'boot_create_checkout'; DELETE FROM public.health_probe_results WHERE probe_name = 'boot_create_checkout';
