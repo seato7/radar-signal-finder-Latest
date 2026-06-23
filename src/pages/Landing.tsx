@@ -744,6 +744,7 @@ const CumulativeReturnCard = () => {
     },
     staleTime: 5 * 60 * 1000,
   });
+  const { data: counts } = useAssetUniverseCounts();
 
   const closedCount = data?.closedCount ?? 0;
   const totalReturn = data?.totalReturnPct ?? null;
@@ -769,7 +770,7 @@ const CumulativeReturnCard = () => {
                 ? "…"
                 : hasValue
                   ? `${positive ? "+" : ""}${(totalReturn as number).toFixed(2)}%`
-                  : "Tracking 25,536 assets"}
+                  : `Tracking ${counts?.total ? counts.total.toLocaleString("en-US") : "all"} assets`}
             </div>
             <div className="text-ds-text-primary text-body-sm font-medium mb-1">
               {hasValue ? "Cumulative Return" : "Live Coverage"}
