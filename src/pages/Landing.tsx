@@ -689,7 +689,7 @@ const Landing = () => {
               Start Watching the Market
             </h2>
             <p className="text-ds-text-secondary text-body md:text-body-lg max-w-2xl mx-auto mb-8">
-              Browse 25,536 ranked assets, see live scoring, save what catches your eye.
+              Browse {stats?.assetCount ? stats.assetCount.toLocaleString("en-US") : "all"} ranked assets, see live scoring, save what catches your eye.
             </p>
             {/* Preview-first funnel — see mem://constraints/preview-first-funnel */}
             <Button
