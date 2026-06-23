@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Eye, Sparkles, Crosshair, BarChart3, Shield, Star, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useAssetUniverseCounts } from "@/hooks/useAssetUniverseCounts";
 
 const MEDIA_NAMES = [
   "Bloomberg",
