@@ -21,14 +21,20 @@ interface SpotlightSignal {
 
 const SignalSpotlight = () => {
   const navigate = useNavigate();
-  const { userPlan, isAuthenticated } = useAuth();
+  const { userPlan, planLoading, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
   const anonSignup = useAnonSignupCTA();
-  const isFree = userPlan === 'free' || !userPlan;
+  // Authenticated users below the entitled tier (Free only). Anonymous viewers
+  // fall through to the same locked card. Critically: while the subscription
+  // is still resolving we render a skeleton instead of defaulting to the Free
+  // upgrade card — that's what produced the "flash of upgrade prompt" on
+  // every paid tier.
+  const isFreeAuth = isAuthenticated && userPlan === 'free';
+  const showLocked = !isAuthenticated || isFreeAuth;
 
   const { data: spotlight, isLoading } = useQuery({
     queryKey: ['signal-spotlight'],
-    enabled: !isFree && isAuthenticated,
+    enabled: isAuthenticated && !planLoading && !isFreeAuth,
 
     queryFn: async (): Promise<SpotlightSignal | null> => {
       const { data, error } = await (supabase.rpc as any)('get_signal_spotlight_for_user');
@@ -57,7 +63,24 @@ const SignalSpotlight = () => {
     staleTime: 10 * 60 * 1000,
   });
 
-  if (isFree) {
+  // Plan still resolving for an authenticated user — render neutral skeleton.
+  if (isAuthenticated && planLoading) {
+    return (
+      <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="h-10 w-10 skeleton-pulse rounded-ds-md" />
+            <div className="flex-1 space-y-2">
+              <div className="h-5 w-48 skeleton-pulse rounded" />
+              <div className="h-4 w-full skeleton-pulse rounded" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (showLocked) {
     return (
       <Card className="bg-ds-surface border border-ds-border rounded-ds-lg shadow-none">
         <CardContent className="p-6">

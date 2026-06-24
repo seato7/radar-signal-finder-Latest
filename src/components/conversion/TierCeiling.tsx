@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
-import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
+import { getCTAHref } from "@/lib/getUpgradeCTA";
 
 type Tier = "free" | "starter" | "pro" | "premium";
 
@@ -39,9 +39,14 @@ export function TierCeiling({
   const headline = atCeiling
     ? `You've used all ${limit} ${limitUnit}`
     : `${currentUsage}/${limit} ${limitUnit} used${scope}`;
-  const cta = getCTAText(isAuthenticated, userPlan);
+  // The CTA must match the nextTier the body promises. Calling
+  // getCTAText() with a generic context can downgrade the recommendation
+  // to Starter (e.g. Free→Starter ladder) and contradict body copy that
+  // says "Pro unlocks 10 watchlist slots…". Use the explicit prop instead.
+  const nextTierLabel = `${nextTier[0].toUpperCase()}${nextTier.slice(1)}`;
+  const cta = isAuthenticated ? `Upgrade to ${nextTierLabel}` : "Sign Up Free";
   const subhead = isAuthenticated
-    ? `${nextTier[0].toUpperCase()}${nextTier.slice(1)} unlocks ${nextTierBenefit}`
+    ? `${nextTierLabel} unlocks ${nextTierBenefit}`
     : `Free Access unlocks ${nextTierBenefit}`;
   const href = getCTAHref(isAuthenticated, userPlan, trackingLabel);
 
