@@ -17,7 +17,9 @@ interface FollowedTheme {
 const FollowedThemesCard = () => {
   const navigate = useNavigate();
   const { userPlan, isAuthenticated, planLoading } = useAuth();
-  const isFree = userPlan === 'free' || !userPlan;
+  // Treat authenticated users as paid while the subscription is still resolving,
+  // so paid tiers don't flash the Free upgrade prompt on dashboard mount.
+  const isFree = !isAuthenticated || (!planLoading && userPlan === 'free');
 
 
 
