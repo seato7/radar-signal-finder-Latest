@@ -789,7 +789,7 @@ const AssetRadar = () => {
         />
         <BlurredUpgradeOverlay
           feature="Asset Radar"
-          description={`Upgrade to Starter to unlock scores on ${formatCount(universeCounts?.stock)} stocks and the ranked Asset Radar.`}
+          description={universeCounts ? `Upgrade to Starter to unlock scores on ${formatCount(universeCounts.stock)} stocks and the ranked Asset Radar.` : "Upgrade to Starter to unlock stock scores and the ranked Asset Radar."}
         >
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
