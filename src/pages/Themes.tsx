@@ -498,7 +498,7 @@ const Themes = () => {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
           {visibleThemes.map((theme, index) => {
             const isLocked = isThemeLocked(index, theme);
             const isTracking = theme.is_tracking;
