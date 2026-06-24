@@ -96,7 +96,7 @@ function DsNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const { user, logout, userPlan, isAdmin, isPremium, isAuthenticated } = useAuth();
+  const { user, logout, userPlan, planLoading, isAdmin, isPremium, isAuthenticated } = useAuth();
   const { openAuthModal } = useAuthModal();
   const isCollapsed = state === "collapsed";
 
@@ -191,15 +191,22 @@ export function AppSidebar() {
                 <User className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{user?.email}</span>
               </div>
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-ds-sm px-2 py-0.5",
-                  "text-[11px] font-medium uppercase tracking-wider",
-                  "border border-ds-brand-primary/40 text-ds-brand-primary capitalize",
-                )}
-              >
-                {userPlan} Plan
-              </span>
+              {planLoading ? (
+                <span
+                  className="inline-flex items-center rounded-ds-sm px-2 py-0.5 h-[18px] w-20 bg-ds-surface-elevated animate-pulse"
+                  aria-label="Loading plan"
+                />
+              ) : (
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-ds-sm px-2 py-0.5",
+                    "text-[11px] font-medium uppercase tracking-wider",
+                    "border border-ds-brand-primary/40 text-ds-brand-primary capitalize",
+                  )}
+                >
+                  {userPlan} Plan
+                </span>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
