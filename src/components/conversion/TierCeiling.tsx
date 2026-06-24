@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnonSignupCTA } from "@/hooks/useAnonSignupCTA";
-import { getCTAText, getCTAHref } from "@/lib/getUpgradeCTA";
+import { getCTAHref } from "@/lib/getUpgradeCTA";
 
 type Tier = "free" | "starter" | "pro" | "premium";
 
