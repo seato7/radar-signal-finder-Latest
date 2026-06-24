@@ -19,7 +19,7 @@ interface ThemeScore {
 
 const TopThemesCard = () => {
   const navigate = useNavigate();
-  const { limits, userPlan, isAuthenticated } = useAuth();
+  const { limits, userPlan, isAuthenticated, planLoading } = useAuth();
   const themesLimit = limits().themes;
   const isFree = userPlan === 'free' || !userPlan;
 

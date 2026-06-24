@@ -16,7 +16,7 @@ interface FollowedTheme {
 
 const FollowedThemesCard = () => {
   const navigate = useNavigate();
-  const { userPlan, isAuthenticated } = useAuth();
+  const { userPlan, isAuthenticated, planLoading } = useAuth();
   const isFree = userPlan === 'free' || !userPlan;
 
 

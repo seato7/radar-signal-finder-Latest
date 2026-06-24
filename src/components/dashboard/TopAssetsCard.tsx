@@ -47,7 +47,7 @@ const extractFromExplanation = (scoreExplanation: any, key: string): number => {
 
 const TopAssetsCard = () => {
   const navigate = useNavigate();
-  const { limits, userPlan, isAuthenticated } = useAuth();
+  const { limits, userPlan, isAuthenticated, planLoading } = useAuth();
   const { openAuthModal } = useAuthModal();
   const anonSignup = useAnonSignupCTA();
   const planLimits = limits();
