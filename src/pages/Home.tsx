@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 // Dashboard components
 import MarketRadar from "@/components/dashboard/MarketRadar";
@@ -9,22 +8,12 @@ import SignalSpotlight from "@/components/dashboard/SignalSpotlight";
 import AIAssistantHero from "@/components/dashboard/AIAssistantHero";
 import RecentAlertsCard from "@/components/dashboard/RecentAlertsCard";
 import FollowedThemesCard from "@/components/dashboard/FollowedThemesCard";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const Home = () => {
-  const { data: userPlan = 'free' } = useQuery({
-    queryKey: ['user-plan'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return 'free';
-      const { data } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      return data?.role || 'free';
-    },
-    staleTime: 5 * 60 * 1000,
-  });
+  // Read plan from the single auth source so the badge waits for the resolved
+  // subscription instead of flashing "Free Plan" while user_roles is in flight.
+  const { userPlan, planLoading, isAuthenticated } = useAuth();
 
   return (
     <div className="space-y-6 pb-8">
@@ -39,10 +28,14 @@ const Home = () => {
           </p>
         </div>
         <div className="hidden sm:flex shrink-0">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary text-caption font-medium capitalize">
-            <span className="h-1.5 w-1.5 rounded-full bg-ds-brand-primary" />
-            {userPlan} Plan
-          </span>
+          {isAuthenticated && planLoading ? (
+            <Skeleton className="h-6 w-24 rounded-ds-sm" />
+          ) : isAuthenticated ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-ds-sm border border-ds-brand-primary/40 text-ds-brand-primary text-caption font-medium capitalize">
+              <span className="h-1.5 w-1.5 rounded-full bg-ds-brand-primary" />
+              {userPlan} Plan
+            </span>
+          ) : null}
         </div>
       </div>
 
