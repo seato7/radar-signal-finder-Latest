@@ -139,7 +139,7 @@ const AssetRadar = () => {
   const { openAuthModal } = useAuthModal();
   const anonSignup = useAnonSignupCTA();
   const planLimits = getPlanLimits(userPlan);
-  const { data: universeCounts } = useAssetUniverseCounts();
+  const { data: universeCounts, isLoading: countsLoading } = useAssetUniverseCounts();
   const { toast } = useToast();
   const { addTicker: addToWatchlist, adding: addingToWatchlist } = useAddToWatchlist();
   const [requestModalOpen, setRequestModalOpen] = useState(false);
