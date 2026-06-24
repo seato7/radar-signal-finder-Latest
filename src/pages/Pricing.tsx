@@ -394,11 +394,11 @@ const Pricing = () => {
                 <Button
                   className={cn(
                     "w-full mt-6",
-                    !current && !isFreePlan && plan.plan_id !== "enterprise" && "cta-upgrade-pulse",
+                    !current && !isFreePlan && !isBelowCurrent(plan.plan_id) && plan.plan_id !== "enterprise" && "cta-upgrade-pulse",
                   )}
-                  variant={current || isFreePlan || plan.plan_id === "enterprise" ? "outline" : "default"}
+                  variant={current || isBelowCurrent(plan.plan_id) || isFreePlan || plan.plan_id === "enterprise" ? "outline" : "default"}
                   onClick={() => handleCheckout(plan.plan_id)}
-                  disabled={current}
+                  disabled={current || isBelowCurrent(plan.plan_id)}
                 >
                   {getCtaLabel(plan, current)}
                 </Button>
