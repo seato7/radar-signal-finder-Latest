@@ -4461,6 +4461,20 @@ export type Database = {
           ticker: string
         }[]
       }
+      get_asset_universe_counts: {
+        Args: never
+        Returns: {
+          commodity: number
+          crypto: number
+          etf: number
+          forex: number
+          premium_coverage: number
+          pro_coverage: number
+          starter_coverage: number
+          stock: number
+          total: number
+        }[]
+      }
       get_assets_diagnostic: {
         Args: never
         Returns: {
