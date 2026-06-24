@@ -222,11 +222,28 @@ const Pricing = () => {
     }
   };
 
+  // Tier rank — anything <= the user's tier should render Included/disabled,
+  // never an active "upgrade" CTA. Fixes Premium users seeing an active Pro
+  // button, and Pro users being upsold to Starter for features they already
+  // have (signal-spotlight CTA shares this root cause).
+  const TIER_RANK: Record<string, number> = {
+    free: 0, starter: 1, pro: 2, premium: 3, enterprise: 4, admin: 5,
+  };
+  const currentRank = TIER_RANK[userPlan ?? "free"] ?? 0;
+
   const isCurrentPlan = (planId: string) =>
     userPlan === planId || (planId === "premium" && userPlan === "admin");
 
+  const isBelowCurrent = (planId: string) => {
+    if (planId === "enterprise") return false; // always a contact-sales CTA
+    if (isCurrentPlan(planId)) return false;
+    const planRank = TIER_RANK[planId] ?? 0;
+    return planRank < currentRank;
+  };
+
   const getCtaLabel = (plan: Plan, current: boolean) => {
     if (current) return "Current plan";
+    if (isBelowCurrent(plan.plan_id)) return "Included in your plan";
     if (plan.plan_id === "free") return isAuthenticated ? "Switch to Free" : "Sign up free";
     if (plan.plan_id === "starter" && !isAnnual) return "Start 7-day free trial";
     if (plan.plan_id === "pro") return "Unlock 3 signals + 20 AI messages/day";
