@@ -393,7 +393,9 @@ const Pricing = () => {
 
                 <Button
                   className={cn(
-                    "w-full mt-6",
+                    // Allow long CTA copy (e.g. "Go unlimited — every signal, theme and alert")
+                    // to wrap inside the card on mobile/tablet instead of overflowing horizontally.
+                    "w-full mt-6 h-auto min-h-10 whitespace-normal leading-tight text-center py-2 px-3",
                     !current && !isFreePlan && !isBelowCurrent(plan.plan_id) && plan.plan_id !== "enterprise" && "cta-upgrade-pulse",
                   )}
                   variant={current || isBelowCurrent(plan.plan_id) || isFreePlan || plan.plan_id === "enterprise" ? "outline" : "default"}
