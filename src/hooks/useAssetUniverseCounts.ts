@@ -64,11 +64,12 @@ export function useAssetUniverseCounts() {
 }
 
 /**
- * Format an asset count. Returns null when the value is unknown so callers
- * can render a skeleton instead of an em-dash. The legacy `"—"` fallback
- * has been removed — a missing count must never appear as a glyph in copy.
+ * Format an asset count. Returns an empty string when the value is unknown so
+ * callers never bake an em-dash into user-facing copy. Surfaces that need a
+ * loading state should gate render on the hook's `isLoading`/`data` instead
+ * of inspecting this return.
  */
-export function formatCount(n: number | undefined | null): string | null {
-  if (n == null || n <= 0) return null;
+export function formatCount(n: number | undefined | null): string {
+  if (n == null || n <= 0) return "";
   return n.toLocaleString("en-US");
 }
